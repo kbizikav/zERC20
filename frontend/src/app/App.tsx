@@ -409,8 +409,8 @@ function AppContent(): JSX.Element {
     const loadResources = async () => {
       try {
         setError(undefined);
-        setLoadingMessage('Loading tokens.json…');
-        const loadedTokens = await loadTokens(runtime.resources.tokensPath);
+        setLoadingMessage('Loading token metadata…');
+        const loadedTokens = await loadTokens(runtime.resources.tokensCompressed);
         if (cancelled) return;
         setTokens(loadedTokens);
 

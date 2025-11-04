@@ -34,7 +34,7 @@ export interface ArtifactPaths {
 }
 
 export interface ResourceConfig {
-  tokensPath: string;
+  tokensCompressed: string;
   artifacts: ArtifactPaths;
 }
 
@@ -76,7 +76,11 @@ const envSchema = z.object({
   VITE_EVENT_BLOCK_SPAN: optionalNumber(5_000),
   VITE_SCAN_PAGE_SIZE: optionalNumber(100),
   VITE_AUTHORIZATION_TTL_SECONDS: optionalNumber(600),
-  VITE_TOKENS_PATH: z.string().trim().default('/config/tokens.json'),
+  VITE_TOKENS_COMPRESSED: z
+    .string()
+    .trim()
+    .min(1, 'VITE_TOKENS_COMPRESSED is required; run scripts/encode-tokens.sh')
+    .regex(/^[A-Za-z0-9+/=]+$/, 'VITE_TOKENS_COMPRESSED must be base64-encoded'),
   VITE_ARTIFACTS_BASE_PATH: z.string().trim().default('/artifacts'),
   VITE_TOKEN_SYMBOL: z
     .string()
@@ -138,7 +142,7 @@ export function resolveRuntimeConfig(env: ImportMetaEnv): RuntimeConfig {
   };
 
   const resources: ResourceConfig = {
-    tokensPath: parsed.VITE_TOKENS_PATH,
+    tokensCompressed: parsed.VITE_TOKENS_COMPRESSED,
     artifacts: {
       basePath,
       single: withBase(singleArtifactFiles),
