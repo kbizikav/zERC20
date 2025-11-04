@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import {
   BurnArtifacts,
   RedeemContext,
@@ -24,9 +25,10 @@ import { useWallet } from '@app/providers/WalletProvider';
 import { getStealthClient, createDeciderClient, createIndexerClient } from '@services/clients';
 import { VetKey } from '@dfinity/vetkeys';
 import { StealthError } from '@services/sdk/storage/errors.js';
-import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
+import { RedeemDetailSection, RedeemDetailChainSummary } from '@features/redeem/RedeemDetailSection';
 import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
+import { createTeleportSubmittedMessage } from '@features/redeem/redeemMessages';
 import { yieldToUi } from '@features/redeem/yieldToUi';
 
 interface ScanReceivingsPanelProps {
@@ -49,6 +51,37 @@ function padRecipient(address: string): string {
 
 function formatEligibleValue(value: bigint): string {
   return formatUnits(value, 18);
+}
+
+function createChainSummaries(chains: RedeemContext['chains']): RedeemDetailChainSummary[] {
+  return chains.reduce<RedeemDetailChainSummary[]>((acc, chain) => {
+    const hasActivity =
+      chain.events.eligible.length > 0 || chain.events.ineligible.length > 0;
+    if (!hasActivity) {
+      return acc;
+    }
+    const chainId = chain.chainId.toString();
+    const summary: RedeemDetailChainSummary = {
+      chainId,
+      name: chain.token.label ?? `Chain ${chainId}`,
+      eligibleValue: formatEligibleValue(chain.totalEligibleValue),
+      pendingValue: formatEligibleValue(chain.totalPendingValue),
+      eligibleEvents: chain.events.eligible.map((event) => ({
+        eventIndex: event.eventIndex.toString(),
+        from: event.from,
+        to: event.to,
+        value: formatEligibleValue(event.value),
+      })),
+      pendingEvents: chain.events.ineligible.map((event) => ({
+        eventIndex: event.eventIndex.toString(),
+        from: event.from,
+        to: event.to,
+        value: formatEligibleValue(event.value),
+      })),
+    };
+    acc.push(summary);
+    return acc;
+  }, []);
 }
 
 function formatAnnouncementTimestamp(ns: bigint): string {
@@ -218,7 +251,7 @@ export function ScanReceivingsPanel({
   const [isScanning, setIsScanning] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
-  const [redeemMessage, setRedeemMessage] = useState<string>();
+  const [redeemMessage, setRedeemMessage] = useState<ReactNode>();
   const [cachedVetKey, setCachedVetKey] = useState<VetKey>();
   const [selectedAnnouncementId, setSelectedAnnouncementId] = useState<string>();
   const [detail, setDetail] = useState<AnnouncementDetail | null>(null);
@@ -653,7 +686,13 @@ export function ScanReceivingsPanel({
           await tx.wait();
           completeStage('wallet');
           await yieldToUi();
-          setRedeemMessage(`Teleport submitted: ${tx.hash}`);
+          setRedeemMessage(
+            createTeleportSubmittedMessage({
+              label: 'Teleport submitted',
+              txHash: tx.hash,
+              chainId: detail.burn.generalRecipient.chainId,
+            }),
+          );
         } else {
           const fields = artifacts.batch;
           if (!fields.localPp || !fields.localVp || !fields.globalPp || !fields.globalVp) {
@@ -695,7 +734,13 @@ export function ScanReceivingsPanel({
           await tx.wait();
           completeStage('wallet');
           await yieldToUi();
-          setRedeemMessage(`Batch teleport submitted: ${tx.hash}`);
+          setRedeemMessage(
+            createTeleportSubmittedMessage({
+              label: 'Batch teleport submitted',
+              txHash: tx.hash,
+              chainId: detail.burn.generalRecipient.chainId,
+            }),
+          );
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -713,7 +758,7 @@ export function ScanReceivingsPanel({
   return (
     <section className="card">
       <header className="card-header">
-        <h2>Receivings</h2>
+        <h2>Private Inbox</h2>
       </header>
       {!tokens.hub && (
         <div className="card-body">
@@ -835,6 +880,7 @@ export function ScanReceivingsPanel({
                                   : undefined,
                               eligibleValue: eligibleValueDisplay,
                               pendingValue: pendingValueDisplay,
+                              chainSummaries: createChainSummaries(announcementDetail.context.chains),
                             },
                           ]}
                           message={redeemMessage}

@@ -1,8 +1,21 @@
-import { FormEvent, useCallback, useMemo, useRef, useState } from 'react';
-import { normalizeHex, prepareInvoiceIssue, submitInvoice } from '@services/sdk';
-import { getBytes, parseEther } from 'ethers';
+import { FormEvent, MouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  NUM_BATCH_INVOICES,
+  buildFullBurnAddress,
+  deriveInvoiceBatch,
+  deriveInvoiceSingle,
+  listInvoices,
+  normalizeHex,
+  prepareInvoiceIssue,
+  submitInvoice,
+  isSingleInvoiceHex,
+  getZerc20Contract,
+  createProviderForToken,
+} from '@services/sdk';
+import { getBytes, parseUnits } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
 import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
+import type { TokenEntry } from '@services/sdk/registry/tokens.js';
 import { useWallet } from '@app/providers/WalletProvider';
 import { getStealthClient } from '@services/clients';
 import { useSeed } from '@/hooks/useSeed';
@@ -26,24 +39,43 @@ interface InvoiceResult {
     tweak: string;
   }>;
   signatureMessage: string;
+  isBatch: boolean;
+}
+
+interface BurnAddressSummary {
+  subId: number;
+  burnAddress: string;
+}
+
+interface LatestBurnSummary {
+  invoiceId: string;
+  isBatch: boolean;
+  burnAddresses: BurnAddressSummary[];
 }
 
 export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision }: PrivateReceivePanelProps): JSX.Element {
   const wallet = useWallet();
   const seed = useSeed();
   const [isBatch, setIsBatch] = useState(false);
+  const [showOptions, setShowOptions] = useState(false);
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [result, setResult] = useState<InvoiceResult>();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isQrOpen, setIsQrOpen] = useState(false);
-  const [qrBurnAddress, setQrBurnAddress] = useState<string>();
-  const [qrAmount, setQrAmount] = useState('');
+  const [selectedBurn, setSelectedBurn] = useState<BurnAddressSummary | null>(null);
+  const [qrAmount, setQrAmount] = useState('1');
   const [qrDataUrl, setQrDataUrl] = useState<string>();
   const [qrPayload, setQrPayload] = useState<string>();
   const [qrError, setQrError] = useState<string>();
-  const qrAmountRef = useRef('');
-  const [isInvoiceManagerOpen, setInvoiceManagerOpen] = useState(false);
+  const qrAmountRef = useRef('1');
+  const selectedBurnRef = useRef<string>();
+  const [qrTokenDecimals, setQrTokenDecimals] = useState(18);
+  const [latestBurnSummary, setLatestBurnSummary] = useState<LatestBurnSummary | null>(null);
+  const [latestBurnError, setLatestBurnError] = useState<string>();
+  const [isLoadingLatestBurns, setIsLoadingLatestBurns] = useState(false);
+  const [invoiceReloadRevision, setInvoiceReloadRevision] = useState(0);
+  const [copyNotice, setCopyNotice] = useState<{ left: number; top: number } | null>(null);
+  const copyNoticeTimeoutRef = useRef<number | undefined>(undefined);
 
   const availableTokens = useMemo(() => tokens.tokens ?? [], [tokens.tokens]);
   const connectedToken = useMemo(() => {
@@ -58,8 +90,177 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
     }
   }, [availableTokens, wallet.chainId]);
 
+  const [qrChainId, setQrChainId] = useState<string>(() => {
+    const preferred = connectedToken ?? availableTokens[0];
+    return preferred ? preferred.chainId.toString() : '';
+  });
+
+  const qrSelectedToken = useMemo<TokenEntry | undefined>(
+    () => availableTokens.find((entry) => entry.chainId.toString() === qrChainId),
+    [availableTokens, qrChainId],
+  );
+
+  useEffect(() => {
+    if (availableTokens.length === 0) {
+      if (qrChainId !== '') {
+        setQrChainId('');
+      }
+      return;
+    }
+    const hasSelection = availableTokens.some((entry) => entry.chainId.toString() === qrChainId);
+    if (hasSelection) {
+      return;
+    }
+    const preferred = connectedToken ?? availableTokens[0];
+    if (preferred) {
+      setQrChainId(preferred.chainId.toString());
+    }
+  }, [availableTokens, connectedToken, qrChainId]);
+
   const isWalletConnected = Boolean(wallet.account && wallet.chainId);
   const isSupportedNetwork = Boolean(connectedToken);
+
+  useEffect(() => {
+    if (!wallet.account || !connectedToken || !seed.seedHex || seed.isDeriving || seed.error) {
+      setLatestBurnSummary(null);
+      setLatestBurnError(undefined);
+      setIsLoadingLatestBurns(false);
+      return;
+    }
+
+    let cancelled = false;
+    const ownerAddress = normalizeHex(wallet.account);
+    const chainId = connectedToken.chainId;
+    const seedHex = seed.seedHex;
+
+    setIsLoadingLatestBurns(true);
+    setLatestBurnError(undefined);
+
+    const loadLatestBurns = async () => {
+      try {
+        const stealthClient = await getStealthClient(config);
+        const invoiceIds = await listInvoices(stealthClient, ownerAddress, chainId);
+        if (cancelled) {
+          return;
+        }
+        if (invoiceIds.length === 0) {
+          setLatestBurnSummary(null);
+          return;
+        }
+        const normalizedIds = invoiceIds
+          .map((value) => normalizeHex(value))
+          .sort((a, b) => {
+            const aValue = BigInt(a);
+            const bValue = BigInt(b);
+            if (aValue === bValue) {
+              return 0;
+            }
+            return aValue > bValue ? -1 : 1;
+          });
+        const latestInvoiceId = normalizedIds[0];
+        if (latestBurnSummary?.invoiceId === latestInvoiceId) {
+          return;
+        }
+        const invoiceIsSingle = isSingleInvoiceHex(latestInvoiceId);
+        const recipient = ownerAddress;
+        const burns: BurnAddressSummary[] = [];
+        if (invoiceIsSingle) {
+          const secretAndTweak = await deriveInvoiceSingle(seedHex, latestInvoiceId, chainId, recipient);
+          if (cancelled) {
+            return;
+          }
+          const burn = await buildFullBurnAddress(chainId, recipient, secretAndTweak.secret, secretAndTweak.tweak);
+          if (cancelled) {
+            return;
+          }
+          burns.push({ subId: 0, burnAddress: burn.burnAddress });
+        } else {
+          for (let subId = 0; subId < NUM_BATCH_INVOICES; subId += 1) {
+            const secretAndTweak = await deriveInvoiceBatch(seedHex, latestInvoiceId, subId, chainId, recipient);
+            if (cancelled) {
+              return;
+            }
+            const burn = await buildFullBurnAddress(
+              chainId,
+              recipient,
+              secretAndTweak.secret,
+              secretAndTweak.tweak,
+            );
+            if (cancelled) {
+              return;
+            }
+            burns.push({ subId, burnAddress: burn.burnAddress });
+          }
+        }
+        if (!cancelled) {
+          setLatestBurnSummary({ invoiceId: latestInvoiceId, isBatch: !invoiceIsSingle, burnAddresses: burns });
+          setLatestBurnError(undefined);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (!cancelled) {
+          setLatestBurnError(message);
+          setLatestBurnSummary(null);
+        }
+      } finally {
+        if (!cancelled) {
+          setIsLoadingLatestBurns(false);
+        }
+      }
+    };
+
+    void loadLatestBurns();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    wallet.account,
+    connectedToken,
+    seed.seedHex,
+    seed.isDeriving,
+    seed.error,
+    config,
+    storageRevision,
+    latestBurnSummary?.invoiceId,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const loadDecimals = async () => {
+      if (!qrSelectedToken) {
+        if (!cancelled) {
+          setQrTokenDecimals(18);
+        }
+        return;
+      }
+
+      try {
+        const shouldUseWalletProvider =
+          Boolean(wallet.provider) &&
+          Boolean(connectedToken) &&
+          connectedToken?.chainId === qrSelectedToken.chainId;
+        const runner = shouldUseWalletProvider ? wallet.provider : createProviderForToken(qrSelectedToken);
+        const contract = getZerc20Contract(qrSelectedToken.tokenAddress, runner);
+        const value = await contract.decimals();
+        if (!cancelled) {
+          const numeric = Number(value);
+          setQrTokenDecimals(Number.isFinite(numeric) && numeric >= 0 ? Math.trunc(numeric) : 18);
+        }
+      } catch {
+        if (!cancelled) {
+          setQrTokenDecimals(18);
+        }
+      }
+    };
+
+    void loadDecimals();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [connectedToken, qrSelectedToken, wallet.provider]);
 
   const handleSubmit = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -67,6 +268,7 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
       setStatus(undefined);
       setError(undefined);
       setResult(undefined);
+      setLatestBurnError(undefined);
 
       if (!wallet.account) {
         setError('Connect your wallet to issue invoices.');
@@ -106,17 +308,31 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
 
         setStatus('Submitting invoice to storage…');
         await submitInvoice(stealthClient, artifacts.invoiceId, signatureBytes);
+        setStatus(undefined);
+
+        const burnSummary = artifacts.burnAddresses.map((entry) => ({
+          subId: entry.subId,
+          burnAddress: entry.burnAddress,
+        }));
 
         setResult({
           invoiceId: artifacts.invoiceId,
           signatureHex,
           signatureMessage: artifacts.signatureMessage,
           burnAddresses: artifacts.burnAddresses,
+          isBatch,
         });
-        setStatus('Invoice submitted.');
+        setLatestBurnSummary({
+          invoiceId: artifacts.invoiceId,
+          isBatch,
+          burnAddresses: burnSummary,
+        });
+        setInvoiceReloadRevision((prev) => prev + 1);
+        setIsLoadingLatestBurns(false);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setError(message);
+        setLatestBurnError(message);
         setStatus(undefined);
       } finally {
         setIsSubmitting(false);
@@ -125,41 +341,186 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
     [wallet, connectedToken, isBatch, seed, config],
   );
 
-  const openQrModal = useCallback((burnAddress: string) => {
-    setQrBurnAddress(burnAddress);
-    setQrAmount('');
-    qrAmountRef.current = '';
-    setQrDataUrl(undefined);
-    setQrPayload(undefined);
-    setQrError(undefined);
-    setIsQrOpen(true);
+  useEffect(() => {
+    return () => {
+      if (copyNoticeTimeoutRef.current !== undefined) {
+        window.clearTimeout(copyNoticeTimeoutRef.current);
+      }
+    };
   }, []);
 
-  const closeQrModal = useCallback(() => {
-    setIsQrOpen(false);
-    setQrBurnAddress(undefined);
-    setQrAmount('');
-    qrAmountRef.current = '';
-    setQrDataUrl(undefined);
-    setQrPayload(undefined);
-    setQrError(undefined);
-  }, []);
+  const handleCopyBurnAddress = useCallback(
+    (event: MouseEvent<HTMLButtonElement>, entry: BurnAddressSummary) => {
+      setSelectedBurn(entry);
+      selectedBurnRef.current = entry.burnAddress;
+      const { clientX, clientY } = event;
 
-  const handleQrAmountChange = useCallback(
-    (value: string) => {
-      setQrAmount(value);
-      qrAmountRef.current = value;
+      const showCopyNotice = () => {
+        if (typeof window === 'undefined') {
+          return;
+        }
+        if (copyNoticeTimeoutRef.current !== undefined) {
+          window.clearTimeout(copyNoticeTimeoutRef.current);
+        }
+        const offsetX = 12;
+        const offsetY = 28;
+        setCopyNotice({
+          left: clientX + offsetX,
+          top: clientY - offsetY,
+        });
+        copyNoticeTimeoutRef.current = window.setTimeout(() => {
+          setCopyNotice(null);
+          copyNoticeTimeoutRef.current = undefined;
+        }, 1200);
+      };
+
+      const copyWithClipboardApi = async () => {
+        try {
+          if (typeof navigator !== 'undefined' && navigator.clipboard) {
+            await navigator.clipboard.writeText(entry.burnAddress);
+            return true;
+          }
+        } catch {
+          // fall through to fallback copy method
+        }
+        return false;
+      };
+
+      const copyWithFallback = () => {
+        if (typeof document === 'undefined') {
+          return false;
+        }
+        const textarea = document.createElement('textarea');
+        textarea.value = entry.burnAddress;
+        textarea.setAttribute('readonly', '');
+        textarea.style.position = 'absolute';
+        textarea.style.left = '-9999px';
+        document.body.appendChild(textarea);
+        textarea.select();
+        let success = false;
+        try {
+          success = document.execCommand('copy');
+        } catch {
+          success = false;
+        }
+        document.body.removeChild(textarea);
+        return success;
+      };
+
+      void copyWithClipboardApi().then((success) => {
+        if (success) {
+          showCopyNotice();
+          return;
+        }
+        if (copyWithFallback()) {
+          showCopyNotice();
+          return;
+        }
+      });
+    },
+    [],
+  );
+
+  const renderBurnAddresses = useCallback(
+    (entries: BurnAddressSummary[], isBatchInvoice: boolean) => {
+      if (isBatchInvoice) {
+        return (
+          <ol className="burn-addresses">
+            {entries.map((entry) => (
+              <li
+                key={entry.subId}
+                className={selectedBurn?.burnAddress === entry.burnAddress ? 'selected' : undefined}
+              >
+                <div className="burn-address-row">
+                  <strong>#{entry.subId}</strong>
+                </div>
+                <button
+                  type="button"
+                  className={`burn-address-copy${
+                    selectedBurn?.burnAddress === entry.burnAddress ? ' selected' : ''
+                  }`}
+                  onClick={(event) => handleCopyBurnAddress(event, entry)}
+                  title="Copy burn address"
+                >
+                  <code className="mono">{entry.burnAddress}</code>
+                </button>
+              </li>
+            ))}
+          </ol>
+        );
+      }
+
+      const [entry] = entries;
+      if (!entry) {
+        return <p className="hint">No burn address available.</p>;
+      }
+
+      return (
+        <div
+          className={`burn-address-single${
+            selectedBurn?.burnAddress === entry.burnAddress ? ' selected' : ''
+          }`}
+        >
+          <button
+            type="button"
+            className={`burn-address-copy${
+              selectedBurn?.burnAddress === entry.burnAddress ? ' selected' : ''
+            }`}
+            onClick={(event) => handleCopyBurnAddress(event, entry)}
+            title="Copy burn address"
+          >
+            <code className="mono">{entry.burnAddress}</code>
+          </button>
+        </div>
+      );
+    },
+    [handleCopyBurnAddress, selectedBurn],
+  );
+
+  useEffect(() => {
+    if (!latestBurnSummary || latestBurnSummary.burnAddresses.length === 0) {
+      setSelectedBurn(null);
+      setQrAmount('1');
+      qrAmountRef.current = '1';
+      setQrDataUrl(undefined);
+      setQrPayload(undefined);
       setQrError(undefined);
+      return;
+    }
 
-      if (!qrBurnAddress || value.trim() === '') {
+    setSelectedBurn((current) => {
+      const match = current
+        ? latestBurnSummary.burnAddresses.find((entry) => entry.burnAddress === current.burnAddress)
+        : undefined;
+      if (match) {
+        if (current && current.burnAddress === match.burnAddress) {
+          return current;
+        }
+        return match;
+      }
+      return latestBurnSummary.burnAddresses[0] ?? null;
+    });
+  }, [latestBurnSummary]);
+
+  const generateQrData = useCallback(
+    async (value: string, burnAddress: string) => {
+      if (value.trim() === '') {
+        setQrDataUrl(undefined);
+        setQrPayload(undefined);
+        setQrError(undefined);
+        return;
+      }
+
+      if (!qrSelectedToken) {
+        setQrError('Select a chain to generate the QR code.');
         setQrDataUrl(undefined);
         setQrPayload(undefined);
         return;
       }
 
-      let weiValue: bigint;
+      let parsedAmount: bigint;
       try {
-        weiValue = parseEther(value);
+        parsedAmount = parseUnits(value, qrTokenDecimals);
       } catch {
         setQrError('Unable to encode amount. Use a numeric value like 0.5');
         setQrDataUrl(undefined);
@@ -167,92 +528,257 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
         return;
       }
 
-      if (weiValue <= 0n) {
+      if (parsedAmount <= 0n) {
         setQrError('Enter a positive amount.');
         setQrDataUrl(undefined);
         setQrPayload(undefined);
         return;
       }
 
-      const payload = `ethereum:${qrBurnAddress}?value=${weiValue.toString()}`;
-      toDataURL(payload, { errorCorrectionLevel: 'M', margin: 2, scale: 6 })
-        .then((dataUrl: string) => {
-          if (qrAmountRef.current !== value) {
-            return;
-          }
-          setQrPayload(payload);
-          setQrDataUrl(dataUrl);
-          setQrError(undefined);
-        })
-        .catch(() => {
-          if (qrAmountRef.current !== value) {
-            return;
-          }
-          setQrError('Unable to encode amount. Use a numeric value like 0.5');
-          setQrDataUrl(undefined);
-          setQrPayload(undefined);
-        });
+      const chainSuffix = `@${qrSelectedToken.chainId.toString()}`;
+      const payload = `ethereum:${qrSelectedToken.tokenAddress}${chainSuffix}/transfer?address=${burnAddress}&uint256=${parsedAmount.toString()}`;
+      try {
+        const dataUrl = await toDataURL(payload, { errorCorrectionLevel: 'M', margin: 2, scale: 6 });
+        if (qrAmountRef.current !== value) {
+          return;
+        }
+        if (selectedBurnRef.current !== burnAddress) {
+          return;
+        }
+        setQrPayload(payload);
+        setQrDataUrl(dataUrl);
+        setQrError(undefined);
+      } catch {
+        if (qrAmountRef.current !== value) {
+          return;
+        }
+        if (selectedBurnRef.current !== burnAddress) {
+          return;
+        }
+        setQrError('Unable to encode amount. Use a numeric value like 0.5');
+        setQrDataUrl(undefined);
+        setQrPayload(undefined);
+      }
     },
-    [qrBurnAddress],
+    [qrSelectedToken, qrTokenDecimals],
   );
+
+  const handleQrAmountChange = useCallback(
+    (value: string) => {
+      setQrAmount(value);
+      qrAmountRef.current = value;
+      setQrError(undefined);
+
+      const burnAddress = selectedBurn?.burnAddress;
+      if (!burnAddress) {
+        setQrDataUrl(undefined);
+        setQrPayload(undefined);
+        return;
+      }
+
+      void generateQrData(value, burnAddress);
+    },
+    [selectedBurn, generateQrData],
+  );
+
+  const handleQrChainChange = useCallback(
+    (value: string) => {
+      if (value === qrChainId) {
+        return;
+      }
+      setQrChainId(value);
+      setQrError(undefined);
+      setQrDataUrl(undefined);
+      setQrPayload(undefined);
+    },
+    [qrChainId],
+  );
+
+  useEffect(() => {
+    selectedBurnRef.current = selectedBurn?.burnAddress;
+    if (!selectedBurn) {
+      setQrDataUrl(undefined);
+      setQrPayload(undefined);
+      setQrError(undefined);
+      return;
+    }
+    if (qrAmountRef.current.trim() === '') {
+      setQrDataUrl(undefined);
+      setQrPayload(undefined);
+      setQrError(undefined);
+      return;
+    }
+    void generateQrData(qrAmountRef.current, selectedBurn.burnAddress);
+  }, [selectedBurn, generateQrData]);
+
+  const renderLatestBurnSummary = useCallback(() => {
+    if (!isWalletConnected) {
+      return <p className="hint">Connect your wallet to view burn addresses.</p>;
+    }
+    if (!isSupportedNetwork) {
+      return <p className="error">Unsupported network. Switch MetaMask to a chain defined in tokens.json.</p>;
+    }
+    if (seed.isDeriving) {
+      return <p className="hint">Authorize the seed request in your wallet before loading burn addresses.</p>;
+    }
+    if (seed.error) {
+      return <p className="error">Seed authorization failed: {seed.error}</p>;
+    }
+    if (!seed.seedHex) {
+      return <p className="hint">Authorize the seed request in your wallet to load burn addresses.</p>;
+    }
+    if (isLoadingLatestBurns) {
+      return <p className="hint">Loading latest burn addresses…</p>;
+    }
+    if (latestBurnError) {
+      return <p className="error">{latestBurnError}</p>;
+    }
+    if (!latestBurnSummary) {
+      return <p className="hint">No invoices found for this chain yet.</p>;
+    }
+    return (
+      <>
+        {latestBurnSummary.isBatch && (
+          <ul className="summary">
+            <li>Type: Batch</li>
+          </ul>
+        )}
+        {renderBurnAddresses(latestBurnSummary.burnAddresses, latestBurnSummary.isBatch)}
+        <div className="wallet-qr-inline">
+          {selectedBurn ? (
+            <>
+              <div className="qr-preview persistent">
+                {qrDataUrl ? (
+                  <img src={qrDataUrl} alt="Wallet QR code" />
+                ) : (
+                  <div className="qr-placeholder">
+                    <span className="hint">QR code will appear here.</span>
+                  </div>
+                )}
+              </div>
+              <div className="wallet-qr-amount">
+                <div className="wallet-qr-inputs">
+                  <div className="wallet-qr-field">
+                    <label htmlFor="wallet-qr-amount">Amount</label>
+                    <input
+                      id="wallet-qr-amount"
+                      type="number"
+                      min="0"
+                      step="any"
+                      value={qrAmount}
+                      onChange={(event) => handleQrAmountChange(event.target.value)}
+                      placeholder="Example: 0.25"
+                    />
+                  </div>
+                  <div className="wallet-qr-field">
+                    <label htmlFor="wallet-qr-chain">Chain</label>
+                    <select
+                      id="wallet-qr-chain"
+                      value={qrChainId}
+                      onChange={(event) => handleQrChainChange(event.target.value)}
+                      disabled={availableTokens.length === 0}
+                    >
+                      {availableTokens.map((token) => {
+                        const chainValue = token.chainId.toString();
+                        return (
+                          <option key={chainValue} value={chainValue}>
+                            {token.label} (#{chainValue})
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </div>
+                </div>
+              </div>
+              {qrError && <p className="error">{qrError}</p>}
+            </>
+          ) : (
+            <p className="hint">Select a burn address to view the QR code.</p>
+          )}
+        </div>
+      </>
+    );
+  }, [
+    isWalletConnected,
+    isSupportedNetwork,
+    seed.isDeriving,
+    seed.error,
+    seed.seedHex,
+    isLoadingLatestBurns,
+    latestBurnError,
+    latestBurnSummary,
+    renderBurnAddresses,
+    selectedBurn,
+    qrDataUrl,
+    qrAmount,
+    qrError,
+    handleQrAmountChange,
+    handleQrChainChange,
+    qrChainId,
+    availableTokens,
+  ]);
 
   return (
     <>
+      {copyNotice && (
+        <div className="copy-toast" style={{ top: copyNotice.top, left: copyNotice.left }}>
+          Copied
+        </div>
+      )}
       <section className="card">
         <header className="card-header">
           <div>
-            <h2>Generate Burn Address</h2>
+            <h2>Receive</h2>
           </div>
         </header>
+        <div className="card-section">
+          <h3>Burn Address</h3>
+          {renderLatestBurnSummary()}
+        </div>
         {availableTokens.length === 0 ? (
           <div className="card-body">
             <p className="error">No token entries were loaded from tokens.json.</p>
           </div>
         ) : (
           <form className="card-body grid" onSubmit={handleSubmit}>
-            <div>
-              <label htmlFor="receive-chain">Recipient Chain</label>
-              <input
-                id="receive-chain"
-                type="text"
-                value={
-                  connectedToken
-                    ? `${connectedToken.label} (chain ${connectedToken.chainId.toString()})`
-                    : isWalletConnected && wallet.chainId
-                    ? `Unsupported (chain ${wallet.chainId})`
-                    : ''
+            <footer className="card-footer full">
+              <button
+                type="submit"
+                className="primary"
+                disabled={
+                  isSubmitting || !isWalletConnected || !isSupportedNetwork || seed.isDeriving || !seed.seedHex
                 }
-                readOnly
-                placeholder="Connect MetaMask"
-              />
-              {!isWalletConnected && <p className="hint">Connect your wallet in MetaMask.</p>}
-              {isWalletConnected && !isSupportedNetwork && (
-                <p className="error">Unsupported network. Switch MetaMask to a chain defined in tokens.json.</p>
-              )}
-            </div>
-            <div>
-              <label htmlFor="receive-mode">Invoice Mode</label>
-              <select
-                id="receive-mode"
-                value={isBatch ? 'batch' : 'single'}
-                onChange={(event) => setIsBatch(event.target.value === 'batch')}
               >
-                <option value="single">Single</option>
-                <option value="batch">Batch (10 burn addresses)</option>
-              </select>
-            </div>
+                {isSubmitting ? 'Regenerating…' : 'Regenerate'}
+              </button>
+              {status && <span>{status}</span>}
+              {error && <span className="error">{error}</span>}
+            </footer>
             <div className="full">
-              <label htmlFor="receive-recipient">Recipient Address</label>
-              <input
-                id="receive-recipient"
-                type="text"
-                value={wallet.account ?? ''}
-                readOnly
-                disabled
-                placeholder="Connect MetaMask"
-              />
-              {!wallet.account && <p className="hint">Connect your wallet to populate the recipient address.</p>}
+              <button
+                type="button"
+                className="ghost"
+                aria-expanded={showOptions}
+                aria-controls="invoice-mode-options"
+                onClick={() => setShowOptions((prev) => !prev)}
+              >
+                {showOptions ? 'Hide options' : 'More options…'}
+              </button>
             </div>
+
+            {showOptions && (
+              <div>
+                <label htmlFor="invoice-mode-options">Invoice Mode</label>
+                <select
+                  id="invoice-mode-options"
+                  value={isBatch ? 'batch' : 'single'}
+                  onChange={(event) => setIsBatch(event.target.value === 'batch')}
+                >
+                  <option value="single">Single</option>
+                  <option value="batch">Batch (10 burn addresses)</option>
+                </select>
+              </div>
+            )}
 
             {seed.isDeriving && (
               <div className="full">
@@ -264,111 +790,18 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
                 <p className="error">Seed authorization failed: {seed.error}</p>
               </div>
             )}
-
-            <footer className="card-footer full">
-              <button
-                type="submit"
-                className="primary"
-                disabled={
-                  isSubmitting || !isWalletConnected || !isSupportedNetwork || seed.isDeriving || !seed.seedHex
-                }
-              >
-                {isSubmitting ? 'Submitting…' : 'Issue Invoice'}
-              </button>
-              {status && <span>{status}</span>}
-              {error && <span className="error">{error}</span>}
-            </footer>
           </form>
         )}
-
-        {result && (
-          <div className="card-section">
-            <h3>Invoice Summary</h3>
-            <ul className="summary">
-              <li>
-                Invoice ID: <code className="mono">{result.invoiceId}</code>
-              </li>
-            </ul>
-            <h4>Burn Addresses</h4>
-            <ol className="burn-addresses">
-              {result.burnAddresses.map((entry) => (
-                <li key={entry.subId}>
-                  <div className="burn-address-row">
-                    <strong>#{entry.subId}</strong>
-                    <button type="button" onClick={() => openQrModal(entry.burnAddress)}>
-                      QR
-                    </button>
-                  </div>
-                  <code className="mono">{entry.burnAddress}</code>
-                </li>
-              ))}
-            </ol>
-          </div>
-        )}
-        {isQrOpen && qrBurnAddress && (
-          <div className="modal-overlay" role="dialog" aria-modal="true">
-            <div className="modal">
-              <div className="modal-header">
-                <h3>Wallet QR</h3>
-                <button type="button" className="ghost" onClick={closeQrModal}>
-                  Close
-                </button>
-              </div>
-              <div className="modal-body">
-                <div>
-                  <span className="detail-label">Burn address</span>
-                  <span className="detail-value">
-                    <code className="mono">{qrBurnAddress}</code>
-                  </span>
-                </div>
-                <div>
-                  <label htmlFor="qr-amount">Amount</label>
-                  <input
-                    id="qr-amount"
-                    type="number"
-                    min="0"
-                    step="any"
-                    value={qrAmount}
-                    onChange={(event) => handleQrAmountChange(event.target.value)}
-                    placeholder="Example: 0.25"
-                  />
-                </div>
-                {qrError && <p className="error">{qrError}</p>}
-                {qrDataUrl && qrPayload && (
-                  <div className="qr-preview">
-                    <img src={qrDataUrl} alt="Wallet QR code" />
-                    <code className="mono">{qrPayload}</code>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-        <div className="card-toggle">
-          <button
-            type="button"
-            className={isInvoiceManagerOpen ? 'card-toggle-button open' : 'card-toggle-button'}
-            aria-expanded={isInvoiceManagerOpen}
-            aria-controls="invoice-manager-panel"
-            onClick={() => setInvoiceManagerOpen((prev) => !prev)}
-          >
-            <span className="card-toggle-label">Manage Issued Invoices</span>
-            <span className="card-toggle-icon" aria-hidden="true">
-              {isInvoiceManagerOpen ? '−' : '+'}
-            </span>
-          </button>
-        </div>
       </section>
-      {isInvoiceManagerOpen && (
-        <div id="invoice-manager-panel">
-          <ScanInvoicesPanel
-            config={config}
-            tokens={tokens}
-            artifacts={artifacts}
-            storageRevision={storageRevision}
-          />
-        </div>
-      )}
+      <div id="invoice-manager-panel">
+        <ScanInvoicesPanel
+          config={config}
+          tokens={tokens}
+          artifacts={artifacts}
+          storageRevision={storageRevision}
+          reloadRevision={invoiceReloadRevision}
+        />
+      </div>
     </>
   );
 }

@@ -61,6 +61,7 @@ export interface InvoiceIssueArtifacts {
   recipientAddress: string;
   recipientChainId: bigint;
   burnAddresses: InvoiceBatchBurnAddress[];
+  isBatch: boolean;
   signatureMessage: string;
 }
 

@@ -262,7 +262,43 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
 
         const token = connectedToken;
         const destinationChain = parseBigNumberish(recipientChainId, 'Recipient chain ID');
-        const normalizedRecipient = normalizeHex(recipient);
+        const trimmedRecipient = recipient.trim();
+        const recipientTokenEntry = availableTokens.find((entry) => entry.chainId === destinationChain);
+        if (!recipientTokenEntry) {
+          throw new Error('Selected recipient chain is not configured in tokens.json.');
+        }
+
+        const normalizedRecipient = await (async () => {
+          if (!trimmedRecipient) {
+            throw new Error('Recipient address is required');
+          }
+
+          const normalizedCandidate = trimmedRecipient.startsWith('0X')
+            ? `0x${trimmedRecipient.slice(2)}`
+            : trimmedRecipient;
+          const isHexCandidate =
+            /^0x[0-9a-fA-F]+$/.test(normalizedCandidate) || /^[0-9a-fA-F]+$/.test(normalizedCandidate);
+
+          if (isHexCandidate) {
+            return normalizeHex(trimmedRecipient);
+          }
+
+          const providerForResolution =
+            wallet.provider && wallet.chainId === Number(destinationChain)
+              ? wallet.provider
+              : createProviderForToken(recipientTokenEntry);
+
+          try {
+            const resolved = await providerForResolution.resolveName(trimmedRecipient);
+            if (!resolved) {
+              throw new Error(`ENS name "${trimmedRecipient}" did not resolve to an address.`);
+            }
+            return normalizeHex(resolved);
+          } catch (cause) {
+            const message = cause instanceof Error ? cause.message : String(cause);
+            throw new Error(`Failed to resolve ENS name "${trimmedRecipient}": ${message}`);
+          }
+        })();
 
         setStatus('Preparing encrypted announcement…');
         const stealthClient = await getStealthClient(config);
@@ -301,7 +337,18 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
         setIsSubmitting(false);
       }
     },
-    [wallet, connectedToken, recipientChainId, recipient, amount, seed, config, decimalsToUse, tokenBalance],
+    [
+      wallet,
+      connectedToken,
+      recipientChainId,
+      recipient,
+      amount,
+      seed,
+      config,
+      decimalsToUse,
+      tokenBalance,
+      availableTokens,
+    ],
   );
 
   return (
@@ -342,7 +389,9 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
             <input
               id="send-recipient"
               type="text"
-              placeholder="0x…"
+              placeholder="0x… or alice.eth"
+              autoComplete="off"
+              spellCheck={false}
               required
               value={recipient}
               onChange={(event) => setRecipient(event.target.value)}

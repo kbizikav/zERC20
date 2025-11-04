@@ -1,7 +1,7 @@
 import { Contract, JsonRpcProvider } from 'ethers';
 
 import { DEFAULT_INDEXER_FETCH_LIMIT } from '../core/constants.js';
-import { HttpIndexerClient, HistoricalProof, IndexedEvent } from '../indexer/index.js';
+import { HttpIndexerClient, HistoricalProof } from '../indexer/index.js';
 import { HttpDeciderClient } from '../proofs/prover.js';
 import {
   AggregationTreeState,
@@ -14,9 +14,11 @@ import {
 } from './teleport.js';
 import { TokenEntry, findTokenByChain } from '../registry/tokens.js';
 import { BurnArtifacts } from '../core/types.js';
-import { createSingleWithdrawWasm, SingleWithdrawWasm } from '../wasm/index.js';
-import { normalizeHex } from '../core/utils.js';
-import { formatFieldElement, toFieldHex, toLeafIndexString } from './proofUtils.js';
+import {
+  runSingleTeleportProver,
+  type SingleTeleportProverInput,
+  type SingleTeleportArtifacts as SingleTeleportProverArtifacts,
+} from './singleTeleportProver.js';
 import { runNovaProver, type NovaProverInput, type NovaProverOutput } from './novaProver.js';
 
 export interface RedeemChainContext {
@@ -165,71 +167,111 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
   };
 }
 
-export interface SingleTeleportArtifacts {
-  proofCalldata: string;
-  publicInputs: string[];
-  treeDepth: number;
+export interface SingleTeleportParams extends SingleTeleportProverInput {
+  offloadToWorker?: boolean;
+}
+export type { SingleTeleportArtifacts } from './singleTeleportProver.js';
+
+export async function generateSingleTeleportProof(
+  params: SingleTeleportParams,
+): Promise<SingleTeleportProverArtifacts> {
+  return computeSingleTeleportProof(params);
 }
 
-export interface SingleTeleportParams {
-  wasmArtifacts: {
-    localPk: Uint8Array;
-    localVk: Uint8Array;
-    globalPk: Uint8Array;
-    globalVk: Uint8Array;
-  };
-  aggregationState: AggregationTreeState;
-  recipientFr: string;
-  secretHex: string;
-  event: IndexedEvent;
-  proof: GlobalTeleportProof;
-}
+type PendingSingleTeleportJob = {
+  resolve: (output: SingleTeleportProverArtifacts) => void;
+  reject: (error: unknown) => void;
+};
 
-export async function generateSingleTeleportProof(params: SingleTeleportParams): Promise<SingleTeleportArtifacts> {
-  const wasm: SingleWithdrawWasm = await createSingleWithdrawWasm(
-    params.wasmArtifacts.localPk,
-    params.wasmArtifacts.localVk,
-    params.wasmArtifacts.globalPk,
-    params.wasmArtifacts.globalVk,
-  );
-  const zeroField = formatFieldElement('0x0', 'delta');
-  const witness = {
-    merkleRoot: formatFieldElement(params.aggregationState.aggregationRoot, 'merkleRoot'),
-    recipient: formatFieldElement(params.recipientFr, 'recipient'),
-    withdrawValue: formatFieldElement(toFieldHex(params.event.value), 'withdrawValue'),
-    value: formatFieldElement(toFieldHex(params.event.value), 'value'),
-    delta: zeroField,
-    secret: formatFieldElement(params.secretHex, 'secret'),
-    leafIndex: toLeafIndexString(params.proof.leafIndex),
-    siblings: params.proof.siblings.map((sibling, idx) =>
-      formatFieldElement(sibling, `proof.siblings[${idx}]`),
-    ),
-  };
-  try {
-    const result = await wasm.prove(witness);
-    return {
-      proofCalldata: normalizeHex(result.proofCalldata),
-      publicInputs: result.publicInputs.map((input: string) => normalizeHex(input)),
-      treeDepth: result.treeDepth,
-    };
-  } catch (error) {
-    // Surface detailed witness context for troubleshooting, but avoid leaking secrets when possible.
-    // We redact the secret while keeping parity with CLI-style logs.
-    const debugWitness = {
-      ...witness,
-      secret: '[redacted]',
-    };
-    console.error(
-      '[zkERC20] generateSingleTeleportProof failed',
-      debugWitness,
-      error,
-    );
-    throw new Error(
-      error instanceof Error
-        ? `single teleport proof failed: ${error.message}`
-        : `single teleport proof failed: ${String(error)}`,
-    );
+let singleTeleportWorker: Worker | null = null;
+let nextSingleTeleportJobId = 0;
+const pendingSingleTeleportJobs = new Map<number, PendingSingleTeleportJob>();
+
+function canUseSingleTeleportWorker(params: SingleTeleportParams): boolean {
+  if (params.offloadToWorker === false) {
+    return false;
   }
+  return typeof window !== 'undefined' && typeof window.Worker !== 'undefined';
+}
+
+function ensureSingleTeleportWorker(): Worker {
+  if (!singleTeleportWorker) {
+    const worker = new Worker(new URL('./singleTeleportProver.worker.ts', import.meta.url), {
+      type: 'module',
+    });
+    worker.addEventListener('message', (event: MessageEvent<any>) => {
+      const { id, type } = event.data ?? {};
+      if (!pendingSingleTeleportJobs.has(id)) {
+        return;
+      }
+      const pending = pendingSingleTeleportJobs.get(id);
+      if (!pending) {
+        return;
+      }
+      pendingSingleTeleportJobs.delete(id);
+      if (type === 'result') {
+        pending.resolve(event.data.result as SingleTeleportProverArtifacts);
+      } else if (type === 'error') {
+        const error = event.data.error;
+        pending.reject(new Error(error?.message ?? 'Single teleport worker failure'));
+      } else {
+        pending.reject(
+          new Error(`Single teleport worker returned unexpected message type ${String(type)}`),
+        );
+      }
+    });
+    worker.addEventListener('error', (event) => {
+      pendingSingleTeleportJobs.forEach((pending) =>
+        pending.reject(event.error ?? new Error('Single teleport worker error')),
+      );
+      pendingSingleTeleportJobs.clear();
+    });
+    singleTeleportWorker = worker;
+  }
+  return singleTeleportWorker;
+}
+
+async function runSingleTeleportProofWithWorker(
+  params: SingleTeleportProverInput,
+): Promise<SingleTeleportProverArtifacts> {
+  const worker = ensureSingleTeleportWorker();
+  const jobId = nextSingleTeleportJobId++;
+  const payload = { id: jobId, payload: params };
+  const promise = new Promise<SingleTeleportProverArtifacts>((resolve, reject) => {
+    pendingSingleTeleportJobs.set(jobId, { resolve, reject });
+  });
+  worker.postMessage(payload);
+  return promise;
+}
+
+function buildSingleTeleportWorkload(
+  params: SingleTeleportParams,
+): SingleTeleportProverInput {
+  return {
+    wasmArtifacts: params.wasmArtifacts,
+    aggregationState: params.aggregationState,
+    recipientFr: params.recipientFr,
+    secretHex: params.secretHex,
+    event: params.event,
+    proof: params.proof,
+  };
+}
+
+async function computeSingleTeleportProof(
+  params: SingleTeleportParams,
+): Promise<SingleTeleportProverArtifacts> {
+  const workload = buildSingleTeleportWorkload(params);
+  if (canUseSingleTeleportWorker(params)) {
+    try {
+      return await runSingleTeleportProofWithWorker(workload);
+    } catch (error) {
+      console.warn(
+        '[zkERC20] Falling back to main-thread single teleport prover due to worker failure.',
+        error,
+      );
+    }
+  }
+  return runSingleTeleportProver(workload);
 }
 
 export interface BatchTeleportArtifacts {

@@ -120,13 +120,23 @@ export function useSeed(): SeedState {
 
   const deriveSeed = useCallback(async () => {
     const currentAccount = accountRef.current;
+    if (!currentAccount) {
+      const err = new Error('Connect your wallet to derive the privacy seed.');
+      setError(err.message);
+      throw err;
+    }
+
+    const cached = loadStoredSeed(currentAccount);
+    if (cached) {
+      setSeedHex(cached);
+      setError(undefined);
+      return cached;
+    }
+
     setIsDeriving(true);
     setError(undefined);
     try {
-      if (!currentAccount) {
-        throw new Error('Connect your wallet to derive the privacy seed.');
-      }
-      const digest = await deriveSeedForAccount(currentAccount, ensureSigner, true);
+      const digest = await deriveSeedForAccount(currentAccount, ensureSigner, false);
       if (accountRef.current === currentAccount) {
         setSeedHex(digest);
       }

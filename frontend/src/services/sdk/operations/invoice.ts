@@ -4,16 +4,12 @@ import { InvoiceSubmission } from '../storage/types.js';
 import { getBytes } from 'ethers';
 
 import { NUM_BATCH_INVOICES } from '../core/constants.js';
-import {
-  InvoiceBatchBurnAddress,
-  InvoiceIssueArtifacts,
-} from '../core/types.js';
+import { InvoiceBatchBurnAddress, InvoiceIssueArtifacts } from '../core/types.js';
 import {
   addressToBytes,
   ensureHexLength,
   hexFromBytes,
   normalizeHex,
-  randomBytes,
 } from '../core/utils.js';
 import { buildFullBurnAddress, deriveInvoiceBatch, deriveInvoiceSingle } from '../wasm/index.js';
 
@@ -23,8 +19,72 @@ export interface InvoiceIssueParams {
   recipientAddress: string;
   recipientChainId: number | bigint;
   isBatch: boolean;
-  randomBytes?: (length: number) => Uint8Array;
-  maxRetries?: number;
+}
+
+const CHAIN_ID_OFFSET = 1;
+const CHAIN_ID_LENGTH = 8;
+const SEQUENCE_OFFSET = CHAIN_ID_OFFSET + CHAIN_ID_LENGTH;
+const SEQUENCE_LENGTH = 32 - SEQUENCE_OFFSET;
+const MAX_SEQUENCE_VALUE = (1n << BigInt(7 + SEQUENCE_LENGTH * 8)) - 1n;
+
+function ensureSequenceBounds(sequence: bigint): void {
+  if (sequence < 0n || sequence > MAX_SEQUENCE_VALUE) {
+    throw new Error('invoice id sequence overflow');
+  }
+}
+
+function applyInvoiceMode(bytes: Uint8Array, isBatch: boolean): void {
+  if (isBatch) {
+    bytes[0] &= 0x7f;
+  } else {
+    bytes[0] |= 0x80;
+  }
+}
+
+function extractSequenceValue(invoiceBytes: Uint8Array): bigint {
+  if (invoiceBytes.length !== 32) {
+    throw new Error('invoice id must be 32 bytes');
+  }
+  let value = BigInt(invoiceBytes[0] & 0x7f);
+  for (let index = SEQUENCE_OFFSET; index < invoiceBytes.length; index += 1) {
+    value = (value << 8n) | BigInt(invoiceBytes[index]);
+  }
+  return value;
+}
+
+function applySequenceValue(invoiceBytes: Uint8Array, sequence: bigint): void {
+  ensureSequenceBounds(sequence);
+  let remaining = sequence;
+  const tail = new Uint8Array(SEQUENCE_LENGTH);
+  for (let index = SEQUENCE_LENGTH - 1; index >= 0; index -= 1) {
+    tail[index] = Number(remaining & 0xffn);
+    remaining >>= 8n;
+  }
+  const head = Number(remaining & 0x7fn);
+  remaining >>= 7n;
+  if (remaining !== 0n) {
+    throw new Error('invoice id sequence overflow');
+  }
+  invoiceBytes[0] = (invoiceBytes[0] & 0x80) | head;
+  for (let index = 0; index < SEQUENCE_LENGTH; index += 1) {
+    invoiceBytes[SEQUENCE_OFFSET + index] = tail[index];
+  }
+}
+
+function isSingleInvoiceBytes(invoiceBytes: Uint8Array): boolean {
+  if (invoiceBytes.length !== 32) {
+    throw new Error('invoice id must be 32 bytes');
+  }
+  return (invoiceBytes[0] & 0x80) !== 0;
+}
+
+function createInvoiceIdBytes(isBatch: boolean, chainId: bigint, sequence: bigint): Uint8Array {
+  ensureSequenceBounds(sequence);
+  const bytes = new Uint8Array(32);
+  applyInvoiceMode(bytes, isBatch);
+  embedChainId(bytes, chainId);
+  applySequenceValue(bytes, sequence);
+  return bytes;
 }
 
 export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<InvoiceIssueArtifacts> {
@@ -33,33 +93,29 @@ export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<I
     recipientAddress,
     recipientChainId,
     isBatch,
-    randomBytes: rng,
-    maxRetries = 8,
   } = params;
   const seedHex = ensureHexLength(params.seedHex, 32, 'seed');
-  const randomFn = rng ?? randomBytes;
   const normalizedChainId = BigInt(recipientChainId);
 
   const recipientBytes = addressToBytes(recipientAddress);
   const existing = await client.listInvoices(recipientBytes);
-  const existingIds = new Set(
-    existing
-      .filter((bytes: Uint8Array) => extractChainIdFromInvoiceBytes(bytes) === normalizedChainId)
-      .map((bytes: Uint8Array) => hexFromBytes(bytes)),
+  const existingForChain = existing.filter(
+    (bytes: Uint8Array) => extractChainIdFromInvoiceBytes(bytes) === normalizedChainId,
   );
 
-  let invoiceBytes: Uint8Array | null = null;
-  for (let attempt = 0; attempt < maxRetries; attempt += 1) {
-    const candidate = generateInvoiceIdBytes(isBatch, normalizedChainId, randomFn);
-    const candidateHex = hexFromBytes(candidate);
-    if (!existingIds.has(candidateHex)) {
-      invoiceBytes = candidate;
-      break;
+  let maxSequence: bigint | undefined;
+  for (const invoiceBytes of existingForChain) {
+    const invoiceIsSingle = isSingleInvoiceBytes(invoiceBytes);
+    if (invoiceIsSingle === !isBatch) {
+      const sequence = extractSequenceValue(invoiceBytes);
+      if (maxSequence === undefined || sequence > maxSequence) {
+        maxSequence = sequence;
+      }
     }
   }
-  if (!invoiceBytes) {
-    throw new Error('failed to generate unique invoice id');
-  }
+
+  const nextSequence = (maxSequence ?? -1n) + 1n;
+  const invoiceBytes = createInvoiceIdBytes(isBatch, normalizedChainId, nextSequence);
   const invoiceIdHex = hexFromBytes(invoiceBytes);
 
   const burnAddresses: InvoiceBatchBurnAddress[] = [];
@@ -113,12 +169,10 @@ export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<I
     recipientAddress: normalizeHex(recipientAddress),
     recipientChainId: normalizedChainId,
     burnAddresses,
+    isBatch,
     signatureMessage,
   };
 }
-
-const CHAIN_ID_OFFSET = 1;
-const CHAIN_ID_LENGTH = 8;
 
 function embedChainId(bytes: Uint8Array, chainId: bigint): void {
   const normalizedChain = BigInt.asUintN(64, chainId);
@@ -145,22 +199,9 @@ export function extractChainIdFromInvoiceHex(invoiceIdHex: string): bigint {
   return extractChainIdFromInvoiceBytes(bytes);
 }
 
-function generateInvoiceIdBytes(
-  isBatch: boolean,
-  chainId: bigint,
-  rng: (length: number) => Uint8Array,
-): Uint8Array {
-  const bytes = rng(32);
-  if (bytes.length !== 32) {
-    throw new Error('invoice id generator must return 32 bytes');
-  }
-  if (isBatch) {
-    bytes[0] &= 0x7f;
-  } else {
-    bytes[0] |= 0x80;
-  }
-  embedChainId(bytes, chainId);
-  return bytes;
+export function isSingleInvoiceHex(invoiceIdHex: string): boolean {
+  const bytes = getBytes(ensureHexLength(invoiceIdHex, 32, 'invoice id'));
+  return isSingleInvoiceBytes(bytes);
 }
 
 export async function submitInvoice(

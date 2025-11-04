@@ -14,8 +14,10 @@ import { buildSwitchChainOptions } from '@/utils/wallet';
 const TAB_SEND = 'send';
 const TAB_RECEIVE = 'receive';
 const TAB_RECEIVINGS = 'receivings';
+const TAB_MORE = 'more';
 
 type ActiveTab = typeof TAB_SEND | typeof TAB_RECEIVE | typeof TAB_RECEIVINGS;
+type ActiveMoreTab = typeof TAB_SEND | typeof TAB_RECEIVINGS;
 
 function compactBalanceDisplay(value: bigint, decimals: number): string {
   const normalizedDecimals = Number.isFinite(decimals) && decimals >= 0 ? Math.min(decimals, 18) : 18;
@@ -387,7 +389,8 @@ function AppContent(): JSX.Element {
   const [artifacts, setArtifacts] = useState<TeleportArtifacts | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('Loading configuration…');
   const [error, setError] = useState<string>();
-  const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_SEND);
+  const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_RECEIVE);
+  const [activeMoreTab, setActiveMoreTab] = useState<ActiveMoreTab>(TAB_SEND);
   const [storageRevision, setStorageRevision] = useState<number>(0);
   const [isConvertOpen, setIsConvertOpen] = useState<boolean>(false);
 
@@ -396,12 +399,18 @@ function AppContent(): JSX.Element {
   }, []);
 
   useEffect(() => {
+    if (activeTab === TAB_SEND || activeTab === TAB_RECEIVINGS) {
+      setActiveMoreTab(activeTab);
+    }
+  }, [activeTab]);
+
+  useEffect(() => {
     let cancelled = false;
     const loadResources = async () => {
       try {
         setError(undefined);
-        setLoadingMessage('Loading token metadata…');
-        const loadedTokens = await loadTokens(runtime.resources.tokensCompressed);
+        setLoadingMessage('Loading tokens.json…');
+        const loadedTokens = await loadTokens(runtime.resources.tokensPath);
         if (cancelled) return;
         setTokens(loadedTokens);
 
@@ -451,14 +460,46 @@ function AppContent(): JSX.Element {
     setIsConvertOpen(false);
   }, []);
 
-  const tabItems = useMemo(
+  const mainTabItems = useMemo(
     () => [
-      { id: TAB_SEND, label: 'Private Sending', disabled: !isReady },
-      { id: TAB_RECEIVINGS, label: 'Receivings', disabled: !isReady },
-      { id: TAB_RECEIVE, label: 'Generate Burn Address', disabled: !isReady },
+      { id: TAB_RECEIVE, label: 'Receive', disabled: !isReady },
+      { id: TAB_MORE, label: 'More…', disabled: !isReady },
     ],
     [isReady],
   );
+
+  const moreTabItems = useMemo(
+    () => [
+      { id: TAB_SEND, label: 'Private Sending', disabled: !isReady },
+      { id: TAB_RECEIVINGS, label: 'Private Inbox', disabled: !isReady },
+    ],
+    [isReady],
+  );
+
+  const handleSelectMainTab = useCallback(
+    (id: string) => {
+      if (id === TAB_RECEIVE) {
+        setActiveTab(TAB_RECEIVE);
+        return;
+      }
+      if (id === TAB_MORE) {
+        setActiveTab(activeMoreTab);
+      }
+    },
+    [activeMoreTab],
+  );
+
+  const handleSelectMoreTab = useCallback(
+    (id: string) => {
+      if (id === TAB_SEND || id === TAB_RECEIVINGS) {
+        setActiveMoreTab(id);
+        setActiveTab(id);
+      }
+    },
+    [],
+  );
+
+  const effectiveActiveTab = activeTab === TAB_RECEIVE ? TAB_RECEIVE : TAB_MORE;
 
   const handleClearStorage = useCallback(() => {
     if (typeof window === 'undefined') {
@@ -494,11 +535,20 @@ function AppContent(): JSX.Element {
       />
 
       <Tabs
-        activeId={activeTab}
-        onSelect={(id) => setActiveTab(id as ActiveTab)}
-        items={tabItems}
+        activeId={effectiveActiveTab}
+        onSelect={handleSelectMainTab}
+        items={mainTabItems}
         ariaLabel="zERC20 console sections"
       />
+
+      {effectiveActiveTab === TAB_MORE ? (
+        <Tabs
+          activeId={activeTab}
+          onSelect={handleSelectMoreTab}
+          items={moreTabItems}
+          ariaLabel="Additional console sections"
+        />
+      ) : null}
 
       <main className="panels">
         {isReady && tokens && artifacts ? (

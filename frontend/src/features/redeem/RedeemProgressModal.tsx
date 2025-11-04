@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { RedeemStep } from './redeemSteps';
 
 interface RedeemProgressModalProps {
@@ -5,7 +6,7 @@ interface RedeemProgressModalProps {
   steps: RedeemStep[];
   onClose: () => void;
   title?: string;
-  message?: string;
+  message?: ReactNode;
 }
 
 function statusLabel(status: RedeemStep['status']): string {
