@@ -1,0 +1,22 @@
+{
+  "tokens": [
+    {
+      "label": "localnet",
+      "token_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+      "verifier_address": "0x68B1D87F95878fE05B998F19b66F4baba5De1aed",
+      "minter_address": null,
+      "chain_id": 31337,
+      "deployed_block_number": 0,
+      "rpc_urls": [
+        "http://127.0.0.1:8545"
+      ]
+    }
+  ],
+  "hub": {
+    "hub_address": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
+    "chain_id": 31337,
+    "rpc_urls": [
+      "http://127.0.0.1:8545"
+    ]
+  }
+}

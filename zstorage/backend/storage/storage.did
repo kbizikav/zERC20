@@ -1,0 +1,39 @@
+type InitArgs = record { capacity_hint : opt nat64 };
+
+type AnnouncementInput = record {
+  ibe_ciphertext : blob;
+  ciphertext : blob;
+  nonce : blob;
+};
+
+type Announcement = record {
+  id : nat64;
+  ibe_ciphertext : blob;
+  ciphertext : blob;
+  nonce : blob;
+  created_at_ns : nat64;
+};
+
+type AnnouncementPage = record {
+  announcements : vec Announcement;
+  next_id : opt nat64;
+};
+
+type InvoiceSubmission = record {
+  invoice_id : blob;
+  signature : blob;
+};
+
+type SubmitAnnouncementResult = variant { ok : Announcement; err : text };
+
+type SubmitInvoiceResult = variant { ok : null; err : text };
+
+type ListInvoicesResult = variant { ok : vec blob; err : text };
+
+service : (opt InitArgs) -> {
+  submit_announcement : (AnnouncementInput) -> (SubmitAnnouncementResult);
+  submit_invoice : (InvoiceSubmission) -> (SubmitInvoiceResult);
+  list_invoices : (blob) -> (ListInvoicesResult) query;
+  list_announcements : (opt nat64, opt nat32) -> (AnnouncementPage) query;
+  get_announcement : (nat64) -> (opt Announcement) query;
+}

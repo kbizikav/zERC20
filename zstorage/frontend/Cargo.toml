@@ -1,0 +1,36 @@
+[package]
+name = "stealth_client"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+key_manager = { path = "../backend/key_manager" }
+storage = { path = "../backend/storage" }
+anyhow.workspace = true
+aes-gcm.workspace = true
+candid.workspace = true
+hex.workspace = true
+ic-vetkeys.workspace = true
+ic-cdk.workspace = true
+ic-agent = { version = "0.37", features = ["reqwest"] }
+k256 = { version = "0.13", features = ["ecdsa"] }
+alloy-primitives.workspace = true
+rand.workspace = true
+serde.workspace = true
+sha3.workspace = true
+thiserror.workspace = true
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+clap = { version = "4.5", features = ["derive"] }
+
+[dev-dependencies]
+pocket-ic = "10.0.0"
+criterion = "0.5"
+ic_bls12_381 = { version = "0.10", features = ["groups", "pairings", "experimental", "zeroize"] }
+sha2.workspace = true
+
+[[bench]]
+name = "ibe_decrypt"
+harness = false

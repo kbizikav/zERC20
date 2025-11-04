@@ -1,0 +1,26 @@
+type Address = blob;
+type PublicKey = blob;
+type Signature = blob;
+type EncryptedKey = blob;
+
+type InitArgs = record {
+  key_id_name : text;
+};
+
+type EncryptedViewKeyRequest = record {
+  address : Address;
+  transport_public_key : PublicKey;
+  expiry_ns : nat64;
+  nonce : nat64;
+  signature : Signature;
+};
+
+type GetViewPublicKeyResult = variant { Ok : PublicKey; Err : text };
+type GetMaxNonceResult = variant { Ok : nat64; Err : text };
+type RequestEncryptedViewKeyResult = variant { Ok : EncryptedKey; Err : text };
+
+service : (InitArgs) -> {
+  get_max_nonce : (Address) -> (GetMaxNonceResult) query;
+  get_view_public_key : (Address) -> (GetViewPublicKeyResult);
+  request_encrypted_view_key : (EncryptedViewKeyRequest) -> (RequestEncryptedViewKeyResult);
+}

@@ -1,0 +1,45 @@
+[package]
+name = "zkp"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = ["parallel"]
+parallel = ["folding-schemes/parallel"]
+
+[dependencies]
+alloy = { workspace = true }
+sha2 = "0.10"
+hex = { workspace = true }
+folding-schemes = { workspace = true }
+solidity-verifiers = { workspace = true }
+ark-ff = { workspace = true }
+ark-bn254 = { workspace = true }
+ark-grumpkin = { workspace = true }
+ark-groth16 = { workspace = true }
+ark-ec = { workspace = true }
+ark-serialize = { workspace = true }
+ark-r1cs-std = { workspace = true }
+ark-crypto-primitives = { workspace = true }
+ark-relations = { workspace = true }
+ark-snark = { workspace = true }
+light-poseidon = { workspace = true }
+num-bigint = { workspace = true }
+anyhow = { workspace = true }
+rand = { workspace = true }
+ark-std = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+getrandom = { workspace = true }
+
+[dev-dependencies]
+revm = { version = "29.0.1", default-features = false }
+criterion = "0.7"
+
+[[bench]]
+name = "proof_bench"
+harness = false
+
+[[bench]]
+name = "decider_bench"
+harness = false

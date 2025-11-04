@@ -1,0 +1,29 @@
+# rust artifacts
+target
+
+# codex files
+AGENTS.md
+
+# nova artifacts
+nova_artifacts/
+
+# environment files
+**/.env
+
+# config files
+config/*
+!config/tokens.example.json
+frontend-app/public/config/*.json
+!frontend-app/public/config/.gitkeep
+
+# scan output files
+**/output.json
+
+**/node_modules/
+
+frontend/dist/
+
+# ic artifacts
+.dfx
+.ic.env
+canister_ids.json

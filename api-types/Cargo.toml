@@ -1,0 +1,9 @@
+[package]
+name = "api-types"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+serde = { workspace = true }
+serde_with = { version = "3.8.1", features = ["macros"] }
+alloy = { workspace = true }

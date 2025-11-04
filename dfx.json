@@ -1,0 +1,30 @@
+{
+  "canisters": {
+    "key_manager": {
+      "type": "rust",
+      "package": "key_manager",
+      "candid": "zstorage/backend/key_manager/key_manager.did",
+      "wasm": "target/wasm32-unknown-unknown/release/key_manager.wasm"
+    },
+    "storage": {
+      "type": "rust",
+      "package": "storage",
+      "candid": "zstorage/backend/storage/storage.did",
+      "wasm": "target/wasm32-unknown-unknown/release/storage.wasm"
+    }
+  },
+  "defaults": {
+    "build": {
+      "args": "",
+      "packtool": ""
+    }
+  },
+  "networks": {
+    "local": {
+      "bind": "127.0.0.1:4943",
+      "type": "ephemeral"
+    }
+  },
+  "output_env_file": ".ic.env",
+  "version": 1
+}

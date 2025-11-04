@@ -1,0 +1,109 @@
+[workspace]
+members = [
+    "zkp",
+    "wasm",
+    "indexer",
+    "decider-prover",
+    "client-common",
+    "cli",
+    "crosschain-job",
+    "api-types",
+    "zstorage/frontend",
+    "zstorage/backend/key_manager",
+    "zstorage/backend/storage",
+]
+resolver = "2"
+
+[workspace.dependencies]
+envy = "0.4.2"
+dotenvy = "0.15.7"
+env_logger = "0.11.8"
+log = "0.4.28"
+hex = "0.4.3"
+base64 = "0.22.1"
+clap = { version = "4.5.18", features = ["derive", "env"] }
+aes-gcm = { version = "0.10", default-features = false, features = [
+    "aes",
+    "alloc",
+] }
+sha3 = "0.10"
+folding-schemes = { git = "https://github.com/kbizikav/sonobe", branch = "update-revm", default-features = false }
+solidity-verifiers = { git = "https://github.com/kbizikav/sonobe", branch = "update-revm", default-features = false }
+ark-ff = { version = "0.5.0", default-features = false }
+ark-bn254 = { version = "0.5.0", default-features = false }
+ark-grumpkin = { version = "0.5.0", default-features = false }
+ark-groth16 = { version = "0.5.0", default-features = false }
+ark-ec = { version = "0.5.0", default-features = false }
+ark-serialize = { version = "0.5.0", default-features = false }
+ark-r1cs-std = { version = "0.5.0", default-features = false }
+ark-relations = { version = "0.5.0", default-features = false }
+ark-crypto-primitives = { version = "0.5.0", default-features = false, features = [
+    "crh",
+] }
+ark-snark = { version = "0.5.0", default-features = false }
+light-poseidon = "0.4.0"
+num-bigint = "0.4.3"
+anyhow = "1.0.100"
+rand = "0.8.5"
+rand_chacha = "0.3.1"
+getrandom = { version = "0.2.16", features = ["js"] }
+ark-std = "0.5.0"
+serde = { version = "1.0.221", features = ["derive"] }
+serde_json = "1.0.132"
+tower = "0.5.2"
+reqwest = "0.12.23"
+thiserror = "2.0.17"
+bls12_381 = { version = "0.8", default-features = false, features = [
+    "alloc",
+    "groups",
+] }
+subtle = "2.5"
+candid = "0.10.20"
+hkdf = "0.12"
+ic-cdk = "0.18.7"
+ic-cdk-macros = "0.18.7"
+ic-ledger-types = "0.15"
+ic-stable-structures = "0.7.2"
+ic-vetkeys = "0.5"
+serde_bytes = "0.11"
+sha2 = "0.10"
+alloy = { version = "1.0.35" }
+alloy-primitives = { version = "1.4.1", default-features = false, features = [
+    "k256",
+] }
+tokio = { version = "1.45", features = [
+    "io-util",
+    "macros",
+    "rt",
+    "sync",
+    "time",
+] }
+async-trait = "0.1.83"
+uuid = { version = "1.10.0", features = ["v4", "js"] }
+sqlx = { version = "0.8.6", features = [
+    "chrono",
+    "postgres",
+    "runtime-tokio-native-tls",
+    "uuid",
+    "bigdecimal",
+    "migrate",
+] }
+actix-web = { version = "4.9.0", features = ["macros"] }
+actix-cors = "0.7.0"
+url = "2.5.3"
+
+[patch.crates-io]
+ark-groth16 = { git = "https://github.com/arkworks-rs/groth16", rev = "b3b4a15" }
+ark-ff = { git = "https://github.com/arkworks-rs/algebra" }
+ark-ec = { git = "https://github.com/arkworks-rs/algebra" }
+ark-serialize = { git = "https://github.com/arkworks-rs/algebra" }
+ark-poly = { git = "https://github.com/arkworks-rs/algebra" }
+ark-relations = { git = "https://github.com/arkworks-rs/snark" }
+ark-snark = { git = "https://github.com/arkworks-rs/snark" }
+ark-crypto-primitives = { git = "https://github.com/winderica/crypto-primitives", rev = "af003fc" }
+ark-r1cs-std = { git = "https://github.com/winderica/r1cs-std", rev = "ae8283a" }
+ark-std = { git = "https://github.com/arkworks-rs/std" }
+ark-poly-commit = { git = "https://github.com/arkworks-rs/poly-commit" }
+ark-bn254 = { git = "https://github.com/arkworks-rs/algebra" }
+ark-grumpkin = { git = "https://github.com/arkworks-rs/algebra" }
+ark-bls12-381 = { git = "https://github.com/arkworks-rs/algebra" }
