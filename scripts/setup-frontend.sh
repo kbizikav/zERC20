@@ -25,15 +25,41 @@ if [[ ! -d "$FRONTEND_DIR" ]]; then
   exit 1
 fi
 
-copy_tokens() {
-  local destination=$1
-  if [[ -f "$TOKENS_SRC" ]]; then
-    mkdir -p "$destination"
-    cp "$TOKENS_SRC" "$destination/tokens.json"
-    echo "Copied tokens.json to $destination"
-  else
-    echo "Warning: $TOKENS_SRC not found; tokens.json was not copied." >&2
+embed_tokens_env() {
+  local env_file="$FRONTEND_DIR/.env.local"
+  if [[ ! -f "$TOKENS_SRC" ]]; then
+    echo "Warning: $TOKENS_SRC not found; skipped embedding tokens config." >&2
+    return
   fi
+
+  if ! command -v gzip >/dev/null 2>&1; then
+    echo "Error: gzip command not found; cannot compress tokens config." >&2
+    exit 1
+  fi
+
+  if ! command -v base64 >/dev/null 2>&1; then
+    echo "Error: base64 command not found; cannot encode tokens config." >&2
+    exit 1
+  fi
+
+  local compressed
+  compressed=$(gzip -c "$TOKENS_SRC" | base64 | tr -d '\n')
+  local tmp
+  tmp=$(mktemp)
+
+  if [[ -f "$env_file" ]]; then
+    grep -v '^VITE_TOKENS_COMPRESSED=' "$env_file" > "$tmp" || true
+  fi
+
+  {
+    if [[ -f "$tmp" ]]; then
+      cat "$tmp"
+    fi
+    echo "VITE_TOKENS_COMPRESSED=$compressed"
+  } > "$env_file"
+
+  rm -f "$tmp"
+  echo "Embedded tokens configuration written to $env_file"
 }
 
 copy_artifacts() {
@@ -78,10 +104,9 @@ copy_abi_bundle() {
 }
 
 PUBLIC_DIR="$FRONTEND_DIR/public"
-CONFIG_DIR="$PUBLIC_DIR/config"
 ARTIFACTS_DIR="$PUBLIC_DIR/artifacts"
 
-copy_tokens "$CONFIG_DIR"
+embed_tokens_env
 copy_artifacts "$ARTIFACTS_DIR"
 
 WASM_ASSET_DIR="$FRONTEND_DIR/src/assets/wasm"
