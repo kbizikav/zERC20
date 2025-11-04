@@ -13,6 +13,7 @@ import {
   createProviderForToken,
 } from '@services/sdk';
 import { getBytes, parseUnits } from 'ethers';
+import type { ContractRunner } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
 import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
 import type { TokenEntry } from '@services/sdk/registry/tokens.js';
@@ -241,7 +242,15 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
           Boolean(wallet.provider) &&
           Boolean(connectedToken) &&
           connectedToken?.chainId === qrSelectedToken.chainId;
-        const runner = shouldUseWalletProvider ? wallet.provider : createProviderForToken(qrSelectedToken);
+        let runner: ContractRunner;
+        if (shouldUseWalletProvider) {
+          if (!wallet.provider) {
+            throw new Error('Wallet provider unavailable');
+          }
+          runner = wallet.provider;
+        } else {
+          runner = createProviderForToken(qrSelectedToken);
+        }
         const contract = getZerc20Contract(qrSelectedToken.tokenAddress, runner);
         const value = await contract.decimals();
         if (!cancelled) {
