@@ -10,9 +10,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 /**
  * @title Minter
- * @notice Handles wrapping and unwrapping of native or ERC20 tokens through a mintable zerc20 token.
- * @dev The contract is UUPS-upgradeable and supports either native token deposits or ERC20 deposits
- *      based on the configured `tokenAddress` (zero for native, non-zero for ERC20).
+ * @notice Implements the deposit / redemption adapter that mints and burns zERC20 against native or ERC20 liquidity.
+ * @dev UUPS-upgradeable; `tokenAddress == address(0)` enables native deposit mode, otherwise ERC20 mode.
  */
 contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20Upgradeable for IERC20Upgradeable;
@@ -52,7 +51,7 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
         _disableInitializers();
     }
 
-    /// @notice Initializes the contract with the wrapper and underlying token addresses.
+    /// @notice Initializes the contract with the zERC20 wrapper and underlying liquidity token.
     /// @param zerc20Token_ Address of the mintable/burnable zerc20 token (must be non-zero).
     /// @param tokenAddress_ Address of the underlying ERC20 token (zero when wrapping native token).
     /// @param initialOwner Address that will assume ownership for upgrades and administration.
@@ -77,8 +76,8 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// Deposits
     /// ---------------------------------------------------------------------
 
-    /// @notice Deposit native currency and receive wrapped tokens.
-    /// @dev Only callable when `tokenAddress` is zero.
+    /// @notice Accepts native currency and mints zERC20 1:1, matching the deposit flow in the spec.
+    /// @dev Only callable when `tokenAddress` is zero (native mode).
     function depositNative() external payable nonReentrant {
         if (tokenAddress != address(0)) revert NativeDisabled();
         uint256 amount = msg.value;
@@ -88,9 +87,9 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
         emit NativeDeposited(msg.sender, amount);
     }
 
-    /// @notice Deposit ERC20 tokens and receive wrapped tokens.
-    /// @dev Only callable when `tokenAddress` is non-zero.
-    /// @param amount Quantity of underlying tokens to deposit.
+    /// @notice Accepts ERC20 deposits and mints zERC20 1:1.
+    /// @dev Only callable when `tokenAddress` is non-zero (ERC20 mode).
+    /// @param amount Quantity of underlying tokens to deposit and wrap.
     function depositToken(uint256 amount) external nonReentrant {
         if (tokenAddress == address(0)) revert TokenDisabled();
         if (amount == 0) revert ZeroAmount();
@@ -105,8 +104,8 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// Withdrawals
     /// ---------------------------------------------------------------------
 
-    /// @notice Burn wrapped tokens and withdraw native currency.
-    /// @dev Only callable when `tokenAddress` is zero.
+    /// @notice Burns zERC20 and releases native liquidity back to the caller (spec Step 2).
+    /// @dev Only callable when `tokenAddress` is zero (native mode).
     /// @param amount Quantity of wrapped tokens to burn / native currency to redeem.
     function withdrawNative(uint256 amount) external nonReentrant {
         if (tokenAddress != address(0)) revert NativeDisabled();
@@ -123,8 +122,8 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
         emit NativeWithdrawn(msg.sender, amount);
     }
 
-    /// @notice Burn wrapped tokens and withdraw the underlying ERC20.
-    /// @dev Only callable when `tokenAddress` is non-zero.
+    /// @notice Burns zERC20 and transfers the underlying ERC20 back to the caller.
+    /// @dev Only callable when `tokenAddress` is non-zero (ERC20 mode).
     /// @param amount Quantity of wrapped tokens to burn / ERC20 to redeem.
     function withdrawToken(uint256 amount) external nonReentrant {
         if (tokenAddress == address(0)) revert TokenDisabled();
