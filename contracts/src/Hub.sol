@@ -226,29 +226,6 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// LayerZero Receiver
     /// -----------------------------------------------------------------------
 
-    function lzReceive(
-        Origin calldata origin,
-        bytes32 guid,
-        bytes calldata payload,
-        address executor,
-        bytes calldata extraData
-    ) public payable override {
-        if (address(endpoint) != msg.sender) revert OnlyEndpoint(msg.sender);
-
-        if (eidToPosition[origin.srcEid] == 0) revert TokenNotRegistered(origin.srcEid);
-        if (payload.length != TRANSFER_PAYLOAD_LENGTH) revert InvalidPayloadLength(payload.length);
-
-        bytes32 peer = peers[origin.srcEid];
-        if (peer != bytes32(0)) {
-            if (peer != origin.sender) revert OnlyPeer(origin.srcEid, origin.sender);
-        } else {
-            bytes32 ownerBytes = bytes32(uint256(uint160(owner())));
-            if (origin.sender != ownerBytes) revert NoPeer(origin.srcEid);
-        }
-
-        _lzReceive(origin, guid, payload, executor, extraData);
-    }
-
     function _lzReceive(Origin calldata origin, bytes32, bytes calldata payload, address, bytes calldata)
         internal
         override
@@ -260,12 +237,13 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
 
         (uint256 transferRoot, uint64 transferTreeIndex) = abi.decode(payload, (uint256, uint64));
         uint256 index = pos - 1;
-        uint256 previousRoot = transferRoots[index];
+        uint64 currentTreeIndex = transferTreeIndices[index];
+        if (transferTreeIndex <= currentTreeIndex) {
+            return;
+        }
         transferRoots[index] = transferRoot;
         transferTreeIndices[index] = transferTreeIndex;
-        if (previousRoot != transferRoot) {
-            isUpToDate = false;
-        }
+        isUpToDate = false;
         emit TransferRootUpdated(origin.srcEid, index, transferRoot);
     }
 

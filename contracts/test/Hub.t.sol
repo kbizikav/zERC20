@@ -193,6 +193,8 @@ contract HubTest is TestHelperOz5 {
         Origin memory origin = Origin({srcEid: 999, sender: _toBytes32(address(this)), nonce: 1});
         bytes memory payload = abi.encode(uint256(1), uint64(1));
 
+        hub.setPeer(origin.srcEid, _toBytes32(address(this)));
+
         vm.prank(address(endpoint));
         vm.expectRevert(abi.encodeWithSelector(Hub.TokenNotRegistered.selector, origin.srcEid));
         hub.lzReceive(origin, bytes32(0), payload, address(0), bytes(""));
@@ -201,6 +203,8 @@ contract HubTest is TestHelperOz5 {
     function testLzReceiveRevertsOnInvalidPayloadLength() public {
         Origin memory origin = Origin({srcEid: REMOTE_EID_A, sender: _toBytes32(address(this)), nonce: 1});
         bytes memory payload = hex"01";
+
+        hub.setPeer(REMOTE_EID_A, _toBytes32(address(this)));
 
         vm.prank(address(endpoint));
         vm.expectRevert(abi.encodeWithSelector(Hub.InvalidPayloadLength.selector, payload.length));
@@ -223,6 +227,8 @@ contract HubTest is TestHelperOz5 {
         uint64 treeIndex = 5;
         bytes memory payload = abi.encode(newRoot, treeIndex);
 
+        localHub.setPeer(info.eid, _toBytes32(address(this)));
+
         vm.expectEmit(true, true, true, true, address(localHub));
         emit Hub.TransferRootUpdated(info.eid, 0, newRoot);
 
@@ -232,6 +238,32 @@ contract HubTest is TestHelperOz5 {
         assertEq(localHub.transferRoots(0), newRoot, "root stored");
         assertEq(localHub.transferTreeIndices(0), treeIndex, "tree index stored");
         assertFalse(localHub.isUpToDate(), "hub marked stale");
+    }
+
+    function testLzReceiveIgnoresStaleTransferTreeIndex() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info =
+            Hub.TokenInfo({chainId: 606, eid: 88, verifier: address(0x10), token: address(0x11)});
+        localHub.registerToken(info);
+        localHub.setPeer(info.eid, _toBytes32(address(this)));
+
+        Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
+        bytes memory freshPayload = abi.encode(uint256(111), uint64(10));
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), freshPayload, address(0), bytes(""));
+
+        assertEq(localHub.transferTreeIndices(0), 10, "fresh index stored");
+        assertEq(localHub.transferRoots(0), 111, "fresh root stored");
+
+        bytes memory stalePayload = abi.encode(uint256(222), uint64(5));
+        vm.recordLogs();
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), stalePayload, address(0), bytes(""));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 0, "no events emitted for stale update");
+
+        assertEq(localHub.transferTreeIndices(0), 10, "stale index ignored");
+        assertEq(localHub.transferRoots(0), 111, "stale root ignored");
     }
 
     function testHubUpgradePreservesState() public {
