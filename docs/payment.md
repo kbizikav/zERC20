@@ -12,7 +12,7 @@ communicate with three backends:
 Two proving behaviors exist:
 
 - **Single withdraw** — only one transfer shares a tuple `(recipient_chain_id, recipient_address,
-  tweak)`. A local WASM prover is sufficient and usually finishes within a few seconds.
+tweak)`. A local WASM prover is sufficient and usually finishes within a few seconds.
 - **Batch withdraw** — multiple transfers share the tuple. Each transfer requires a WASM proof plus a
   heavy decider prover session (~30 s server-side) before the final transaction can be submitted.
 
@@ -20,12 +20,12 @@ Two proving behaviors exist:
 
 ## Terminology
 
-| Term             | Description                                                                                                                                                      |
-| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Burn address** | An address treated as “burned” when tokens are sent to it.<br>`burn = H(H(recipient_chain_id, recipient_address, tweak), secret)`                                 |
-| **seed**         | Derived via `compute_seed_from_signature(PRIVATE_KEY)`. Seeds deterministically drive secret/tweak generation for invoices and payment advice IDs.                |
-| **tweak**        | Recipient-linked derived parameter that prevents collisions and groups batch members.                                                                            |
-| **secret**       | Private parameter stored inside the stealth payload. Ownership of the secret enables withdrawal, and it never leaves the encrypted payload during normal use.     |
+| Term             | Description                                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Burn address** | An address treated as “burned” when tokens are sent to it.<br>`burn = H(H(recipient_chain_id, recipient_address, tweak), secret)`                             |
+| **seed**         | Derived via `compute_seed_from_signature(PRIVATE_KEY)`. Seeds deterministically drive secret/tweak generation for invoices and payment advice IDs.            |
+| **tweak**        | Recipient-linked derived parameter that prevents collisions and groups batch members.                                                                         |
+| **secret**       | Private parameter stored inside the stealth payload. Ownership of the secret enables withdrawal, and it never leaves the encrypted payload during normal use. |
 
 ---
 
@@ -83,14 +83,3 @@ publishing the encrypted payload, and transferring funds immediately.
      stealth payload, verifies that eligible transfers exist via the indexer, and runs the same
      proof pipeline described in the invoice workflow. If no eligible events remain, no proofs are
      attempted.
-
----
-
-## Operational Notes
-
-- Recipients must register a view public key with the storage canister so that payment advice flows
-  can publish encrypted announcements.
-- Stealth payloads embed the withdrawal secret. Treat any serialized payload or decrypted
-  announcement as confidential and avoid sharing it beyond the intended parties.
-- Single withdrawals complete entirely within local WASM proving, while batch withdrawals require a
-  cooperative decider prover service and the corresponding Nova artifacts.
