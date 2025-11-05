@@ -1,99 +1,85 @@
 ## Summary
 
-In **zERC20**, tokens are sent to a **burn address** that appears unrelated to the actual recipient.  
-The recipient can later **withdraw** the funds using secret information, ensuring **transaction privacy**.
+In **zERC20**, stealth transfers are implemented by deriving a sealed **stealth payload** that hides
+the real recipient. Funds move through burn addresses, while the withdrawable secret material remains
+inside the encrypted payload held by the recipient. Stealth clients typically
+communicate with three backends:
 
-There are two types of withdrawals:
+1. **Storage canister** on the Internet Computer (stores invoices and encrypted announcements).
+2. **Indexer** that exposes ERC‑20 transfers involving burn addresses.
+3. **Decider prover + verifier contracts** that validate zero‑knowledge proofs.
 
-- **Single Withdraw:**  
-  When there is only one transfer with the same `(recipient_chain_id, recipient_address, tweak)`.  
-  → Completes within a few seconds in WASM.
+Two proving behaviors exist:
 
-- **Batch Withdraw:**  
-  When there are multiple transfers with the same `(recipient_chain_id, recipient_address, tweak)`.  
-  → Requires a WASM proof (~2 seconds per transfer) plus a heavy **decider proof** (~30 seconds server-side).
+- **Single withdraw** — only one transfer shares a tuple `(recipient_chain_id, recipient_address,
+tweak)`. A local WASM prover is sufficient and usually finishes within a few seconds.
+- **Batch withdraw** — multiple transfers share the tuple. Each transfer requires a WASM proof plus a
+  heavy decider prover session (~30 s server-side) before the final transaction can be submitted.
 
 ---
 
 ## Terminology
 
-| Term             | Description                                                                                                                          |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| **Burn address** | An address treated as “burned” when tokens are sent to it. <br>`burn = H( H(recipient_chain_id, recipient_address, tweak), secret )` |
-| **seed**         | A secret value derived from the user’s signature. Used to derive `tweak` and `secret`.                                               |
-| **tweak**        | A recipient-linked derived parameter used for collision avoidance and batch keying.                                                  |
-| **secret**       | A private parameter determining withdrawability. Only the holder can withdraw.                                                       |
+| Term             | Description                                                                                                                                                   |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Burn address** | An address treated as “burned” when tokens are sent to it.<br>`burn = H(H(recipient_chain_id, recipient_address, tweak), secret)`                             |
+| **seed**         | Derived via `compute_seed_from_signature(PRIVATE_KEY)`. Seeds deterministically drive secret/tweak generation for invoices and payment advice IDs.            |
+| **tweak**        | Recipient-linked derived parameter that prevents collisions and groups batch members.                                                                         |
+| **secret**       | Private parameter stored inside the stealth payload. Ownership of the secret enables withdrawal, and it never leaves the encrypted payload during normal use. |
 
 ---
 
-## Information Exchange Methods
+## Information Exchange Modes
 
-There are two ways for the sender and recipient to exchange the `burn address` and related secret data.
+Two complementary workflows cover how senders and recipients coordinate stealth payload
+information.
 
 ---
 
 ### A. Invoice (Recipient-initiated)
 
-**Purpose:**  
-The recipient issues an invoice, and the sender transfers tokens to the specified burn address.
+Recipients register invoices with the storage canister, distribute the derived burn addresses to
+payers, and later redeem the resulting transfers.
 
-#### Steps
-
-1. **Recipient:**  
-   Chooses an `invoice_id` and submits it to the Internet Computer storage canister (via `submit_invoice`).  
-   Embeds a single/multiple flag (`is_batch`) in the `invoice_id` bits.
-
-2. **Recipient:**
-
-```
-
-(tweak, salt) = DeriveTweakAndSalt(seed_R, invoice_id)
-secret = DeriveSecret(view_pub_R, salt)
-burn = BurnAddress(rcid, raddr, tweak, secret)
-
-```
-
-3. **Recipient → Sender:**  
-   Sends the generated `burn` address to the sender (this is the **invoice**).
-
-4. **Sender:**  
-   Sends tokens to the `burn` address.
-
-5. **Recipient:**  
-   Checks payment completion via `token.balanceOf(burn)`.
-
-6. **Withdrawal:**
-
-- If `is_batch == false` → **Single Withdraw**
-- If `is_batch == true` → Scan `sub_id ∈ [0..n]` and perform **Batch Withdraw**
+1. **Issuing** — the recipient chooses single or batch mode and signs a `submit_invoice` request that
+   persists a unique `invoice_id`. Seeds derived from the signing key deterministically produce the
+   `(tweak, secret)` pairs used for burn address derivation.
+2. **Distribution** — the recipient hands the resulting burn address (single mode) or a subset of the
+   10 batch burn addresses (sub IDs `0..9`) to potential payers. Any ERC‑20 transfer directed to
+   those burn addresses counts toward the invoice.
+3. **Monitoring** — the recipient (or an automated agent) rebuilds the candidate burn addresses,
+   queries the indexer for matching transfers, and classifies each transfer as eligible or
+   ineligible using the on-chain aggregation tree state.
+4. **Redemption** — once eligible transfers exist, the recipient proves ownership by supplying the
+   secret material inside the stealth payloads, generates proofs (single or batch), and
+   submits calls to the verifier contracts. Batch withdrawals also upload witness data to the
+   decider prover before finalization.
 
 ---
 
 ### B. Payment Advice (Sender-initiated)
 
-**Purpose:**  
-The sender generates the recipient’s burn address on their side, sends tokens,  
-and then off-chain notifies the recipient of the secret parameters used.
+Senders can originate stealth transfers without waiting for an invoice by deriving a burn address,
+publishing the encrypted payload, and transferring funds immediately.
 
-#### Steps
-
-1. **Sender:**  
-   Obtains recipient’s `(rcid, raddr)`.
-
-2. **Sender:**
-
-```
-
-(tweak, secret) = DeriveTweakAndSalt(seed_S, advice_id)
-burn = BurnAddress(rcid, raddr, tweak, secret)
-
-```
-
-Generates the burn address and sends tokens.
-
-3. **Sender → Recipient:**  
-   Sends `(secret, tweak)` (and optionally `(rcid, raddr)`) off-chain.  
-   → This is called a **payment advice**.
-
-4. **Recipient:**  
-   Uses the received `tweak` and `secret` to perform a **Single Withdraw**.
+1. **Derivation and funding**
+   - The sender samples a `payment_advice_id`, derives `(tweak, secret)` from their seed, and builds
+     the stealth payload for the intended `(recipient_chain_id, recipient_address)`.
+   - The resulting payload encodes the burn address along with the proof secret material. The sender
+     transfers ERC‑20 funds directly to that burn address.
+2. **Announcement**
+   - Before (or immediately after) funding, the sender fetches the recipient’s registered view public
+     key from the storage canister, encrypts the stealth payload, and submits the ciphertext as an
+     announcement. Each announcement receives an ID plus timestamps, enabling recipients to collect
+     pending transfers later.
+   - As an alternative, the sender may deliver the serialized stealth payload to the recipient via
+     an out-of-band channel instead of relying on announcements.
+3. **Recipient collection**
+   - Recipients authenticate with the key-manager canister, download batched announcements, decrypt
+     those targeted to them, and persist the recovered `full_burn_address_hex`, `burn_address`, and
+     metadata locally.
+4. **Redemption**
+   - Using either the stored announcement ID or a raw payload blob, the recipient loads the
+     stealth payload, verifies that eligible transfers exist via the indexer, and runs the same
+     proof pipeline described in the invoice workflow. If no eligible events remain, no proofs are
+     attempted.

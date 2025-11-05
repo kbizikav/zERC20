@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Unlicense
-pragma solidity ^0.8.20;
+pragma solidity 0.8.30;
 
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import {MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
@@ -13,8 +13,9 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 /**
  * @title Verifier
- * @notice Skeleton verifier contract mirroring docs/contract_jp.md.
- * @dev Core zero-knowledge verification logic is intentionally omitted.
+ * @notice LayerZero OApp that enforces the Nova / Groth16 teleport flows,
+ *         acting as the bridge between on-chain hash-chain checkpoints, cross-chain aggregation roots, and zERC20 mints.
+ * @dev Tracks reserved hash chains, proved transfer roots, global aggregation roots, and cumulative teleported totals.
  */
 contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     using GeneralRecipientLib for GeneralRecipientLib.GeneralRecipient;
@@ -88,6 +89,16 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         _disableInitializers();
     }
 
+    /// @notice Initializes the verifier with the zERC20 token, Hub endpoint, LayerZero endpoint, and initial deciders.
+    /// @param token_ zERC20 token whose hash chain is reserved/minted against.
+    /// @param hubEid_ LayerZero endpoint ID of the Hub contract.
+    /// @param endpoint LayerZero endpoint address (forwarded to OApp init).
+    /// @param delegate Relayer address allowed to execute LayerZero callbacks.
+    /// @param rootDecider_ Nova verifier for transfer-root transitions.
+    /// @param withdrawGlobalDecider_ Nova verifier for global teleport proofs.
+    /// @param withdrawLocalDecider_ Nova verifier for local teleport proofs.
+    /// @param singleWithdrawGlobalVerifier_ Groth16 verifier for global single teleports.
+    /// @param singleWithdrawLocalVerifier_ Groth16 verifier for local single teleports.
     function initialize(
         address token_,
         uint32 hubEid_,
@@ -120,6 +131,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         );
     }
 
+    /// @dev Internal initializer that wires storage pointers and seeds the transfer root history with the constant from the spec.
     /// forge-lint: disable-next-line(mixed-case-function)
     function __Verifier_init(
         address token_,
@@ -157,6 +169,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// Transfer Root Functions
     /// -----------------------------------------------------------------------
 
+    /// @notice Snapshots the latest `(index, hashChain)` tuple from zERC20 so Nova proofs can reference stable inputs.
+    /// @dev Mirrors the first step of the private proof-of-burn lifecycle.
+    /// @return index Reserved transfer index copied from zERC20.
+    /// @return hashChain SHA-256 hash chain committed up to `index - 1`.
     function reserveHashChain() external returns (uint64 index, uint256 hashChain) {
         IzERC20 tokenContract = IzERC20(_token);
         uint64 index_ = uint64(tokenContract.index());
@@ -167,6 +183,9 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         return (index_, hashChain_);
     }
 
+    /// @notice Verifies a Nova proof for a transfer-root transition and records the resulting root by index.
+    /// @dev Enforces consistency between (a) previously proved roots and (b) reserved hash chains, pausing on conflicts.
+    /// @param proof Opaque calldata expected by `IRootDecider`, ABI-encoded as `uint256[32]`.
     function proveTransferRoot(bytes calldata proof) external whenNotPaused {
         uint256[32] memory proof_ = abi.decode(proof, (uint256[32]));
         uint64 oldIndex = uint64(proof_[1]);
@@ -201,6 +220,12 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// Teleport Functions
     /// -----------------------------------------------------------------------
 
+    /// @notice Executes the multi-note Nova teleport flow, minting the delta on zERC20.
+    /// @dev Proof enforces that `totalValue` strictly increases per recipient hash; `isGlobal` selects local/global root arrays.
+    /// @param isGlobal Whether the proof references Hub-derived global roots.
+    /// @param rootHint Index into either `provedTransferRoots` or `globalTransferRoots`.
+    /// @param gr GeneralRecipient struct encoding chain id, recipient, tweak, and version byte.
+    /// @param proof ABI-encoded Nova proof blob consumed by `IWithdrawDecider`.
     function teleport(
         bool isGlobal,
         uint64 rootHint,
@@ -223,6 +248,12 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         _teleport(isGlobal, rootHint, transferRoot, recipient, gr, totalValue);
     }
 
+    /// @notice Executes the Groth16 teleport flow for lightweight single withdrawals.
+    /// @dev Shares the same recipient/root validation pipeline as `teleport` but operates on Groth16 proofs.
+    /// @param isGlobal Whether the proof references Hub-derived global roots.
+    /// @param rootHint Index into either `provedTransferRoots` or `globalTransferRoots`.
+    /// @param gr GeneralRecipient struct encoding chain id, recipient, tweak, and version byte.
+    /// @param proof ABI-encoded Groth16 proof blob consumed by `IWithdrawVerifier`.
     function singleTeleport(
         bool isGlobal,
         uint64 rootHint,
@@ -241,6 +272,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         _teleport(isGlobal, rootHint, transferRoot, recipient, gr, value);
     }
 
+    /// @dev Shared logic for Nova and Groth16 teleports:
+    ///      - Confirms the claimed root matches the hinted slot (local or global)
+    ///      - Recomputes the recipient hash and chain id binding
+    ///      - Mints only the delta above `totalTeleported[recipient]`.
     function _teleport(
         bool isGlobal,
         uint64 rootHint,
@@ -273,6 +308,9 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// Relay Functions
     /// -----------------------------------------------------------------------
 
+    /// @notice Sends the latest proved transfer root to the Hub over LayerZero so it can join the global aggregation tree.
+    /// @dev Requires `latestProvedIndex` to have a non-zero root; excess msg.value is kept as the LZ native fee.
+    /// @param options LayerZero execution parameters forwarded to `_lzSend`.
     function relayTransferRoot(bytes calldata options)
         external
         payable
@@ -296,11 +334,14 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         latestRelayedIndex = index;
     }
 
+    /// @notice Quotes the native fee required to relay a TransferRoot payload to the Hub.
+    /// @param options LayerZero execution parameters mirrored from `relayTransferRoot`.
     function quoteRelay(bytes calldata options) external view returns (MessagingFee memory fee) {
         bytes memory payload = abi.encode(uint256(0), uint64(0));
         return _quote(_hubEid, payload, options, false);
     }
 
+    /// @notice Returns `true` when every proved root has been relayed to the Hub (`latestProvedIndex == latestRelayedIndex`).
     function isUpToDate() public view returns (bool) {
         return latestProvedIndex == latestRelayedIndex;
     }
@@ -309,6 +350,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// LayerZero Receiver
     /// -----------------------------------------------------------------------
 
+    /// @dev Accepts `(globalRoot, aggSeq)` payloads from the Hub, ignoring duplicates while tracking `latestAggSeq`.
     function _lzReceive(Origin calldata origin, bytes32, bytes calldata payload, address, bytes calldata)
         internal
         override
@@ -330,11 +372,23 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// Admin Functions
     /// -----------------------------------------------------------------------
 
+    /// @notice Allows the owner to proactively pause the contract outside of proof conflicts.
+    function activateEmergency() external onlyOwner {
+        _pause();
+    }
+
+    /// @notice Clears the emergency pause that is triggered when conflicting transfer roots are observed.
     function deactivateEmergency() external onlyOwner {
         _unpause();
         emit DeactivateEmergency();
     }
 
+    /// @notice Atomically rotates all decider/verifier addresses to keep proofs aligned with the latest deployments.
+    /// @param newRootDecider Nova verifier for transfer roots.
+    /// @param newWithdrawGlobalDecider Nova verifier for global teleports.
+    /// @param newWithdrawLocalDecider Nova verifier for local teleports.
+    /// @param newSingleWithdrawGlobalVerifier Groth16 verifier for global single teleports.
+    /// @param newSingleWithdrawLocalVerifier Groth16 verifier for local single teleports.
     function setVerifiers(
         address newRootDecider,
         address newWithdrawGlobalDecider,
