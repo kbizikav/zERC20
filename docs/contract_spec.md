@@ -10,7 +10,7 @@
 ### zERC20 (`contracts/src/zERC20.sol`)
 
 - Upgradeable ERC-20 that overrides `_afterTokenTransfer` to (1) enforce `value <= 2^248 - 1`, (2) append `(to, value)` to a SHA-256 hash chain truncated to 248 bits, and (3) emit `IndexedTransfer(index++, from, to, value)` for deterministic ordering. This history feeds the proof system (`hashChain` and `index` are public inputs).
-- Maintains `verifier` (allowed to call `teleport`) and `minter` (allowed to mint/burn for the deposit contract). Owner-only setters guard against zero addresses.
+- Maintains `verifier` (allowed to call `teleport`) and `minter` (allowed to mint/burn for the deposit contract). Owner-only setters guard against zero addresses, except that `minter` may be set to `address(0)` on chains that deliberately disable the Minter flow.
 - `teleport(address to, uint256 value)` is invoked solely by the Verifier once a teleport proof succeeds, minting directly to the provided address (event `Teleport` mirrors the burn-proof output).
 - Exposes auxiliary mint/burn entrypoints for the Minter (`mint`, `burn`) plus a UUPS upgrade hook restricted to `owner`.
 
