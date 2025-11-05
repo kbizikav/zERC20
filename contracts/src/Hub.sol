@@ -177,6 +177,16 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         }
     }
 
+    function getTransferRootsAndIndices() external view returns (uint256[] memory roots, uint64[] memory treeIndices) {
+        uint256 len = transferRoots.length;
+        roots = new uint256[](len);
+        treeIndices = new uint64[](len);
+        for (uint256 i = 0; i < len; ++i) {
+            roots[i] = transferRoots[i];
+            treeIndices[i] = transferTreeIndices[i];
+        }
+    }
+
     function _computeBroadcastContext() internal view returns (BroadcastContext memory ctx) {
         uint256 len = transferRoots.length;
         ctx.snapshot = new uint256[](len);
