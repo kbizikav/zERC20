@@ -83,7 +83,6 @@ contract zERC20 is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable, IzERC2
 
     /// @notice Updates the minter address; callable only by the owner.
     function setMinter(address newMinter) external onlyOwner {
-        if (newMinter == address(0)) revert ZeroAddress();
         minter = newMinter;
         emit MinterUpdated(newMinter);
     }
