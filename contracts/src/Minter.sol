@@ -1,5 +1,5 @@
-// SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+// SPDX-License-Identifier: Unlicense
+pragma solidity 0.8.30;
 
 import {IMintableBurnableERC20} from "./interfaces/IMintableBurnableERC20.sol";
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
@@ -55,10 +55,7 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// @param zerc20Token_ Address of the mintable/burnable zerc20 token (must be non-zero).
     /// @param tokenAddress_ Address of the underlying ERC20 token (zero when wrapping native token).
     /// @param initialOwner Address that will assume ownership for upgrades and administration.
-    function initialize(address zerc20Token_, address tokenAddress_, address initialOwner)
-        external
-        initializer
-    {
+    function initialize(address zerc20Token_, address tokenAddress_, address initialOwner) external initializer {
         if (zerc20Token_ == address(0)) revert ZeroZerc20Token();
         if (initialOwner == address(0)) revert ZeroOwner();
 
