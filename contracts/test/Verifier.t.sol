@@ -116,6 +116,24 @@ contract VerifierTest is TestHelperOz5 {
         );
     }
 
+    function testActivateEmergencyPausesContract() public {
+        verifier.activateEmergency();
+        assertTrue(verifier.paused(), "verifier should be paused");
+    }
+
+    function testActivateEmergencyOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert("Ownable: caller is not the owner");
+        verifier.activateEmergency();
+    }
+
+    function testActivateEmergencyCannotRunTwice() public {
+        verifier.activateEmergency();
+        vm.expectRevert("Pausable: paused");
+        verifier.activateEmergency();
+    }
+
     function testRelayTransferRootSendsToEndpoint() public {
         uint256 root = verifier.provedTransferRoots(0);
 

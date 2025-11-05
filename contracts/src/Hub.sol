@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Unlicense
-pragma solidity ^0.8.20;
+pragma solidity 0.8.30;
 
 import {MessagingFee} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
 import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
@@ -10,8 +10,9 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 /**
  * @title Hub
- * @notice Maintains per-EID transfer roots, aggregates them via Poseidon, and broadcasts the aggregation root.
- * @dev Matches docs/contract_jp.md with PoseidonT3 hashing and a maximum of MAX_LEAVES leaves.
+ * @notice Central LayerZero OApp that tracks per-token transfer roots, Poseidon-aggregates them, and broadcasts the
+ *         global root consumed by verifier contracts.
+ * @dev Implements the PoseidonT3 tree (height 6 / 64 leaves) and fee semantics consumed by the verifier network.
  */
 contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// -----------------------------------------------------------------------
@@ -104,6 +105,9 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// Mutations
     /// -----------------------------------------------------------------------
 
+    /// @notice Registers a token/verifier tuple so its transfer roots contribute to the Poseidon aggregation tree.
+    /// @dev Mirrors the owner-gated registration flow defined for the aggregation hub.
+    /// @param info Struct containing chainId, endpoint ID, verifier, and token metadata.
     function registerToken(TokenInfo calldata info) external onlyOwner {
         if (info.verifier == address(0)) revert ZeroVerifier();
         if (info.token == address(0)) revert ZeroToken();
@@ -121,6 +125,8 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         emit TokenRegistered(info.eid, index, info.chainId, info.token, info.verifier);
     }
 
+    /// @notice Refreshes the verifier/token metadata for an already-registered endpoint without reordering leaves.
+    /// @param info Updated metadata sharing the same `eid` slot.
     function updateToken(TokenInfo calldata info) external onlyOwner {
         if (info.verifier == address(0)) revert ZeroVerifier();
         if (info.token == address(0)) revert ZeroToken();
@@ -135,7 +141,11 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         emit TokenUpdated(info.eid, index, info.chainId, info.token, info.verifier);
     }
 
-    function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) public payable {
+    /// @notice Snapshots transfer roots, computes the Poseidon aggregation root, and broadcasts it to target EIDs.
+    /// @dev Implements the `broadcast` step, including fee refund semantics.
+    /// @param targetEids LayerZero endpoint IDs that must receive the global root.
+    /// @param lzOptions LayerZero execution parameters (gas, native drop, etc.).
+    function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
         BroadcastContext memory ctx = _computeBroadcastContext();
         bytes memory options = lzOptions;
         MessagingFee[] memory fees = new MessagingFee[](targetEids.length);
@@ -159,8 +169,12 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         emit AggregationRootUpdated(ctx.aggregationRoot, ctx.nextAggSeq, ctx.snapshot, ctx.transferTreeIndicesSnapshot);
     }
 
+    /// @notice Estimates the total native fee required to broadcast a payload to the provided endpoints.
+    /// @param targetEids Destination endpoint IDs that must already be registered.
+    /// @param lzOptions LayerZero execution parameters mirrored from `broadcast`.
+    /// @return totalNativeFee Sum of endpoint-specific native fee quotes.
     function quoteBroadcast(uint32[] calldata targetEids, bytes calldata lzOptions)
-        public
+        external
         view
         returns (uint256 totalNativeFee)
     {
@@ -169,6 +183,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         totalNativeFee = _quoteBroadcast(targetEids, dummyPayload, options, new MessagingFee[](targetEids.length));
     }
 
+    /// @notice Returns a memory copy of the registered token metadata for off-chain auditors.
     function getTokenInfos() external view returns (TokenInfo[] memory infos) {
         uint256 len = tokenInfos.length;
         infos = new TokenInfo[](len);
@@ -177,6 +192,18 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         }
     }
 
+    /// @notice Exposes the latest per-token transfer roots along with their monotonically increasing tree indices.
+    function getTransferRootsAndIndices() external view returns (uint256[] memory roots, uint64[] memory treeIndices) {
+        uint256 len = transferRoots.length;
+        roots = new uint256[](len);
+        treeIndices = new uint64[](len);
+        for (uint256 i = 0; i < len; ++i) {
+            roots[i] = transferRoots[i];
+            treeIndices[i] = transferTreeIndices[i];
+        }
+    }
+
+    /// @dev Copies current leaves, computes the Poseidon aggregation root, and prepares the outbound payload/seq.
     function _computeBroadcastContext() internal view returns (BroadcastContext memory ctx) {
         uint256 len = transferRoots.length;
         ctx.snapshot = new uint256[](len);
@@ -195,6 +222,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         ctx.payload = abi.encode(ctx.aggregationRoot, ctx.nextAggSeq);
     }
 
+    /// @dev Internal helper shared by `broadcast` and `quoteBroadcast` that enforces registration and native-fee-only.
     function _quoteBroadcast(
         uint32[] calldata targetEids,
         bytes memory payload,
@@ -216,29 +244,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// LayerZero Receiver
     /// -----------------------------------------------------------------------
 
-    function lzReceive(
-        Origin calldata origin,
-        bytes32 guid,
-        bytes calldata payload,
-        address executor,
-        bytes calldata extraData
-    ) public payable override {
-        if (address(endpoint) != msg.sender) revert OnlyEndpoint(msg.sender);
-
-        if (eidToPosition[origin.srcEid] == 0) revert TokenNotRegistered(origin.srcEid);
-        if (payload.length != TRANSFER_PAYLOAD_LENGTH) revert InvalidPayloadLength(payload.length);
-
-        bytes32 peer = peers[origin.srcEid];
-        if (peer != bytes32(0)) {
-            if (peer != origin.sender) revert OnlyPeer(origin.srcEid, origin.sender);
-        } else {
-            bytes32 ownerBytes = bytes32(uint256(uint160(owner())));
-            if (origin.sender != ownerBytes) revert NoPeer(origin.srcEid);
-        }
-
-        _lzReceive(origin, guid, payload, executor, extraData);
-    }
-
+    /// @dev Accepts `(transferRoot, transferTreeIndex)` payloads from registered verifiers and marks the tree dirty.
     function _lzReceive(Origin calldata origin, bytes32, bytes calldata payload, address, bytes calldata)
         internal
         override
@@ -250,12 +256,13 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
 
         (uint256 transferRoot, uint64 transferTreeIndex) = abi.decode(payload, (uint256, uint64));
         uint256 index = pos - 1;
-        uint256 previousRoot = transferRoots[index];
+        uint64 currentTreeIndex = transferTreeIndices[index];
+        if (transferTreeIndex <= currentTreeIndex) {
+            return;
+        }
         transferRoots[index] = transferRoot;
         transferTreeIndices[index] = transferTreeIndex;
-        if (previousRoot != transferRoot) {
-            isUpToDate = false;
-        }
+        isUpToDate = false;
         emit TransferRootUpdated(origin.srcEid, index, transferRoot);
     }
 
