@@ -9,21 +9,18 @@ use actix_web::{
 };
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use deadpool_redis::Pool;
 use log::{error as log_error, info};
 
 use decider_prover::{
     CircuitKind, JobRequest, JobStatusResponse, ProverEngine, ProverError, SubmitJobResponse,
     config::{AppConfig, load_config},
-    queue::{self, EnqueueJobResult},
+    queue::{EnqueueJobResult, QueueClient},
     worker,
 };
 
 #[derive(Clone)]
 struct AppState {
-    pool: Pool,
-    queue_key: String,
-    job_prefix: String,
+    queue: QueueClient,
     job_ttl_seconds: u64,
     enable_withdraw_local: bool,
 }
@@ -37,14 +34,10 @@ async fn submit_job(
 
     validate_job_request(&request, state.enable_withdraw_local)?;
 
-    match queue::enqueue_job(
-        &state.pool,
-        &state.queue_key,
-        &state.job_prefix,
-        &request,
-        state.job_ttl_seconds,
-    )
-    .await
+    match state
+        .queue
+        .enqueue_job(&request, state.job_ttl_seconds)
+        .await
     {
         Ok(EnqueueJobResult::Enqueued(job_state)) => {
             let response = SubmitJobResponse {
@@ -75,7 +68,7 @@ async fn get_job_status(
     job_id: Path<String>,
 ) -> actix_web::Result<impl Responder> {
     let job_id = job_id.into_inner();
-    match queue::get_job(&state.pool, &state.job_prefix, &job_id).await {
+    match state.queue.get_job(&job_id).await {
         Ok(Some(state)) => Ok(HttpResponse::Ok().json(JobStatusResponse::from(state))),
         Ok(None) => Err(error::ErrorNotFound(format!("job {job_id} not found"))),
         Err(err) => Err(map_internal_error(err)),
@@ -99,20 +92,19 @@ async fn main() -> anyhow::Result<()> {
         config.artifacts_dir.display()
     );
     let engine = Arc::new(load_prover_engine(&config)?);
-    let pool = queue::create_pool(&config.redis_url)?;
+    let queue = QueueClient::connect(
+        &config.database_url,
+        &config.queue_name,
+        &config.job_table,
+        config.visibility_timeout_seconds,
+        config.visibility_extension_seconds,
+    )
+    .await?;
 
-    worker::spawn_worker(
-        pool.clone(),
-        Arc::clone(&engine),
-        config.queue_key.clone(),
-        config.job_key_prefix.clone(),
-        config.job_ttl_seconds,
-    );
+    worker::spawn_worker(queue.clone(), Arc::clone(&engine), config.job_ttl_seconds);
 
     let app_state = Data::new(AppState {
-        pool,
-        queue_key: config.queue_key.clone(),
-        job_prefix: config.job_key_prefix.clone(),
+        queue,
         job_ttl_seconds: config.job_ttl_seconds,
         enable_withdraw_local: config.enable_withdraw_local,
     });
