@@ -13,4 +13,5 @@ pub use teleport::{
     JsAggregationTreeState, fetch_aggregation_tree_state, fetch_local_teleport_merkle_proofs,
     fetch_transfer_events, generate_global_teleport_merkle_proofs, separate_events_by_eligibility,
 };
-pub use withdraw::{SingleWithdrawWasm, WithdrawNovaWasm};
+pub use utils::{fr_to_hex, hex_to_fr, log_timing};
+pub use withdraw::{JsExternalInput, JsSingleWithdrawInput, SingleWithdrawWasm, WithdrawNovaWasm};
