@@ -162,6 +162,8 @@ impl TryFrom<JsAggregationTreeState> for AggregationTreeState {
     }
 }
 
+/// Expects a JSON object matching `FetchAggregationTreeParams` and returns a serialized
+/// `JsAggregationTreeState`.
 #[wasm_bindgen]
 pub async fn fetch_aggregation_tree_state(params: JsValue) -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
@@ -173,6 +175,8 @@ pub async fn fetch_aggregation_tree_state(params: JsValue) -> Result<JsValue, Js
     serde_wasm_bindgen::to_value(&state).map_err(serde_error_to_js)
 }
 
+/// Expects `{ indexerUrl, tokens, burnAddresses, indexerFetchLimit? }` matching
+/// `FetchTransferEventsParams` and returns a list of `JsChainEvents`.
 #[wasm_bindgen]
 pub async fn fetch_transfer_events(params: JsValue) -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
@@ -184,6 +188,8 @@ pub async fn fetch_transfer_events(params: JsValue) -> Result<JsValue, JsValue> 
     serde_wasm_bindgen::to_value(&events).map_err(serde_error_to_js)
 }
 
+/// Consumes `SeparateEventsParams` (aggregation state + chain events) and emits
+/// `Vec<JsSeparatedChainEvents>` describing eligibility per chain.
 #[wasm_bindgen]
 pub fn separate_events_by_eligibility(params: JsValue) -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
@@ -193,6 +199,8 @@ pub fn separate_events_by_eligibility(params: JsValue) -> Result<JsValue, JsValu
     serde_wasm_bindgen::to_value(&separated).map_err(serde_error_to_js)
 }
 
+/// Takes `FetchLocalTeleportProofsParams` (indexer URL, token, tree index, events) and returns
+/// serialized `JsLocalTeleportProof` records.
 #[wasm_bindgen]
 pub async fn fetch_local_teleport_merkle_proofs(params: JsValue) -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
@@ -204,6 +212,8 @@ pub async fn fetch_local_teleport_merkle_proofs(params: JsValue) -> Result<JsVal
     serde_wasm_bindgen::to_value(&proofs).map_err(serde_error_to_js)
 }
 
+/// Takes `GenerateGlobalTeleportProofsParams` (aggregation state + local proofs) and returns
+/// `Vec<JsGlobalTeleportProof>`.
 #[wasm_bindgen]
 pub fn generate_global_teleport_merkle_proofs(params: JsValue) -> Result<JsValue, JsValue> {
     console_error_panic_hook::set_once();
@@ -270,7 +280,7 @@ async fn fetch_local_teleport_merkle_proofs_impl(
         &params.events,
     )
     .await?;
-    Ok(proofs.into_iter().map(local_proof_to_js).collect())
+    Ok(proofs.into_iter().map(Into::into).collect())
 }
 
 fn generate_global_teleport_merkle_proofs_impl(
@@ -280,7 +290,7 @@ fn generate_global_teleport_merkle_proofs_impl(
     let local_proofs = chain_local_proofs_to_map(params.proofs)?;
     let global =
         merkle_proofs::generate_global_teleport_merkle_proofs(&aggregation_state, &local_proofs)?;
-    Ok(global.into_iter().map(global_proof_to_js).collect())
+    Ok(global.into_iter().map(Into::into).collect())
 }
 
 fn build_hub(entry: &HubEntry) -> Result<HubContract> {
@@ -342,31 +352,35 @@ fn chain_events_to_hashmap(entries: Vec<JsChainEvents>) -> HashMap<u64, Vec<Inde
     map
 }
 
-fn local_proof_to_js(proof: LocalTeleportMerkleProof) -> JsLocalTeleportProof {
-    let siblings = proof
-        .local_merkle_proof
-        .siblings
-        .iter()
-        .map(fr_to_hex)
-        .collect();
-    JsLocalTeleportProof {
-        tree_index: proof.tree_index,
-        event: proof.event,
-        siblings,
+impl From<LocalTeleportMerkleProof> for JsLocalTeleportProof {
+    fn from(proof: LocalTeleportMerkleProof) -> Self {
+        let siblings = proof
+            .local_merkle_proof
+            .siblings
+            .iter()
+            .map(fr_to_hex)
+            .collect();
+        JsLocalTeleportProof {
+            tree_index: proof.tree_index,
+            event: proof.event,
+            siblings,
+        }
     }
 }
 
-fn global_proof_to_js(proof: GlobalTeleportMerkleProof) -> JsGlobalTeleportProof {
-    let siblings = proof
-        .global_merkle_proof
-        .siblings
-        .iter()
-        .map(fr_to_hex)
-        .collect();
-    JsGlobalTeleportProof {
-        event: proof.event,
-        siblings,
-        leaf_index: proof.global_leaf_index,
+impl From<GlobalTeleportMerkleProof> for JsGlobalTeleportProof {
+    fn from(proof: GlobalTeleportMerkleProof) -> Self {
+        let siblings = proof
+            .global_merkle_proof
+            .siblings
+            .iter()
+            .map(fr_to_hex)
+            .collect();
+        JsGlobalTeleportProof {
+            event: proof.event,
+            siblings,
+            leaf_index: proof.global_leaf_index,
+        }
     }
 }
 
