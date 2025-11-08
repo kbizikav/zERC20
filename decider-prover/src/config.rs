@@ -16,6 +16,8 @@ pub struct AppConfig {
     pub database_url: String,
     #[serde(default = "default_artifacts_dir")]
     pub artifacts_dir: PathBuf,
+    #[serde(default = "default_worker_count")]
+    pub worker_count: usize,
     #[serde(default = "default_queue_name")]
     pub queue_name: String,
     #[serde(default = "default_job_table")]
@@ -40,6 +42,12 @@ pub fn load_config() -> Result<AppConfig, ProverError> {
 
     if cfg.artifacts_dir.is_relative() {
         cfg.artifacts_dir = workspace_root().join(&cfg.artifacts_dir);
+    }
+
+    if cfg.worker_count == 0 {
+        return Err(ProverError::Config(
+            "worker_count must be greater than zero".to_owned(),
+        ));
     }
 
     if cfg.job_ttl_seconds == 0 {
@@ -85,6 +93,10 @@ pub fn workspace_root() -> PathBuf {
 
 fn default_artifacts_dir() -> PathBuf {
     workspace_root().join("nova_artifacts")
+}
+
+fn default_worker_count() -> usize {
+    1
 }
 
 fn default_queue_name() -> String {

@@ -12,7 +12,7 @@ use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use log::{error as log_error, info};
 
 use decider_prover::{
-    CircuitKind, JobRequest, JobStatusResponse, ProverEngine, ProverError, SubmitJobResponse,
+    JobRequest, JobStatusResponse, ProverEngine, ProverError, SubmitJobResponse,
     config::{AppConfig, CircuitEnablement, load_config},
     queue::{EnqueueJobResult, QueueClient},
     worker,
@@ -101,7 +101,10 @@ async fn main() -> anyhow::Result<()> {
     )
     .await?;
 
-    worker::spawn_worker(queue.clone(), Arc::clone(&engine), config.job_ttl_seconds);
+    for _ in 0..config.worker_count {
+        worker::spawn_worker(queue.clone(), Arc::clone(&engine), config.job_ttl_seconds);
+    }
+    info!("spawned {} worker(s)", config.worker_count);
 
     let app_state = Data::new(AppState {
         queue,
