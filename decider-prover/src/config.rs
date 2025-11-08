@@ -6,19 +6,23 @@ use crate::errors::ProverError;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct AppConfig {
-    pub redis_url: String,
+    pub database_url: String,
     #[serde(default = "default_artifacts_dir")]
     pub artifacts_dir: PathBuf,
-    #[serde(default = "default_queue_key")]
-    pub queue_key: String,
-    #[serde(default = "default_job_key_prefix")]
-    pub job_key_prefix: String,
+    #[serde(default = "default_queue_name")]
+    pub queue_name: String,
+    #[serde(default = "default_job_table")]
+    pub job_table: String,
     #[serde(default = "default_listen_addr")]
     pub listen_addr: String,
     #[serde(default = "default_json_body_limit")]
     pub json_body_limit_bytes: usize,
     #[serde(default = "default_job_ttl_seconds")]
     pub job_ttl_seconds: u64,
+    #[serde(default = "default_visibility_timeout_seconds")]
+    pub visibility_timeout_seconds: i32,
+    #[serde(default = "default_visibility_extension_seconds")]
+    pub visibility_extension_seconds: i32,
     #[serde(default)]
     pub enable_withdraw_local: bool,
 }
@@ -37,6 +41,25 @@ pub fn load_config() -> Result<AppConfig, ProverError> {
         ));
     }
 
+    if cfg.visibility_timeout_seconds <= 0 {
+        return Err(ProverError::Config(
+            "visibility_timeout_seconds must be greater than zero".to_owned(),
+        ));
+    }
+
+    if cfg.visibility_extension_seconds <= 0 {
+        return Err(ProverError::Config(
+            "visibility_extension_seconds must be greater than zero".to_owned(),
+        ));
+    }
+
+    if cfg.visibility_timeout_seconds <= cfg.visibility_extension_seconds {
+        return Err(ProverError::Config(
+            "visibility_timeout_seconds must be greater than visibility_extension_seconds"
+                .to_owned(),
+        ));
+    }
+
     Ok(cfg)
 }
 
@@ -51,12 +74,12 @@ fn default_artifacts_dir() -> PathBuf {
     workspace_root().join("nova_artifacts")
 }
 
-fn default_queue_key() -> String {
-    "prover:queue".to_owned()
+fn default_queue_name() -> String {
+    "prover_queue".to_owned()
 }
 
-fn default_job_key_prefix() -> String {
-    "prover:job".to_owned()
+fn default_job_table() -> String {
+    "prover_jobs".to_owned()
 }
 
 fn default_listen_addr() -> String {
@@ -69,4 +92,12 @@ fn default_json_body_limit() -> usize {
 
 fn default_job_ttl_seconds() -> u64 {
     24 * 60 * 60
+}
+
+fn default_visibility_timeout_seconds() -> i32 {
+    15 * 60
+}
+
+fn default_visibility_extension_seconds() -> i32 {
+    60
 }
