@@ -1,4 +1,3 @@
-#[cfg(not(target_arch = "wasm32"))]
 pub mod contracts;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod indexer;
@@ -7,5 +6,4 @@ pub mod payment;
 pub mod prover;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod teleport;
-#[cfg(not(target_arch = "wasm32"))]
 pub mod tokens;
