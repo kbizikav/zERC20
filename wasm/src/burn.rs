@@ -18,26 +18,21 @@ struct JsSecretTweak {
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct JsGeneralRecipient {
-    #[serde(rename = "chainId")]
     chain_id: u64,
     address: String,
     tweak: String,
-    #[serde(rename = "fr")]
     fr: String,
-    #[serde(rename = "u256")]
     u256: String,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct JsBurnArtifacts {
-    #[serde(rename = "burnAddress")]
     burn_address: String,
-    #[serde(rename = "fullBurnAddress")]
     full_burn_address: String,
-    #[serde(rename = "generalRecipient")]
     general_recipient: JsGeneralRecipient,
-    #[serde(rename = "secret")]
     secret: String,
 }
 

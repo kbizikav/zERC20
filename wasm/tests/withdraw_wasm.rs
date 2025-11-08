@@ -26,10 +26,9 @@ use zkp::{
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ProveResult {
-    #[serde(rename = "finalState")]
     final_state: Vec<String>,
-    #[serde(rename = "ivcProof")]
     ivc_proof: String,
     steps: usize,
 }

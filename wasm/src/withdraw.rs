@@ -17,47 +17,42 @@ use zkp::{
 };
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JsExternalInput {
     #[serde(default)]
     pub is_dummy: bool,
     pub value: String,
     pub secret: String,
-    #[serde(rename = "leafIndex")]
     pub leaf_index: String,
     pub siblings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct JsProveResult {
-    #[serde(rename = "finalState")]
     final_state: Vec<String>,
-    #[serde(rename = "ivcProof")]
     ivc_proof: String,
     steps: usize,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct JsSingleWithdrawInput {
-    #[serde(rename = "merkleRoot")]
     pub merkle_root: String,
     pub recipient: String,
-    #[serde(rename = "withdrawValue")]
     pub withdraw_value: String,
     pub value: String,
     pub delta: String,
     pub secret: String,
-    #[serde(rename = "leafIndex")]
     pub leaf_index: String,
     pub siblings: Vec<String>,
 }
 
 #[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 struct JsGroth16ProveResult {
-    #[serde(rename = "proofCalldata")]
     proof_calldata: String,
-    #[serde(rename = "publicInputs")]
     public_inputs: Vec<String>,
-    #[serde(rename = "treeDepth")]
     tree_depth: usize,
 }
 
