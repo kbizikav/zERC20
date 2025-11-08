@@ -1,6 +1,13 @@
-use std::path::{Path, PathBuf};
+use std::{
+    fmt,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
-use serde::Deserialize;
+use serde::de::{self, SeqAccess, Visitor};
+use serde::{Deserialize, Deserializer};
+
+use api_types::prover::CircuitKind;
 
 use crate::errors::ProverError;
 
@@ -24,7 +31,7 @@ pub struct AppConfig {
     #[serde(default = "default_visibility_extension_seconds")]
     pub visibility_extension_seconds: i32,
     #[serde(default)]
-    pub enable_withdraw_local: bool,
+    pub enabled_circuits: CircuitEnablement,
 }
 
 pub fn load_config() -> Result<AppConfig, ProverError> {
@@ -57,6 +64,12 @@ pub fn load_config() -> Result<AppConfig, ProverError> {
         return Err(ProverError::Config(
             "visibility_timeout_seconds must be greater than visibility_extension_seconds"
                 .to_owned(),
+        ));
+    }
+
+    if !cfg.enabled_circuits.any_enabled() {
+        return Err(ProverError::Config(
+            "enabled_circuits must contain at least one circuit".to_owned(),
         ));
     }
 
@@ -100,4 +113,127 @@ fn default_visibility_timeout_seconds() -> i32 {
 
 fn default_visibility_extension_seconds() -> i32 {
     60
+}
+
+#[derive(Debug, Clone)]
+pub struct CircuitEnablement {
+    root: bool,
+    withdraw_local: bool,
+    withdraw_global: bool,
+}
+
+impl CircuitEnablement {
+    pub fn root(&self) -> bool {
+        self.root
+    }
+
+    pub fn withdraw_local(&self) -> bool {
+        self.withdraw_local
+    }
+
+    pub fn withdraw_global(&self) -> bool {
+        self.withdraw_global
+    }
+
+    pub fn any_enabled(&self) -> bool {
+        self.root || self.withdraw_local || self.withdraw_global
+    }
+
+    pub fn contains(&self, circuit: &CircuitKind) -> bool {
+        match circuit {
+            CircuitKind::Root => self.root,
+            CircuitKind::WithdrawLocal => self.withdraw_local,
+            CircuitKind::WithdrawGlobal => self.withdraw_global,
+        }
+    }
+
+    fn none() -> Self {
+        Self {
+            root: false,
+            withdraw_local: false,
+            withdraw_global: false,
+        }
+    }
+
+    fn enable(&mut self, circuit: CircuitKind) {
+        match circuit {
+            CircuitKind::Root => self.root = true,
+            CircuitKind::WithdrawLocal => self.withdraw_local = true,
+            CircuitKind::WithdrawGlobal => self.withdraw_global = true,
+        }
+    }
+
+    fn from_iter<I>(iter: I) -> Self
+    where
+        I: IntoIterator<Item = CircuitKind>,
+    {
+        let mut enablement = Self::none();
+        for circuit in iter {
+            enablement.enable(circuit);
+        }
+        enablement
+    }
+
+    fn from_csv(value: &str) -> Result<Self, String> {
+        if value.trim().is_empty() {
+            return Ok(Self::none());
+        }
+        let mut circuits = Vec::new();
+        for entry in value.split(',') {
+            let trimmed = entry.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let circuit = CircuitKind::from_str(trimmed)?;
+            circuits.push(circuit);
+        }
+        Ok(Self::from_iter(circuits))
+    }
+}
+
+impl Default for CircuitEnablement {
+    fn default() -> Self {
+        Self {
+            root: true,
+            withdraw_local: false,
+            withdraw_global: true,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for CircuitEnablement {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        struct CircuitEnablementVisitor;
+
+        impl<'de> Visitor<'de> for CircuitEnablementVisitor {
+            type Value = CircuitEnablement;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a comma-separated string or array of circuit kinds")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                CircuitEnablement::from_csv(value).map_err(E::custom)
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: SeqAccess<'de>,
+            {
+                let mut circuits = Vec::new();
+                while let Some(kind) = seq.next_element::<CircuitKind>()? {
+                    circuits.push(kind);
+                }
+                Ok(CircuitEnablement::from_iter(circuits))
+            }
+        }
+
+        deserializer.deserialize_any(CircuitEnablementVisitor)
+    }
 }
