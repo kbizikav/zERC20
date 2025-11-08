@@ -1,11 +1,16 @@
 use std::{
     collections::hash_map::DefaultHasher,
+    fs,
     hash::{Hash, Hasher},
+    io::Read,
+    path::Path,
 };
 
 use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
 use alloy::primitives::Address;
 use anyhow::{Context, Result, anyhow};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
+use flate2::read::GzDecoder;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -116,4 +121,46 @@ impl TokensFile {
         }
         Ok(())
     }
+
+    pub fn normalize_entries(&mut self) -> Result<()> {
+        self.normalize()?;
+        for token in self.tokens.iter_mut() {
+            token
+                .normalize()
+                .with_context(|| format!("invalid token entry '{}'", token.label))?;
+        }
+        Ok(())
+    }
+}
+
+pub fn load_tokens_from_path(path: impl AsRef<Path>) -> Result<TokensFile> {
+    let path_ref = path.as_ref();
+    let contents = fs::read_to_string(path_ref)
+        .with_context(|| format!("failed to read tokens config {}", path_ref.display()))?;
+    parse_tokens_config(&contents)
+        .with_context(|| format!("invalid tokens config {}", path_ref.display()))
+}
+
+pub fn load_tokens_from_compressed(payload: &str) -> Result<TokensFile> {
+    let normalized: String = payload.chars().filter(|ch| !ch.is_whitespace()).collect();
+    if normalized.is_empty() {
+        return Err(anyhow!("TOKENS_COMPRESSED payload is empty"));
+    }
+    let decoded = STANDARD
+        .decode(normalized.as_bytes())
+        .context("failed to base64-decode TOKENS_COMPRESSED payload")?;
+    let mut decoder = GzDecoder::new(decoded.as_slice());
+    let mut json = String::new();
+    decoder
+        .read_to_string(&mut json)
+        .context("failed to decompress TOKENS_COMPRESSED payload")?;
+    parse_tokens_config(&json).context("invalid tokens payload from TOKENS_COMPRESSED")
+}
+
+pub fn parse_tokens_config(contents: &str) -> Result<TokensFile> {
+    let mut file: TokensFile =
+        serde_json::from_str(contents).context("failed to parse tokens config JSON")?;
+    file.normalize_entries()
+        .context("invalid tokens config entries")?;
+    Ok(file)
 }

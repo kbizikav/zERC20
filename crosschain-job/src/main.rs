@@ -1,4 +1,4 @@
-use std::{fs, path::Path, str::FromStr, time::Duration};
+use std::{env, path::Path, str::FromStr, time::Duration};
 
 use alloy::{
     network::Ethereum,
@@ -13,7 +13,7 @@ use client_common::{
         utils::{get_provider, get_provider_with_fallback},
         verifier::VerifierContract,
     },
-    tokens::{HubEntry, TokenEntry, TokensFile},
+    tokens::{HubEntry, TokenEntry, load_tokens_from_compressed, load_tokens_from_path},
 };
 use log::{error, info, warn};
 use tokio::time::{self, MissedTickBehavior};
@@ -317,7 +317,10 @@ async fn main() -> Result<()> {
 
     let (tokens, hub_entry) = load_tokens_config(&cli.tokens_file_path)?;
     if tokens.is_empty() {
-        bail!("no tokens configured in {}", cli.tokens_file_path.display());
+        bail!(
+            "no tokens configured; set TOKENS_COMPRESSED or populate {}",
+            cli.tokens_file_path.display()
+        );
     }
 
     let relay_options = cli.relay_options.into_vec();
@@ -328,8 +331,8 @@ async fn main() -> Result<()> {
     for token in &tokens {
         let provider = build_provider(&token.rpc_urls)
             .with_context(|| format!("failed to construct provider for token '{}'", token.label))?;
-        let contract = VerifierContract::new(provider, token.verifier_address)
-            .with_legacy_tx(token.legacy_tx);
+        let contract =
+            VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
         relay_jobs.push(RelayJob {
             label: token.label.clone(),
             chain_id: token.chain_id,
@@ -454,19 +457,28 @@ fn build_provider(rpc_urls: &[String]) -> Result<client_common::contracts::utils
 }
 
 fn load_tokens_config(path: &Path) -> Result<(Vec<TokenEntry>, Option<HubEntry>)> {
-    let contents = fs::read_to_string(path)
-        .with_context(|| format!("failed to read tokens config {}", path.display()))?;
-    let mut tokens_file: TokensFile =
-        serde_json::from_str(&contents).context("failed to parse tokens config JSON")?;
-    tokens_file
-        .normalize()
-        .with_context(|| format!("invalid tokens config {}", path.display()))?;
-    for token in tokens_file.tokens.iter_mut() {
-        token
-            .normalize()
-            .with_context(|| format!("invalid token entry '{}'", token.label))?;
+    if let Some(tokens) = load_tokens_config_from_env()? {
+        return Ok(tokens);
     }
+    let tokens_file = load_tokens_from_path(path)?;
     Ok((tokens_file.tokens, tokens_file.hub))
+}
+
+fn load_tokens_config_from_env() -> Result<Option<(Vec<TokenEntry>, Option<HubEntry>)>> {
+    match env::var("TOKENS_COMPRESSED") {
+        Ok(value) => {
+            if value.trim().is_empty() {
+                bail!("TOKENS_COMPRESSED is set but empty");
+            }
+            let tokens_file = load_tokens_from_compressed(&value)
+                .context("failed to parse TOKENS_COMPRESSED payload")?;
+            Ok(Some((tokens_file.tokens, tokens_file.hub)))
+        }
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => {
+            bail!("TOKENS_COMPRESSED contains invalid unicode")
+        }
+    }
 }
 
 fn parse_private_key(input: &str) -> Result<B256> {
