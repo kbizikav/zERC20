@@ -463,8 +463,8 @@ async fn fetch_onchain_indices(token: &TokenContext) -> (Option<u64>, Option<u64
         }
     };
 
-    let contract = VerifierContract::new(provider, token.verifier_address)
-        .with_legacy_tx(token.legacy_tx);
+    let contract =
+        VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
 
     let reserved_index = match contract.latest_reserved_index().await {
         Ok(value) => Some(value),

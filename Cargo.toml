@@ -91,6 +91,7 @@ sqlx = { version = "0.8.6", features = [
 actix-web = { version = "4.9.0", features = ["macros"] }
 actix-cors = "0.7.0"
 url = "2.5.3"
+flate2 = { version = "1.0.34", default-features = true }
 
 [patch.crates-io]
 ark-groth16 = { git = "https://github.com/arkworks-rs/groth16", rev = "b3b4a15" }

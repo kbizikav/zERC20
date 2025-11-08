@@ -128,8 +128,8 @@ impl EventSyncJobBuilder {
                 })?
             };
 
-            let contract = ZErc20Contract::new(provider, token.token_address)
-                .with_legacy_tx(token.legacy_tx);
+            let contract =
+                ZErc20Contract::new(provider, token.token_address).with_legacy_tx(token.legacy_tx);
             let lock_key = token.lock_key_with_salt(EVENT_LOCK_SALT);
             let metadata = token.metadata();
             let context = EventTokenContext {
