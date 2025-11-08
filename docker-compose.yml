@@ -41,7 +41,7 @@ services:
       - "host.docker.internal:host-gateway"
     environment:
       DATABASE_URL: postgres://postgres:postgres@postgres:5432/zkp
-      TOKENS_FILE_PATH: /config/tokens.json
+      TOKENS_COMPRESSED: "${TOKENS_COMPRESSED:?TOKENS_COMPRESSED must be set in .env}"
       DECIDER_PROVER_URL: http://host.docker.internal:8081
       ROOT_SUBMITTER_PRIVATE_KEY: "${ROOT_SUBMITTER_PRIVATE_KEY:?ROOT_SUBMITTER_PRIVATE_KEY must be set in .env}"
       IS_SYNC: "true"
@@ -54,7 +54,6 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - ./config:/config:ro
       - ./nova_artifacts:/app/nova_artifacts:ro
 
   crosschain-job:
@@ -65,7 +64,7 @@ services:
     env_file:
       - ./.env
     environment:
-      TOKENS_FILE_PATH: /config/tokens.json
+      TOKENS_COMPRESSED: "${TOKENS_COMPRESSED:?TOKENS_COMPRESSED must be set in .env}"
       RELAY_PRIVATE_KEY: "${RELAY_PRIVATE_KEY:?RELAY_PRIVATE_KEY must be set in .env}"
       RELAY_INTERVAL_SECS: "60"
       BROADCAST_INTERVAL_SECS: "60"
@@ -73,8 +72,6 @@ services:
       BROADCAST_OPTIONS: 0x00030100110100000000000000000000000000030d40
       RUST_LOG: info
     command: []
-    volumes:
-      - ./config:/config:ro
 
 volumes:
   postgres-data:

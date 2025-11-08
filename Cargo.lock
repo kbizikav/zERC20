@@ -2064,6 +2064,7 @@ dependencies = [
  "ark-bn254",
  "async-trait",
  "base64 0.22.1",
+ "flate2",
  "hex",
  "rand 0.8.5",
  "reqwest",
