@@ -1,6 +1,9 @@
-use crate::utils::{
-    anyhow_to_js_error, format_u256_hex, fr_to_hex, hex_to_fr, parse_address_hex, parse_u256_hex,
-    serde_error_to_js,
+use crate::{
+    tokens::{JsHubEntry, JsTokenEntry},
+    utils::{
+        anyhow_to_js_error, format_u256_hex, fr_to_hex, hex_to_fr, parse_address_hex,
+        parse_u256_hex, serde_error_to_js,
+    },
 };
 use alloy::primitives::Address;
 use anyhow::{Context, Result};
@@ -30,21 +33,16 @@ use zkp::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsAggregationTreeState {
-    #[serde(rename = "latestAggSeq")]
     pub latest_agg_seq: u64,
-    #[serde(rename = "aggregationRoot")]
     pub aggregation_root: String,
     pub snapshot: Vec<String>,
-    #[serde(rename = "transferTreeIndices")]
     pub transfer_tree_indices: Vec<u64>,
-    #[serde(rename = "chainIds")]
     pub chain_ids: Vec<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JsChainEvents {
-    #[serde(rename = "chainId")]
     chain_id: u64,
     events: Vec<IndexedEvent>,
 }
@@ -52,7 +50,6 @@ struct JsChainEvents {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct JsSeparatedChainEvents {
-    #[serde(rename = "chainId")]
     chain_id: u64,
     events: EventsWithEligibility,
 }
@@ -60,7 +57,6 @@ struct JsSeparatedChainEvents {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JsLocalTeleportProof {
-    #[serde(rename = "treeIndex")]
     tree_index: u64,
     event: IndexedEvent,
     siblings: Vec<String>,
@@ -69,7 +65,6 @@ struct JsLocalTeleportProof {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JsChainLocalProofs {
-    #[serde(rename = "chainId")]
     chain_id: u64,
     proofs: Vec<JsLocalTeleportProof>,
 }
@@ -79,7 +74,6 @@ struct JsChainLocalProofs {
 struct JsGlobalTeleportProof {
     event: IndexedEvent,
     siblings: Vec<String>,
-    #[serde(rename = "leafIndex")]
     leaf_index: u64,
 }
 
@@ -95,19 +89,16 @@ struct FetchAggregationTreeParams {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FetchTransferEventsParams {
-    #[serde(rename = "indexerUrl")]
     indexer_url: String,
     #[serde(default)]
     indexer_fetch_limit: Option<usize>,
     tokens: Vec<JsTokenEntry>,
-    #[serde(rename = "burnAddresses")]
     burn_addresses: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct SeparateEventsParams {
-    #[serde(rename = "aggregationState")]
     aggregation_state: JsAggregationTreeState,
     events: Vec<JsChainEvents>,
 }
@@ -115,10 +106,8 @@ struct SeparateEventsParams {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct FetchLocalTeleportProofsParams {
-    #[serde(rename = "indexerUrl")]
     indexer_url: String,
     token: JsTokenEntry,
-    #[serde(rename = "treeIndex")]
     tree_index: u64,
     events: Vec<IndexedEvent>,
 }
@@ -126,73 +115,8 @@ struct FetchLocalTeleportProofsParams {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct GenerateGlobalTeleportProofsParams {
-    #[serde(rename = "aggregationState")]
     aggregation_state: JsAggregationTreeState,
     proofs: Vec<JsChainLocalProofs>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct JsHubEntry {
-    #[serde(rename = "hubAddress")]
-    hub_address: String,
-    #[serde(rename = "chainId")]
-    chain_id: u64,
-    #[serde(default)]
-    rpc_urls: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct JsTokenEntry {
-    label: String,
-    #[serde(rename = "tokenAddress")]
-    token_address: String,
-    #[serde(rename = "verifierAddress")]
-    verifier_address: String,
-    #[serde(default)]
-    #[serde(rename = "minterAddress")]
-    minter_address: Option<String>,
-    #[serde(rename = "chainId")]
-    chain_id: u64,
-    #[serde(rename = "deployedBlockNumber", default)]
-    deployed_block_number: u64,
-    #[serde(default)]
-    rpc_urls: Vec<String>,
-    #[serde(default)]
-    legacy_tx: bool,
-}
-
-impl TryFrom<JsTokenEntry> for TokenEntry {
-    type Error = anyhow::Error;
-
-    fn try_from(value: JsTokenEntry) -> Result<Self> {
-        Ok(TokenEntry {
-            label: value.label,
-            token_address: parse_address_hex(&value.token_address)?,
-            verifier_address: parse_address_hex(&value.verifier_address)?,
-            minter_address: value
-                .minter_address
-                .map(|addr| parse_address_hex(&addr))
-                .transpose()?,
-            chain_id: value.chain_id,
-            deployed_block_number: value.deployed_block_number,
-            rpc_urls: value.rpc_urls,
-            legacy_tx: value.legacy_tx,
-        })
-    }
-}
-
-impl TryFrom<JsHubEntry> for HubEntry {
-    type Error = anyhow::Error;
-
-    fn try_from(value: JsHubEntry) -> Result<Self> {
-        Ok(HubEntry {
-            hub_address: parse_address_hex(&value.hub_address)?,
-            chain_id: value.chain_id,
-            rpc_urls: value.rpc_urls,
-        })
-    }
 }
 
 impl From<AggregationTreeState> for JsAggregationTreeState {
