@@ -13,7 +13,7 @@ use log::{error as log_error, info};
 
 use decider_prover::{
     CircuitKind, JobRequest, JobStatusResponse, ProverEngine, ProverError, SubmitJobResponse,
-    config::{AppConfig, load_config},
+    config::{AppConfig, CircuitEnablement, load_config},
     queue::{EnqueueJobResult, QueueClient},
     worker,
 };
@@ -22,7 +22,7 @@ use decider_prover::{
 struct AppState {
     queue: QueueClient,
     job_ttl_seconds: u64,
-    enable_withdraw_local: bool,
+    enabled_circuits: CircuitEnablement,
 }
 
 #[post("/jobs")]
@@ -32,7 +32,7 @@ async fn submit_job(
 ) -> actix_web::Result<impl Responder> {
     let request = payload.into_inner();
 
-    validate_job_request(&request, state.enable_withdraw_local)?;
+    validate_job_request(&request, &state.enabled_circuits)?;
 
     match state
         .queue
@@ -106,7 +106,7 @@ async fn main() -> anyhow::Result<()> {
     let app_state = Data::new(AppState {
         queue,
         job_ttl_seconds: config.job_ttl_seconds,
-        enable_withdraw_local: config.enable_withdraw_local,
+        enabled_circuits: config.enabled_circuits.clone(),
     });
     let json_limit = config.json_body_limit_bytes;
 
@@ -130,7 +130,7 @@ async fn main() -> anyhow::Result<()> {
 
 fn load_prover_engine(config: &AppConfig) -> Result<ProverEngine, ProverError> {
     let start = Instant::now();
-    let engine = ProverEngine::load(&config.artifacts_dir, config.enable_withdraw_local)?;
+    let engine = ProverEngine::load(&config.artifacts_dir, &config.enabled_circuits)?;
     info!(
         "loaded decider parameters from {} in {:.2?}",
         config.artifacts_dir.display(),
@@ -141,19 +141,16 @@ fn load_prover_engine(config: &AppConfig) -> Result<ProverEngine, ProverError> {
 
 fn validate_job_request(
     request: &JobRequest,
-    enable_withdraw_local: bool,
+    enabled_circuits: &CircuitEnablement,
 ) -> actix_web::Result<()> {
     if request.job_id.trim().is_empty() {
         return Err(error::ErrorBadRequest("job_id must not be empty"));
     }
-    match request.circuit {
-        CircuitKind::Root | CircuitKind::WithdrawGlobal => {}
-        CircuitKind::WithdrawLocal if enable_withdraw_local => {}
-        CircuitKind::WithdrawLocal => {
-            return Err(error::ErrorBadRequest(
-                "withdraw_local circuit is disabled in this prover",
-            ));
-        }
+    if !enabled_circuits.contains(&request.circuit) {
+        return Err(error::ErrorBadRequest(format!(
+            "{} circuit is disabled in this prover",
+            request.circuit
+        )));
     }
     ensure_base64_payload(&request.ivc_proof)?;
     Ok(())
