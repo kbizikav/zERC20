@@ -1,0 +1,25 @@
+{
+  "name": "@zerc20/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json && pnpm run copy-wasm",
+    "copy-wasm": "rm -rf dist/wasm && mkdir -p dist && cp -R src/wasm dist/wasm",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "tsx": "^4.20.6",
+    "typescript": "^5.6.2",
+    "vitest": "^4.0.8"
+  }
+}
