@@ -10,7 +10,8 @@ use tokio::time::sleep;
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 1_000;
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait DeciderClient: Send + Sync {
     async fn produce_decider_proof(
         &self,
@@ -36,7 +37,6 @@ impl HttpDeciderClient {
         }
 
         let client = Client::builder()
-            .timeout(timeout + Duration::from_secs(5))
             .build()
             .map_err(DeciderError::ClientBuild)?;
 
@@ -115,7 +115,8 @@ pub enum DeciderError {
 
 pub type DeciderResult<T> = Result<T, DeciderError>;
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl DeciderClient for HttpDeciderClient {
     async fn produce_decider_proof(
         &self,
