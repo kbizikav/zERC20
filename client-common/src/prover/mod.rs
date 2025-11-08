@@ -166,59 +166,54 @@ impl DeciderClient for HttpDeciderClient {
             })?;
 
         let job_id_for_timeout = job_id.clone();
-        timeout(
-            self.timeout,
-            async {
-                loop {
-                    let response = self
-                        .client
-                        .get(status_url.clone())
-                        .send()
+        timeout(self.timeout, async {
+            loop {
+                let response = self
+                    .client
+                    .get(status_url.clone())
+                    .send()
+                    .await
+                    .map_err(|source| DeciderError::StatusRequest {
+                        circuit: circuit_name.clone(),
+                        source,
+                    })?
+                    .error_for_status()
+                    .map_err(|source| DeciderError::StatusRequestStatus {
+                        circuit: circuit_name.clone(),
+                        source,
+                    })?;
+
+                let status: JobStatusResponse =
+                    response
+                        .json()
                         .await
-                        .map_err(|source| DeciderError::StatusRequest {
-                            circuit: circuit_name.clone(),
-                            source,
-                        })?
-                        .error_for_status()
-                        .map_err(|source| DeciderError::StatusRequestStatus {
+                        .map_err(|source| DeciderError::StatusDecode {
                             circuit: circuit_name.clone(),
                             source,
                         })?;
 
-                    let status: JobStatusResponse =
-                        response
-                            .json()
-                            .await
-                            .map_err(|source| DeciderError::StatusDecode {
-                                circuit: circuit_name.clone(),
-                                source,
-                            })?;
-
-                    match status.status {
-                        JobStatus::Queued | JobStatus::Processing => {
-                            sleep(self.poll_interval).await;
-                        }
-                        JobStatus::Completed => {
-                            let result =
-                                status.result.ok_or_else(|| DeciderError::MissingResult {
-                                    job_id: job_id.clone(),
-                                })?;
-                            let proof = decode_base64_payload(&result)?;
-                            return Ok(proof);
-                        }
-                        JobStatus::Failed => {
-                            let err =
-                                status.error.unwrap_or_else(|| "unknown error".to_string());
-                            return Err(DeciderError::JobFailed {
-                                circuit: circuit_name.clone(),
-                                job_id: job_id.clone(),
-                                error_msg: err,
-                            });
-                        }
+                match status.status {
+                    JobStatus::Queued | JobStatus::Processing => {
+                        sleep(self.poll_interval).await;
+                    }
+                    JobStatus::Completed => {
+                        let result = status.result.ok_or_else(|| DeciderError::MissingResult {
+                            job_id: job_id.clone(),
+                        })?;
+                        let proof = decode_base64_payload(&result)?;
+                        return Ok(proof);
+                    }
+                    JobStatus::Failed => {
+                        let err = status.error.unwrap_or_else(|| "unknown error".to_string());
+                        return Err(DeciderError::JobFailed {
+                            circuit: circuit_name.clone(),
+                            job_id: job_id.clone(),
+                            error_msg: err,
+                        });
                     }
                 }
-            },
-        )
+            }
+        })
         .await
         .map_err(|_| DeciderError::Timeout {
             job_id: job_id_for_timeout,
