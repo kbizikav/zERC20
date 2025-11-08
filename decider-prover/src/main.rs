@@ -9,23 +9,20 @@ use actix_web::{
 };
 use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
-use deadpool_redis::Pool;
 use log::{error as log_error, info};
 
 use decider_prover::{
-    CircuitKind, JobRequest, JobStatusResponse, ProverEngine, ProverError, SubmitJobResponse,
-    config::{AppConfig, load_config},
-    queue::{self, EnqueueJobResult},
+    JobRequest, JobStatusResponse, ProverEngine, ProverError, SubmitJobResponse,
+    config::{AppConfig, CircuitEnablement, load_config},
+    queue::{EnqueueJobResult, QueueClient},
     worker,
 };
 
 #[derive(Clone)]
 struct AppState {
-    pool: Pool,
-    queue_key: String,
-    job_prefix: String,
+    queue: QueueClient,
     job_ttl_seconds: u64,
-    enable_withdraw_local: bool,
+    enabled_circuits: CircuitEnablement,
 }
 
 #[post("/jobs")]
@@ -35,16 +32,12 @@ async fn submit_job(
 ) -> actix_web::Result<impl Responder> {
     let request = payload.into_inner();
 
-    validate_job_request(&request, state.enable_withdraw_local)?;
+    validate_job_request(&request, &state.enabled_circuits)?;
 
-    match queue::enqueue_job(
-        &state.pool,
-        &state.queue_key,
-        &state.job_prefix,
-        &request,
-        state.job_ttl_seconds,
-    )
-    .await
+    match state
+        .queue
+        .enqueue_job(&request, state.job_ttl_seconds)
+        .await
     {
         Ok(EnqueueJobResult::Enqueued(job_state)) => {
             let response = SubmitJobResponse {
@@ -75,7 +68,7 @@ async fn get_job_status(
     job_id: Path<String>,
 ) -> actix_web::Result<impl Responder> {
     let job_id = job_id.into_inner();
-    match queue::get_job(&state.pool, &state.job_prefix, &job_id).await {
+    match state.queue.get_job(&job_id).await {
         Ok(Some(state)) => Ok(HttpResponse::Ok().json(JobStatusResponse::from(state))),
         Ok(None) => Err(error::ErrorNotFound(format!("job {job_id} not found"))),
         Err(err) => Err(map_internal_error(err)),
@@ -99,22 +92,24 @@ async fn main() -> anyhow::Result<()> {
         config.artifacts_dir.display()
     );
     let engine = Arc::new(load_prover_engine(&config)?);
-    let pool = queue::create_pool(&config.redis_url)?;
+    let queue = QueueClient::connect(
+        &config.database_url,
+        &config.queue_name,
+        &config.job_table,
+        config.visibility_timeout_seconds,
+        config.visibility_extension_seconds,
+    )
+    .await?;
 
-    worker::spawn_worker(
-        pool.clone(),
-        Arc::clone(&engine),
-        config.queue_key.clone(),
-        config.job_key_prefix.clone(),
-        config.job_ttl_seconds,
-    );
+    for _ in 0..config.worker_count {
+        worker::spawn_worker(queue.clone(), Arc::clone(&engine), config.job_ttl_seconds);
+    }
+    info!("spawned {} worker(s)", config.worker_count);
 
     let app_state = Data::new(AppState {
-        pool,
-        queue_key: config.queue_key.clone(),
-        job_prefix: config.job_key_prefix.clone(),
+        queue,
         job_ttl_seconds: config.job_ttl_seconds,
-        enable_withdraw_local: config.enable_withdraw_local,
+        enabled_circuits: config.enabled_circuits.clone(),
     });
     let json_limit = config.json_body_limit_bytes;
 
@@ -138,7 +133,7 @@ async fn main() -> anyhow::Result<()> {
 
 fn load_prover_engine(config: &AppConfig) -> Result<ProverEngine, ProverError> {
     let start = Instant::now();
-    let engine = ProverEngine::load(&config.artifacts_dir, config.enable_withdraw_local)?;
+    let engine = ProverEngine::load(&config.artifacts_dir, &config.enabled_circuits)?;
     info!(
         "loaded decider parameters from {} in {:.2?}",
         config.artifacts_dir.display(),
@@ -149,19 +144,16 @@ fn load_prover_engine(config: &AppConfig) -> Result<ProverEngine, ProverError> {
 
 fn validate_job_request(
     request: &JobRequest,
-    enable_withdraw_local: bool,
+    enabled_circuits: &CircuitEnablement,
 ) -> actix_web::Result<()> {
     if request.job_id.trim().is_empty() {
         return Err(error::ErrorBadRequest("job_id must not be empty"));
     }
-    match request.circuit {
-        CircuitKind::Root | CircuitKind::WithdrawGlobal => {}
-        CircuitKind::WithdrawLocal if enable_withdraw_local => {}
-        CircuitKind::WithdrawLocal => {
-            return Err(error::ErrorBadRequest(
-                "withdraw_local circuit is disabled in this prover",
-            ));
-        }
+    if !enabled_circuits.contains(&request.circuit) {
+        return Err(error::ErrorBadRequest(format!(
+            "{} circuit is disabled in this prover",
+            request.circuit
+        )));
     }
     ensure_base64_payload(&request.ivc_proof)?;
     Ok(())

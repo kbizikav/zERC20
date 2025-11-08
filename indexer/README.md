@@ -66,6 +66,20 @@ Provide optional hub metadata and token definitions in JSON (default path `../co
 
 Each token must include at least one RPC URL (string or array). Duplicate labels or addresses are allowed but will map to distinct advisory locks.
 
+#### Compressed configuration (`TOKENS_COMPRESSED`)
+
+Instead of mounting `tokens.json`, you can provide the same metadata as a Base64-encoded,
+gzip-compressed blob via the `TOKENS_COMPRESSED` environment variable (the same format
+used by `VITE_TOKENS_COMPRESSED` in the frontend). Generate the payload with
+`scripts/encode-tokens.sh` and export it before launching `tree-indexer`:
+
+```bash
+export TOKENS_COMPRESSED="$(scripts/encode-tokens.sh config/tokens.json)"
+cargo run -p tree-indexer
+```
+
+When the variable is set, it takes precedence over `--tokens` / `TOKENS_FILE_PATH`.
+
 ### Environment Variables
 
 Set the runtime parameters through environment variables (see `.env.example`):

@@ -62,7 +62,6 @@ COPY docker/indexer-entrypoint.sh /usr/local/bin/indexer-entrypoint.sh
 ENV ARTIFACTS_DIR=/app/nova_artifacts \
     ARTIFACTS_SOURCE=volume \
     ARTIFACTS_STRIP_COMPONENTS=1 \
-    TOKENS_FILE_PATH=/config/tokens.json \
     INDEXER_HTTP_ADDR=0.0.0.0:8081 \
     RUST_LOG=info
 

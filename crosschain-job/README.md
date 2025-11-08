@@ -37,6 +37,11 @@ needs an RPC URL list, verifier address, and chain identifier. The optional
 `hub` section enables the broadcast job. When omitted, broadcast is
 automatically disabled.
 
+You can skip the JSON file entirely by exporting `TOKENS_COMPRESSED`, which
+accepts the same Base64+gzip payload produced by `scripts/encode-tokens.sh`
+(`VITE_TOKENS_COMPRESSED` in the frontend). When set, this variable overrides
+`TOKENS_FILE_PATH`.
+
 ## Running
 
 From the repository root:
