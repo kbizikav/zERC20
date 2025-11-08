@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use api_types::prover::{CircuitKind, JobRequest, JobStatus, JobStatusResponse};
 use async_trait::async_trait;
@@ -6,7 +6,7 @@ use base64::Engine;
 use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
 use reqwest::{Client, Url};
 use thiserror::Error;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 const DEFAULT_POLL_INTERVAL_MS: u64 = 1_000;
 
@@ -165,60 +165,65 @@ impl DeciderClient for HttpDeciderClient {
                 source,
             })?;
 
-        let started = Instant::now();
-        loop {
-            if started.elapsed() > self.timeout {
-                return Err(DeciderError::Timeout {
-                    job_id: job_id.clone(),
-                    timeout: self.timeout,
-                });
-            }
+        let job_id_for_timeout = job_id.clone();
+        timeout(
+            self.timeout,
+            async {
+                loop {
+                    let response = self
+                        .client
+                        .get(status_url.clone())
+                        .send()
+                        .await
+                        .map_err(|source| DeciderError::StatusRequest {
+                            circuit: circuit_name.clone(),
+                            source,
+                        })?
+                        .error_for_status()
+                        .map_err(|source| DeciderError::StatusRequestStatus {
+                            circuit: circuit_name.clone(),
+                            source,
+                        })?;
 
-            let response = self
-                .client
-                .get(status_url.clone())
-                .send()
-                .await
-                .map_err(|source| DeciderError::StatusRequest {
-                    circuit: circuit_name.clone(),
-                    source,
-                })?
-                .error_for_status()
-                .map_err(|source| DeciderError::StatusRequestStatus {
-                    circuit: circuit_name.clone(),
-                    source,
-                })?;
+                    let status: JobStatusResponse =
+                        response
+                            .json()
+                            .await
+                            .map_err(|source| DeciderError::StatusDecode {
+                                circuit: circuit_name.clone(),
+                                source,
+                            })?;
 
-            let status: JobStatusResponse =
-                response
-                    .json()
-                    .await
-                    .map_err(|source| DeciderError::StatusDecode {
-                        circuit: circuit_name.clone(),
-                        source,
-                    })?;
-
-            match status.status {
-                JobStatus::Queued | JobStatus::Processing => {
-                    sleep(self.poll_interval).await;
+                    match status.status {
+                        JobStatus::Queued | JobStatus::Processing => {
+                            sleep(self.poll_interval).await;
+                        }
+                        JobStatus::Completed => {
+                            let result =
+                                status.result.ok_or_else(|| DeciderError::MissingResult {
+                                    job_id: job_id.clone(),
+                                })?;
+                            let proof = decode_base64_payload(&result)?;
+                            return Ok(proof);
+                        }
+                        JobStatus::Failed => {
+                            let err =
+                                status.error.unwrap_or_else(|| "unknown error".to_string());
+                            return Err(DeciderError::JobFailed {
+                                circuit: circuit_name.clone(),
+                                job_id: job_id.clone(),
+                                error_msg: err,
+                            });
+                        }
+                    }
                 }
-                JobStatus::Completed => {
-                    let result = status.result.ok_or_else(|| DeciderError::MissingResult {
-                        job_id: job_id.clone(),
-                    })?;
-                    let proof = decode_base64_payload(&result)?;
-                    return Ok(proof);
-                }
-                JobStatus::Failed => {
-                    let err = status.error.unwrap_or_else(|| "unknown error".to_string());
-                    return Err(DeciderError::JobFailed {
-                        circuit: circuit_name.clone(),
-                        job_id: job_id.clone(),
-                        error_msg: err,
-                    });
-                }
-            }
-        }
+            },
+        )
+        .await
+        .map_err(|_| DeciderError::Timeout {
+            job_id: job_id_for_timeout,
+            timeout: self.timeout,
+        })?
     }
 }
 

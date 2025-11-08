@@ -1,10 +1,12 @@
 use std::{
     collections::hash_map::DefaultHasher,
-    fs,
     hash::{Hash, Hasher},
     io::Read,
     path::Path,
 };
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs;
 
 use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
 use alloy::primitives::Address;
@@ -133,12 +135,20 @@ impl TokensFile {
     }
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 pub fn load_tokens_from_path(path: impl AsRef<Path>) -> Result<TokensFile> {
     let path_ref = path.as_ref();
     let contents = fs::read_to_string(path_ref)
         .with_context(|| format!("failed to read tokens config {}", path_ref.display()))?;
     parse_tokens_config(&contents)
         .with_context(|| format!("invalid tokens config {}", path_ref.display()))
+}
+
+#[cfg(target_arch = "wasm32")]
+pub fn load_tokens_from_path(_path: impl AsRef<Path>) -> Result<TokensFile> {
+    Err(anyhow!(
+        "loading tokens from a filesystem path is unsupported in wasm; pass the JSON contents instead"
+    ))
 }
 
 pub fn load_tokens_from_compressed(payload: &str) -> Result<TokensFile> {
