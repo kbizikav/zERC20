@@ -1,11 +1,24 @@
-use std::{env, time::Duration};
+use std::{env, path::Path, time::Duration};
 
 use anyhow::{Context, Result, bail};
 use api_types::prover::{CircuitKind, JobRequest, JobStatus, JobStatusResponse, SubmitJobResponse};
+use ark_bn254::Fr;
+use ark_ff::Zero;
+use ark_serialize::CanonicalSerialize;
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use chrono::Utc;
+use folding_schemes::FoldingScheme;
+use rand::{SeedableRng, rngs::StdRng};
 use reqwest::StatusCode;
 use tokio::time::sleep;
+use zkp::{
+    nova::{
+        constants::TRANSFER_TREE_HEIGHT,
+        params::NovaParams,
+        root_nova::{RootCircuit, RootExternalInputs},
+    },
+    utils::poseidon::utils::circom_poseidon_config,
+};
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
 const PROVER_URL_ENV: &str = "DECIDER_PROVER_URL";
@@ -20,7 +33,7 @@ async fn main() -> Result<()> {
 
     let client = reqwest::Client::new();
     let job_id = format!("dummy-root-{}", Utc::now().timestamp_millis());
-    let ivc_proof = BASE64_STANDARD.encode(b"dummy-root-proof");
+    let ivc_proof = build_dummy_root_ivc_proof_base64()?;
     let request = JobRequest {
         job_id: job_id.clone(),
         circuit: CircuitKind::Root,
@@ -56,6 +69,56 @@ async fn main() -> Result<()> {
     }
 
     Ok(())
+}
+
+fn build_dummy_root_ivc_proof_base64() -> Result<String> {
+    let nova_params = load_root_nova_params_from_artifacts()
+        .context("failed to load nova params from artifacts")?;
+    let state_len = nova_params
+        .state_len()
+        .context("root nova params must expose state length")?;
+    let mut nova = nova_params
+        .initial_nova(vec![Fr::zero(); state_len])
+        .context("failed to initialize root nova instance")?;
+    let mut step_rng = StdRng::seed_from_u64(0xBAD5EED);
+    let external_input = RootExternalInputs::<Fr> {
+        is_dummy: true,
+        address: Fr::zero(),
+        value: Fr::zero(),
+        siblings: [Fr::zero(); TRANSFER_TREE_HEIGHT],
+    };
+    nova.prove_step(&mut step_rng, external_input.clone(), None)
+        .context("failed to execute dummy root nova step")?;
+    nova.prove_step(&mut step_rng, external_input, None)
+        .context("failed to execute dummy root nova step")?;
+    let ivc_proof = nova.ivc_proof();
+    nova_params
+        .verify(ivc_proof.clone())
+        .context("failed to verify dummy root ivc proof")?;
+
+    let mut bytes = Vec::new();
+    ivc_proof
+        .serialize_uncompressed(&mut bytes)
+        .context("failed to serialize dummy ivc proof")?;
+    Ok(BASE64_STANDARD.encode(bytes))
+}
+
+fn load_root_nova_params_from_artifacts() -> Result<NovaParams<RootCircuit<Fr>>> {
+    const NOVA_ARTIFACTS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../nova_artifacts");
+    let artifacts_path = Path::new(NOVA_ARTIFACTS_DIR);
+    load_root_nova_params(artifacts_path)
+}
+
+fn load_root_nova_params(dir: &Path) -> Result<NovaParams<RootCircuit<Fr>>> {
+    let pp_path = dir.join("root_nova_pp.bin");
+    let vp_path = dir.join("root_nova_vp.bin");
+    let pp_bytes =
+        std::fs::read(&pp_path).with_context(|| format!("failed to read {}", pp_path.display()))?;
+    let vp_bytes =
+        std::fs::read(&vp_path).with_context(|| format!("failed to read {}", vp_path.display()))?;
+    let poseidon_params = circom_poseidon_config::<Fr>();
+    NovaParams::<RootCircuit<Fr>>::from_bytes(poseidon_params, pp_bytes, vp_bytes)
+        .context("failed to deserialize nova params from artifacts")
 }
 
 async fn submit_job(
