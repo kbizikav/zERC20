@@ -16,6 +16,7 @@ use flate2::read::GzDecoder;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct TokenEntry {
     pub label: String,
     pub token_address: Address,
@@ -31,6 +32,7 @@ pub struct TokenEntry {
 }
 
 #[derive(Debug, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 pub struct HubEntry {
     pub hub_address: Address,
     pub chain_id: u64,

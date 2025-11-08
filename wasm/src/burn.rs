@@ -4,12 +4,12 @@ use crate::utils::{
 };
 use alloy::primitives::Address;
 use anyhow::Context;
-use client_common::payment::{burn_address::FullBurnAddress, invoice::SecretAndTweak};
+use client_common::payment::{
+    burn_address::FullBurnAddress, invoice::SecretAndTweak, seed::SEED_MESSAGE,
+};
 use serde::Serialize;
 use wasm_bindgen::prelude::*;
 use zkp::utils::{convertion::fr_to_b256, general_recipient::GeneralRecipient};
-
-const SEED_MESSAGE: &str = "zERC20 | Seed Derivation\n\nYou are signing to derive a private seed used ONLY to generate\none-time burn receiving addresses for zERC20.\n\nFacts:\n- Not a transaction; no gas or approvals.\n- Cannot move funds or grant permissions.\n- If this signature is exposed, privacy may be reduced\n  (burn addresses may become linkable). Funds remain safe.\n- Keep this signature private.\n\nDetails:\n- App: zERC20\n- Purpose: Seed for burn address derivation\n- Version: 1";
 
 #[derive(Debug, Serialize)]
 struct JsSecretTweak {

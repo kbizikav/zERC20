@@ -1,9 +1,6 @@
-use crate::{
-    tokens::{JsHubEntry, JsTokenEntry},
-    utils::{
-        anyhow_to_js_error, format_u256_hex, fr_to_hex, hex_to_fr, parse_address_hex,
-        parse_u256_hex, serde_error_to_js,
-    },
+use crate::utils::{
+    anyhow_to_js_error, format_u256_hex, fr_to_hex, hex_to_fr, parse_address_hex, parse_u256_hex,
+    serde_error_to_js,
 };
 use alloy::primitives::Address;
 use anyhow::{Context, Result};
@@ -82,8 +79,8 @@ struct JsGlobalTeleportProof {
 struct FetchAggregationTreeParams {
     #[serde(default)]
     event_block_span: Option<u64>,
-    hub: JsHubEntry,
-    token: JsTokenEntry,
+    hub: HubEntry,
+    token: TokenEntry,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,7 +89,7 @@ struct FetchTransferEventsParams {
     indexer_url: String,
     #[serde(default)]
     indexer_fetch_limit: Option<usize>,
-    tokens: Vec<JsTokenEntry>,
+    tokens: Vec<TokenEntry>,
     burn_addresses: Vec<String>,
 }
 
@@ -107,7 +104,7 @@ struct SeparateEventsParams {
 #[serde(rename_all = "camelCase")]
 struct FetchLocalTeleportProofsParams {
     indexer_url: String,
-    token: JsTokenEntry,
+    token: TokenEntry,
     tree_index: u64,
     events: Vec<IndexedEvent>,
 }
@@ -226,9 +223,9 @@ pub fn generate_global_teleport_merkle_proofs(params: JsValue) -> Result<JsValue
 async fn fetch_aggregation_tree_state_impl(
     params: FetchAggregationTreeParams,
 ) -> Result<JsAggregationTreeState> {
-    let mut hub_entry: HubEntry = params.hub.try_into()?;
+    let mut hub_entry = params.hub;
     hub_entry.normalize()?;
-    let mut token_entry: TokenEntry = params.token.try_into()?;
+    let mut token_entry = params.token;
     token_entry.normalize()?;
     let hub = build_hub(&hub_entry)?;
     let verifier = build_verifier(&token_entry)?;
@@ -270,7 +267,7 @@ fn separate_events_by_eligibility_impl(
 async fn fetch_local_teleport_merkle_proofs_impl(
     params: FetchLocalTeleportProofsParams,
 ) -> Result<Vec<JsLocalTeleportProof>> {
-    let mut token_entry: TokenEntry = params.token.try_into()?;
+    let mut token_entry = params.token;
     token_entry.normalize()?;
     let indexer = build_indexer_client(&params.indexer_url)?;
     let proofs = merkle_proofs::fetch_local_teleport_merkle_proofs(
@@ -313,12 +310,11 @@ fn build_token_clients(entries: &[TokenEntry]) -> Result<Vec<ZErc20Contract>> {
         .collect()
 }
 
-fn build_token_entries(raw: Vec<JsTokenEntry>) -> Result<Vec<TokenEntry>> {
+fn build_token_entries(raw: Vec<TokenEntry>) -> Result<Vec<TokenEntry>> {
     raw.into_iter()
-        .map(|entry| {
-            let mut converted: TokenEntry = entry.try_into()?;
-            converted.normalize()?;
-            Ok(converted)
+        .map(|mut entry| {
+            entry.normalize()?;
+            Ok(entry)
         })
         .collect()
 }
