@@ -11,6 +11,9 @@ ABI_DEST="$REPO_ROOT/sdk/src/assets/abi"
 WASM_SRC="$REPO_ROOT/wasm/pkg"
 WASM_DEST="$REPO_ROOT/sdk/src/assets/wasm"
 
+ARTIFACTS_SRC="$REPO_ROOT/nova_artifacts"
+ARTIFACTS_DEST="$REPO_ROOT/sdk/src/assets/artifacts"
+
 copy_assets() {
   local src="$1"
   local dest="$2"
@@ -29,5 +32,6 @@ copy_assets() {
 
 copy_assets "$ABI_SRC" "$ABI_DEST" "ABI files"
 copy_assets "$WASM_SRC" "$WASM_DEST" "WASM pkg"
+copy_assets "$ARTIFACTS_SRC" "$ARTIFACTS_DEST" "Nova artifacts"
 
 echo "SDK assets are up to date."

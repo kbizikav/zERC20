@@ -25,7 +25,7 @@ const previousOverride = (globalThis as { __ZKERC20_WASM_PATH__?: string }).__ZK
   pathToFileURL(wasmPath).toString();
 
 function loadArtifact(name: string): Uint8Array {
-  const fullPath = path.join(repoRoot, 'nova_artifacts', name);
+  const fullPath = path.join(repoRoot, 'sdk', 'src', 'assets', 'artifacts', name);
   const buffer = readFileSync(fullPath);
   return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
 }
