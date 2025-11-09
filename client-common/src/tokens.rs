@@ -9,7 +9,7 @@ use std::{fs, path::Path};
 
 use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
 use alloy::primitives::Address;
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
@@ -84,7 +84,11 @@ impl TokenEntry {
     }
 
     pub fn provider(&self) -> Result<NormalProvider> {
-        let provider = if self.rpc_urls.len() == 1 {
+        if self.rpc_urls.is_empty() {
+            bail!("token '{}' has no rpc urls configured", self.label)
+        }
+
+        let provider = if cfg!(target_arch = "wasm32") {
             get_provider(self.rpc_urls[0].as_str())
         } else {
             get_provider_with_fallback(&self.rpc_urls)
@@ -106,7 +110,10 @@ impl HubEntry {
     }
 
     pub fn provider(&self) -> Result<NormalProvider> {
-        let provider = if self.rpc_urls.len() == 1 {
+        if self.rpc_urls.is_empty() {
+            bail!("hub has no rpc urls configured")
+        }
+        let provider = if cfg!(target_arch = "wasm32") {
             get_provider(self.rpc_urls[0].as_str())
         } else {
             get_provider_with_fallback(&self.rpc_urls)
