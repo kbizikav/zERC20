@@ -7,7 +7,7 @@ export function invoiceMessageText(invoiceId: Uint8Array): string {
   if (invoiceId.length !== 32) {
     throw new Error('invoiceId must be 32 bytes');
   }
-  return `ICP Stealth Invoice Submission:\ninvoice_id: 0x${bytesToHex(invoiceId)}`;
+  return `ICP Stealth Invoice Submission:\ninvoice_id: ${bytesToHex(invoiceId)}`;
 }
 
 export function invoiceMessage(invoiceId: Uint8Array): Uint8Array {

@@ -23,7 +23,7 @@ export function authorizationMessageText(
   expiryNs: bigint,
   nonce: bigint,
 ): string {
-  return `ICP Stealth Authorization:\naddress: 0x${bytesToHex(address)}\ncanister: ${canisterId.toText()}\ntransport: 0x${bytesToHex(transportPublicKey)}\nexpiry_ns:${expiryNs}\nnonce:${nonce}`;
+  return `ICP Stealth Authorization:\naddress: ${bytesToHex(address)}\ncanister: ${canisterId.toText()}\ntransport: ${bytesToHex(transportPublicKey)}\nexpiry_ns:${expiryNs}\nnonce:${nonce}`;
 }
 
 export function authorizationMessage(
@@ -64,7 +64,7 @@ function eip191Message(message: Uint8Array): Uint8Array {
 }
 
 export function addressToHex(address: Address): string {
-  return `0x${bytesToHex(address)}`;
+  return bytesToHex(address);
 }
 
 export function messageToString(message: Uint8Array): string {
