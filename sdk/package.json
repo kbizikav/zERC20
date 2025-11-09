@@ -15,7 +15,14 @@
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@dfinity/agent": "3.4.1",
+    "@dfinity/candid": "3.4.1",
+    "@dfinity/principal": "3.4.1",
+    "@dfinity/vetkeys": "0.4.0",
+    "base64-arraybuffer": "^1.0.2",
+    "ethers": "^6.13.4"
+  },
   "devDependencies": {
     "@types/node": "^24.10.0",
     "tsx": "^4.20.6",
