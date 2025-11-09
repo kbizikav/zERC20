@@ -1,5 +1,6 @@
 import { Principal } from '@dfinity/principal';
 import { SigningKey, computeAddress, getBytes, hexlify, keccak256 } from 'ethers';
+import { bytesToHex, hexToBytes } from '../utils/hex.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
@@ -51,22 +52,6 @@ export function signAuthorization(message: Uint8Array, privateKey: Uint8Array): 
 export function unixTimeNs(): bigint {
   const nowMs = BigInt(Date.now());
   return nowMs * 1_000_000n;
-}
-
-export function bytesToHex(bytes: Uint8Array): string {
-  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
-}
-
-export function hexToBytes(hex: string): Uint8Array {
-  const normalized = hex.startsWith('0x') ? hex.slice(2) : hex;
-  if (normalized.length % 2 !== 0) {
-    throw new Error('hex string must have even length');
-  }
-  const bytes = new Uint8Array(normalized.length / 2);
-  for (let i = 0; i < bytes.length; i++) {
-    bytes[i] = parseInt(normalized.slice(i * 2, i * 2 + 2), 16);
-  }
-  return bytes;
 }
 
 function eip191Message(message: Uint8Array): Uint8Array {

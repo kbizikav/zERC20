@@ -1,4 +1,4 @@
-import { bytesToHex } from './authorization.js';
+import { bytesToHex } from '../utils/hex.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

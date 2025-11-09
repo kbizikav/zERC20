@@ -13,7 +13,7 @@ function ensureEvenHex(hex: string): string {
   return hex.length % 2 === 0 ? hex : `0${hex}`;
 }
 
-function bytesToHex(bytes: Uint8Array): string {
+export function bytesToHex(bytes: Uint8Array): string {
   if (bytes.length === 0) {
     return '0x';
   }

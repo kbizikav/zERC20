@@ -4,7 +4,7 @@ import {
   type SingleWithdrawWasm,
   type WithdrawNovaWasm,
 } from '../wasm/index.js';
-import { normalizeHex } from '../utils/hex.js';
+import { hexToBytes, normalizeHex } from '../utils/hex.js';
 import type {
   GlobalTeleportProof,
   IndexedEvent,
@@ -13,13 +13,7 @@ import type {
   SingleTeleportArtifacts,
   SingleTeleportParams,
 } from '../types.js';
-import {
-  appendDummySteps,
-  formatFieldElement,
-  hexToBytes,
-  toFieldHex,
-  toLeafIndexString,
-} from './proofUtils.js';
+import { appendDummySteps, formatFieldElement, toFieldHex, toLeafIndexString } from './proofUtils.js';
 
 export async function computeSingleTeleportProof(
   params: SingleTeleportParams,

@@ -48,7 +48,7 @@ export function randomDummySteps(): number {
 
 export function appendDummySteps(steps: any[]): void {
   const dummySteps = randomDummySteps();
-  const maxLeaves = 1n << BigInt(GLOBAL_TRANSFER_TREE_HEIGHT);
+  const maxLeaves = 1n << BigInt(30);
   const offset = maxLeaves - 1n - BigInt(dummySteps);
   for (let i = 0; i < dummySteps; i += 1) {
     const leafIndex = offset + BigInt(i);
@@ -64,16 +64,4 @@ export function appendDummySteps(steps: any[]): void {
         ),
     });
   }
-}
-
-export function hexToBytes(hex: string): Uint8Array {
-  const normalized = normalizeHex(hex).slice(2);
-  if (normalized.length === 0) {
-    return new Uint8Array();
-  }
-  const bytes = new Uint8Array(normalized.length / 2);
-  for (let i = 0; i < normalized.length; i += 2) {
-    bytes[i / 2] = parseInt(normalized.slice(i, i + 2), 16);
-  }
-  return bytes;
 }

@@ -1,7 +1,7 @@
 import {
   DEFAULT_DECIDER_POLL_INTERVAL_MS,
   DEFAULT_DECIDER_TIMEOUT_MS,
-} from '../core/constants.js';
+} from '../constants.js';
 import { encode as encodeBase64, decode as decodeBase64 } from 'base64-arraybuffer';
 
 export type CircuitKind = 'root' | 'withdraw_local' | 'withdraw_global';

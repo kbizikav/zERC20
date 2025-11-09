@@ -10,12 +10,12 @@ import initWasm, {
   SingleWithdrawWasm,
   WithdrawNovaWasm,
   seed_message as wasmSeedMessage,
-} from './zkerc20_wasm.js';
+} from '../assets/wasm/zkerc20_wasm.js';
 
 import { BurnArtifacts, SecretAndTweak } from '../types.js';
 import { normalizeHex, toBigInt } from '../utils/hex.js';
 
-const wasmModuleUrl = new URL('./zkerc20_wasm_bg.wasm', import.meta.url).toString();
+const wasmModuleUrl = new URL('../assets/wasm/zkerc20_wasm_bg.wasm', import.meta.url).toString();
 
 let wasmInitPromise: Promise<void> | undefined;
 
@@ -71,7 +71,7 @@ export function configureWasmLocator(options: ConfigureWasmOptions = {}): void {
     globalObject.__ZKERC20_WASM_PATH__ = wasmModuleUrl;
     return;
   }
-  const wasmFilename = options.wasmFilename ?? 'wasm/zkerc20_wasm_bg.wasm';
+  const wasmFilename = options.wasmFilename ?? 'assets/wasm/zkerc20_wasm_bg.wasm';
   const base = resolveOriginBase({ ...options, globalObject });
   const wasmUrl = new URL(wasmFilename, base);
   globalObject.__ZKERC20_WASM_PATH__ = wasmUrl.toString();

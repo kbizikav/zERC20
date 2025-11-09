@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json && pnpm run copy-wasm",
-    "copy-wasm": "rm -rf dist/wasm && mkdir -p dist && cp -R src/wasm dist/wasm",
+    "copy-wasm": "rm -rf dist/assets/wasm && mkdir -p dist/assets && cp -R src/assets/wasm dist/assets/wasm",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"
