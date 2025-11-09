@@ -2,11 +2,10 @@ use std::{
     collections::hash_map::DefaultHasher,
     hash::{Hash, Hasher},
     io::Read,
-    path::Path,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
-use std::fs;
+use std::{fs, path::Path};
 
 use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
 use alloy::primitives::Address;
@@ -16,7 +15,6 @@ use flate2::read::GzDecoder;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct TokenEntry {
     pub label: String,
     pub token_address: Address,
@@ -32,7 +30,6 @@ pub struct TokenEntry {
 }
 
 #[derive(Debug, Deserialize, Clone)]
-#[serde(rename_all = "camelCase")]
 pub struct HubEntry {
     pub hub_address: Address,
     pub chain_id: u64,
@@ -144,13 +141,6 @@ pub fn load_tokens_from_path(path: impl AsRef<Path>) -> Result<TokensFile> {
         .with_context(|| format!("failed to read tokens config {}", path_ref.display()))?;
     parse_tokens_config(&contents)
         .with_context(|| format!("invalid tokens config {}", path_ref.display()))
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn load_tokens_from_path(_path: impl AsRef<Path>) -> Result<TokensFile> {
-    Err(anyhow!(
-        "loading tokens from a filesystem path is unsupported in wasm; pass the JSON contents instead"
-    ))
 }
 
 pub fn load_tokens_from_compressed(payload: &str) -> Result<TokensFile> {
