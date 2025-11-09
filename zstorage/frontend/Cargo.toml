@@ -6,6 +6,10 @@ edition = "2021"
 [lib]
 crate-type = ["lib"]
 
+[features]
+default = []
+tokio = ["dep:tokio"]
+
 [dependencies]
 key_manager = { path = "../backend/key_manager" }
 storage = { path = "../backend/storage" }
@@ -15,22 +19,34 @@ candid.workspace = true
 hex.workspace = true
 ic-vetkeys.workspace = true
 ic-cdk.workspace = true
-ic-agent = { version = "0.37", features = ["reqwest"] }
+ic-agent = { workspace = true, features = ["wasm-bindgen"] }
 k256 = { version = "0.13", features = ["ecdsa"] }
 alloy-primitives.workspace = true
 rand.workspace = true
 serde.workspace = true
 sha3.workspace = true
 thiserror.workspace = true
-tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["full"], optional = true }
 clap = { version = "4.5", features = ["derive"] }
+getrandom.workspace = true
 
 [dev-dependencies]
 pocket-ic = "10.0.0"
 criterion = "0.5"
-ic_bls12_381 = { version = "0.10", features = ["groups", "pairings", "experimental", "zeroize"] }
+ic_bls12_381 = { version = "0.10", features = [
+    "groups",
+    "pairings",
+    "experimental",
+    "zeroize",
+] }
+tokio = { workspace = true, features = ["full"] }
 sha2.workspace = true
 
 [[bench]]
 name = "ibe_decrypt"
 harness = false
+required-features = ["tokio"]
+
+[[bin]]
+name = "stealth_client"
+required-features = ["tokio"]
