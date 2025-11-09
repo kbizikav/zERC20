@@ -21,7 +21,7 @@ frontend-app/public/config/*.json
 
 **/node_modules/
 
-frontend/dist/
+**/dist
 
 # ic artifacts
 .dfx
