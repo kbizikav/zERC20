@@ -7,12 +7,35 @@ import initWasm, {
   general_recipient_fr as wasmGeneralRecipientFr,
   aggregation_merkle_proof as wasmAggregationMerkleProof,
   aggregation_root as wasmAggregationRoot,
+  fetch_aggregation_tree_state as wasmFetchAggregationTreeState,
+  fetch_transfer_events as wasmFetchTransferEvents,
+  separate_events_by_eligibility as wasmSeparateEventsByEligibility,
+  fetch_local_teleport_merkle_proofs as wasmFetchLocalTeleportMerkleProofs,
+  generate_global_teleport_merkle_proofs as wasmGenerateGlobalTeleportMerkleProofs,
   SingleWithdrawWasm,
   WithdrawNovaWasm,
   seed_message as wasmSeedMessage,
 } from '../assets/wasm/zkerc20_wasm.js';
 
-import { BurnArtifacts, SecretAndTweak } from '../types.js';
+import {
+  AggregationTreeState,
+  BurnArtifacts,
+  ChainEvents,
+  ChainLocalTeleportProofs,
+  EventsWithEligibility,
+  FetchAggregationTreeStateParams,
+  FetchLocalTeleportProofsParams,
+  FetchTransferEventsParams,
+  GenerateGlobalTeleportProofsParams,
+  GlobalTeleportProofWithEvent,
+  HubEntryConfig,
+  IndexedEvent,
+  LocalTeleportProof,
+  SecretAndTweak,
+  SeparateEventsByEligibilityParams,
+  SeparatedChainEvents,
+  TokenEntryConfig,
+} from '../types.js';
 import { normalizeHex, toBigInt } from '../utils/hex.js';
 
 const wasmModuleUrl = new URL('../assets/wasm/zkerc20_wasm_bg.wasm', import.meta.url).toString();
@@ -187,6 +210,224 @@ function asBurnArtifacts(value: unknown): BurnArtifacts {
   };
 }
 
+type NumericValue = number | string | bigint;
+
+interface RawHubEntry {
+  hub_address: string;
+  chain_id: NumericValue;
+  rpc_urls: string[];
+}
+
+interface RawTokenEntry {
+  label: string;
+  token_address: string;
+  verifier_address: string;
+  minter_address?: string;
+  chain_id: NumericValue;
+  deployed_block_number: NumericValue;
+  rpc_urls: string[];
+  legacy_tx: boolean;
+}
+
+interface RawAggregationTreeState {
+  latestAggSeq: NumericValue;
+  aggregationRoot: string;
+  snapshot: string[];
+  transferTreeIndices: NumericValue[];
+  chainIds: NumericValue[];
+}
+
+interface RawIndexedEvent {
+  event_index: NumericValue;
+  from: string;
+  to: string;
+  value: string;
+  eth_block_number: NumericValue;
+}
+
+interface RawChainEvents {
+  chainId: NumericValue;
+  events: RawIndexedEvent[];
+}
+
+interface RawEventsWithEligibility {
+  eligible: RawIndexedEvent[];
+  ineligible: RawIndexedEvent[];
+}
+
+interface RawSeparatedChainEvents {
+  chainId: NumericValue;
+  events: RawEventsWithEligibility;
+}
+
+interface RawLocalTeleportProof {
+  treeIndex: NumericValue;
+  event: RawIndexedEvent;
+  siblings: string[];
+}
+
+interface RawChainLocalTeleportProofs {
+  chainId: NumericValue;
+  proofs: RawLocalTeleportProof[];
+}
+
+interface RawGlobalTeleportProof {
+  event: RawIndexedEvent;
+  siblings: string[];
+  leafIndex: NumericValue;
+}
+
+function copyRpcUrls(urls: readonly string[], label: string): string[] {
+  if (!Array.isArray(urls) || urls.length === 0) {
+    throw new Error(`${label} must provide at least one RPC URL`);
+  }
+  return urls.map((url, idx) => {
+    if (typeof url !== 'string' || url.trim().length === 0) {
+      throw new Error(`${label} RPC URL at index ${idx} must be a non-empty string`);
+    }
+    return url.trim();
+  });
+}
+
+function serializeHubEntry(entry: HubEntryConfig): RawHubEntry {
+  return {
+    hub_address: normalizeHex(entry.hubAddress),
+    chain_id: entry.chainId,
+    rpc_urls: copyRpcUrls(entry.rpcUrls, 'hub.rpcUrls'),
+  };
+}
+
+function serializeTokenEntry(entry: TokenEntryConfig): RawTokenEntry {
+  return {
+    label: entry.label,
+    token_address: normalizeHex(entry.tokenAddress),
+    verifier_address: normalizeHex(entry.verifierAddress),
+    minter_address: entry.minterAddress ? normalizeHex(entry.minterAddress) : undefined,
+    chain_id: entry.chainId,
+    deployed_block_number: entry.deployedBlockNumber,
+    rpc_urls: copyRpcUrls(entry.rpcUrls, `${entry.label}.rpcUrls`),
+    legacy_tx: entry.legacyTx ?? false,
+  };
+}
+
+function serializeAggregationTreeState(state: AggregationTreeState): RawAggregationTreeState {
+  return {
+    latestAggSeq: state.latestAggSeq,
+    aggregationRoot: normalizeHex(state.aggregationRoot),
+    snapshot: state.snapshot.map((value) => normalizeHex(value)),
+    transferTreeIndices: state.transferTreeIndices.map((value) => value),
+    chainIds: state.chainIds.map((value) => value),
+  };
+}
+
+function deserializeAggregationTreeState(raw: RawAggregationTreeState): AggregationTreeState {
+  return {
+    latestAggSeq: toBigInt(raw.latestAggSeq),
+    aggregationRoot: normalizeHex(raw.aggregationRoot),
+    snapshot: raw.snapshot.map((value) => normalizeHex(value)),
+    transferTreeIndices: raw.transferTreeIndices.map((value) => toBigInt(value)),
+    chainIds: raw.chainIds.map((value) => toBigInt(value)),
+  };
+}
+
+function serializeIndexedEvent(event: IndexedEvent): RawIndexedEvent {
+  return {
+    event_index: event.eventIndex,
+    from: normalizeHex(event.from),
+    to: normalizeHex(event.to),
+    value: normalizeHex(event.value),
+    eth_block_number: event.ethBlockNumber,
+  };
+}
+
+function deserializeIndexedEvent(raw: RawIndexedEvent): IndexedEvent {
+  return {
+    eventIndex: toBigInt(raw.event_index),
+    from: normalizeHex(raw.from),
+    to: normalizeHex(raw.to),
+    value: toBigInt(raw.value),
+    ethBlockNumber: toBigInt(raw.eth_block_number),
+  };
+}
+
+function serializeChainEvents(entry: ChainEvents): RawChainEvents {
+  return {
+    chainId: entry.chainId,
+    events: entry.events.map(serializeIndexedEvent),
+  };
+}
+
+function deserializeChainEvents(raw: RawChainEvents): ChainEvents {
+  return {
+    chainId: toBigInt(raw.chainId),
+    events: raw.events.map(deserializeIndexedEvent),
+  };
+}
+
+function deserializeEventsWithEligibility(raw: RawEventsWithEligibility): EventsWithEligibility {
+  return {
+    eligible: raw.eligible.map(deserializeIndexedEvent),
+    ineligible: raw.ineligible.map(deserializeIndexedEvent),
+  };
+}
+
+function deserializeSeparatedChainEvents(raw: RawSeparatedChainEvents): SeparatedChainEvents {
+  return {
+    chainId: toBigInt(raw.chainId),
+    events: deserializeEventsWithEligibility(raw.events),
+  };
+}
+
+function serializeLocalTeleportProof(proof: LocalTeleportProof): RawLocalTeleportProof {
+  return {
+    treeIndex: proof.treeIndex,
+    event: serializeIndexedEvent(proof.event),
+    siblings: proof.siblings.map((value) => normalizeHex(value)),
+  };
+}
+
+function deserializeLocalTeleportProof(raw: RawLocalTeleportProof): LocalTeleportProof {
+  return {
+    treeIndex: toBigInt(raw.treeIndex),
+    event: deserializeIndexedEvent(raw.event),
+    siblings: raw.siblings.map((value) => normalizeHex(value)),
+  };
+}
+
+function serializeChainLocalTeleportProofs(
+  entry: ChainLocalTeleportProofs,
+): RawChainLocalTeleportProofs {
+  return {
+    chainId: entry.chainId,
+    proofs: entry.proofs.map(serializeLocalTeleportProof),
+  };
+}
+
+function deserializeGlobalTeleportProof(raw: RawGlobalTeleportProof): GlobalTeleportProofWithEvent {
+  return {
+    event: deserializeIndexedEvent(raw.event),
+    siblings: raw.siblings.map((value) => normalizeHex(value)),
+    leafIndex: toBigInt(raw.leafIndex),
+  };
+}
+
+function toSafeNumber(value: number | bigint, label: string): number {
+  if (typeof value === 'number') {
+    if (!Number.isFinite(value) || !Number.isInteger(value)) {
+      throw new Error(`${label} must be a finite integer`);
+    }
+    return value;
+  }
+  if (value < 0n) {
+    throw new Error(`${label} must be non-negative`);
+  }
+  const asNumber = Number(value);
+  if (!Number.isFinite(asNumber) || BigInt(asNumber) !== value) {
+    throw new Error(`${label} exceeds JavaScript safe integer range`);
+  }
+  return asNumber;
+}
+
 export async function derivePaymentAdvice(
   seedHex: string,
   paymentAdviceIdHex: string,
@@ -281,6 +522,75 @@ export async function aggregationMerkleProof(snapshot: readonly string[], index:
   await ensureWasm();
   const siblings: string[] = wasmAggregationMerkleProof(snapshot.slice(), index);
   return siblings.map((value) => normalizeHex(value));
+}
+
+export async function fetchAggregationTreeState(
+  params: FetchAggregationTreeStateParams,
+): Promise<AggregationTreeState> {
+  await ensureWasm();
+  const payload: {
+    eventBlockSpan?: number;
+    hub: RawHubEntry;
+    token: RawTokenEntry;
+  } = {
+    hub: serializeHubEntry(params.hub),
+    token: serializeTokenEntry(params.token),
+  };
+  if (params.eventBlockSpan !== undefined) {
+    payload.eventBlockSpan = toSafeNumber(params.eventBlockSpan, 'eventBlockSpan');
+  }
+  const rawState: RawAggregationTreeState = await wasmFetchAggregationTreeState(payload);
+  return deserializeAggregationTreeState(rawState);
+}
+
+export async function fetchTransferEvents(params: FetchTransferEventsParams): Promise<ChainEvents[]> {
+  await ensureWasm();
+  const payload = {
+    indexerUrl: params.indexerUrl,
+    indexerFetchLimit: params.indexerFetchLimit,
+    tokens: params.tokens.map(serializeTokenEntry),
+    burnAddresses: params.burnAddresses.map((address) => normalizeHex(address)),
+  };
+  const rawEvents: RawChainEvents[] = await wasmFetchTransferEvents(payload);
+  return rawEvents.map((entry) => deserializeChainEvents(entry));
+}
+
+export async function separateEventsByEligibility(
+  params: SeparateEventsByEligibilityParams,
+): Promise<SeparatedChainEvents[]> {
+  await ensureWasm();
+  const payload = {
+    aggregationState: serializeAggregationTreeState(params.aggregationState),
+    events: params.events.map(serializeChainEvents),
+  };
+  const rawSeparated: RawSeparatedChainEvents[] = wasmSeparateEventsByEligibility(payload);
+  return rawSeparated.map((entry) => deserializeSeparatedChainEvents(entry));
+}
+
+export async function fetchLocalTeleportMerkleProofs(
+  params: FetchLocalTeleportProofsParams,
+): Promise<LocalTeleportProof[]> {
+  await ensureWasm();
+  const payload = {
+    indexerUrl: params.indexerUrl,
+    token: serializeTokenEntry(params.token),
+    treeIndex: toBigInt(params.treeIndex),
+    events: params.events.map(serializeIndexedEvent),
+  };
+  const rawProofs: RawLocalTeleportProof[] = await wasmFetchLocalTeleportMerkleProofs(payload);
+  return rawProofs.map((proof) => deserializeLocalTeleportProof(proof));
+}
+
+export async function generateGlobalTeleportMerkleProofs(
+  params: GenerateGlobalTeleportProofsParams,
+): Promise<GlobalTeleportProofWithEvent[]> {
+  await ensureWasm();
+  const payload = {
+    aggregationState: serializeAggregationTreeState(params.aggregationState),
+    proofs: params.chains.map(serializeChainLocalTeleportProofs),
+  };
+  const rawProofs: RawGlobalTeleportProof[] = wasmGenerateGlobalTeleportMerkleProofs(payload);
+  return rawProofs.map((proof) => deserializeGlobalTeleportProof(proof));
 }
 
 export async function createSingleWithdrawWasm(
