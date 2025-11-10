@@ -1,26 +1,29 @@
-import { Contract, JsonRpcProvider } from 'ethers';
+import { Contract } from 'ethers';
 
 import { DEFAULT_INDEXER_FETCH_LIMIT } from '../constants.js';
-import { HttpIndexerClient, HistoricalProof, IndexedEvent } from '../indexer/index.js';
 import { HttpDeciderClient } from '../decider/prover.js';
-import {
-  fetchAggregationTreeState,
-  generateGlobalTeleportProofs,
-  getTreeIndexForChain,
-  partitionEventsByEligibility,
-} from './teleport.js';
-import { TokenEntry, findTokenByChain } from '../registry/tokens.js';
+import { getTreeIndexForChain } from './teleport.js';
+import { HubEntry, TokenEntry, findTokenByChain } from '../registry/tokens.js';
 import {
   AggregationTreeState,
   EventsWithEligibility,
   GlobalTeleportProofWithEvent,
   BurnArtifacts,
+  LocalTeleportProof,
   SingleTeleportArtifacts,
   SingleTeleportParams,
   NovaProverInput,
   NovaProverOutput,
 } from '../types.js';
-import { createSingleWithdrawWasm, SingleWithdrawWasm } from '../wasm/index.js';
+import {
+  createSingleWithdrawWasm,
+  SingleWithdrawWasm,
+  fetchAggregationTreeState,
+  fetchTransferEvents,
+  separateEventsByEligibility,
+  fetchLocalTeleportMerkleProofs as fetchLocalTeleportProofs,
+  generateGlobalTeleportMerkleProofs as generateGlobalTeleportProofs,
+} from '../wasm/index.js';
 import { normalizeHex } from '../utils/hex.js';
 import { formatFieldElement, toFieldHex, toLeafIndexString } from '../zkp/proofUtils.js';
 import { runNovaProver } from './novaProver.js';
@@ -30,7 +33,7 @@ export interface RedeemChainContext {
   token: TokenEntry;
   events: EventsWithEligibility;
   globalProofs: GlobalTeleportProofWithEvent[];
-  eligibleProofs: HistoricalProof[];
+  eligibleProofs: LocalTeleportProof[];
   totalEligibleValue: bigint;
   totalPendingValue: bigint;
   totalIndexedValue: bigint;
@@ -41,7 +44,7 @@ export interface RedeemContext {
   aggregationState: AggregationTreeState;
   events: EventsWithEligibility;
   globalProofs: GlobalTeleportProofWithEvent[];
-  eligibleProofs: HistoricalProof[];
+  eligibleProofs: LocalTeleportProof[];
   totalEligibleValue: bigint;
   totalPendingValue: bigint;
   totalIndexedValue: bigint;
@@ -52,12 +55,11 @@ export interface RedeemContext {
 export interface RedeemContextParams {
   burn: BurnArtifacts;
   tokens: readonly TokenEntry[];
-  indexer: HttpIndexerClient;
+  hub: HubEntry;
   verifierContract: Contract;
-  hubContract: Contract;
-  provider: JsonRpcProvider;
+  indexerUrl: string;
   indexerFetchLimit?: number;
-  eventBlockSpan?: bigint;
+  eventBlockSpan?: bigint | number;
 }
 
 export async function collectRedeemContext(params: RedeemContextParams): Promise<RedeemContext> {
@@ -65,83 +67,86 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
   const primaryToken = findTokenByChain(params.tokens, primaryChainId);
 
   const aggregationState = await fetchAggregationTreeState({
-    hubContract: params.hubContract,
-    verifierContract: params.verifierContract,
-    provider: params.provider,
+    hub: params.hub,
+    token: primaryToken,
     eventBlockSpan: params.eventBlockSpan,
   });
 
+  const chainEvents = await fetchTransferEvents({
+    indexerUrl: params.indexerUrl,
+    tokens: params.tokens,
+    burnAddresses: [params.burn.burnAddress],
+    indexerFetchLimit: params.indexerFetchLimit ?? DEFAULT_INDEXER_FETCH_LIMIT,
+  });
+
+  const separatedChains = await separateEventsByEligibility({
+    aggregationState,
+    events: chainEvents,
+  });
+
+  const eventsByChain = new Map<bigint, EventsWithEligibility>();
+  for (const entry of separatedChains) {
+    eventsByChain.set(entry.chainId, entry.events);
+  }
+
   const perChain: RedeemChainContext[] = [];
+  const combinedEvents: EventsWithEligibility = { eligible: [], ineligible: [] };
+  const combinedGlobalProofs: GlobalTeleportProofWithEvent[] = [];
+  const combinedEligibleProofs: LocalTeleportProof[] = [];
 
   for (const tokenEntry of params.tokens) {
-    const events = await params.indexer.eventsByRecipient({
-      chainId: tokenEntry.chainId,
-      tokenAddress: tokenEntry.tokenAddress,
-      to: params.burn.burnAddress,
-      limit: params.indexerFetchLimit ?? DEFAULT_INDEXER_FETCH_LIMIT,
-    });
+    const chainEventsForToken =
+      eventsByChain.get(tokenEntry.chainId) ?? { eligible: [], ineligible: [] };
 
-    const treeRootIndex = getTreeIndexForChain(aggregationState, tokenEntry.chainId);
-    const separated = partitionEventsByEligibility(events, treeRootIndex);
-    const totalEligibleValue = separated.eligible.reduce<bigint>(
+    combinedEvents.eligible.push(...chainEventsForToken.eligible);
+    combinedEvents.ineligible.push(...chainEventsForToken.ineligible);
+
+    const totalEligibleValue = chainEventsForToken.eligible.reduce<bigint>(
       (acc, event) => acc + event.value,
       0n,
     );
-    const totalPendingValue = separated.ineligible.reduce<bigint>(
+    const totalPendingValue = chainEventsForToken.ineligible.reduce<bigint>(
       (acc, event) => acc + event.value,
       0n,
     );
     const totalIndexedValue = totalEligibleValue + totalPendingValue;
 
     let globalProofs: GlobalTeleportProofWithEvent[] = [];
-    let eligibleProofs: HistoricalProof[] = [];
+    let eligibleProofs: LocalTeleportProof[] = [];
 
-    if (separated.eligible.length > 0) {
-      const leafIndices = separated.eligible.map((event) => event.eventIndex);
-      const localProofs = await params.indexer.proveMany({
-        chainId: tokenEntry.chainId,
-        tokenAddress: tokenEntry.tokenAddress,
-        targetIndex: treeRootIndex,
-        leafIndices,
+    if (chainEventsForToken.eligible.length > 0) {
+      const treeRootIndex = getTreeIndexForChain(aggregationState, tokenEntry.chainId);
+      eligibleProofs = await fetchLocalTeleportProofs({
+        indexerUrl: params.indexerUrl,
+        token: tokenEntry,
+        treeIndex: treeRootIndex,
+        events: chainEventsForToken.eligible,
       });
-      if (localProofs.length !== separated.eligible.length) {
-        throw new Error(
-          `Indexer returned ${localProofs.length} proofs but expected ${separated.eligible.length} for chain ${tokenEntry.chainId}`,
-        );
-      }
-
-      globalProofs = await generateGlobalTeleportProofs(
+      globalProofs = await generateGlobalTeleportProofs({
         aggregationState,
-        tokenEntry.chainId,
-        separated.eligible,
-        localProofs,
-      );
-      eligibleProofs = localProofs;
+        chains: [
+          {
+            chainId: tokenEntry.chainId,
+            proofs: eligibleProofs,
+          },
+        ],
+      });
     }
 
     perChain.push({
       chainId: tokenEntry.chainId,
       token: tokenEntry,
-      events: separated,
+      events: chainEventsForToken,
       globalProofs,
       eligibleProofs,
       totalEligibleValue,
       totalPendingValue,
       totalIndexedValue,
     });
-  }
 
-  const combinedEvents: EventsWithEligibility = {
-    eligible: [],
-    ineligible: [],
-  };
-  for (const chainContext of perChain) {
-    combinedEvents.eligible.push(...chainContext.events.eligible);
-    combinedEvents.ineligible.push(...chainContext.events.ineligible);
+    combinedGlobalProofs.push(...globalProofs);
+    combinedEligibleProofs.push(...eligibleProofs);
   }
-
-  const combinedGlobalProofs = perChain.flatMap((chainContext) => chainContext.globalProofs);
-  const combinedEligibleProofs = perChain.flatMap((chainContext) => chainContext.eligibleProofs);
 
   const totalEligibleValue = perChain.reduce<bigint>(
     (acc, chainContext) => acc + chainContext.totalEligibleValue,

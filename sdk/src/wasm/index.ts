@@ -407,6 +407,34 @@ export async function aggregationMerkleProof(snapshot: readonly string[], index:
   return runtime().aggregationMerkleProof(snapshot, index);
 }
 
+export async function fetchAggregationTreeState(
+  params: FetchAggregationTreeStateParams,
+): Promise<AggregationTreeState> {
+  return runtime().fetchAggregationTreeState(params);
+}
+
+export async function fetchTransferEvents(params: FetchTransferEventsParams): Promise<ChainEvents[]> {
+  return runtime().fetchTransferEvents(params);
+}
+
+export async function separateEventsByEligibility(
+  params: SeparateEventsByEligibilityParams,
+): Promise<SeparatedChainEvents[]> {
+  return runtime().separateEventsByEligibility(params);
+}
+
+export async function fetchLocalTeleportMerkleProofs(
+  params: FetchLocalTeleportProofsParams,
+): Promise<LocalTeleportProof[]> {
+  return runtime().fetchLocalTeleportMerkleProofs(params);
+}
+
+export async function generateGlobalTeleportMerkleProofs(
+  params: GenerateGlobalTeleportProofsParams,
+): Promise<GlobalTeleportProofWithEvent[]> {
+  return runtime().generateGlobalTeleportMerkleProofs(params);
+}
+
 export async function createSingleWithdrawWasm(
   localPk: Uint8Array,
   localVk: Uint8Array,

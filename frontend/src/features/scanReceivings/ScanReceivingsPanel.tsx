@@ -8,9 +8,7 @@ import {
   scanReceivings,
   decodeFullBurnAddress,
   findTokenByChain,
-  createProviderForHub,
   createProviderForToken,
-  getHubContract,
   getVerifierContract,
   collectRedeemContext,
   generateSingleTeleportProof,
@@ -21,7 +19,7 @@ import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
 import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
 import { useWallet } from '@app/providers/WalletProvider';
-import { getStealthClient, createDeciderClient, createIndexerClient } from '@services/clients';
+import { getStealthClient, createDeciderClient } from '@services/clients';
 import { VetKey } from '@dfinity/vetkeys';
 import { StealthError } from '@zerc20/sdk';
 import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
@@ -476,19 +474,15 @@ export function ScanReceivingsPanel({
         const burn = await decodeFullBurnAddress(announcement.fullBurnAddress);
         const token = findTokenByChain(availableTokens, burn.generalRecipient.chainId);
 
-        const hubProvider = createProviderForHub(tokens.hub);
-        const hubContract = getHubContract(tokens.hub.hubAddress, hubProvider);
         const tokenProvider = createProviderForToken(token);
         const verifierContract = getVerifierContract(token.verifierAddress, tokenProvider);
-        const indexer = createIndexerClient(config);
 
         const context = await collectRedeemContext({
           burn,
           tokens: availableTokens,
-          indexer,
+          hub: tokens.hub,
           verifierContract,
-          hubContract,
-          provider: hubProvider,
+          indexerUrl: config.indexerUrl,
           indexerFetchLimit: config.indexerFetchLimit,
           eventBlockSpan: BigInt(config.eventBlockSpan),
         });
@@ -555,9 +549,6 @@ export function ScanReceivingsPanel({
         activateStage('indexer', 'Fetching events from indexer…');
         await yieldToUi();
 
-        const hubProvider = createProviderForHub(tokens.hub);
-        const hubContract = getHubContract(tokens.hub.hubAddress, hubProvider);
-        const indexer = createIndexerClient(config);
         const tokenEntry = detail.context.token;
         const tokenProvider = createProviderForToken(tokenEntry);
         const verifierRead = getVerifierContract(tokenEntry.verifierAddress, tokenProvider);
@@ -565,10 +556,9 @@ export function ScanReceivingsPanel({
         const refreshedContext = await collectRedeemContext({
           burn: detail.burn,
           tokens: availableTokens,
-          indexer,
+          hub: tokens.hub,
           verifierContract: verifierRead,
-          hubContract,
-          provider: hubProvider,
+          indexerUrl: config.indexerUrl,
           indexerFetchLimit: config.indexerFetchLimit,
           eventBlockSpan: BigInt(config.eventBlockSpan),
         });

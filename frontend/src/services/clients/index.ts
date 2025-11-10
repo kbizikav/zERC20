@@ -1,6 +1,6 @@
 import { HttpAgent } from '@dfinity/agent';
 import { Principal } from '@dfinity/principal';
-import { HttpDeciderClient, HttpIndexerClient, StealthCanisterClient } from '@zerc20/sdk';
+import { HttpDeciderClient, StealthCanisterClient } from '@zerc20/sdk';
 import type { AppConfig } from '@config/appConfig';
 
 function isLocalhost(url: string): boolean {
@@ -24,10 +24,6 @@ export async function getStealthClient(config: AppConfig): Promise<StealthCanist
     stealthClientCache.set(cacheKey, promise);
   }
   return stealthClientCache.get(cacheKey) as Promise<StealthCanisterClient>;
-}
-
-export function createIndexerClient(config: AppConfig): HttpIndexerClient {
-  return new HttpIndexerClient(config.indexerUrl);
 }
 
 export function createDeciderClient(config: AppConfig): HttpDeciderClient {

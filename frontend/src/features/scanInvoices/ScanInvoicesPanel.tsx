@@ -9,9 +9,7 @@ import {
   listInvoices,
   extractChainIdFromInvoiceHex,
   normalizeHex,
-  getHubContract,
   getVerifierContract,
-  createProviderForHub,
   createProviderForToken,
   generateBatchTeleportProof,
   generateSingleTeleportProof,
@@ -21,7 +19,7 @@ import type { AppConfig } from '@config/appConfig';
 import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
 import { useWallet } from '@app/providers/WalletProvider';
 import { useSeed } from '@/hooks/useSeed';
-import { createDeciderClient, createIndexerClient, getStealthClient } from '@services/clients';
+import { createDeciderClient, getStealthClient } from '@services/clients';
 import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
 import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
@@ -284,10 +282,6 @@ export function ScanInvoicesPanel({
         }
         setStatus('Fetching invoice status…');
 
-        const hubProvider = createProviderForHub(tokens.hub);
-        const hubContract = getHubContract(tokens.hub.hubAddress, hubProvider);
-        const indexer = createIndexerClient(config);
-
         const burnDetails: BurnDetail[] = [];
         const invoiceIsSingle = isSingleInvoice(invoiceId);
         const subIds = invoiceIsSingle ? [0] : Array.from({ length: 10 }, (_, idx) => idx);
@@ -309,10 +303,9 @@ export function ScanInvoicesPanel({
           const context = await collectRedeemContext({
             burn,
             tokens: availableTokens,
-            indexer,
+            hub: tokens.hub,
             verifierContract,
-            hubContract,
-            provider: hubProvider,
+            indexerUrl: config.indexerUrl,
             indexerFetchLimit: config.indexerFetchLimit,
             eventBlockSpan: BigInt(config.eventBlockSpan),
           });
@@ -385,9 +378,6 @@ export function ScanInvoicesPanel({
         activateStage('indexer', 'Fetching events from indexer…');
         await yieldToUi();
 
-        const hubProvider = createProviderForHub(tokens.hub);
-        const hubContract = getHubContract(tokens.hub.hubAddress, hubProvider);
-        const indexer = createIndexerClient(config);
         const tokenEntry = burnDetail.context.token;
         const tokenProvider = createProviderForToken(tokenEntry);
         const verifierRead = getVerifierContract(tokenEntry.verifierAddress, tokenProvider);
@@ -395,10 +385,9 @@ export function ScanInvoicesPanel({
         const refreshedContext = await collectRedeemContext({
           burn: burnDetail.burn,
           tokens: availableTokens,
-          indexer,
+          hub: tokens.hub,
           verifierContract: verifierRead,
-          hubContract,
-          provider: hubProvider,
+          indexerUrl: config.indexerUrl,
           indexerFetchLimit: config.indexerFetchLimit,
           eventBlockSpan: BigInt(config.eventBlockSpan),
         });

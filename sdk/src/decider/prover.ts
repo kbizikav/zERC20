@@ -3,6 +3,7 @@ import {
   DEFAULT_DECIDER_TIMEOUT_MS,
 } from '../constants.js';
 import { encode as encodeBase64, decode as decodeBase64 } from 'base64-arraybuffer';
+import { ensureFetch } from '../utils/http.js';
 
 export type CircuitKind = 'root' | 'withdraw_local' | 'withdraw_global';
 
@@ -18,13 +19,6 @@ interface JobStatusResponse {
   status: 'queued' | 'processing' | 'completed' | 'failed';
   result?: string | null;
   error?: string | null;
-}
-
-function ensureFetch(): typeof fetch {
-  if (typeof fetch === 'undefined') {
-    throw new Error('fetch is not available in the current environment');
-  }
-  return (input: RequestInfo | URL, init?: RequestInit) => fetch(input, init);
 }
 
 function toBase64(data: Uint8Array): string {

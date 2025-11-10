@@ -1,6 +1,6 @@
 import { JsonRpcProvider } from 'ethers';
 
-import { normalizeHex } from '../utils/hex.js';
+import { normalizeHex, toBigInt } from '../utils/hex.js';
 
 export interface TokenEntry {
   label: string;
@@ -30,21 +30,12 @@ function toHexAddress(value: string): string {
   return normalizeHex(value);
 }
 
-function toBigInt(value: MaybeString, label: string): bigint {
-  if (typeof value === 'bigint') {
-    return value;
+function parseBigInt(value: MaybeString, label: string): bigint {
+  try {
+    return toBigInt(value);
+  } catch {
+    throw new Error(`${label} must be a bigint-compatible value`);
   }
-  if (typeof value === 'number') {
-    return BigInt(value);
-  }
-  const trimmed = value.trim();
-  if (trimmed.startsWith('0x') || trimmed.startsWith('0X')) {
-    return BigInt(trimmed);
-  }
-  if (/^\d+$/.test(trimmed)) {
-    return BigInt(trimmed);
-  }
-  throw new Error(`${label} must be a bigint-compatible value`);
 }
 
 function normalizeRpcUrls(urls: unknown, label: string): string[] {
@@ -156,11 +147,11 @@ export function normalizeTokensFile(file: TokensFile): TokensFile {
         getStringField(record, ['verifierAddress', 'verifier_address'], `${label}.verifierAddress`),
       ),
       minterAddress: minterAddressValue ? toHexAddress(minterAddressValue) : undefined,
-      chainId: toBigInt(
+      chainId: parseBigInt(
         getValueField<MaybeString>(record, ['chainId', 'chain_id'], `${label}.chainId`),
         `${label}.chainId`,
       ),
-      deployedBlockNumber: toBigInt(
+      deployedBlockNumber: parseBigInt(
         getValueField<MaybeString>(
           record,
           ['deployedBlockNumber', 'deployed_block_number'],
@@ -181,7 +172,7 @@ export function normalizeTokensFile(file: TokensFile): TokensFile {
     const record = expectRecord(file.hub, 'hub entry');
     file.hub = {
       hubAddress: toHexAddress(getStringField(record, ['hubAddress', 'hub_address'], 'hub.hubAddress')),
-      chainId: toBigInt(getValueField<MaybeString>(record, ['chainId', 'chain_id'], 'hub.chainId'), 'hub.chainId'),
+      chainId: parseBigInt(getValueField<MaybeString>(record, ['chainId', 'chain_id'], 'hub.chainId'), 'hub.chainId'),
       rpcUrls: normalizeRpcUrls(getValueField<unknown>(record, ['rpcUrls', 'rpc_urls'], 'hub.rpcUrls'), 'hub'),
     };
   }
