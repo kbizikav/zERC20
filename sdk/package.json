@@ -22,7 +22,8 @@
     "@dfinity/vetkeys": "0.4.0",
     "base64-arraybuffer": "^1.0.2",
     "ethers": "^6.13.4",
-    "pako": "^2.1.0"
+    "pako": "^2.1.0",
+    "poseidon-lite": "^0.0.2"
   },
   "devDependencies": {
     "@types/pako": "^2.0.4",

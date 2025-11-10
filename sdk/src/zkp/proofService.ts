@@ -7,6 +7,7 @@ import type {
   SingleTeleportParams,
 } from "../types.js";
 import { hexToBytes, normalizeHex } from "../utils/hex.js";
+import { verifyGlobalTeleportProofs } from "../utils/merkle.js";
 import {
   loadBatchTeleportArtifacts,
   loadSingleTeleportArtifacts,
@@ -156,6 +157,12 @@ export class ProofService {
 
     const { events: sortedEvents, proofs: sortedProofs } =
       sortProofsByLeafIndex(params.events, params.proofs);
+
+    verifyGlobalTeleportProofs({
+      aggregationRoot: params.aggregationState.aggregationRoot,
+      events: sortedEvents,
+      proofs: sortedProofs,
+    });
 
     const wasmArtifacts = await loadBatchTeleportArtifacts();
     const wasm = await this.wasm.createWithdrawNovaProgram(

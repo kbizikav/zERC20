@@ -101,6 +101,9 @@ importers:
       pako:
         specifier: ^2.1.0
         version: 2.1.0
+      poseidon-lite:
+        specifier: ^0.0.2
+        version: 0.0.2
     devDependencies:
       '@types/node':
         specifier: ^24.10.0
@@ -1402,6 +1405,9 @@ packages:
   pngjs@5.0.0:
     resolution: {integrity: sha512-40QW5YalBNfQo5yRYmiw7Yz6TKKVr3h6970B2YE+3fQpsWcrbj1PzJgxeJ19DRQjhMbKPIuMY8rFaXc8moolVw==}
     engines: {node: '>=10.13.0'}
+
+  poseidon-lite@0.0.2:
+    resolution: {integrity: sha512-bGdDPTOQkJbBjbtSEWc3gY+YhqlGTxGlZ8041F8TGGg5QyGGp1Cfs4b8AEnFFjHbkPg6WdWXUgEjU1GKOKWAPw==}
 
   possible-typed-array-names@1.1.0:
     resolution: {integrity: sha512-/+5VFTchJDoVj3bhoqi6UeymcD00DAwb1nJwamzPvHEszJ4FpF6SNNbUbOS8yI56qHzdV8eK0qEfOSiodkTdxg==}
@@ -3164,6 +3170,8 @@ snapshots:
       find-up: 5.0.0
 
   pngjs@5.0.0: {}
+
+  poseidon-lite@0.0.2: {}
 
   possible-typed-array-names@1.1.0: {}
 
