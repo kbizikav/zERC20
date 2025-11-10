@@ -332,6 +332,99 @@ export class WasmRuntime {
   }
 }
 
+const defaultRuntime = new WasmRuntime();
+
+function runtime(): WasmRuntime {
+  return defaultRuntime;
+}
+
+export function getDefaultWasmRuntime(): WasmRuntime {
+  return runtime();
+}
+
+export function configureWasmLocator(options: WasmRuntimeOptions = {}): void {
+  runtime().configure(options);
+}
+
+export async function getSeedMessage(): Promise<string> {
+  return runtime().getSeedMessage();
+}
+
+export async function derivePaymentAdvice(
+  seedHex: string,
+  paymentAdviceIdHex: string,
+  recipientChainId: bigint | number,
+  recipientAddress: string,
+): Promise<SecretAndTweak> {
+  return runtime().derivePaymentAdvice(seedHex, paymentAdviceIdHex, recipientChainId, recipientAddress);
+}
+
+export async function deriveInvoiceSingle(
+  seedHex: string,
+  invoiceIdHex: string,
+  recipientChainId: bigint | number,
+  recipientAddress: string,
+): Promise<SecretAndTweak> {
+  return runtime().deriveInvoiceSingle(seedHex, invoiceIdHex, recipientChainId, recipientAddress);
+}
+
+export async function deriveInvoiceBatch(
+  seedHex: string,
+  invoiceIdHex: string,
+  subId: number,
+  recipientChainId: bigint | number,
+  recipientAddress: string,
+): Promise<SecretAndTweak> {
+  return runtime().deriveInvoiceBatch(seedHex, invoiceIdHex, subId, recipientChainId, recipientAddress);
+}
+
+export async function buildFullBurnAddress(
+  recipientChainId: bigint | number,
+  recipientAddress: string,
+  secretHex: string,
+  tweakHex: string,
+): Promise<BurnArtifacts> {
+  return runtime().buildFullBurnAddress(recipientChainId, recipientAddress, secretHex, tweakHex);
+}
+
+export async function decodeFullBurnAddress(payloadHex: string): Promise<BurnArtifacts> {
+  return runtime().decodeFullBurnAddress(payloadHex);
+}
+
+export async function generalRecipientFr(
+  chainId: bigint | number,
+  recipientAddress: string,
+  tweakHex: string,
+): Promise<string> {
+  return runtime().generalRecipientFr(chainId, recipientAddress, tweakHex);
+}
+
+export async function aggregationRoot(snapshot: readonly string[]): Promise<string> {
+  return runtime().aggregationRoot(snapshot);
+}
+
+export async function aggregationMerkleProof(snapshot: readonly string[], index: number): Promise<string[]> {
+  return runtime().aggregationMerkleProof(snapshot, index);
+}
+
+export async function createSingleWithdrawWasm(
+  localPk: Uint8Array,
+  localVk: Uint8Array,
+  globalPk: Uint8Array,
+  globalVk: Uint8Array,
+): Promise<SingleWithdrawWasm> {
+  return runtime().createSingleWithdrawProgram(localPk, localVk, globalPk, globalVk);
+}
+
+export async function createWithdrawNovaWasm(
+  localPp: Uint8Array,
+  localVp: Uint8Array,
+  globalPp: Uint8Array,
+  globalVp: Uint8Array,
+): Promise<WithdrawNovaWasm> {
+  return runtime().createWithdrawNovaProgram(localPp, localVp, globalPp, globalVp);
+}
+
 function normalizeOverride(url?: string): string | undefined {
   if (!url) {
     return undefined;

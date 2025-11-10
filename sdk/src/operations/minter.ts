@@ -1,7 +1,7 @@
 import { Signer, ZeroAddress } from 'ethers';
 
 import { getMinterContract, getZerc20Contract } from '../onchain/contracts.js';
-import { normalizeHex } from '../core/utils.js';
+import { normalizeHex } from '../utils/hex.js';
 
 export interface MinterDepositResult {
   transactionHash: string;

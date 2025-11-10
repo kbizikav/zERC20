@@ -6,9 +6,9 @@ import { Tabs } from '@components/Tabs';
 import { useRuntimeConfig } from '@config/ConfigContext';
 import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
 import { loadTeleportArtifacts, loadTokens } from '@services/resources';
-import { getZerc20Contract } from '@services/sdk';
+import { getZerc20Contract } from '@zerc20/sdk';
 import { ConvertPanel, PrivateReceivePanel, PrivateSendPanel, ScanReceivingsPanel } from '@features/index';
-import { configureWasmLocator } from '@services/sdk/wasm/index.js';
+import { configureWasmLocator } from '@zerc20/sdk';
 import { buildSwitchChainOptions } from '@/utils/wallet';
 
 const TAB_SEND = 'send';

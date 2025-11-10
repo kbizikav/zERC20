@@ -1,5 +1,5 @@
 import { FormEvent, useCallback, useMemo, useRef, useState } from 'react';
-import { normalizeHex, prepareInvoiceIssue, submitInvoice } from '@services/sdk';
+import { normalizeHex, prepareInvoiceIssue, submitInvoice } from '@zerc20/sdk';
 import { getBytes, parseEther } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
 import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';

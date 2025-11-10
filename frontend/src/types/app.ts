@@ -1,4 +1,4 @@
-import type { HubEntry, TokenEntry, TokensFile } from '@services/sdk/registry/tokens.js';
+import type { HubEntry, TokenEntry, TokensFile } from '@zerc20/sdk';
 
 export interface NormalizedTokens {
   hub?: HubEntry;

@@ -1,12 +1,7 @@
-import { normalizeHex } from '../core/utils.js';
+import { normalizeHex } from '../utils/hex.js';
+import type { IndexedEvent } from '../types.js';
 
-export interface IndexedEvent {
-  eventIndex: bigint;
-  from: string;
-  to: string;
-  value: bigint;
-  ethBlockNumber: bigint;
-}
+export type { IndexedEvent };
 
 export interface HistoricalProof {
   targetIndex: bigint;

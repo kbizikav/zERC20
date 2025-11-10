@@ -1,20 +1,20 @@
-import { invoiceMessageText } from '../storage/invoice.js';
-import { StealthCanisterClient } from '../storage/client.js';
-import { InvoiceSubmission } from '../storage/types.js';
+import { invoiceMessageText } from '../ic/invoice.js';
+import { StealthCanisterClient } from '../ic/client.js';
+import { InvoiceSubmission } from '../ic/types.js';
 import { getBytes } from 'ethers';
 
-import { NUM_BATCH_INVOICES } from '../core/constants.js';
+import { NUM_BATCH_INVOICES } from '../constants.js';
 import {
   InvoiceBatchBurnAddress,
   InvoiceIssueArtifacts,
-} from '../core/types.js';
+} from '../types.js';
 import {
   addressToBytes,
   ensureHexLength,
   hexFromBytes,
   normalizeHex,
   randomBytes,
-} from '../core/utils.js';
+} from '../utils/hex.js';
 import { buildFullBurnAddress, deriveInvoiceBatch, deriveInvoiceSingle } from '../wasm/index.js';
 
 export interface InvoiceIssueParams {

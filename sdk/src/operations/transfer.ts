@@ -1,7 +1,7 @@
 import { BigNumberish, Signer } from 'ethers';
 
 import { getZerc20Contract } from '../onchain/contracts.js';
-import { normalizeHex } from '../core/utils.js';
+import { normalizeHex } from '../utils/hex.js';
 
 export interface TransferResult {
   transactionHash: string;

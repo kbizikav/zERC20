@@ -8,7 +8,7 @@ import {
   createProviderForToken,
   normalizeHex,
   TokenEntry,
-} from '@services/sdk';
+} from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 import type { AppConfig } from '@config/appConfig';
 import type { NormalizedTokens } from '@/types/app';

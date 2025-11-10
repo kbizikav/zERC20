@@ -1,11 +1,11 @@
-import { authorizationMessage, authorizationMessageText, unixTimeNs } from '../storage/authorization.js';
-import { StealthCanisterClient } from '../storage/client.js';
-import { decryptVetKey, prepareTransportKey, TransportKeyPair } from '../storage/recipient.js';
-import { scanAnnouncements } from '../storage/encryption.js';
-import { Announcement, EncryptedViewKeyRequest } from '../storage/types.js';
+import { authorizationMessage, authorizationMessageText, unixTimeNs } from '../ic/authorization.js';
+import { StealthCanisterClient } from '../ic/client.js';
+import { decryptVetKey, prepareTransportKey, TransportKeyPair } from '../ic/recipient.js';
+import { scanAnnouncements } from '../ic/encryption.js';
+import { Announcement, EncryptedViewKeyRequest } from '../ic/types.js';
 import type { VetKey } from '@dfinity/vetkeys';
-import { ScannedAnnouncement } from '../core/types.js';
-import { addressToBytes, hexFromBytes } from '../core/utils.js';
+import { ScannedAnnouncement } from '../types.js';
+import { addressToBytes, hexFromBytes } from '../utils/hex.js';
 import { decodeFullBurnAddress } from '../wasm/index.js';
 
 export interface AuthorizationPayload {

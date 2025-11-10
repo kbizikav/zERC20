@@ -1,5 +1,5 @@
 import { ungzip } from 'pako';
-import { normalizeTokensFile, TokensFile } from '@services/sdk/registry/tokens.js';
+import { normalizeTokensFile, TokensFile } from '@zerc20/sdk';
 import type { NormalizedTokens } from '@/types/app';
 
 const tokenCache = new Map<string, Promise<NormalizedTokens>>();

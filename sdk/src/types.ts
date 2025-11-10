@@ -1,3 +1,5 @@
+import type { Announcement, AnnouncementInput } from './ic/types.js';
+
 export interface SecretAndTweak {
   secret: string;
   tweak: string;
@@ -17,6 +19,51 @@ export interface BurnArtifacts {
   secret: string;
   tweak: string;
   generalRecipient: GeneralRecipient;
+}
+
+export interface PrivateSendPreparation {
+  paymentAdviceId: string;
+  secret: string;
+  tweak: string;
+  burnAddress: string;
+  burnPayload: string;
+  generalRecipient: GeneralRecipient;
+}
+
+export interface AnnouncementArtifacts {
+  announcement: AnnouncementInput;
+  sessionKey: Uint8Array;
+}
+
+export interface PreparedPrivateSend extends PrivateSendPreparation, AnnouncementArtifacts {
+  paymentAdviceIdBytes: Uint8Array;
+}
+
+export interface PrivateSendResult extends PrivateSendPreparation {
+  announcement: Announcement;
+}
+
+export interface InvoiceBatchBurnAddress {
+  subId: number;
+  burnAddress: string;
+  secret: string;
+  tweak: string;
+}
+
+export interface InvoiceIssueArtifacts {
+  invoiceId: string;
+  recipientAddress: string;
+  recipientChainId: bigint;
+  burnAddresses: InvoiceBatchBurnAddress[];
+  signatureMessage: string;
+}
+
+export interface ScannedAnnouncement {
+  id: bigint;
+  burnAddress: string;
+  fullBurnAddress: string;
+  createdAtNs: bigint;
+  recipientChainId: bigint;
 }
 
 export interface AggregationTreeState {

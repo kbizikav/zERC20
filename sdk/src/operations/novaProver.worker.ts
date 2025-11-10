@@ -1,5 +1,5 @@
 import { runNovaProver } from './novaProver.js';
-import type { NovaProverInput, NovaProverOutput } from './novaProver.js';
+import type { NovaProverInput, NovaProverOutput } from '../types.js';
 
 interface WorkerRequest {
   id: number;

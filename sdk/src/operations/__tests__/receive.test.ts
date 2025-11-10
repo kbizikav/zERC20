@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { GLOBAL_TRANSFER_TREE_HEIGHT } from '../../core/constants.js';
-import type { GlobalTeleportProof } from '../teleport.js';
+import { GLOBAL_TRANSFER_TREE_HEIGHT } from '../../constants.js';
+import type { GlobalTeleportProofWithEvent } from '../../types.js';
 
 const proveMock = vi.fn();
 const createSingleWithdrawWasmMock = vi.fn(async () => ({
@@ -42,7 +42,7 @@ describe('generateSingleTeleportProof', () => {
     proveMock.mockResolvedValue(proofResponse);
 
     const siblings = Array.from({ length: GLOBAL_TRANSFER_TREE_HEIGHT }, () => hexString(0));
-    const globalProof: GlobalTeleportProof = {
+    const globalProof: GlobalTeleportProofWithEvent = {
       event: {
         eventIndex: 0n,
         from: hexString(11),

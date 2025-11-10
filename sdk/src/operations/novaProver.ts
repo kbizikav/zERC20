@@ -1,34 +1,14 @@
 import { createWithdrawNovaWasm, WithdrawNovaWasm } from '../wasm/index.js';
-import { normalizeHex } from '../core/utils.js';
-import type { AggregationTreeState, GlobalTeleportProof } from './teleport.js';
+import { normalizeHex } from '../utils/hex.js';
 import type { IndexedEvent } from '../indexer/index.js';
 import {
   appendDummySteps,
   formatFieldElement,
-  hexToBytes,
   toFieldHex,
   toLeafIndexString,
-} from './proofUtils.js';
-
-export interface NovaProverInput {
-  wasmArtifacts: {
-    localPp: Uint8Array;
-    localVp: Uint8Array;
-    globalPp: Uint8Array;
-    globalVp: Uint8Array;
-  };
-  aggregationState: AggregationTreeState;
-  recipientFr: string;
-  secretHex: string;
-  proofs: readonly GlobalTeleportProof[];
-  events: readonly IndexedEvent[];
-}
-
-export interface NovaProverOutput {
-  ivcProof: Uint8Array;
-  finalState: string[];
-  steps: number;
-}
+} from '../zkp/proofUtils.js';
+import { hexToBytes } from '../utils/hex.js';
+import type { NovaProverInput, NovaProverOutput } from '../types.js';
 
 export async function runNovaProver(params: NovaProverInput): Promise<NovaProverOutput> {
   if (params.proofs.length !== params.events.length) {

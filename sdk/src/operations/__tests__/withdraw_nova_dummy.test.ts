@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { HttpDeciderClient } from '../../proofs/prover.js';
+import type { HttpDeciderClient } from '../../decider/prover.js';
 
 const ZERO_FR = `0x${'00'.repeat(32)}`;
 const DUMMY_RECIPIENT = `0x${'01'.repeat(32)}`;

@@ -11,7 +11,7 @@ import {
   getZerc20Contract,
   normalizeHex,
   withdrawWithMinter,
-} from '@services/sdk';
+} from '@zerc20/sdk';
 import { getExplorerTxUrl } from '@utils/explorer';
 import { buildSwitchChainOptions } from '@/utils/wallet';
 

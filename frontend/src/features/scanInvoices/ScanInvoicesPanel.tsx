@@ -15,7 +15,7 @@ import {
   createProviderForToken,
   generateBatchTeleportProof,
   generateSingleTeleportProof,
-} from '@services/sdk';
+} from '@zerc20/sdk';
 import { formatUnits, getBytes, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
 import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';

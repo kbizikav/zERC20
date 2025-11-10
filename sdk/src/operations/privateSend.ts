@@ -1,19 +1,19 @@
-import { encryptAnnouncementWithArtifacts } from '../storage/encryption.js';
-import { StealthCanisterClient } from '../storage/client.js';
-import { Announcement } from '../storage/types.js';
+import { encryptAnnouncementWithArtifacts } from '../ic/encryption.js';
+import { StealthCanisterClient } from '../ic/client.js';
+import { Announcement } from '../ic/types.js';
 import { getBytes } from 'ethers';
 
 import {
   PreparedPrivateSend,
   PrivateSendResult,
-} from '../core/types.js';
+} from '../types.js';
 import {
   addressToBytes,
   ensureHexLength,
   hexFromBytes,
   normalizeHex,
   randomBytes,
-} from '../core/utils.js';
+} from '../utils/hex.js';
 import {
   buildFullBurnAddress,
   derivePaymentAdvice,

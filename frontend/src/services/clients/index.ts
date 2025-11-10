@@ -1,6 +1,6 @@
 import { HttpAgent } from '@dfinity/agent';
 import { Principal } from '@dfinity/principal';
-import { HttpDeciderClient, HttpIndexerClient, StealthCanisterClient } from '@services/sdk';
+import { HttpDeciderClient, HttpIndexerClient, StealthCanisterClient } from '@zerc20/sdk';
 import type { AppConfig } from '@config/appConfig';
 
 function isLocalhost(url: string): boolean {

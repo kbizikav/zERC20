@@ -4,29 +4,17 @@ import {
   AGGREGATION_TREE_HEIGHT,
   GLOBAL_TRANSFER_TREE_HEIGHT,
   TRANSFER_TREE_HEIGHT,
-} from '../core/constants.js';
-import { HttpIndexerClient, HistoricalProof, IndexedEvent } from '../indexer/index.js';
+} from '../constants.js';
+import { HistoricalProof, IndexedEvent } from '../indexer/index.js';
 import { aggregationMerkleProof, aggregationRoot } from '../wasm/index.js';
-import { normalizeHex } from '../core/utils.js';
+import { normalizeHex } from '../utils/hex.js';
+import type {
+  AggregationTreeState,
+  EventsWithEligibility,
+  GlobalTeleportProofWithEvent,
+} from '../types.js';
 
-export interface AggregationTreeState {
-  latestAggSeq: bigint;
-  aggregationRoot: string;
-  snapshot: string[];
-  transferTreeIndices: bigint[];
-  chainIds: bigint[];
-}
-
-export interface EventsWithEligibility {
-  eligible: IndexedEvent[];
-  ineligible: IndexedEvent[];
-}
-
-export interface GlobalTeleportProof {
-  event: IndexedEvent;
-  siblings: string[];
-  leafIndex: bigint;
-}
+export type { AggregationTreeState, EventsWithEligibility, GlobalTeleportProofWithEvent };
 
 export interface AggregationStateParams {
   hubContract: Contract;
@@ -158,7 +146,7 @@ export async function generateGlobalTeleportProofs(
   chainId: bigint,
   events: readonly IndexedEvent[],
   localProofs: readonly HistoricalProof[],
-): Promise<GlobalTeleportProof[]> {
+): Promise<GlobalTeleportProofWithEvent[]> {
   if (events.length !== localProofs.length) {
     throw new Error(`Events length ${events.length} does not match proofs length ${localProofs.length}`);
   }

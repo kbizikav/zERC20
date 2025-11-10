@@ -16,14 +16,14 @@ import {
   generateSingleTeleportProof,
   generateBatchTeleportProof,
   normalizeHex,
-} from '@services/sdk';
+} from '@zerc20/sdk';
 import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
 import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
 import { useWallet } from '@app/providers/WalletProvider';
 import { getStealthClient, createDeciderClient, createIndexerClient } from '@services/clients';
 import { VetKey } from '@dfinity/vetkeys';
-import { StealthError } from '@services/sdk/storage/errors.js';
+import { StealthError } from '@zerc20/sdk';
 import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
 import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';

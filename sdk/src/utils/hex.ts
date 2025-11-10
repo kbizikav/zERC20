@@ -1,3 +1,5 @@
+import { getBytes, keccak256 } from 'ethers';
+
 export type HexLike =
   | string
   | number
@@ -19,6 +21,10 @@ export function bytesToHex(bytes: Uint8Array): string {
   }
   const chunks = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
   return `0x${chunks.join('')}`;
+}
+
+export function hexFromBytes(bytes: Uint8Array): string {
+  return bytesToHex(bytes);
 }
 
 export function normalizeHex(value: HexLike): string {
@@ -71,6 +77,34 @@ export function hexToBytes(value: string): Uint8Array {
     bytes[i / 2] = parseInt(normalized.slice(i, i + 2), 16);
   }
   return bytes;
+}
+
+export function ensureHexLength(value: HexLike, expectedBytes: number, label: string): string {
+  const normalized = normalizeHex(value);
+  const bytes = getBytes(normalized);
+  if (bytes.length !== expectedBytes) {
+    throw new Error(`${label} must be ${expectedBytes} bytes, received ${bytes.length}`);
+  }
+  return normalized;
+}
+
+export function addressToBytes(address: string): Uint8Array {
+  const normalized = ensureHexLength(address, 20, 'address');
+  return getBytes(normalized);
+}
+
+export function randomBytes(length: number): Uint8Array {
+  const buffer = new Uint8Array(length);
+  if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
+    crypto.getRandomValues(buffer);
+    return buffer;
+  }
+  throw new Error('secure randomness is not available (missing global crypto)');
+}
+
+export function sha3(data: Uint8Array | string): string {
+  const bytes = typeof data === 'string' ? getBytes(data) : data;
+  return keccak256(bytes);
 }
 
 export function toBigInt(value: number | string | bigint): bigint {

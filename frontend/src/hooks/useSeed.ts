@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getBytes, JsonRpcSigner, keccak256 } from 'ethers';
-import { seedDerivationMessage } from '@services/sdk/operations/privateSend.js';
+import { seedDerivationMessage } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 
 export interface SeedState {

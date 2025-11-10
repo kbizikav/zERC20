@@ -1,6 +1,6 @@
 import { JsonRpcProvider } from 'ethers';
 
-import { normalizeHex } from '../core/utils.js';
+import { normalizeHex } from '../utils/hex.js';
 
 export interface TokenEntry {
   label: string;

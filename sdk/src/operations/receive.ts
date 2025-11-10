@@ -1,29 +1,35 @@
 import { Contract, JsonRpcProvider } from 'ethers';
 
-import { DEFAULT_INDEXER_FETCH_LIMIT } from '../core/constants.js';
+import { DEFAULT_INDEXER_FETCH_LIMIT } from '../constants.js';
 import { HttpIndexerClient, HistoricalProof, IndexedEvent } from '../indexer/index.js';
-import { HttpDeciderClient } from '../proofs/prover.js';
+import { HttpDeciderClient } from '../decider/prover.js';
 import {
-  AggregationTreeState,
-  EventsWithEligibility,
   fetchAggregationTreeState,
   generateGlobalTeleportProofs,
   getTreeIndexForChain,
   partitionEventsByEligibility,
-  GlobalTeleportProof,
 } from './teleport.js';
 import { TokenEntry, findTokenByChain } from '../registry/tokens.js';
-import { BurnArtifacts } from '../core/types.js';
+import {
+  AggregationTreeState,
+  EventsWithEligibility,
+  GlobalTeleportProofWithEvent,
+  BurnArtifacts,
+  SingleTeleportArtifacts,
+  SingleTeleportParams,
+  NovaProverInput,
+  NovaProverOutput,
+} from '../types.js';
 import { createSingleWithdrawWasm, SingleWithdrawWasm } from '../wasm/index.js';
-import { normalizeHex } from '../core/utils.js';
-import { formatFieldElement, toFieldHex, toLeafIndexString } from './proofUtils.js';
-import { runNovaProver, type NovaProverInput, type NovaProverOutput } from './novaProver.js';
+import { normalizeHex } from '../utils/hex.js';
+import { formatFieldElement, toFieldHex, toLeafIndexString } from '../zkp/proofUtils.js';
+import { runNovaProver } from './novaProver.js';
 
 export interface RedeemChainContext {
   chainId: bigint;
   token: TokenEntry;
   events: EventsWithEligibility;
-  globalProofs: GlobalTeleportProof[];
+  globalProofs: GlobalTeleportProofWithEvent[];
   eligibleProofs: HistoricalProof[];
   totalEligibleValue: bigint;
   totalPendingValue: bigint;
@@ -34,7 +40,7 @@ export interface RedeemContext {
   token: TokenEntry;
   aggregationState: AggregationTreeState;
   events: EventsWithEligibility;
-  globalProofs: GlobalTeleportProof[];
+  globalProofs: GlobalTeleportProofWithEvent[];
   eligibleProofs: HistoricalProof[];
   totalEligibleValue: bigint;
   totalPendingValue: bigint;
@@ -87,7 +93,7 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
     );
     const totalIndexedValue = totalEligibleValue + totalPendingValue;
 
-    let globalProofs: GlobalTeleportProof[] = [];
+    let globalProofs: GlobalTeleportProofWithEvent[] = [];
     let eligibleProofs: HistoricalProof[] = [];
 
     if (separated.eligible.length > 0) {
@@ -163,26 +169,6 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
     totalTeleported,
     chains: perChain,
   };
-}
-
-export interface SingleTeleportArtifacts {
-  proofCalldata: string;
-  publicInputs: string[];
-  treeDepth: number;
-}
-
-export interface SingleTeleportParams {
-  wasmArtifacts: {
-    localPk: Uint8Array;
-    localVk: Uint8Array;
-    globalPk: Uint8Array;
-    globalVk: Uint8Array;
-  };
-  aggregationState: AggregationTreeState;
-  recipientFr: string;
-  secretHex: string;
-  event: IndexedEvent;
-  proof: GlobalTeleportProof;
 }
 
 export async function generateSingleTeleportProof(params: SingleTeleportParams): Promise<SingleTeleportArtifacts> {
