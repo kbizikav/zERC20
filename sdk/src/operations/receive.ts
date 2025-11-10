@@ -23,11 +23,14 @@ import {
   separateEventsByEligibility,
   fetchLocalTeleportMerkleProofs as fetchLocalTeleportProofs,
   generateGlobalTeleportMerkleProofs as generateGlobalTeleportProofs,
+  getDefaultWasmRuntime,
 } from '../wasm/index.js';
 import { loadSingleTeleportArtifacts } from '../wasm/artifacts.js';
 import { normalizeHex } from '../utils/hex.js';
 import { formatFieldElement, toFieldHex, toLeafIndexString } from '../zkp/proofUtils.js';
-import { runNovaProver } from './novaProver.js';
+import { ProofService } from '../zkp/proofService.js';
+
+const proofService = new ProofService(getDefaultWasmRuntime());
 
 export interface RedeemChainContext {
   chainId: bigint;
@@ -238,64 +241,6 @@ export interface BatchTeleportParams extends NovaProverInput {
   offloadToWorker?: boolean;
 }
 
-type PendingNovaJob = {
-  resolve: (output: NovaProverOutput) => void;
-  reject: (error: unknown) => void;
-};
-
-let novaWorker: Worker | null = null;
-let nextNovaJobId = 0;
-const pendingNovaJobs = new Map<number, PendingNovaJob>();
-
-function canUseNovaWorker(params: BatchTeleportParams): boolean {
-  if (params.offloadToWorker === false) {
-    return false;
-  }
-  return typeof window !== 'undefined' && typeof window.Worker !== 'undefined';
-}
-
-function ensureNovaWorker(): Worker {
-  if (!novaWorker) {
-    const worker = new Worker(new URL('./novaProver.worker.ts', import.meta.url), { type: 'module' });
-    worker.addEventListener('message', (event: MessageEvent<any>) => {
-      const { id, type } = event.data ?? {};
-      if (!pendingNovaJobs.has(id)) {
-        return;
-      }
-      const pending = pendingNovaJobs.get(id);
-      if (!pending) {
-        return;
-      }
-      pendingNovaJobs.delete(id);
-      if (type === 'result') {
-        pending.resolve(event.data.result as NovaProverOutput);
-      } else if (type === 'error') {
-        const error = event.data.error;
-        pending.reject(new Error(error?.message ?? 'Nova worker failure'));
-      } else {
-        pending.reject(new Error(`Nova worker returned unexpected message type ${String(type)}`));
-      }
-    });
-    worker.addEventListener('error', (event) => {
-      pendingNovaJobs.forEach((pending) => pending.reject(event.error ?? new Error('Nova worker error')));
-      pendingNovaJobs.clear();
-    });
-    novaWorker = worker;
-  }
-  return novaWorker;
-}
-
-async function runNovaProofWithWorker(params: NovaProverInput): Promise<NovaProverOutput> {
-  const worker = ensureNovaWorker();
-  const jobId = nextNovaJobId++;
-  const payload = { id: jobId, payload: params };
-  const promise = new Promise<NovaProverOutput>((resolve, reject) => {
-    pendingNovaJobs.set(jobId, { resolve, reject });
-  });
-  worker.postMessage(payload);
-  return promise;
-}
-
 async function computeNovaProof(params: BatchTeleportParams): Promise<NovaProverOutput> {
   const workload: NovaProverInput = {
     aggregationState: params.aggregationState,
@@ -304,14 +249,9 @@ async function computeNovaProof(params: BatchTeleportParams): Promise<NovaProver
     proofs: params.proofs,
     events: params.events,
   };
-  if (canUseNovaWorker(params)) {
-    try {
-      return await runNovaProofWithWorker(workload);
-    } catch (error) {
-      console.warn('[zkERC20] Falling back to main-thread Nova prover due to worker failure.', error);
-    }
-  }
-  return runNovaProver(workload);
+  return proofService.runNovaProver(workload, {
+    offloadToWorker: params.offloadToWorker,
+  });
 }
 
 export async function generateBatchTeleportProof(params: BatchTeleportParams): Promise<BatchTeleportArtifacts> {

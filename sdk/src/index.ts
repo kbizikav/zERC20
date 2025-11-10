@@ -5,7 +5,6 @@ export * from "./ic/index.js";
 export * from "./onchain/contracts.js";
 export * from "./operations/invoice.js";
 export * from "./operations/minter.js";
-export * from "./operations/novaProver.js";
 export * from "./operations/privateSend.js";
 export * from "./operations/receive.js";
 export * from "./operations/scanner.js";

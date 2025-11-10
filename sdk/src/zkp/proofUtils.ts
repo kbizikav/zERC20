@@ -1,4 +1,4 @@
-import { GLOBAL_TRANSFER_TREE_HEIGHT, NUM_BATCH_INVOICES } from '../constants.js';
+import { GLOBAL_TRANSFER_TREE_HEIGHT } from '../constants.js';
 import { normalizeHex } from '../utils/hex.js';
 
 export function toFixedHex(value: bigint, bytes: number = 32): string {
@@ -37,13 +37,15 @@ export function formatFieldElement(value: string, label: string): string {
 }
 
 export function randomDummySteps(): number {
+  const MIN_DUMMY_STEPS = 1;
+  const MAX_DUMMY_STEPS = 3;
   const buffer = new Uint32Array(1);
   if (typeof crypto !== 'undefined' && typeof crypto.getRandomValues === 'function') {
     crypto.getRandomValues(buffer);
-    const value = buffer[0] % NUM_BATCH_INVOICES;
-    return value === 0 ? 1 : value;
+    const range = MAX_DUMMY_STEPS - MIN_DUMMY_STEPS + 1;
+    return MIN_DUMMY_STEPS + (buffer[0] % range);
   }
-  return 1;
+  return MIN_DUMMY_STEPS;
 }
 
 export function appendDummySteps(steps: any[]): void {

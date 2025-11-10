@@ -635,12 +635,16 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
           setRedeemMessage(`Teleport submitted: ${tx.hash}`);
         } else {
           const decider = getDeciderClient({ baseUrl: config.deciderUrl });
+          const batchProofInputs = refreshedContext.globalProofs;
+          if (batchProofInputs.length !== eligible.length) {
+            throw new Error('Indexer returned mismatched event/proof counts for batch teleport.');
+          }
           const batchProof = await generateBatchTeleportProof({
             aggregationState: refreshedContext.aggregationState,
             recipientFr: detail.burn.generalRecipient.fr,
             secretHex: detail.burn.secret,
-            events: eligible,
-            proofs: refreshedContext.globalProofs,
+            events: batchProofInputs.map((entry) => entry.event),
+            proofs: batchProofInputs,
             decider,
             onDeciderRequestStart: async () => {
               completeStage('proof');
