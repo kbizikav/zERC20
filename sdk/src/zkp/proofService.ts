@@ -9,6 +9,10 @@ import type {
 import { hexToBytes, normalizeHex } from "../utils/hex.js";
 import type { WasmRuntime } from "../wasm/index.js";
 import {
+  loadSingleTeleportArtifacts,
+  loadBatchTeleportArtifacts,
+} from "../wasm/artifacts.js";
+import {
   appendDummySteps,
   formatFieldElement,
   toFieldHex,
@@ -88,11 +92,12 @@ export class ProofService {
   private async computeSingleTeleportProof(
     params: SingleTeleportParams
   ): Promise<SingleTeleportArtifacts> {
+    const wasmArtifacts = await loadSingleTeleportArtifacts();
     const wasm = await this.wasm.createSingleWithdrawProgram(
-      params.wasmArtifacts.localPk,
-      params.wasmArtifacts.localVk,
-      params.wasmArtifacts.globalPk,
-      params.wasmArtifacts.globalVk
+      wasmArtifacts.localPk,
+      wasmArtifacts.localVk,
+      wasmArtifacts.globalPk,
+      wasmArtifacts.globalVk
     );
     const zeroField = formatFieldElement("0x0", "delta");
     const witness = {
@@ -152,11 +157,12 @@ export class ProofService {
     const { events: sortedEvents, proofs: sortedProofs } =
       sortProofsByLeafIndex(params.events, params.proofs);
 
+    const wasmArtifacts = await loadBatchTeleportArtifacts();
     const wasm = await this.wasm.createWithdrawNovaProgram(
-      params.wasmArtifacts.localPp,
-      params.wasmArtifacts.localVp,
-      params.wasmArtifacts.globalPp,
-      params.wasmArtifacts.globalVp
+      wasmArtifacts.localPp,
+      wasmArtifacts.localVp,
+      wasmArtifacts.globalPp,
+      wasmArtifacts.globalVp
     );
     const z0 = [
       formatFieldElement(params.aggregationState.aggregationRoot, "z0[0]"),

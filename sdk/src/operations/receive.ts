@@ -24,6 +24,7 @@ import {
   fetchLocalTeleportMerkleProofs as fetchLocalTeleportProofs,
   generateGlobalTeleportMerkleProofs as generateGlobalTeleportProofs,
 } from '../wasm/index.js';
+import { loadSingleTeleportArtifacts } from '../wasm/artifacts.js';
 import { normalizeHex } from '../utils/hex.js';
 import { formatFieldElement, toFieldHex, toLeafIndexString } from '../zkp/proofUtils.js';
 import { runNovaProver } from './novaProver.js';
@@ -177,11 +178,12 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
 }
 
 export async function generateSingleTeleportProof(params: SingleTeleportParams): Promise<SingleTeleportArtifacts> {
+  const wasmArtifacts = await loadSingleTeleportArtifacts();
   const wasm: SingleWithdrawWasm = await createSingleWithdrawWasm(
-    params.wasmArtifacts.localPk,
-    params.wasmArtifacts.localVk,
-    params.wasmArtifacts.globalPk,
-    params.wasmArtifacts.globalVk,
+    wasmArtifacts.localPk,
+    wasmArtifacts.localVk,
+    wasmArtifacts.globalPk,
+    wasmArtifacts.globalVk,
   );
   const zeroField = formatFieldElement('0x0', 'delta');
   const witness = {
@@ -296,7 +298,6 @@ async function runNovaProofWithWorker(params: NovaProverInput): Promise<NovaProv
 
 async function computeNovaProof(params: BatchTeleportParams): Promise<NovaProverOutput> {
   const workload: NovaProverInput = {
-    wasmArtifacts: params.wasmArtifacts,
     aggregationState: params.aggregationState,
     recipientFr: params.recipientFr,
     secretHex: params.secretHex,

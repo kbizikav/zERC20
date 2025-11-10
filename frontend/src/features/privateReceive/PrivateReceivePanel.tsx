@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useMemo, useRef, useState } from 'react';
 import { normalizeHex, prepareInvoiceIssue, submitInvoice, getStealthClientFromConfig } from '@zerc20/sdk';
 import { getBytes, parseEther } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens, TeleportWasmArtifacts } from '@zerc20/sdk';
+import type { NormalizedTokens } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 import { useSeed } from '@/hooks/useSeed';
 import { toDataURL } from 'qrcode';
@@ -11,7 +11,6 @@ import { ScanInvoicesPanel } from '@features/scanInvoices/ScanInvoicesPanel';
 interface PrivateReceivePanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  artifacts: TeleportWasmArtifacts;
   storageRevision: number;
 }
 
@@ -27,7 +26,7 @@ interface InvoiceResult {
   signatureMessage: string;
 }
 
-export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision }: PrivateReceivePanelProps): JSX.Element {
+export function PrivateReceivePanel({ config, tokens, storageRevision }: PrivateReceivePanelProps): JSX.Element {
   const wallet = useWallet();
   const seed = useSeed();
   const [isBatch, setIsBatch] = useState(false);
@@ -364,12 +363,7 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
       </section>
       {isInvoiceManagerOpen && (
         <div id="invoice-manager-panel">
-          <ScanInvoicesPanel
-            config={config}
-            tokens={tokens}
-            artifacts={artifacts}
-            storageRevision={storageRevision}
-          />
+          <ScanInvoicesPanel config={config} tokens={tokens} storageRevision={storageRevision} />
         </div>
       )}
     </>

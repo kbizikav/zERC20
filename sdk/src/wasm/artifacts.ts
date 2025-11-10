@@ -1,17 +1,17 @@
 import { ensureFetch } from '../utils/http.js';
 
 export interface SingleTeleportWasmArtifacts {
-  localPk?: Uint8Array;
-  localVk?: Uint8Array;
-  globalPk?: Uint8Array;
-  globalVk?: Uint8Array;
+  localPk: Uint8Array;
+  localVk: Uint8Array;
+  globalPk: Uint8Array;
+  globalVk: Uint8Array;
 }
 
 export interface BatchTeleportWasmArtifacts {
-  localPp?: Uint8Array;
-  localVp?: Uint8Array;
-  globalPp?: Uint8Array;
-  globalVp?: Uint8Array;
+  localPp: Uint8Array;
+  localVp: Uint8Array;
+  globalPp: Uint8Array;
+  globalVp: Uint8Array;
 }
 
 export interface TeleportWasmArtifacts {
@@ -50,14 +50,26 @@ function buildArtifactUrls<T extends ArtifactFileMap>(files: T): T {
 
 const SINGLE_ARTIFACT_URLS = buildArtifactUrls(SINGLE_ARTIFACT_FILES);
 const BATCH_ARTIFACT_URLS = buildArtifactUrls(BATCH_ARTIFACT_FILES);
+const SINGLE_ARTIFACT_URL_SET = new Set<string>(Object.values(SINGLE_ARTIFACT_URLS));
+const BATCH_ARTIFACT_URL_SET = new Set<string>(Object.values(BATCH_ARTIFACT_URLS));
 
 const binaryCache = new Map<string, Promise<Uint8Array>>();
+let singleArtifactsPromise: Promise<SingleTeleportWasmArtifacts> | undefined;
+let batchArtifactsPromise: Promise<BatchTeleportWasmArtifacts> | undefined;
 
 export function clearTeleportArtifactCache(url?: string): void {
   if (url) {
     binaryCache.delete(url);
+    if (SINGLE_ARTIFACT_URL_SET.has(url)) {
+      singleArtifactsPromise = undefined;
+    }
+    if (BATCH_ARTIFACT_URL_SET.has(url)) {
+      batchArtifactsPromise = undefined;
+    }
     return;
   }
+  singleArtifactsPromise = undefined;
+  batchArtifactsPromise = undefined;
   binaryCache.clear();
 }
 
@@ -76,26 +88,51 @@ async function fetchBinary(url: string, fetchFn: typeof fetch): Promise<Uint8Arr
   return binaryCache.get(url) as Promise<Uint8Array>;
 }
 
-async function loadArtifactGroup(paths: ArtifactFileMap, fetchFn: typeof fetch): Promise<Record<string, Uint8Array>> {
+async function loadArtifactGroup<T extends ArtifactFileMap>(
+  paths: T,
+  fetchFn: typeof fetch,
+): Promise<{ [K in keyof T]: Uint8Array }> {
   const entries = await Promise.all(
     Object.entries(paths).map(async ([key, url]) => {
       const bytes = await fetchBinary(url, fetchFn);
       return [key, bytes] as const;
     }),
   );
-  return Object.fromEntries(entries);
+  return Object.fromEntries(entries) as { [K in keyof T]: Uint8Array };
+}
+
+export async function loadSingleTeleportArtifacts(
+  options: LoadTeleportArtifactsOptions = {},
+): Promise<SingleTeleportWasmArtifacts> {
+  if (!singleArtifactsPromise) {
+    const fetchFn = options.fetchImpl ?? ensureFetch();
+    singleArtifactsPromise = loadArtifactGroup(
+      SINGLE_ARTIFACT_URLS,
+      fetchFn,
+    ) as Promise<SingleTeleportWasmArtifacts>;
+  }
+  return singleArtifactsPromise;
+}
+
+export async function loadBatchTeleportArtifacts(
+  options: LoadTeleportArtifactsOptions = {},
+): Promise<BatchTeleportWasmArtifacts> {
+  if (!batchArtifactsPromise) {
+    const fetchFn = options.fetchImpl ?? ensureFetch();
+    batchArtifactsPromise = loadArtifactGroup(
+      BATCH_ARTIFACT_URLS,
+      fetchFn,
+    ) as Promise<BatchTeleportWasmArtifacts>;
+  }
+  return batchArtifactsPromise;
 }
 
 export async function loadTeleportArtifacts(
   options: LoadTeleportArtifactsOptions = {},
 ): Promise<TeleportWasmArtifacts> {
-  const fetchFn = options.fetchImpl ?? ensureFetch();
   const [single, batch] = await Promise.all([
-    loadArtifactGroup(SINGLE_ARTIFACT_URLS, fetchFn),
-    loadArtifactGroup(BATCH_ARTIFACT_URLS, fetchFn),
+    loadSingleTeleportArtifacts(options),
+    loadBatchTeleportArtifacts(options),
   ]);
-  return {
-    single: single as SingleTeleportWasmArtifacts,
-    batch: batch as BatchTeleportWasmArtifacts,
-  };
+  return { single, batch };
 }

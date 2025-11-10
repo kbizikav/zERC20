@@ -4,8 +4,8 @@ import { AppProviders } from './providers/AppProviders';
 import { useWallet } from './providers/WalletProvider';
 import { Tabs } from '@components/Tabs';
 import { useRuntimeConfig } from '@config/ConfigContext';
-import { configureWasmLocator, getZerc20Contract, loadTeleportArtifacts, loadTokens } from '@zerc20/sdk';
-import type { NormalizedTokens, TeleportWasmArtifacts } from '@zerc20/sdk';
+import { configureWasmLocator, getZerc20Contract, loadTokens } from '@zerc20/sdk';
+import type { NormalizedTokens } from '@zerc20/sdk';
 import { ConvertPanel, PrivateReceivePanel, PrivateSendPanel, ScanReceivingsPanel } from '@features/index';
 import { buildSwitchChainOptions } from '@/utils/wallet';
 
@@ -382,7 +382,6 @@ function AppContent(): JSX.Element {
   const runtime = useRuntimeConfig();
   const { tokenSymbol } = runtime.app;
   const [tokens, setTokens] = useState<NormalizedTokens | null>(null);
-  const [artifacts, setArtifacts] = useState<TeleportWasmArtifacts | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('Loading configuration…');
   const [error, setError] = useState<string>();
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_SEND);
@@ -402,11 +401,6 @@ function AppContent(): JSX.Element {
         const loadedTokens = await loadTokens(runtime.tokensCompressed);
         if (cancelled) return;
         setTokens(loadedTokens);
-
-        setLoadingMessage('Loading proving artifacts…');
-        const loadedArtifacts = await loadTeleportArtifacts();
-        if (cancelled) return;
-        setArtifacts(loadedArtifacts);
         setLoadingMessage('');
       } catch (err) {
         if (cancelled) {
@@ -431,10 +425,7 @@ function AppContent(): JSX.Element {
     };
   }, [runtime.tokensCompressed]);
 
-  const isReady = useMemo(
-    () => Boolean(tokens && artifacts && !loadingMessage && !error),
-    [tokens, artifacts, loadingMessage, error],
-  );
+  const isReady = useMemo(() => Boolean(tokens && !loadingMessage && !error), [tokens, loadingMessage, error]);
 
   const hasConvertTokens = useMemo(
     () => Boolean(tokens?.tokens?.some((entry) => Boolean(entry.minterAddress))),
@@ -499,7 +490,7 @@ function AppContent(): JSX.Element {
       />
 
       <main className="panels">
-        {isReady && tokens && artifacts ? (
+        {isReady && tokens ? (
           <>
             {activeTab === TAB_SEND && (
               <section
@@ -518,12 +509,7 @@ function AppContent(): JSX.Element {
                 id={`panel-${TAB_RECEIVINGS}`}
                 aria-labelledby={`tab-${TAB_RECEIVINGS}`}
               >
-                <ScanReceivingsPanel
-                  config={runtime.app}
-                  tokens={tokens}
-                  artifacts={artifacts}
-                  storageRevision={storageRevision}
-                />
+                <ScanReceivingsPanel config={runtime.app} tokens={tokens} storageRevision={storageRevision} />
               </section>
             )}
             {activeTab === TAB_RECEIVE && (
@@ -536,7 +522,6 @@ function AppContent(): JSX.Element {
                 <PrivateReceivePanel
                   config={runtime.app}
                   tokens={tokens}
-                  artifacts={artifacts}
                   storageRevision={storageRevision}
                 />
               </section>
@@ -544,7 +529,7 @@ function AppContent(): JSX.Element {
           </>
         ) : (
           <section className="card" role="status" aria-live="polite">
-            <p>Waiting for configuration and assets…</p>
+            <p>Waiting for configuration and token metadata…</p>
           </section>
         )}
       </main>

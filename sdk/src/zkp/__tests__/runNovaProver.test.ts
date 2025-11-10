@@ -21,12 +21,6 @@ const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../../../');
 const wasmPath = path.join(repoRoot, 'wasm', 'pkg', 'zkerc20_wasm_bg.wasm');
 
-function loadArtifact(name: string): Uint8Array {
-  const fullPath = path.join(repoRoot, 'sdk', 'src', 'assets', 'artifacts', name);
-  const buffer = readFileSync(fullPath);
-  return new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-}
-
 function deterministicRandomValues<T extends ArrayBufferView | ArrayBuffer>(buffer: T): T {
   if (buffer instanceof Uint32Array && buffer.length > 0) {
     buffer[0] = 2;
@@ -117,12 +111,6 @@ describe('runNovaProver (dummy steps)', () => {
       const expectedDummySteps = 2;
 
       const result = await proofs.runNovaProver({
-        wasmArtifacts: {
-          localPp: loadArtifact('withdraw_local_nova_pp.bin'),
-          localVp: loadArtifact('withdraw_local_nova_vp.bin'),
-          globalPp: loadArtifact('withdraw_global_nova_pp.bin'),
-          globalVp: loadArtifact('withdraw_global_nova_vp.bin'),
-        },
         aggregationState: {
           latestAggSeq: 1n,
           aggregationRoot: ZERO_FR,

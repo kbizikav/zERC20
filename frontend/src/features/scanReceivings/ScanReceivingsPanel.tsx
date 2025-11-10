@@ -19,7 +19,7 @@ import {
 } from '@zerc20/sdk';
 import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens, TeleportWasmArtifacts } from '@zerc20/sdk';
+import type { NormalizedTokens } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 import { VetKey } from '@dfinity/vetkeys';
 import { StealthError } from '@zerc20/sdk';
@@ -31,7 +31,6 @@ import { yieldToUi } from '@features/redeem/yieldToUi';
 interface ScanReceivingsPanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  artifacts: TeleportWasmArtifacts;
   storageRevision: number;
 }
 
@@ -204,12 +203,7 @@ function persistAnnouncements(address: string, announcements: ScannedAnnouncemen
   }
 }
 
-export function ScanReceivingsPanel({
-  config,
-  tokens,
-  artifacts,
-  storageRevision,
-}: ScanReceivingsPanelProps): JSX.Element {
+export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanReceivingsPanelProps): JSX.Element {
   const wallet = useWallet();
   const [announcements, setAnnouncements] = useState<ScannedAnnouncement[]>([]);
   const [status, setStatus] = useState<string>();
@@ -616,17 +610,7 @@ export function ScanReceivingsPanel({
         await yieldToUi();
 
         if (eligible.length === 1) {
-          const fields = artifacts.single;
-          if (!fields.localPk || !fields.localVk || !fields.globalPk || !fields.globalVk) {
-            throw new Error('Upload all single teleport Groth16 artifacts before redeeming.');
-          }
           const singleProof = await generateSingleTeleportProof({
-            wasmArtifacts: {
-              localPk: fields.localPk,
-              localVk: fields.localVk,
-              globalPk: fields.globalPk,
-              globalVk: fields.globalVk,
-            },
             aggregationState: refreshedContext.aggregationState,
             recipientFr: detail.burn.generalRecipient.fr,
             secretHex: detail.burn.secret,
@@ -650,18 +634,8 @@ export function ScanReceivingsPanel({
           await yieldToUi();
           setRedeemMessage(`Teleport submitted: ${tx.hash}`);
         } else {
-          const fields = artifacts.batch;
-          if (!fields.localPp || !fields.localVp || !fields.globalPp || !fields.globalVp) {
-            throw new Error('Upload all batch teleport Nova artifacts before redeeming.');
-          }
           const decider = getDeciderClient({ baseUrl: config.deciderUrl });
           const batchProof = await generateBatchTeleportProof({
-            wasmArtifacts: {
-              localPp: fields.localPp,
-              localVp: fields.localVp,
-              globalPp: fields.globalPp,
-              globalVp: fields.globalVp,
-            },
             aggregationState: refreshedContext.aggregationState,
             recipientFr: detail.burn.generalRecipient.fr,
             secretHex: detail.burn.secret,
@@ -702,7 +676,7 @@ export function ScanReceivingsPanel({
         setIsLoading(false);
       }
     },
-    [detail, wallet.signer, tokens, availableTokens, artifacts, config],
+    [detail, wallet.signer, tokens, availableTokens, config],
   );
 
   return (

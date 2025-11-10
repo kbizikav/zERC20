@@ -98,12 +98,6 @@ export interface SingleTeleportArtifacts {
 }
 
 export interface SingleTeleportParams {
-  wasmArtifacts: {
-    localPk: Uint8Array;
-    localVk: Uint8Array;
-    globalPk: Uint8Array;
-    globalVk: Uint8Array;
-  };
   aggregationState: AggregationTreeState;
   recipientFr: string;
   secretHex: string;
@@ -112,12 +106,6 @@ export interface SingleTeleportParams {
 }
 
 export interface NovaProverInput {
-  wasmArtifacts: {
-    localPp: Uint8Array;
-    localVp: Uint8Array;
-    globalPp: Uint8Array;
-    globalVp: Uint8Array;
-  };
   aggregationState: AggregationTreeState;
   recipientFr: string;
   secretHex: string;

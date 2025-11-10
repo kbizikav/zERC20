@@ -1,5 +1,6 @@
 import type { NovaProverInput, NovaProverOutput } from "../types.js";
 import { hexToBytes, normalizeHex } from "../utils/hex.js";
+import { loadBatchTeleportArtifacts } from "../wasm/artifacts.js";
 import { createWithdrawNovaWasm, WithdrawNovaWasm } from "../wasm/index.js";
 import {
   appendDummySteps,
@@ -32,11 +33,12 @@ export async function runNovaProver(
   });
   const sortedEvents = proofEventPairs.map((pair) => pair.event);
   const sortedProofs = proofEventPairs.map((pair) => pair.proof);
+  const wasmArtifacts = await loadBatchTeleportArtifacts();
   const wasm: WithdrawNovaWasm = await createWithdrawNovaWasm(
-    params.wasmArtifacts.localPp,
-    params.wasmArtifacts.localVp,
-    params.wasmArtifacts.globalPp,
-    params.wasmArtifacts.globalVp
+    wasmArtifacts.localPp,
+    wasmArtifacts.localVp,
+    wasmArtifacts.globalPp,
+    wasmArtifacts.globalVp
   );
   const z0 = [
     formatFieldElement(params.aggregationState.aggregationRoot, "z0[0]"),

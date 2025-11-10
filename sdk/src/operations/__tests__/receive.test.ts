@@ -6,6 +6,12 @@ const proveMock = vi.fn();
 const createSingleWithdrawWasmMock = vi.fn(async () => ({
   prove: proveMock,
 }));
+const loadSingleTeleportArtifactsMock = vi.fn(async () => ({
+  localPk: new Uint8Array(),
+  localVk: new Uint8Array(),
+  globalPk: new Uint8Array(),
+  globalVk: new Uint8Array(),
+}));
 
 vi.mock('../../wasm/index.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../wasm/index.js')>();
@@ -14,6 +20,10 @@ vi.mock('../../wasm/index.js', async (importOriginal) => {
     createSingleWithdrawWasm: createSingleWithdrawWasmMock,
   };
 });
+
+vi.mock('../../wasm/artifacts.js', () => ({
+  loadSingleTeleportArtifacts: loadSingleTeleportArtifactsMock,
+}));
 
 // Import after mocks
 const { generateSingleTeleportProof } = await import('../receive.js');
@@ -31,6 +41,7 @@ describe('generateSingleTeleportProof', () => {
   beforeEach(() => {
     proveMock.mockReset();
     createSingleWithdrawWasmMock.mockClear();
+    loadSingleTeleportArtifactsMock.mockClear();
   });
 
   it('sends camelCase witness fields to the wasm prover', async () => {
@@ -55,12 +66,6 @@ describe('generateSingleTeleportProof', () => {
     };
 
     const result = await generateSingleTeleportProof({
-      wasmArtifacts: {
-        localPk: new Uint8Array(),
-        localVk: new Uint8Array(),
-        globalPk: new Uint8Array(),
-        globalVk: new Uint8Array(),
-      },
       aggregationState: {
         latestAggSeq: 1n,
         aggregationRoot: padHex(99),
@@ -76,6 +81,7 @@ describe('generateSingleTeleportProof', () => {
 
     expect(result).toEqual(proofResponse);
     expect(proveMock).toHaveBeenCalledTimes(1);
+    expect(loadSingleTeleportArtifactsMock).toHaveBeenCalledTimes(1);
 
     const witnessArg = proveMock.mock.calls[0]?.[0];
     expect(witnessArg).toBeDefined();
