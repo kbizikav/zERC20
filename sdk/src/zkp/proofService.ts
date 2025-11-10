@@ -7,11 +7,11 @@ import type {
   SingleTeleportParams,
 } from "../types.js";
 import { hexToBytes, normalizeHex } from "../utils/hex.js";
-import type { WasmRuntime } from "../wasm/index.js";
 import {
-  loadSingleTeleportArtifacts,
   loadBatchTeleportArtifacts,
+  loadSingleTeleportArtifacts,
 } from "../wasm/artifacts.js";
+import type { WasmRuntime } from "../wasm/index.js";
 import {
   appendDummySteps,
   formatFieldElement,
@@ -196,16 +196,7 @@ export class ProofService {
         steps: proofResult.steps,
       };
     } catch (error) {
-      const debugSiblings = steps.map((step) => ({
-        isDummy: step.is_dummy,
-        leafIndex: step.leafIndex,
-        siblings: step.siblings.slice(0, 4),
-      }));
-      console.error(
-        "[zkERC20] runNovaProver failed",
-        { firstSteps: debugSiblings.slice(0, 2), totalSteps: steps.length },
-        error
-      );
+      console.error("[zkERC20] runNovaProver failed", { z0 }, { steps }, error);
       throw new Error(
         error instanceof Error
           ? `batch teleport proof failed: ${error.message}`
