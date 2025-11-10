@@ -1,10 +1,9 @@
 import { FormEvent, useCallback, useMemo, useRef, useState } from 'react';
-import { normalizeHex, prepareInvoiceIssue, submitInvoice } from '@zerc20/sdk';
+import { normalizeHex, prepareInvoiceIssue, submitInvoice, getStealthClientFromConfig } from '@zerc20/sdk';
 import { getBytes, parseEther } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
+import type { NormalizedTokens, TeleportWasmArtifacts } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
-import { getStealthClient } from '@services/clients';
 import { useSeed } from '@/hooks/useSeed';
 import { toDataURL } from 'qrcode';
 import { ScanInvoicesPanel } from '@features/scanInvoices/ScanInvoicesPanel';
@@ -12,7 +11,7 @@ import { ScanInvoicesPanel } from '@features/scanInvoices/ScanInvoicesPanel';
 interface PrivateReceivePanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  artifacts: TeleportArtifacts;
+  artifacts: TeleportWasmArtifacts;
   storageRevision: number;
 }
 
@@ -90,7 +89,11 @@ export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision
         const recipientAddress = normalizeHex(wallet.account);
 
         setStatus('Preparing invoice artifacts…');
-        const stealthClient = await getStealthClient(config);
+        const stealthClient = await getStealthClientFromConfig({
+          icReplicaUrl: config.icReplicaUrl,
+          storageCanisterId: config.storageCanisterId,
+          keyManagerCanisterId: config.keyManagerCanisterId,
+        });
         const artifacts = await prepareInvoiceIssue({
           client: stealthClient,
           seedHex,

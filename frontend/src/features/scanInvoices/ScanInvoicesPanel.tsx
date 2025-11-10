@@ -13,13 +13,14 @@ import {
   createProviderForToken,
   generateBatchTeleportProof,
   generateSingleTeleportProof,
+  getStealthClientFromConfig,
+  getDeciderClient,
 } from '@zerc20/sdk';
 import { formatUnits, getBytes, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
+import type { NormalizedTokens, TeleportWasmArtifacts } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 import { useSeed } from '@/hooks/useSeed';
-import { createDeciderClient, getStealthClient } from '@services/clients';
 import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
 import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
@@ -28,7 +29,7 @@ import { yieldToUi } from '@features/redeem/yieldToUi';
 interface ScanInvoicesPanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  artifacts: TeleportArtifacts;
+  artifacts: TeleportWasmArtifacts;
   storageRevision: number;
 }
 
@@ -191,7 +192,11 @@ export function ScanInvoicesPanel({
         setIsLoading(true);
         setStatus('Scanning invoices…');
         const owner = normalizeHex(wallet.account);
-        const stealthClient = await getStealthClient(config);
+        const stealthClient = await getStealthClientFromConfig({
+          icReplicaUrl: config.icReplicaUrl,
+          storageCanisterId: config.storageCanisterId,
+          keyManagerCanisterId: config.keyManagerCanisterId,
+        });
         const ids = await listInvoices(stealthClient, owner, connectedToken.chainId);
         const normalizedOwner = owner;
         const normalizedIds = ids.map((value) => normalizeHex(value));
@@ -483,7 +488,7 @@ export function ScanInvoicesPanel({
           if (!fields.localPp || !fields.localVp || !fields.globalPp || !fields.globalVp) {
             throw new Error('Upload all batch teleport Nova artifacts before redeeming.');
           }
-          const decider = createDeciderClient(config);
+          const decider = getDeciderClient({ baseUrl: config.deciderUrl });
           const batchProof = await generateBatchTeleportProof({
             wasmArtifacts: {
               localPp: fields.localPp,

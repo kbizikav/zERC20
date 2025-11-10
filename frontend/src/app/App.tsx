@@ -4,11 +4,9 @@ import { AppProviders } from './providers/AppProviders';
 import { useWallet } from './providers/WalletProvider';
 import { Tabs } from '@components/Tabs';
 import { useRuntimeConfig } from '@config/ConfigContext';
-import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
-import { loadTeleportArtifacts, loadTokens } from '@services/resources';
-import { getZerc20Contract } from '@zerc20/sdk';
+import { configureWasmLocator, getZerc20Contract, loadTeleportArtifacts, loadTokens } from '@zerc20/sdk';
+import type { NormalizedTokens, TeleportWasmArtifacts } from '@zerc20/sdk';
 import { ConvertPanel, PrivateReceivePanel, PrivateSendPanel, ScanReceivingsPanel } from '@features/index';
-import { configureWasmLocator } from '@zerc20/sdk';
 import { buildSwitchChainOptions } from '@/utils/wallet';
 
 const TAB_SEND = 'send';
@@ -384,7 +382,7 @@ function AppContent(): JSX.Element {
   const runtime = useRuntimeConfig();
   const { tokenSymbol } = runtime.app;
   const [tokens, setTokens] = useState<NormalizedTokens | null>(null);
-  const [artifacts, setArtifacts] = useState<TeleportArtifacts | null>(null);
+  const [artifacts, setArtifacts] = useState<TeleportWasmArtifacts | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('Loading configuration…');
   const [error, setError] = useState<string>();
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_SEND);

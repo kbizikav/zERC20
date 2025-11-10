@@ -1,4 +1,6 @@
 import { JsonRpcProvider } from 'ethers';
+import { decode as decodeBase64 } from 'base64-arraybuffer';
+import { ungzip } from 'pako';
 
 import { normalizeHex, toBigInt } from '../utils/hex.js';
 
@@ -22,6 +24,12 @@ export interface HubEntry {
 export interface TokensFile {
   hub?: HubEntry;
   tokens: TokenEntry[];
+}
+
+export interface NormalizedTokens {
+  hub?: HubEntry;
+  tokens: TokenEntry[];
+  raw: TokensFile;
 }
 
 type MaybeString = string | number | bigint;
@@ -178,6 +186,99 @@ export function normalizeTokensFile(file: TokensFile): TokensFile {
   }
 
   return file;
+}
+
+function cloneTokensFile(file: TokensFile): TokensFile {
+  return {
+    ...file,
+    tokens: Array.isArray(file.tokens) ? [...file.tokens] : [],
+    hub: file.hub ? { ...file.hub } : undefined,
+  };
+}
+
+function asNormalizedTokens(file: TokensFile): NormalizedTokens {
+  const normalized = normalizeTokensFile(cloneTokensFile(file));
+  return {
+    raw: file,
+    tokens: normalized.tokens,
+    hub: normalized.hub,
+  };
+}
+
+function base64ToBytes(value: string): Uint8Array {
+  const normalized = value.replace(/\s+/g, '');
+  if (!normalized) {
+    throw new Error('Compressed tokens payload is empty');
+  }
+  try {
+    const buffer = decodeBase64(normalized);
+    return new Uint8Array(buffer);
+  } catch {
+    throw new Error('Compressed tokens payload is not valid base64');
+  }
+}
+
+const tokenCache = new Map<string, Promise<NormalizedTokens>>();
+
+export interface LoadTokensOptions {
+  cacheKey?: string;
+  cache?: Map<string, Promise<NormalizedTokens>>;
+  decoder?: TextDecoder;
+  decompress?: (data: Uint8Array) => Uint8Array | ArrayBuffer;
+}
+
+function decodeTokensPayload(bytes: Uint8Array, decoder?: TextDecoder): TokensFile {
+  const textDecoder = decoder ?? new TextDecoder();
+  const text = textDecoder.decode(bytes);
+  try {
+    return JSON.parse(text) as TokensFile;
+  } catch {
+    throw new Error('Decompressed tokens blob is not valid JSON');
+  }
+}
+
+export function normalizeTokens(file: TokensFile): NormalizedTokens {
+  return asNormalizedTokens(file);
+}
+
+export function clearTokensCache(cache?: Map<string, Promise<NormalizedTokens>>, key?: string): void {
+  const target = cache ?? tokenCache;
+  if (key) {
+    target.delete(key);
+    return;
+  }
+  target.clear();
+}
+
+export function loadTokensFromCompressed(
+  compressed: string,
+  options: LoadTokensOptions = {},
+): Promise<NormalizedTokens> {
+  const cache = options.cache ?? tokenCache;
+  const cacheKey = options.cacheKey ?? `compressed:${compressed}`;
+  if (cache.has(cacheKey)) {
+    return cache.get(cacheKey) as Promise<NormalizedTokens>;
+  }
+
+  const promise = Promise.resolve().then(() => {
+    const gzippedBytes = base64ToBytes(compressed);
+    const decompress = options.decompress ?? ((data: Uint8Array) => ungzip(data));
+    const decompressed = decompress(gzippedBytes);
+    const normalizedBytes =
+      decompressed instanceof Uint8Array ? decompressed : new Uint8Array(decompressed as ArrayBufferLike);
+    const parsed = decodeTokensPayload(normalizedBytes, options.decoder);
+    return asNormalizedTokens(parsed);
+  });
+
+  cache.set(cacheKey, promise);
+  return promise;
+}
+
+export function loadTokens(
+  compressed: string,
+  options: LoadTokensOptions = {},
+): Promise<NormalizedTokens> {
+  return loadTokensFromCompressed(compressed, options);
 }
 
 export function findTokenByChain(tokens: readonly TokenEntry[], chainId: bigint): TokenEntry {

@@ -8,11 +8,11 @@ import {
   createProviderForToken,
   normalizeHex,
   TokenEntry,
+  getStealthClientFromConfig,
 } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens } from '@/types/app';
-import { getStealthClient } from '@services/clients';
+import type { NormalizedTokens } from '@zerc20/sdk';
 import { useSeed } from '@/hooks/useSeed';
 import { getExplorerTxUrl } from '@utils/explorer';
 
@@ -265,7 +265,11 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
         const normalizedRecipient = normalizeHex(recipient);
 
         setStatus('Preparing encrypted announcement…');
-        const stealthClient = await getStealthClient(config);
+        const stealthClient = await getStealthClientFromConfig({
+          icReplicaUrl: config.icReplicaUrl,
+          storageCanisterId: config.storageCanisterId,
+          keyManagerCanisterId: config.keyManagerCanisterId,
+        });
         const preparation = await preparePrivateSend({
           client: stealthClient,
           recipientAddress: normalizedRecipient,

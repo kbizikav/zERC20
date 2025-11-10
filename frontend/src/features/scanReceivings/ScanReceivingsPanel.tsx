@@ -14,12 +14,13 @@ import {
   generateSingleTeleportProof,
   generateBatchTeleportProof,
   normalizeHex,
+  getStealthClientFromConfig,
+  getDeciderClient,
 } from '@zerc20/sdk';
 import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
+import type { NormalizedTokens, TeleportWasmArtifacts } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
-import { getStealthClient, createDeciderClient } from '@services/clients';
 import { VetKey } from '@dfinity/vetkeys';
 import { StealthError } from '@zerc20/sdk';
 import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
@@ -30,7 +31,7 @@ import { yieldToUi } from '@features/redeem/yieldToUi';
 interface ScanReceivingsPanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  artifacts: TeleportArtifacts;
+  artifacts: TeleportWasmArtifacts;
   storageRevision: number;
 }
 
@@ -357,7 +358,11 @@ export function ScanReceivingsPanel({
       }
 
       const performScan = async (forceRenew: boolean): Promise<ScannedAnnouncement[]> => {
-        const client = await getStealthClient(config);
+        const client = await getStealthClientFromConfig({
+          icReplicaUrl: config.icReplicaUrl,
+          storageCanisterId: config.storageCanisterId,
+          keyManagerCanisterId: config.keyManagerCanisterId,
+        });
         let vetKeyToUse = forceRenew ? undefined : cachedVetKey;
 
         if (forceRenew) {
@@ -649,7 +654,7 @@ export function ScanReceivingsPanel({
           if (!fields.localPp || !fields.localVp || !fields.globalPp || !fields.globalVp) {
             throw new Error('Upload all batch teleport Nova artifacts before redeeming.');
           }
-          const decider = createDeciderClient(config);
+          const decider = getDeciderClient({ baseUrl: config.deciderUrl });
           const batchProof = await generateBatchTeleportProof({
             wasmArtifacts: {
               localPp: fields.localPp,

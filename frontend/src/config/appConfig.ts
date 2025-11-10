@@ -14,6 +14,7 @@ export interface AppConfig {
 }
 
 export interface ArtifactLocationMap {
+  [artifact: string]: string;
   localPk: string;
   localVk: string;
   globalPk: string;
@@ -21,6 +22,7 @@ export interface ArtifactLocationMap {
 }
 
 export interface NovaArtifactLocationMap {
+  [artifact: string]: string;
   localPp: string;
   localVp: string;
   globalPp: string;

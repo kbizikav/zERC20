@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { formatUnits, parseUnits } from 'ethers';
 
 import { useWallet } from '@app/providers/WalletProvider';
-import type { NormalizedTokens } from '@/types/app';
+import type { NormalizedTokens } from '@zerc20/sdk';
 import {
   TokenEntry,
   createProviderForToken,

@@ -19,7 +19,6 @@
       "@app/*": ["./src/app/*"],
       "@components/*": ["./src/components/*"],
       "@features/*": ["./src/features/*"],
-      "@services/*": ["./src/services/*"],
       "@config/*": ["./src/config/*"],
       "@utils/*": ["./src/utils/*"]
     },
