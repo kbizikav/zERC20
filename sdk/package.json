@@ -9,8 +9,8 @@
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json && pnpm run copy-wasm",
-    "copy-wasm": "rm -rf dist/assets/wasm && mkdir -p dist/assets && cp -R src/assets/wasm dist/assets/wasm",
+    "build": "tsc -p tsconfig.json && pnpm run copy-assets",
+    "copy-assets": "rm -rf dist/assets && mkdir -p dist/assets && cp -R src/assets/. dist/assets/",
     "dev": "tsx watch src/index.ts",
     "test": "vitest run",
     "typecheck": "tsc --noEmit -p tsconfig.json"

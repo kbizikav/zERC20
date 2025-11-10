@@ -399,12 +399,12 @@ function AppContent(): JSX.Element {
       try {
         setError(undefined);
         setLoadingMessage('Loading token metadata…');
-        const loadedTokens = await loadTokens(runtime.resources.tokensCompressed);
+        const loadedTokens = await loadTokens(runtime.tokensCompressed);
         if (cancelled) return;
         setTokens(loadedTokens);
 
         setLoadingMessage('Loading proving artifacts…');
-        const loadedArtifacts = await loadTeleportArtifacts(runtime.resources.artifacts);
+        const loadedArtifacts = await loadTeleportArtifacts();
         if (cancelled) return;
         setArtifacts(loadedArtifacts);
         setLoadingMessage('');
@@ -429,7 +429,7 @@ function AppContent(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [runtime.resources]);
+  }, [runtime.tokensCompressed]);
 
   const isReady = useMemo(
     () => Boolean(tokens && artifacts && !loadingMessage && !error),
