@@ -38,116 +38,328 @@ import {
 } from '../types.js';
 import { normalizeHex, toBigInt } from '../utils/hex.js';
 
-const wasmModuleUrl = new URL('../assets/wasm/zkerc20_wasm_bg.wasm', import.meta.url).toString();
+const DEFAULT_WASM_FILENAME = 'assets/wasm/zkerc20_wasm_bg.wasm';
+const BUNDLED_WASM_URL = new URL('../assets/wasm/zkerc20_wasm_bg.wasm', import.meta.url).toString();
 
-let wasmInitPromise: Promise<void> | undefined;
-
-declare global {
-  interface Window {
-    __ZKERC20_WASM_PATH__?: string;
-  }
-}
-
-interface WasmLocatorGlobal {
-  __ZKERC20_WASM_PATH__?: string;
+export interface WasmLocatorGlobal {
   location?: {
     origin?: string;
   };
 }
 
-export interface ConfigureWasmOptions {
+export interface WasmRuntimeOptions {
+  /** Direct URL to the wasm bundle. */
+  url?: string;
+  /** Base URL used to resolve the wasm file; relative paths rely on window.location.origin. */
   baseUrl?: string;
+  /** Override filename when using a custom base. */
   wasmFilename?: string;
+  /** Custom global object used when resolving relative base URLs (defaults to globalThis). */
   globalObject?: WasmLocatorGlobal;
+}
+
+export class WasmRuntime {
+  private locator: WasmRuntimeOptions;
+  private overrideUrl?: string;
+  private initPromise?: Promise<void>;
+
+  constructor(options: WasmRuntimeOptions = {}) {
+    this.locator = { ...options };
+    this.overrideUrl = normalizeOverride(options.url);
+  }
+
+  configure(options: WasmRuntimeOptions): void {
+    this.locator = { ...options };
+    this.overrideUrl = normalizeOverride(options.url);
+    this.initPromise = undefined;
+  }
+
+  setOverrideUrl(url?: string): void {
+    this.overrideUrl = normalizeOverride(url);
+    this.initPromise = undefined;
+  }
+
+  async ready(): Promise<void> {
+    await this.ensureReady();
+  }
+
+  async getSeedMessage(): Promise<string> {
+    await this.ensureReady();
+    return wasmSeedMessage();
+  }
+
+  async derivePaymentAdvice(
+    seedHex: string,
+    paymentAdviceIdHex: string,
+    recipientChainId: bigint | number,
+    recipientAddress: string,
+  ): Promise<SecretAndTweak> {
+    await this.ensureReady();
+    return asSecretAndTweak(
+      wasmDerivePaymentAdvice(
+        normalizeHex(seedHex),
+        normalizeHex(paymentAdviceIdHex),
+        toBigInt(recipientChainId),
+        normalizeHex(recipientAddress),
+      ),
+    );
+  }
+
+  async deriveInvoiceSingle(
+    seedHex: string,
+    invoiceIdHex: string,
+    recipientChainId: bigint | number,
+    recipientAddress: string,
+  ): Promise<SecretAndTweak> {
+    await this.ensureReady();
+    return asSecretAndTweak(
+      wasmDeriveInvoiceSingle(
+        normalizeHex(seedHex),
+        normalizeHex(invoiceIdHex),
+        toBigInt(recipientChainId),
+        normalizeHex(recipientAddress),
+      ),
+    );
+  }
+
+  async deriveInvoiceBatch(
+    seedHex: string,
+    invoiceIdHex: string,
+    subId: number,
+    recipientChainId: bigint | number,
+    recipientAddress: string,
+  ): Promise<SecretAndTweak> {
+    await this.ensureReady();
+    return asSecretAndTweak(
+      wasmDeriveInvoiceBatch(
+        normalizeHex(seedHex),
+        normalizeHex(invoiceIdHex),
+        subId,
+        toBigInt(recipientChainId),
+        normalizeHex(recipientAddress),
+      ),
+    );
+  }
+
+  async buildFullBurnAddress(
+    recipientChainId: bigint | number,
+    recipientAddress: string,
+    secretHex: string,
+    tweakHex: string,
+  ): Promise<BurnArtifacts> {
+    await this.ensureReady();
+    const result = wasmBuildFullBurnAddress(
+      toBigInt(recipientChainId),
+      normalizeHex(recipientAddress),
+      normalizeHex(secretHex),
+      normalizeHex(tweakHex),
+    );
+    return asBurnArtifacts(result);
+  }
+
+  async decodeFullBurnAddress(payloadHex: string): Promise<BurnArtifacts> {
+    await this.ensureReady();
+    return asBurnArtifacts(wasmDecodeFullBurnAddress(normalizeHex(payloadHex)));
+  }
+
+  async generalRecipientFr(
+    chainId: bigint | number,
+    recipientAddress: string,
+    tweakHex: string,
+  ): Promise<string> {
+    await this.ensureReady();
+    return normalizeHex(
+      wasmGeneralRecipientFr(toBigInt(chainId), normalizeHex(recipientAddress), normalizeHex(tweakHex)),
+    );
+  }
+
+  async aggregationRoot(snapshot: readonly string[]): Promise<string> {
+    await this.ensureReady();
+    return normalizeHex(wasmAggregationRoot(snapshot.slice()));
+  }
+
+  async aggregationMerkleProof(snapshot: readonly string[], index: number): Promise<string[]> {
+    await this.ensureReady();
+    const siblings: string[] = wasmAggregationMerkleProof(snapshot.slice(), index);
+    return siblings.map((value) => normalizeHex(value));
+  }
+
+  async fetchAggregationTreeState(params: FetchAggregationTreeStateParams): Promise<AggregationTreeState> {
+    await this.ensureReady();
+    const payload: {
+      eventBlockSpan?: number;
+      hub: RawHubEntry;
+      token: RawTokenEntry;
+    } = {
+      hub: serializeHubEntry(params.hub),
+      token: serializeTokenEntry(params.token),
+    };
+    if (params.eventBlockSpan !== undefined) {
+      payload.eventBlockSpan = toSafeNumber(params.eventBlockSpan, 'eventBlockSpan');
+    }
+    const rawState: RawAggregationTreeState = await wasmFetchAggregationTreeState(payload);
+    return deserializeAggregationTreeState(rawState);
+  }
+
+  async fetchTransferEvents(params: FetchTransferEventsParams): Promise<ChainEvents[]> {
+    await this.ensureReady();
+    const payload = {
+      indexerUrl: params.indexerUrl,
+      indexerFetchLimit: params.indexerFetchLimit,
+      tokens: params.tokens.map(serializeTokenEntry),
+      burnAddresses: params.burnAddresses.map((address) => normalizeHex(address)),
+    };
+    const rawEvents: RawChainEvents[] = await wasmFetchTransferEvents(payload);
+    return rawEvents.map((entry) => deserializeChainEvents(entry));
+  }
+
+  async separateEventsByEligibility(
+    params: SeparateEventsByEligibilityParams,
+  ): Promise<SeparatedChainEvents[]> {
+    await this.ensureReady();
+    const payload = {
+      aggregationState: serializeAggregationTreeState(params.aggregationState),
+      events: params.events.map(serializeChainEvents),
+    };
+    const rawSeparated: RawSeparatedChainEvents[] = wasmSeparateEventsByEligibility(payload);
+    return rawSeparated.map((entry) => deserializeSeparatedChainEvents(entry));
+  }
+
+  async fetchLocalTeleportMerkleProofs(
+    params: FetchLocalTeleportProofsParams,
+  ): Promise<LocalTeleportProof[]> {
+    await this.ensureReady();
+    const payload = {
+      indexerUrl: params.indexerUrl,
+      token: serializeTokenEntry(params.token),
+      treeIndex: toBigInt(params.treeIndex),
+      events: params.events.map(serializeIndexedEvent),
+    };
+    const rawProofs: RawLocalTeleportProof[] = await wasmFetchLocalTeleportMerkleProofs(payload);
+    return rawProofs.map((proof) => deserializeLocalTeleportProof(proof));
+  }
+
+  async generateGlobalTeleportMerkleProofs(
+    params: GenerateGlobalTeleportProofsParams,
+  ): Promise<GlobalTeleportProofWithEvent[]> {
+    await this.ensureReady();
+    const payload = {
+      aggregationState: serializeAggregationTreeState(params.aggregationState),
+      proofs: params.chains.map(serializeChainLocalTeleportProofs),
+    };
+    const rawProofs: RawGlobalTeleportProof[] = wasmGenerateGlobalTeleportMerkleProofs(payload);
+    return rawProofs.map((proof) => deserializeGlobalTeleportProof(proof));
+  }
+
+  async createSingleWithdrawProgram(
+    localPk: Uint8Array,
+    localVk: Uint8Array,
+    globalPk: Uint8Array,
+    globalVk: Uint8Array,
+  ): Promise<SingleWithdrawWasm> {
+    await this.ensureReady();
+    return new SingleWithdrawWasm(localPk, localVk, globalPk, globalVk);
+  }
+
+  async createWithdrawNovaProgram(
+    localPp: Uint8Array,
+    localVp: Uint8Array,
+    globalPp: Uint8Array,
+    globalVp: Uint8Array,
+  ): Promise<WithdrawNovaWasm> {
+    await this.ensureReady();
+    return new WithdrawNovaWasm(localPp, localVp, globalPp, globalVp);
+  }
+
+  private async ensureReady(): Promise<void> {
+    if (!this.initPromise) {
+      this.initPromise = this.initialize();
+    }
+    await this.initPromise;
+  }
+
+  private async initialize(): Promise<void> {
+    const candidates = this.resolveCandidateUrls();
+    let lastError: unknown;
+    for (let idx = 0; idx < candidates.length; idx++) {
+      const candidate = candidates[idx];
+      try {
+        await initWasm({ module_or_path: candidate });
+        return;
+      } catch (error) {
+        lastError = error;
+        if (idx < candidates.length - 1) {
+          logWasmFallbackWarning(candidate, error);
+        }
+      }
+    }
+    throw new Error(`failed to initialize zkERC20 wasm: ${formatError(lastError)}`);
+  }
+
+  private resolveCandidateUrls(): string[] {
+    const urls: string[] = [];
+    if (this.overrideUrl) {
+      urls.push(this.overrideUrl);
+    }
+    const configured = this.resolveConfiguredUrl();
+    if (configured && configured !== this.overrideUrl) {
+      urls.push(configured);
+    }
+    if (!urls.includes(BUNDLED_WASM_URL)) {
+      urls.push(BUNDLED_WASM_URL);
+    }
+    return urls;
+  }
+
+  private resolveConfiguredUrl(): string | undefined {
+    const baseUrl = this.locator.baseUrl;
+    if (!baseUrl) {
+      return undefined;
+    }
+    const wasmFilename = this.locator.wasmFilename ?? DEFAULT_WASM_FILENAME;
+    if (/^https?:\/\//i.test(baseUrl)) {
+      return new URL(wasmFilename, ensureTrailingSlash(baseUrl)).toString();
+    }
+    const globalRef = this.locator.globalObject ?? (typeof globalThis !== 'undefined' ? (globalThis as WasmLocatorGlobal) : undefined);
+    const origin = globalRef?.location?.origin;
+    if (!origin) {
+      throw new Error('WasmRuntime requires a global location.origin when baseUrl is relative');
+    }
+    const prefix = baseUrl.startsWith('/') ? `${origin}${baseUrl}` : `${origin}/${baseUrl}`;
+    return new URL(wasmFilename, ensureTrailingSlash(prefix)).toString();
+  }
+}
+
+function normalizeOverride(url?: string): string | undefined {
+  if (!url) {
+    return undefined;
+  }
+  const trimmed = url.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
 }
 
 function ensureTrailingSlash(value: string): string {
   return value.endsWith('/') ? value : `${value}/`;
 }
 
-function resolveOriginBase(options: ConfigureWasmOptions): string {
-  const baseUrl = ensureTrailingSlash(options.baseUrl ?? '/');
-  const hasProtocol = /^https?:\/\//i.test(baseUrl);
-  if (hasProtocol) {
-    return baseUrl;
-  }
-
-  const globalObject = options.globalObject ?? (globalThis as WasmLocatorGlobal | undefined);
-  const origin = globalObject?.location?.origin;
-  if (!origin) {
-    throw new Error('configureWasmLocator requires a global location.origin when baseUrl is relative');
-  }
-
-  if (baseUrl.startsWith('/')) {
-    return `${origin}${baseUrl}`;
-  }
-  return `${origin}/${baseUrl}`;
-}
-
-export function configureWasmLocator(options: ConfigureWasmOptions = {}): void {
-  if (typeof globalThis === 'undefined') {
-    return;
-  }
-
-  const globalObject = options.globalObject ?? (globalThis as WasmLocatorGlobal);
-  if (!options.baseUrl && !options.wasmFilename) {
-    globalObject.__ZKERC20_WASM_PATH__ = wasmModuleUrl;
-    return;
-  }
-  const wasmFilename = options.wasmFilename ?? 'assets/wasm/zkerc20_wasm_bg.wasm';
-  const base = resolveOriginBase({ ...options, globalObject });
-  const wasmUrl = new URL(wasmFilename, base);
-  globalObject.__ZKERC20_WASM_PATH__ = wasmUrl.toString();
-}
-
-function resolveWasmOverride(): string | undefined {
-  try {
-    const override = (globalThis as { __ZKERC20_WASM_PATH__?: unknown }).__ZKERC20_WASM_PATH__;
-    if (typeof override === 'string') {
-      const trimmed = override.trim();
-      if (trimmed.length > 0) {
-        return trimmed;
-      }
-    }
-  } catch {
-    // ignore lookup errors (e.g. globalThis not defined)
-  }
-  return undefined;
-}
-
-function logWasmFallbackWarning(override: string, error: unknown): void {
+function logWasmFallbackWarning(url: string, error: unknown): void {
   if (typeof console === 'undefined' || typeof console.warn !== 'function') {
     return;
   }
   console.warn(
-    `zkERC20 wasm failed to load from override path '${override}'. Falling back to the bundled module URL.`,
+    `zkERC20 wasm failed to load from '${url}'. Falling back to the next candidate.`,
     error,
   );
 }
 
-async function initializeWasm(): Promise<void> {
-  const override = resolveWasmOverride();
-  if (override) {
-    try {
-      await initWasm(override);
-      return;
-    } catch (error) {
-      logWasmFallbackWarning(override, error);
-    }
+function formatError(error: unknown): string {
+  if (!error) {
+    return 'unknown error';
   }
-  await initWasm(wasmModuleUrl);
-}
-
-async function ensureWasm(): Promise<void> {
-  if (!wasmInitPromise) {
-    wasmInitPromise = initializeWasm();
+  if (error instanceof Error) {
+    return error.message;
   }
-  await wasmInitPromise;
-}
-
-export async function getSeedMessage(): Promise<string> {
-  await ensureWasm();
-  return wasmSeedMessage();
+  return String(error);
 }
 
 interface RawSecretAndTweak {
@@ -426,191 +638,6 @@ function toSafeNumber(value: number | bigint, label: string): number {
     throw new Error(`${label} exceeds JavaScript safe integer range`);
   }
   return asNumber;
-}
-
-export async function derivePaymentAdvice(
-  seedHex: string,
-  paymentAdviceIdHex: string,
-  recipientChainId: bigint | number,
-  recipientAddress: string,
-): Promise<SecretAndTweak> {
-  await ensureWasm();
-  return asSecretAndTweak(
-    wasmDerivePaymentAdvice(
-      normalizeHex(seedHex),
-      normalizeHex(paymentAdviceIdHex),
-      toBigInt(recipientChainId),
-      normalizeHex(recipientAddress),
-    ),
-  );
-}
-
-export async function deriveInvoiceSingle(
-  seedHex: string,
-  invoiceIdHex: string,
-  recipientChainId: bigint | number,
-  recipientAddress: string,
-): Promise<SecretAndTweak> {
-  await ensureWasm();
-  return asSecretAndTweak(
-    wasmDeriveInvoiceSingle(
-      normalizeHex(seedHex),
-      normalizeHex(invoiceIdHex),
-      toBigInt(recipientChainId),
-      normalizeHex(recipientAddress),
-    ),
-  );
-}
-
-export async function deriveInvoiceBatch(
-  seedHex: string,
-  invoiceIdHex: string,
-  subId: number,
-  recipientChainId: bigint | number,
-  recipientAddress: string,
-): Promise<SecretAndTweak> {
-  await ensureWasm();
-  return asSecretAndTweak(
-    wasmDeriveInvoiceBatch(
-      normalizeHex(seedHex),
-      normalizeHex(invoiceIdHex),
-      subId,
-      toBigInt(recipientChainId),
-      normalizeHex(recipientAddress),
-    ),
-  );
-}
-
-export async function buildFullBurnAddress(
-  recipientChainId: bigint | number,
-  recipientAddress: string,
-  secretHex: string,
-  tweakHex: string,
-): Promise<BurnArtifacts> {
-  await ensureWasm();
-  const result = wasmBuildFullBurnAddress(
-    toBigInt(recipientChainId),
-    normalizeHex(recipientAddress),
-    normalizeHex(secretHex),
-    normalizeHex(tweakHex),
-  );
-  return asBurnArtifacts(result);
-}
-
-export async function decodeFullBurnAddress(payloadHex: string): Promise<BurnArtifacts> {
-  await ensureWasm();
-  return asBurnArtifacts(wasmDecodeFullBurnAddress(normalizeHex(payloadHex)));
-}
-
-export async function generalRecipientFr(
-  chainId: bigint | number,
-  recipientAddress: string,
-  tweakHex: string,
-): Promise<string> {
-  await ensureWasm();
-  return normalizeHex(
-    wasmGeneralRecipientFr(toBigInt(chainId), normalizeHex(recipientAddress), normalizeHex(tweakHex)),
-  );
-}
-
-export async function aggregationRoot(snapshot: readonly string[]): Promise<string> {
-  await ensureWasm();
-  return normalizeHex(wasmAggregationRoot(snapshot.slice()));
-}
-
-export async function aggregationMerkleProof(snapshot: readonly string[], index: number): Promise<string[]> {
-  await ensureWasm();
-  const siblings: string[] = wasmAggregationMerkleProof(snapshot.slice(), index);
-  return siblings.map((value) => normalizeHex(value));
-}
-
-export async function fetchAggregationTreeState(
-  params: FetchAggregationTreeStateParams,
-): Promise<AggregationTreeState> {
-  await ensureWasm();
-  const payload: {
-    eventBlockSpan?: number;
-    hub: RawHubEntry;
-    token: RawTokenEntry;
-  } = {
-    hub: serializeHubEntry(params.hub),
-    token: serializeTokenEntry(params.token),
-  };
-  if (params.eventBlockSpan !== undefined) {
-    payload.eventBlockSpan = toSafeNumber(params.eventBlockSpan, 'eventBlockSpan');
-  }
-  const rawState: RawAggregationTreeState = await wasmFetchAggregationTreeState(payload);
-  return deserializeAggregationTreeState(rawState);
-}
-
-export async function fetchTransferEvents(params: FetchTransferEventsParams): Promise<ChainEvents[]> {
-  await ensureWasm();
-  const payload = {
-    indexerUrl: params.indexerUrl,
-    indexerFetchLimit: params.indexerFetchLimit,
-    tokens: params.tokens.map(serializeTokenEntry),
-    burnAddresses: params.burnAddresses.map((address) => normalizeHex(address)),
-  };
-  const rawEvents: RawChainEvents[] = await wasmFetchTransferEvents(payload);
-  return rawEvents.map((entry) => deserializeChainEvents(entry));
-}
-
-export async function separateEventsByEligibility(
-  params: SeparateEventsByEligibilityParams,
-): Promise<SeparatedChainEvents[]> {
-  await ensureWasm();
-  const payload = {
-    aggregationState: serializeAggregationTreeState(params.aggregationState),
-    events: params.events.map(serializeChainEvents),
-  };
-  const rawSeparated: RawSeparatedChainEvents[] = wasmSeparateEventsByEligibility(payload);
-  return rawSeparated.map((entry) => deserializeSeparatedChainEvents(entry));
-}
-
-export async function fetchLocalTeleportMerkleProofs(
-  params: FetchLocalTeleportProofsParams,
-): Promise<LocalTeleportProof[]> {
-  await ensureWasm();
-  const payload = {
-    indexerUrl: params.indexerUrl,
-    token: serializeTokenEntry(params.token),
-    treeIndex: toBigInt(params.treeIndex),
-    events: params.events.map(serializeIndexedEvent),
-  };
-  const rawProofs: RawLocalTeleportProof[] = await wasmFetchLocalTeleportMerkleProofs(payload);
-  return rawProofs.map((proof) => deserializeLocalTeleportProof(proof));
-}
-
-export async function generateGlobalTeleportMerkleProofs(
-  params: GenerateGlobalTeleportProofsParams,
-): Promise<GlobalTeleportProofWithEvent[]> {
-  await ensureWasm();
-  const payload = {
-    aggregationState: serializeAggregationTreeState(params.aggregationState),
-    proofs: params.chains.map(serializeChainLocalTeleportProofs),
-  };
-  const rawProofs: RawGlobalTeleportProof[] = wasmGenerateGlobalTeleportMerkleProofs(payload);
-  return rawProofs.map((proof) => deserializeGlobalTeleportProof(proof));
-}
-
-export async function createSingleWithdrawWasm(
-  localPk: Uint8Array,
-  localVk: Uint8Array,
-  globalPk: Uint8Array,
-  globalVk: Uint8Array,
-): Promise<SingleWithdrawWasm> {
-  await ensureWasm();
-  return new SingleWithdrawWasm(localPk, localVk, globalPk, globalVk);
-}
-
-export async function createWithdrawNovaWasm(
-  localPp: Uint8Array,
-  localVp: Uint8Array,
-  globalPp: Uint8Array,
-  globalVp: Uint8Array,
-): Promise<WithdrawNovaWasm> {
-  await ensureWasm();
-  return new WithdrawNovaWasm(localPp, localVp, globalPp, globalVp);
 }
 
 export type { SingleWithdrawWasm, WithdrawNovaWasm };

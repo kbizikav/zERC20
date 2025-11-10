@@ -2,7 +2,8 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { runNovaProver } from '../index.js';
+import { ProofService } from '../index.js';
+import { WasmRuntime } from '../../wasm/index.js';
 
 const ZERO_FR = `0x${'00'.repeat(32)}`;
 const DUMMY_RECIPIENT = `0x${'01'.repeat(32)}`;
@@ -19,10 +20,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, '../../../../');
 const wasmPath = path.join(repoRoot, 'wasm', 'pkg', 'zkerc20_wasm_bg.wasm');
-
-const previousOverride = (globalThis as { __ZKERC20_WASM_PATH__?: string }).__ZKERC20_WASM_PATH__;
-(globalThis as { __ZKERC20_WASM_PATH__?: string }).__ZKERC20_WASM_PATH__ =
-  pathToFileURL(wasmPath).toString();
 
 function loadArtifact(name: string): Uint8Array {
   const fullPath = path.join(repoRoot, 'sdk', 'src', 'assets', 'artifacts', name);
@@ -41,6 +38,7 @@ const originalCrypto = (globalThis as unknown as MutableCryptoGlobal).crypto;
 const originalFetch = globalThis.fetch;
 let installedCrypto = false;
 let previousGetRandomValues: CryptoLike['getRandomValues'] | undefined;
+let proofs: ProofService;
 
 beforeAll(() => {
   (globalThis as { fetch?: typeof fetch }).fetch = (async (input: any, init?: any) => {
@@ -85,6 +83,10 @@ beforeAll(() => {
     previousGetRandomValues = globalRef.crypto.getRandomValues.bind(globalRef.crypto);
     globalRef.crypto.getRandomValues = deterministicRandomValues;
   }
+  const wasm = new WasmRuntime({
+    url: pathToFileURL(wasmPath).toString(),
+  });
+  proofs = new ProofService(wasm, { defaultToWorker: false });
 });
 
 afterAll(() => {
@@ -105,11 +107,7 @@ afterAll(() => {
   } else {
     delete (globalThis as { fetch?: typeof fetch }).fetch;
   }
-  if (previousOverride) {
-    (globalThis as { __ZKERC20_WASM_PATH__?: string }).__ZKERC20_WASM_PATH__ = previousOverride;
-  } else {
-    delete (globalThis as { __ZKERC20_WASM_PATH__?: string }).__ZKERC20_WASM_PATH__;
-  }
+  proofs = undefined as unknown as ProofService;
 });
 
 describe('runNovaProver (dummy steps)', () => {
@@ -118,7 +116,7 @@ describe('runNovaProver (dummy steps)', () => {
     async () => {
       const expectedDummySteps = 2;
 
-      const result = await runNovaProver({
+      const result = await proofs.runNovaProver({
         wasmArtifacts: {
           localPp: loadArtifact('withdraw_local_nova_pp.bin'),
           localVp: loadArtifact('withdraw_local_nova_vp.bin'),

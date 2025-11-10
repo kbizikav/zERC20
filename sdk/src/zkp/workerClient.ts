@@ -88,7 +88,7 @@ function ensureWorker(): Worker {
     throw new Error('Web Worker API is not available in this environment');
   }
   if (!worker) {
-    const workerUrl = new URL('../workers/zkp.worker.js', import.meta.url);
+    const workerUrl = new URL('./worker.js', import.meta.url);
     const instance = new Worker(workerUrl, { type: 'module' });
     instance.addEventListener('message', handleWorkerMessage);
     instance.addEventListener('error', (event) => handleWorkerError(event as ErrorEvent));
