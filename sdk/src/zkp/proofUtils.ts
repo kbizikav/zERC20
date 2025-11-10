@@ -48,7 +48,7 @@ export function randomDummySteps(): number {
 
 export function appendDummySteps(steps: any[]): void {
   const dummySteps = randomDummySteps();
-  const maxLeaves = 1n << BigInt(30);
+  const maxLeaves = 1n << BigInt(GLOBAL_TRANSFER_TREE_HEIGHT);
   const offset = maxLeaves - 1n - BigInt(dummySteps);
   for (let i = 0; i < dummySteps; i += 1) {
     const leafIndex = offset + BigInt(i);

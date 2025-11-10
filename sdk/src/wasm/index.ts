@@ -37,6 +37,7 @@ import {
   TokenEntryConfig,
 } from '../types.js';
 import { normalizeHex, toBigInt } from '../utils/hex.js';
+import { NUM_BATCH_INVOICES } from '../constants.js';
 
 const DEFAULT_WASM_FILENAME = 'assets/wasm/zkerc20_wasm_bg.wasm';
 const BUNDLED_WASM_URL = new URL('../assets/wasm/zkerc20_wasm_bg.wasm', import.meta.url).toString();
@@ -129,6 +130,7 @@ export class WasmRuntime {
     recipientChainId: bigint | number,
     recipientAddress: string,
   ): Promise<SecretAndTweak> {
+    assertValidInvoiceSubId(subId);
     await this.ensureReady();
     return asSecretAndTweak(
       wasmDeriveInvoiceBatch(
@@ -623,10 +625,22 @@ function deserializeGlobalTeleportProof(raw: RawGlobalTeleportProof): GlobalTele
   };
 }
 
+function assertValidInvoiceSubId(subId: number): void {
+  if (!Number.isFinite(subId) || !Number.isInteger(subId)) {
+    throw new Error('subId must be a finite integer');
+  }
+  if (subId < 0 || subId >= NUM_BATCH_INVOICES) {
+    throw new Error(`subId must be between 0 and ${NUM_BATCH_INVOICES - 1}`);
+  }
+}
+
 function toSafeNumber(value: number | bigint, label: string): number {
   if (typeof value === 'number') {
     if (!Number.isFinite(value) || !Number.isInteger(value)) {
       throw new Error(`${label} must be a finite integer`);
+    }
+    if (value < 0) {
+      throw new Error(`${label} must be non-negative`);
     }
     return value;
   }
