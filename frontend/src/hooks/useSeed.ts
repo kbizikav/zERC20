@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { getBytes, JsonRpcSigner, keccak256 } from 'ethers';
-import { seedDerivationMessage } from '@zerc20/sdk';
+import { getSeedMessage } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 
 export interface SeedState {
@@ -83,7 +83,7 @@ async function deriveSeedForAccount(
 
   const derivation = (async () => {
     const signer = await ensureSigner();
-    const message = await seedDerivationMessage();
+    const message = await getSeedMessage();
     const signature = await signer.signMessage(message);
     const digest = keccak256(getBytes(signature));
     persistSeed(account, digest);

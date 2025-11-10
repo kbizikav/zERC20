@@ -40,7 +40,3 @@ export async function loadTeleportArtifacts(paths: ArtifactPaths): Promise<Telep
     batch: batch as BatchTeleportArtifacts,
   };
 }
-
-export function clearArtifactsCache(): void {
-  binaryCache.clear();
-}

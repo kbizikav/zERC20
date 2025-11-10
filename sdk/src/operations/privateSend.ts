@@ -3,22 +3,15 @@ import { StealthCanisterClient } from '../ic/client.js';
 import { Announcement } from '../ic/types.js';
 import { getBytes } from 'ethers';
 
-import {
-  PreparedPrivateSend,
-  PrivateSendResult,
-} from '../types.js';
+import { PreparedPrivateSend, PrivateSendResult } from '../types.js';
 import {
   addressToBytes,
+  bytesToHex,
   ensureHexLength,
-  hexFromBytes,
   normalizeHex,
   randomBytes,
 } from '../utils/hex.js';
-import {
-  buildFullBurnAddress,
-  derivePaymentAdvice,
-  getSeedMessage,
-} from '../wasm/index.js';
+import { buildFullBurnAddress, derivePaymentAdvice } from '../wasm/index.js';
 
 export interface PreparePrivateSendParams {
   client: StealthCanisterClient;
@@ -27,10 +20,6 @@ export interface PreparePrivateSendParams {
   seedHex: string;
   paymentAdviceIdHex?: string;
   randomBytes?: (length: number) => Uint8Array;
-}
-
-export async function seedDerivationMessage(): Promise<string> {
-  return getSeedMessage();
 }
 
 export async function preparePrivateSend(
@@ -47,7 +36,7 @@ export async function preparePrivateSend(
     const rng = params.randomBytes ?? randomBytes;
     paymentAdviceBytes = rng(32);
   }
-  const paymentAdviceIdHex = hexFromBytes(paymentAdviceBytes);
+  const paymentAdviceIdHex = bytesToHex(paymentAdviceBytes);
 
   const secretAndTweak = await derivePaymentAdvice(
     seedHex,

@@ -29,7 +29,3 @@ export async function getStealthClient(config: AppConfig): Promise<StealthCanist
 export function createDeciderClient(config: AppConfig): HttpDeciderClient {
   return new HttpDeciderClient(config.deciderUrl);
 }
-
-export function clearStealthClientCache(): void {
-  stealthClientCache.clear();
-}

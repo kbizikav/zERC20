@@ -5,7 +5,7 @@ import { scanAnnouncements } from '../ic/encryption.js';
 import { Announcement, EncryptedViewKeyRequest } from '../ic/types.js';
 import type { VetKey } from '@dfinity/vetkeys';
 import { ScannedAnnouncement } from '../types.js';
-import { addressToBytes, hexFromBytes } from '../utils/hex.js';
+import { addressToBytes, bytesToHex } from '../utils/hex.js';
 import { decodeFullBurnAddress } from '../wasm/index.js';
 
 export interface AuthorizationPayload {
@@ -84,7 +84,7 @@ export async function scanReceivings(
     const decrypted = await scanAnnouncements(vetKey, page.announcements);
     for (const item of decrypted) {
       try {
-        const burnArtifacts = await decodeFullBurnAddress(hexFromBytes(item.plaintext));
+        const burnArtifacts = await decodeFullBurnAddress(bytesToHex(item.plaintext));
         collected.push({
           id: item.id,
           burnAddress: burnArtifacts.burnAddress,
@@ -110,13 +110,4 @@ export async function scanReceivings(
   }
 
   return collected;
-}
-
-export async function listAnnouncements(
-  client: StealthCanisterClient,
-  startAfter?: bigint,
-  limit: number = 100,
-): Promise<Announcement[]> {
-  const page = await client.listAnnouncements(startAfter, limit);
-  return page.announcements;
 }

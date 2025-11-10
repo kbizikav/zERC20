@@ -58,7 +58,3 @@ export function loadTokens(compressed: string): Promise<NormalizedTokens> {
   }
   return tokenCache.get(key) as Promise<NormalizedTokens>;
 }
-
-export function clearTokensCache(): void {
-  tokenCache.clear();
-}

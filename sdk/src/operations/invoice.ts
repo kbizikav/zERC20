@@ -10,8 +10,8 @@ import {
 } from '../types.js';
 import {
   addressToBytes,
+  bytesToHex,
   ensureHexLength,
-  hexFromBytes,
   normalizeHex,
   randomBytes,
 } from '../utils/hex.js';
@@ -45,13 +45,13 @@ export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<I
   const existingIds = new Set(
     existing
       .filter((bytes: Uint8Array) => extractChainIdFromInvoiceBytes(bytes) === normalizedChainId)
-      .map((bytes: Uint8Array) => hexFromBytes(bytes)),
+      .map((bytes: Uint8Array) => bytesToHex(bytes)),
   );
 
   let invoiceBytes: Uint8Array | null = null;
   for (let attempt = 0; attempt < maxRetries; attempt += 1) {
     const candidate = generateInvoiceIdBytes(isBatch, normalizedChainId, randomFn);
-    const candidateHex = hexFromBytes(candidate);
+    const candidateHex = bytesToHex(candidate);
     if (!existingIds.has(candidateHex)) {
       invoiceBytes = candidate;
       break;
@@ -60,7 +60,7 @@ export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<I
   if (!invoiceBytes) {
     throw new Error('failed to generate unique invoice id');
   }
-  const invoiceIdHex = hexFromBytes(invoiceBytes);
+  const invoiceIdHex = bytesToHex(invoiceBytes);
 
   const burnAddresses: InvoiceBatchBurnAddress[] = [];
   if (isBatch) {
@@ -188,5 +188,5 @@ export async function listInvoices(
     .filter((bytes: Uint8Array) =>
       normalizedChainId === undefined || extractChainIdFromInvoiceBytes(bytes) === normalizedChainId,
     )
-    .map((bytes: Uint8Array) => hexFromBytes(bytes));
+    .map((bytes: Uint8Array) => bytesToHex(bytes));
 }

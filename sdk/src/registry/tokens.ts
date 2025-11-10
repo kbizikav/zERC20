@@ -197,10 +197,3 @@ export function createProviderForToken(entry: TokenEntry): JsonRpcProvider {
   }
   return new JsonRpcProvider(entry.rpcUrls[0]);
 }
-
-export function createProviderForHub(entry: HubEntry): JsonRpcProvider {
-  if (entry.rpcUrls.length === 0) {
-    throw new Error('hub configuration is missing rpc urls');
-  }
-  return new JsonRpcProvider(entry.rpcUrls[0]);
-}
