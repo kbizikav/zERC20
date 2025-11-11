@@ -1,4 +1,4 @@
-import { JsonRpcProvider } from 'ethers';
+import { createPublicClient, http, type PublicClient } from 'viem';
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 import { ungzip } from 'pako';
 
@@ -292,9 +292,11 @@ export function findTokenByChain(tokens: readonly TokenEntry[], chainId: bigint)
   return matches[0];
 }
 
-export function createProviderForToken(entry: TokenEntry): JsonRpcProvider {
+export function createProviderForToken(entry: TokenEntry): PublicClient {
   if (entry.rpcUrls.length === 0) {
     throw new Error(`token '${entry.label}' is missing rpc urls`);
   }
-  return new JsonRpcProvider(entry.rpcUrls[0]);
+  return createPublicClient({
+    transport: http(entry.rpcUrls[0]),
+  });
 }

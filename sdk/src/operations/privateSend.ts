@@ -1,13 +1,13 @@
 import { encryptAnnouncementWithArtifacts } from '../ic/encryption.js';
 import { StealthCanisterClient } from '../ic/client.js';
 import { Announcement } from '../ic/types.js';
-import { getBytes } from 'ethers';
 
 import { PreparedPrivateSend, PrivateSendResult } from '../types.js';
 import {
   addressToBytes,
   bytesToHex,
   ensureHexLength,
+  hexToBytes,
   normalizeHex,
   randomBytes,
 } from '../utils/hex.js';
@@ -31,7 +31,7 @@ export async function preparePrivateSend(
   let paymentAdviceBytes: Uint8Array;
   if (params.paymentAdviceIdHex) {
     const normalized = ensureHexLength(params.paymentAdviceIdHex, 32, 'payment advice id');
-    paymentAdviceBytes = getBytes(normalized);
+    paymentAdviceBytes = hexToBytes(normalized);
   } else {
     const rng = params.randomBytes ?? randomBytes;
     paymentAdviceBytes = rng(32);
@@ -53,7 +53,7 @@ export async function preparePrivateSend(
 
   const recipientBytes = addressToBytes(recipientAddress);
   const viewPublicKey = await client.getViewPublicKey(recipientBytes);
-  const burnPayloadBytes = getBytes(normalizeHex(burnArtifacts.fullBurnAddress));
+  const burnPayloadBytes = hexToBytes(normalizeHex(burnArtifacts.fullBurnAddress));
   const { announcement, sessionKey } = await encryptAnnouncementWithArtifacts(viewPublicKey, burnPayloadBytes);
 
   return {

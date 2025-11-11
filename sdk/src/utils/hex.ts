@@ -1,4 +1,4 @@
-import { getBytes } from 'ethers';
+import { bytesToHex as viemBytesToHex, hexToBytes as viemHexToBytes } from 'viem';
 
 export type HexLike =
   | string
@@ -16,11 +16,7 @@ function ensureEvenHex(hex: string): string {
 }
 
 export function bytesToHex(bytes: Uint8Array): string {
-  if (bytes.length === 0) {
-    return '0x';
-  }
-  const chunks = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0'));
-  return `0x${chunks.join('')}`;
+  return viemBytesToHex(bytes);
 }
 
 export function normalizeHex(value: HexLike): string {
@@ -64,20 +60,16 @@ export function normalizeHex(value: HexLike): string {
 }
 
 export function hexToBytes(value: string): Uint8Array {
-  const normalized = normalizeHex(value).slice(2);
-  if (normalized.length === 0) {
+  const normalized = normalizeHex(value) as `0x${string}`;
+  if (normalized === '0x') {
     return new Uint8Array();
   }
-  const bytes = new Uint8Array(normalized.length / 2);
-  for (let i = 0; i < normalized.length; i += 2) {
-    bytes[i / 2] = parseInt(normalized.slice(i, i + 2), 16);
-  }
-  return bytes;
+  return viemHexToBytes(normalized);
 }
 
 export function ensureHexLength(value: HexLike, expectedBytes: number, label: string): string {
   const normalized = normalizeHex(value);
-  const bytes = getBytes(normalized);
+  const bytes = hexToBytes(normalized);
   if (bytes.length !== expectedBytes) {
     throw new Error(`${label} must be ${expectedBytes} bytes, received ${bytes.length}`);
   }
@@ -86,7 +78,7 @@ export function ensureHexLength(value: HexLike, expectedBytes: number, label: st
 
 export function addressToBytes(address: string): Uint8Array {
   const normalized = ensureHexLength(address, 20, 'address');
-  return getBytes(normalized);
+  return hexToBytes(normalized);
 }
 
 export function randomBytes(length: number): Uint8Array {

@@ -154,9 +154,9 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
       }
 
       try {
-        const runner = wallet.provider ?? createProviderForToken(connectedToken);
+        const runner = wallet.publicClient ?? createProviderForToken(connectedToken);
         const contract = getZerc20Contract(connectedToken.tokenAddress, runner);
-        const value = await contract.decimals();
+        const value = (await contract.read.decimals()) as bigint | number;
         if (!cancelled) {
           const numeric = Number(value);
           setTokenDecimals(Number.isFinite(numeric) && numeric >= 0 ? Math.trunc(numeric) : 18);
@@ -173,7 +173,7 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
     return () => {
       cancelled = true;
     };
-  }, [connectedToken, wallet.provider]);
+  }, [connectedToken, wallet.publicClient]);
 
   useEffect(() => {
     let cancelled = false;
@@ -193,9 +193,9 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
       setIsBalanceLoading(true);
       setBalanceError(undefined);
       try {
-        const runner = wallet.provider ?? createProviderForToken(token);
+        const runner = wallet.publicClient ?? createProviderForToken(token);
         const contract = getZerc20Contract(token.tokenAddress, runner);
-        const balanceValue = await contract.balanceOf(account);
+        const balanceValue = (await contract.read.balanceOf([account as `0x${string}`])) as bigint;
         if (!cancelled) {
           setTokenBalance(balanceValue);
         }
@@ -217,7 +217,7 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
     return () => {
       cancelled = true;
     };
-  }, [wallet.account, wallet.provider, connectedToken]);
+  }, [wallet.account, wallet.publicClient, connectedToken]);
 
   const isWalletConnected = Boolean(wallet.account && wallet.chainId);
   const isSupportedNetwork = Boolean(connectedToken);
@@ -284,16 +284,20 @@ export function PrivateSendPanel({ config, tokens }: PrivateSendPanelProps): JSX
         });
 
         setStatus('Sending ERC-20 transfer…');
-        const signer = await wallet.ensureSigner();
-        const contract = getZerc20Contract(token.tokenAddress, signer);
-        const tx = await contract.transfer(preparation.burnAddress, parsedAmount);
-        const receipt = await tx.wait();
+        const walletClient = await wallet.ensureWalletClient();
+        const contract = getZerc20Contract(token.tokenAddress, walletClient);
+        const writeTransfer = contract.write.transfer as (
+          args: readonly [`0x${string}`, bigint],
+        ) => Promise<`0x${string}`>;
+        const txHash = await writeTransfer([preparation.burnAddress as `0x${string}`, parsedAmount]);
+        const receiptClient = wallet.publicClient ?? createProviderForToken(token);
+        const receipt = await receiptClient.waitForTransactionReceipt({ hash: txHash });
 
         setResult({
           burnAddress: preparation.burnAddress,
           burnPayload: preparation.burnPayload,
           announcementId: announcement.announcement.id,
-          transactionHash: receipt?.hash ?? tx.hash,
+          transactionHash: receipt.transactionHash,
           chainId: token.chainId,
         });
         setStatus('Private transfer submitted.');

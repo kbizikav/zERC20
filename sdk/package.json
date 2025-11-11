@@ -20,10 +20,12 @@
     "@dfinity/candid": "3.4.1",
     "@dfinity/principal": "3.4.1",
     "@dfinity/vetkeys": "0.4.0",
+    "@noble/curves": "^1.4.0",
     "base64-arraybuffer": "^1.0.2",
-    "ethers": "^6.13.4",
     "pako": "^2.1.0",
-    "poseidon-lite": "^0.0.2"
+    "poseidon-lite": "^0.0.2",
+    "viem": "^2.38.6",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/pako": "^2.0.4",

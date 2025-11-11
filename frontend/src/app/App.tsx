@@ -189,10 +189,10 @@ function ConnectionCard({
   useEffect(() => {
     let cancelled = false;
     const account = wallet.account;
-    const provider = wallet.provider;
+    const runner = wallet.walletClient ?? wallet.publicClient;
     const token = activeToken;
 
-    if (!account || !provider || !token) {
+    if (!account || !runner || !token) {
       setFormattedBalance(undefined);
       setBalanceError(undefined);
       setBalanceLoading(false);
@@ -203,11 +203,9 @@ function ConnectionCard({
       setBalanceLoading(true);
       setBalanceError(undefined);
       try {
-        const contract = getZerc20Contract(token.tokenAddress, provider);
-        const [rawBalance, decimalsValue] = await Promise.all([
-          contract.balanceOf(account),
-          contract.decimals(),
-        ]);
+        const contract = getZerc20Contract(token.tokenAddress, runner);
+        const rawBalance = (await contract.read.balanceOf([account as `0x${string}`])) as bigint;
+        const decimalsValue = (await contract.read.decimals()) as bigint | number;
         if (cancelled) {
           return;
         }
@@ -234,7 +232,7 @@ function ConnectionCard({
     return () => {
       cancelled = true;
     };
-  }, [wallet.account, wallet.provider, activeToken]);
+  }, [wallet.account, wallet.publicClient, wallet.walletClient, activeToken]);
 
   const handleClearStorage = useCallback(() => {
     if (!onClearStorage) {

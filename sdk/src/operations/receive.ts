@@ -1,5 +1,3 @@
-import { Contract } from 'ethers';
-
 import { DEFAULT_INDEXER_FETCH_LIMIT } from '../constants.js';
 import { HttpDeciderClient } from '../decider/prover.js';
 import { getTreeIndexForChain } from './teleport.js';
@@ -56,11 +54,23 @@ export interface RedeemContext {
   chains: RedeemChainContext[];
 }
 
+type ViemVerifierContract = {
+  read: {
+    totalTeleported: (args: readonly [string]) => Promise<bigint | number | string>;
+  };
+};
+
+type LegacyVerifierContract = {
+  totalTeleported: (recipientFr: string) => Promise<bigint | number | string>;
+};
+
+type VerifierContractLike = ViemVerifierContract | LegacyVerifierContract;
+
 export interface RedeemContextParams {
   burn: BurnArtifacts;
   tokens: readonly TokenEntry[];
   hub: HubEntry;
-  verifierContract: Contract;
+  verifierContract: VerifierContractLike;
   indexerUrl: string;
   indexerFetchLimit?: number;
   eventBlockSpan?: bigint | number;
@@ -162,9 +172,8 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
   );
   const totalIndexedValue = totalEligibleValue + totalPendingValue;
 
-  const totalTeleported = BigInt(
-    await params.verifierContract.totalTeleported(params.burn.generalRecipient.fr),
-  );
+  const recipientFr = normalizeHex(params.burn.generalRecipient.fr);
+  const totalTeleported = await readTotalTeleported(params.verifierContract, recipientFr);
 
   return {
     token: primaryToken,
@@ -178,6 +187,25 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
     totalTeleported,
     chains: perChain,
   };
+}
+
+function isViemVerifierContract(contract: VerifierContractLike): contract is ViemVerifierContract {
+  return typeof (contract as ViemVerifierContract).read?.totalTeleported === 'function';
+}
+
+async function readTotalTeleported(
+  contract: VerifierContractLike,
+  recipientFr: string,
+): Promise<bigint> {
+  if (isViemVerifierContract(contract)) {
+    const value = await contract.read.totalTeleported([recipientFr]);
+    return BigInt(value as bigint | number | string);
+  }
+  if (typeof (contract as LegacyVerifierContract).totalTeleported === 'function') {
+    const value = await (contract as LegacyVerifierContract).totalTeleported(recipientFr);
+    return BigInt(value as bigint | number | string);
+  }
+  throw new Error('verifier contract must expose totalTeleported');
 }
 
 export async function generateSingleTeleportProof(params: SingleTeleportParams): Promise<SingleTeleportArtifacts> {

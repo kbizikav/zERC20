@@ -1,5 +1,8 @@
-import { getBytes, JsonRpcSigner, keccak256 } from 'ethers';
+import type { WalletClient } from 'viem';
+import { keccak256 } from 'viem';
+import { type StateStorage } from 'zustand/middleware';
 
+import { normalizeHex } from './hex.js';
 import { getSeedMessage } from '../wasm/index.js';
 
 export interface SeedStorage {
@@ -14,6 +17,33 @@ export interface SeedManagerOptions {
 
 function isHexSeed(seed: string | undefined): seed is string {
   return typeof seed === 'string' && /^0x[0-9a-fA-F]+$/.test(seed);
+}
+
+type LegacySigner = {
+  signMessage(message: string | Uint8Array): Promise<string>;
+};
+
+type SeedSigner = LegacySigner | WalletClient;
+
+function isWalletClient(value: unknown): value is WalletClient {
+  return (
+    typeof value === 'object' &&
+    value !== null &&
+    typeof (value as WalletClient).signMessage === 'function' &&
+    typeof (value as WalletClient).request === 'function'
+  );
+}
+
+async function signMessageWithSigner(
+  signer: SeedSigner,
+  account: string,
+  message: string,
+): Promise<string> {
+  if (isWalletClient(signer)) {
+    const normalizedAccount = normalizeHex(account) as `0x${string}`;
+    return signer.signMessage({ account: normalizedAccount, message });
+  }
+  return signer.signMessage(message);
 }
 
 export class SeedManager {
@@ -31,7 +61,7 @@ export class SeedManager {
 
   async deriveSeed(
     account: string,
-    ensureSigner: () => Promise<JsonRpcSigner>,
+    ensureSigner: () => Promise<SeedSigner>,
     options: { force?: boolean } = {},
   ): Promise<string> {
     if (!account) {
@@ -94,12 +124,13 @@ export class SeedManager {
 
   private async performDerivation(
     account: string,
-    ensureSigner: () => Promise<JsonRpcSigner>,
+    ensureSigner: () => Promise<SeedSigner>,
   ): Promise<string> {
     const signer = await ensureSigner();
     const message = await getSeedMessage();
-    const signature = await signer.signMessage(message);
-    const digest = keccak256(getBytes(signature));
+    const signature = await signMessageWithSigner(signer, account, message);
+    const normalizedSignature = normalizeHex(signature) as `0x${string}`;
+    const digest = normalizeHex(keccak256(normalizedSignature));
     this.cache.set(account, digest);
     if (this.storage) {
       try {
@@ -113,41 +144,55 @@ export class SeedManager {
 }
 
 export function createBrowserSeedStorage(prefix = 'zerc20:seed:'): SeedStorage {
-  const globalRef = typeof globalThis === 'undefined' ? undefined : (globalThis as { localStorage?: Storage });
+  const stateStorage = resolveStateStorage();
   return {
     load(account: string): string | undefined {
-      const storage = globalRef?.localStorage;
-      if (!storage) {
-        return undefined;
-      }
       try {
-        const stored = storage.getItem(`${prefix}${account}`);
-        return isHexSeed(stored ?? undefined) ? stored ?? undefined : undefined;
+        const stored = readStorageValue(stateStorage, `${prefix}${account}`);
+        return isHexSeed(stored) ? stored : undefined;
       } catch {
         return undefined;
       }
     },
     save(account: string, seedHex: string): void {
-      const storage = globalRef?.localStorage;
-      if (!storage) {
-        return;
-      }
       try {
-        storage.setItem(`${prefix}${account}`, seedHex);
+        void stateStorage.setItem(`${prefix}${account}`, seedHex);
       } catch {
         // ignore storage errors
       }
     },
     remove(account: string): void {
-      const storage = globalRef?.localStorage;
-      if (!storage) {
-        return;
-      }
       try {
-        storage.removeItem(`${prefix}${account}`);
+        void stateStorage.removeItem(`${prefix}${account}`);
       } catch {
         // ignore storage errors
       }
     },
   };
+}
+
+const noopStorage: StateStorage = {
+  getItem: () => null,
+  setItem: () => undefined,
+  removeItem: () => undefined,
+};
+
+function resolveStateStorage(): StateStorage {
+  if (typeof globalThis === 'undefined') {
+    return noopStorage;
+  }
+  const storage = (globalThis as { localStorage?: StateStorage }).localStorage;
+  return storage ?? noopStorage;
+}
+
+function readStorageValue(storage: StateStorage, key: string): string | undefined {
+  const value = storage.getItem(key);
+  if (isPromiseLike(value)) {
+    return undefined;
+  }
+  return (value as string | null) ?? undefined;
+}
+
+function isPromiseLike<T>(value: unknown): value is PromiseLike<T> {
+  return typeof value === 'object' && value !== null && typeof (value as PromiseLike<T>).then === 'function';
 }

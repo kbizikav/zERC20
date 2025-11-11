@@ -23,6 +23,9 @@ frontend-app/public/config/*.json
 
 **/dist
 
+# typescript build info
+**/.tsbuildinfo/
+
 # ic artifacts
 .dfx
 .ic.env

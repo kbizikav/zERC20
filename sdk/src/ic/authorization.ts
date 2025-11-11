@@ -1,5 +1,8 @@
 import { Principal } from '@dfinity/principal';
-import { SigningKey, computeAddress, getBytes, hexlify, keccak256 } from 'ethers';
+import { secp256k1 } from '@noble/curves/secp256k1';
+import { keccak256, toHex } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+
 import { bytesToHex, hexToBytes } from '../utils/hex.js';
 
 const encoder = new TextEncoder();
@@ -11,9 +14,8 @@ export function deriveAddress(privateKey: Uint8Array): Address {
   if (privateKey.length !== 32) {
     throw new Error('private key must be 32 bytes');
   }
-  const privateKeyHex = hexlify(privateKey);
-  const addressHex = computeAddress(privateKeyHex);
-  return hexToBytes(addressHex);
+  const account = privateKeyToAccount(toHex(privateKey));
+  return hexToBytes(account.address);
 }
 
 export function authorizationMessageText(
@@ -44,9 +46,12 @@ export function signAuthorization(message: Uint8Array, privateKey: Uint8Array): 
     throw new Error('private key must be 32 bytes');
   }
   const digestHex = keccak256(message);
-  const signingKey = new SigningKey(hexlify(privateKey));
-  const signature = signingKey.sign(digestHex);
-  return getBytes(signature.serialized);
+  const digestBytes = hexToBytes(digestHex);
+  const signature = secp256k1.sign(digestBytes, privateKey);
+  const serialized = new Uint8Array(65);
+  serialized.set(signature.toCompactRawBytes(), 0);
+  serialized[64] = signature.recovery + 27;
+  return serialized;
 }
 
 export function unixTimeNs(): bigint {

@@ -474,7 +474,10 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
         const token = findTokenByChain(availableTokens, burn.generalRecipient.chainId);
 
         const tokenProvider = createProviderForToken(token);
-        const verifierContract = getVerifierContract(token.verifierAddress, tokenProvider);
+        const verifierContract = getVerifierContract(
+          token.verifierAddress,
+          tokenProvider,
+        ) as unknown as Parameters<typeof collectRedeemContext>[0]['verifierContract'];
 
         const context = await collectRedeemContext({
           burn,
@@ -511,7 +514,7 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
         setRedeemMessage('Load an announcement detail before redeeming.');
         return;
       }
-      if (!wallet.signer) {
+      if (!wallet.account) {
         setRedeemMessage('Connect your wallet before redeeming transfers.');
         return;
       }
@@ -550,7 +553,10 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
 
         const tokenEntry = detail.context.token;
         const tokenProvider = createProviderForToken(tokenEntry);
-        const verifierRead = getVerifierContract(tokenEntry.verifierAddress, tokenProvider);
+        const verifierRead = getVerifierContract(
+          tokenEntry.verifierAddress,
+          tokenProvider,
+        ) as unknown as Parameters<typeof collectRedeemContext>[0]['verifierContract'];
 
         const refreshedContext = await collectRedeemContext({
           burn: detail.burn,
@@ -599,7 +605,8 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
         });
         await yieldToUi();
 
-        const verifierWithSigner = getVerifierContract(refreshedContext.token.verifierAddress, wallet.signer);
+        const walletClient = await wallet.ensureWalletClient();
+        const verifierWithSigner = getVerifierContract(refreshedContext.token.verifierAddress, walletClient);
         const gr = {
           chainId: detail.burn.generalRecipient.chainId,
           recipient: padRecipient(detail.burn.generalRecipient.address),
@@ -623,16 +630,20 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
           activateStage('wallet', 'Submitting wallet transaction…');
           await yieldToUi();
 
-          const tx = await verifierWithSigner.singleTeleport(
+          const singleTeleport = verifierWithSigner.write.singleTeleport as (
+            args: readonly [boolean, bigint, typeof gr, Uint8Array],
+          ) => Promise<`0x${string}`>;
+          const txHash = await singleTeleport([
             true,
             refreshedContext.aggregationState.latestAggSeq,
             gr,
             getBytes(singleProof.proofCalldata),
-          );
-          await tx.wait();
+          ]);
+          const receiptClient = wallet.publicClient ?? createProviderForToken(refreshedContext.token);
+          await receiptClient.waitForTransactionReceipt({ hash: txHash });
           completeStage('wallet');
           await yieldToUi();
-          setRedeemMessage(`Teleport submitted: ${tx.hash}`);
+          setRedeemMessage(`Teleport submitted: ${txHash}`);
         } else {
           const decider = getDeciderClient({ baseUrl: config.deciderUrl });
           const batchProofInputs = refreshedContext.globalProofs;
@@ -659,16 +670,20 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
           activateStage('wallet', 'Submitting wallet transaction…');
           await yieldToUi();
 
-          const tx = await verifierWithSigner.teleport(
+          const teleport = verifierWithSigner.write.teleport as (
+            args: readonly [boolean, bigint, typeof gr, Uint8Array],
+          ) => Promise<`0x${string}`>;
+          const txHash = await teleport([
             true,
             refreshedContext.aggregationState.latestAggSeq,
             gr,
             batchProof.deciderProof,
-          );
-          await tx.wait();
+          ]);
+          const receiptClient = wallet.publicClient ?? createProviderForToken(refreshedContext.token);
+          await receiptClient.waitForTransactionReceipt({ hash: txHash });
           completeStage('wallet');
           await yieldToUi();
-          setRedeemMessage(`Batch teleport submitted: ${tx.hash}`);
+          setRedeemMessage(`Batch teleport submitted: ${txHash}`);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -680,7 +695,7 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
         setIsLoading(false);
       }
     },
-    [detail, wallet.signer, tokens, availableTokens, config],
+    [availableTokens, config, detail, tokens, wallet],
   );
 
   return (

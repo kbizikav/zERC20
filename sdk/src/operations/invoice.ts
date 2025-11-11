@@ -1,7 +1,6 @@
 import { invoiceMessageText } from '../ic/invoice.js';
 import { StealthCanisterClient } from '../ic/client.js';
 import { InvoiceSubmission } from '../ic/types.js';
-import { getBytes } from 'ethers';
 
 import { NUM_BATCH_INVOICES } from '../constants.js';
 import {
@@ -12,6 +11,7 @@ import {
   addressToBytes,
   bytesToHex,
   ensureHexLength,
+  hexToBytes,
   normalizeHex,
   randomBytes,
 } from '../utils/hex.js';
@@ -141,7 +141,7 @@ export function extractChainIdFromInvoiceBytes(invoiceBytes: Uint8Array): bigint
 }
 
 export function extractChainIdFromInvoiceHex(invoiceIdHex: string): bigint {
-  const bytes = getBytes(ensureHexLength(invoiceIdHex, 32, 'invoice id'));
+  const bytes = hexToBytes(ensureHexLength(invoiceIdHex, 32, 'invoice id'));
   return extractChainIdFromInvoiceBytes(bytes);
 }
 
@@ -168,7 +168,7 @@ export async function submitInvoice(
   invoiceIdHex: string,
   signature: Uint8Array,
 ): Promise<void> {
-  const invoiceBytes = getBytes(ensureHexLength(invoiceIdHex, 32, 'invoice id'));
+  const invoiceBytes = hexToBytes(ensureHexLength(invoiceIdHex, 32, 'invoice id'));
   const submission: InvoiceSubmission = {
     invoiceId: invoiceBytes,
     signature,
