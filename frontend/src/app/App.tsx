@@ -4,7 +4,7 @@ import { AppProviders } from './providers/AppProviders';
 import { useWallet } from './providers/WalletProvider';
 import { Tabs } from '@components/Tabs';
 import { useRuntimeConfig } from '@config/ConfigContext';
-import { configureWasmLocator, getZerc20Contract, loadTokens } from '@zerc20/sdk';
+import { configureWasmLocator, getZerc20Contract, loadTokens, useStorageStore } from '@zerc20/sdk';
 import type { NormalizedTokens } from '@zerc20/sdk';
 import { ConvertPanel, PrivateReceivePanel, PrivateSendPanel, ScanReceivingsPanel } from '@features/index';
 import { buildSwitchChainOptions } from '@/utils/wallet';
@@ -383,7 +383,6 @@ function AppContent(): JSX.Element {
   const [loadingMessage, setLoadingMessage] = useState<string>('Loading configuration…');
   const [error, setError] = useState<string>();
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_SEND);
-  const [storageRevision, setStorageRevision] = useState<number>(0);
   const [isConvertOpen, setIsConvertOpen] = useState<boolean>(false);
 
   useEffect(() => {
@@ -448,12 +447,8 @@ function AppContent(): JSX.Element {
   );
 
   const handleClearStorage = useCallback(() => {
-    if (typeof window === 'undefined') {
-      return false;
-    }
     try {
-      window.localStorage.clear();
-      setStorageRevision((prev) => prev + 1);
+      useStorageStore.getState().clearAll();
       return true;
     } catch {
       return false;
@@ -507,7 +502,7 @@ function AppContent(): JSX.Element {
                 id={`panel-${TAB_RECEIVINGS}`}
                 aria-labelledby={`tab-${TAB_RECEIVINGS}`}
               >
-                <ScanReceivingsPanel config={runtime.app} tokens={tokens} storageRevision={storageRevision} />
+                <ScanReceivingsPanel config={runtime.app} tokens={tokens} />
               </section>
             )}
             {activeTab === TAB_RECEIVE && (
@@ -520,7 +515,6 @@ function AppContent(): JSX.Element {
                 <PrivateReceivePanel
                   config={runtime.app}
                   tokens={tokens}
-                  storageRevision={storageRevision}
                 />
               </section>
             )}

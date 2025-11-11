@@ -16,6 +16,8 @@ import {
   normalizeHex,
   getStealthClientFromConfig,
   getDeciderClient,
+  useStorageStore,
+  type StoredAnnouncement,
 } from '@zerc20/sdk';
 import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
@@ -27,11 +29,11 @@ import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
 import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
 import { yieldToUi } from '@features/redeem/yieldToUi';
+import { toAccountKey } from '@utils/accountKey';
 
 interface ScanReceivingsPanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  storageRevision: number;
 }
 
 interface AnnouncementDetail {
@@ -61,193 +63,86 @@ function formatAnnouncementTimestamp(ns: bigint): string {
   }
 }
 
-const VET_KEY_STORAGE_PREFIX = 'zerc20:vetkey:';
+function deserializeAnnouncements(entries: StoredAnnouncement[]): ScannedAnnouncement[] {
+  const restored = entries
+    .map((entry) => {
+      try {
+        return {
+          id: BigInt(entry.id),
+          burnAddress: entry.burnAddress,
+          fullBurnAddress: entry.fullBurnAddress,
+          createdAtNs: BigInt(entry.createdAtNs),
+          recipientChainId: BigInt(entry.recipientChainId),
+        } as ScannedAnnouncement;
+      } catch {
+        return null;
+      }
+    })
+    .filter((value): value is ScannedAnnouncement => value !== null);
 
-function vetKeyStorageKey(address: string): string {
-  return `${VET_KEY_STORAGE_PREFIX}${address}`;
-}
-
-function loadStoredVetKey(address: string): VetKey | undefined {
-  if (typeof window === 'undefined') {
-    return undefined;
+  const unique = new Map<string, ScannedAnnouncement>();
+  for (const announcement of restored) {
+    unique.set(announcement.id.toString(), announcement);
   }
-  try {
-    const stored = window.localStorage.getItem(vetKeyStorageKey(address));
-    if (!stored) {
-      return undefined;
+  return Array.from(unique.values()).sort((a, b) => {
+    if (a.createdAtNs === b.createdAtNs) {
+      if (a.id === b.id) {
+        return 0;
+      }
+      return a.id > b.id ? -1 : 1;
     }
-    const bytes = getBytes(stored);
-    return VetKey.deserialize(bytes);
-  } catch {
-    window.localStorage.removeItem(vetKeyStorageKey(address));
-    return undefined;
-  }
+    return a.createdAtNs > b.createdAtNs ? -1 : 1;
+  });
 }
 
-function persistVetKey(address: string, vetKey: VetKey): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    const serialized = vetKey.serialize();
-    const hex = hexlify(serialized);
-    window.localStorage.setItem(vetKeyStorageKey(address), hex);
-  } catch {
-    // ignore storage write failures
-  }
-}
-
-function removeStoredVetKey(address: string): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    window.localStorage.removeItem(vetKeyStorageKey(address));
-  } catch {
-    // ignore storage failures
-  }
-}
-
-const ANNOUNCEMENT_STORAGE_PREFIX = 'zerc20:announcements:';
-
-interface StoredAnnouncement {
-  id: string;
-  burnAddress: string;
-  fullBurnAddress: string;
-  createdAtNs: string;
-  recipientChainId: string;
-}
-
-function announcementStorageKey(address: string): string {
-  return `${ANNOUNCEMENT_STORAGE_PREFIX}${normalizeHex(address)}`;
-}
-
-function toStoredAnnouncement(announcement: ScannedAnnouncement): StoredAnnouncement {
-  return {
+function serializeAnnouncements(announcements: ScannedAnnouncement[]): StoredAnnouncement[] {
+  return announcements.map((announcement) => ({
     id: announcement.id.toString(),
     burnAddress: announcement.burnAddress,
     fullBurnAddress: announcement.fullBurnAddress,
     createdAtNs: announcement.createdAtNs.toString(),
     recipientChainId: announcement.recipientChainId.toString(),
-  };
+  }));
 }
 
-function loadStoredAnnouncements(address: string): ScannedAnnouncement[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-  const key = announcementStorageKey(address);
-  try {
-    const stored = window.localStorage.getItem(key);
-    if (!stored) {
-      return [];
-    }
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) {
-      window.localStorage.removeItem(key);
-      return [];
-    }
-    const entries = new Map<string, ScannedAnnouncement>();
-    for (const item of parsed) {
-      if (!item || typeof item !== 'object') {
-        continue;
-      }
-      const candidate = item as Partial<StoredAnnouncement>;
-      if (
-        typeof candidate.id !== 'string' ||
-        typeof candidate.burnAddress !== 'string' ||
-        typeof candidate.fullBurnAddress !== 'string' ||
-        typeof candidate.createdAtNs !== 'string' ||
-        typeof candidate.recipientChainId !== 'string'
-      ) {
-        continue;
-      }
-      try {
-        const announcement: ScannedAnnouncement = {
-          id: BigInt(candidate.id),
-          burnAddress: candidate.burnAddress,
-          fullBurnAddress: candidate.fullBurnAddress,
-          createdAtNs: BigInt(candidate.createdAtNs),
-          recipientChainId: BigInt(candidate.recipientChainId),
-        };
-        entries.set(announcement.id.toString(), announcement);
-      } catch {
-        continue;
-      }
-    }
-    const restored = Array.from(entries.values()).sort((a, b) => {
-      if (a.createdAtNs === b.createdAtNs) {
-        if (a.id === b.id) {
-          return 0;
-        }
-        return a.id > b.id ? -1 : 1;
-      }
-      return a.createdAtNs > b.createdAtNs ? -1 : 1;
-    });
-    return restored;
-  } catch {
-    window.localStorage.removeItem(key);
-    return [];
-  }
-}
-
-function persistAnnouncements(address: string, announcements: ScannedAnnouncement[]): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    const serialized = announcements.map(toStoredAnnouncement);
-    window.localStorage.setItem(announcementStorageKey(address), JSON.stringify(serialized));
-  } catch {
-    // ignore storage write failures
-  }
-}
-
-export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanReceivingsPanelProps): JSX.Element {
+export function ScanReceivingsPanel({ config, tokens }: ScanReceivingsPanelProps): JSX.Element {
   const wallet = useWallet();
-  const [announcements, setAnnouncements] = useState<ScannedAnnouncement[]>([]);
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [isScanning, setIsScanning] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState<string>();
-  const [cachedVetKey, setCachedVetKey] = useState<VetKey>();
   const [selectedAnnouncementId, setSelectedAnnouncementId] = useState<string>();
   const [detail, setDetail] = useState<AnnouncementDetail | null>(null);
   const [redeemSteps, setRedeemSteps] = useState<RedeemStep[]>([]);
   const [isRedeemModalOpen, setRedeemModalOpen] = useState(false);
+  const accountKey = useMemo(() => toAccountKey(wallet.account), [wallet.account]);
+  const storedVetKeyHex = useStorageStore((state) => (accountKey ? state.vetKeys[accountKey] : undefined));
+  const setStoredVetKey = useStorageStore((state) => state.setVetKey);
+  const removeStoredVetKey = useStorageStore((state) => state.removeVetKey);
+  const storedAnnouncementRecords = useStorageStore((state) => (accountKey ? state.announcements[accountKey] ?? [] : []));
+  const setStoredAnnouncements = useStorageStore((state) => state.setAnnouncements);
 
-  useEffect(() => {
-    if (!wallet.account) {
-      setCachedVetKey(undefined);
-      return;
-    }
-    const stored = loadStoredVetKey(wallet.account);
-    setCachedVetKey(stored);
-  }, [wallet.account, storageRevision]);
-
-  useEffect(() => {
-    if (!wallet.account) {
-      setAnnouncements([]);
-      setSelectedAnnouncementId(undefined);
-      setDetail(null);
-      setStatus(undefined);
-      setError(undefined);
-      setRedeemMessage(undefined);
-      setRedeemSteps([]);
-      setRedeemModalOpen(false);
-      setIsScanning(false);
-      setIsDetailLoading(false);
-      setIsLoading(false);
-      return;
+  const cachedVetKey = useMemo(() => {
+    if (!storedVetKeyHex || !accountKey) {
+      return undefined;
     }
     try {
-      const stored = loadStoredAnnouncements(wallet.account);
-      setAnnouncements(stored);
+      const bytes = getBytes(storedVetKeyHex);
+      return VetKey.deserialize(bytes);
     } catch {
-      setAnnouncements([]);
+      removeStoredVetKey(accountKey);
+      return undefined;
     }
+  }, [accountKey, removeStoredVetKey, storedVetKeyHex]);
+
+  const announcements = useMemo(
+    () => deserializeAnnouncements(storedAnnouncementRecords),
+    [storedAnnouncementRecords],
+  );
+
+  useEffect(() => {
     setSelectedAnnouncementId(undefined);
     setDetail(null);
     setStatus(undefined);
@@ -258,40 +153,37 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
     setIsScanning(false);
     setIsDetailLoading(false);
     setIsLoading(false);
-  }, [wallet.account, storageRevision]);
+  }, [accountKey]);
 
   const availableTokens = useMemo(() => tokens.tokens ?? [], [tokens.tokens]);
 
   const mergeAnnouncements = useCallback(
     (accountAddress: string, scanned: ScannedAnnouncement[]): { added: number; total: number } => {
       const normalizedAddress = normalizeHex(accountAddress);
+      const existingRecords = useStorageStore.getState().announcements[normalizedAddress] ?? [];
+      const current = deserializeAnnouncements(existingRecords);
+      const entries = new Map(current.map((item) => [item.id.toString(), item]));
       let added = 0;
-      let total = 0;
-      setAnnouncements((prev) => {
-        const entries = new Map(prev.map((item) => [item.id.toString(), item]));
-        for (const item of scanned) {
-          const key = item.id.toString();
-          if (!entries.has(key)) {
-            entries.set(key, item);
-            added += 1;
-          }
+      for (const item of scanned) {
+        const key = item.id.toString();
+        if (!entries.has(key)) {
+          entries.set(key, item);
+          added += 1;
         }
-        const next = Array.from(entries.values()).sort((a, b) => {
-          if (a.createdAtNs === b.createdAtNs) {
-            if (a.id === b.id) {
-              return 0;
-            }
-            return a.id > b.id ? -1 : 1;
+      }
+      const next = Array.from(entries.values()).sort((a, b) => {
+        if (a.createdAtNs === b.createdAtNs) {
+          if (a.id === b.id) {
+            return 0;
           }
-          return a.createdAtNs > b.createdAtNs ? -1 : 1;
-        });
-        total = next.length;
-        persistAnnouncements(normalizedAddress, next);
-        return next;
+          return a.id > b.id ? -1 : 1;
+        }
+        return a.createdAtNs > b.createdAtNs ? -1 : 1;
       });
-      return { added, total };
+      setStoredAnnouncements(normalizedAddress, serializeAnnouncements(next));
+      return { added, total: next.length };
     },
-    [],
+    [setStoredAnnouncements],
   );
 
   const filteredAnnouncements = useMemo(() => {
@@ -360,8 +252,7 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
         let vetKeyToUse = forceRenew ? undefined : cachedVetKey;
 
         if (forceRenew) {
-          removeStoredVetKey(accountAddress);
-          setCachedVetKey(undefined);
+          removeStoredVetKey(normalizedAccount);
         }
 
         if (!vetKeyToUse) {
@@ -373,8 +264,8 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
 
           setStatus(forceRenew ? 'Requesting new view key…' : 'Requesting view key…');
           const requestedVetKey = await requestVetKey(client, accountAddress, payload, signatureBytes);
-          persistVetKey(accountAddress, requestedVetKey);
-          setCachedVetKey(requestedVetKey);
+          const storedHex = hexlify(requestedVetKey.serialize());
+          setStoredVetKey(normalizedAccount, storedHex);
           vetKeyToUse = requestedVetKey;
         } else {
           setStatus('Using saved view key…');
@@ -436,7 +327,7 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
         setIsScanning(false);
       }
     },
-    [wallet, tokens, config, cachedVetKey, mergeAnnouncements],
+    [wallet, tokens, config, cachedVetKey, mergeAnnouncements, removeStoredVetKey, setStoredVetKey],
   );
 
   const handleAnnouncementDetail = useCallback(

@@ -11,7 +11,6 @@ import { ScanInvoicesPanel } from '@features/scanInvoices/ScanInvoicesPanel';
 interface PrivateReceivePanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  storageRevision: number;
 }
 
 interface InvoiceResult {
@@ -26,7 +25,7 @@ interface InvoiceResult {
   signatureMessage: string;
 }
 
-export function PrivateReceivePanel({ config, tokens, storageRevision }: PrivateReceivePanelProps): JSX.Element {
+export function PrivateReceivePanel({ config, tokens }: PrivateReceivePanelProps): JSX.Element {
   const wallet = useWallet();
   const seed = useSeed();
   const [isBatch, setIsBatch] = useState(false);
@@ -363,7 +362,7 @@ export function PrivateReceivePanel({ config, tokens, storageRevision }: Private
       </section>
       {isInvoiceManagerOpen && (
         <div id="invoice-manager-panel">
-          <ScanInvoicesPanel config={config} tokens={tokens} storageRevision={storageRevision} />
+          <ScanInvoicesPanel config={config} tokens={tokens} />
         </div>
       )}
     </>

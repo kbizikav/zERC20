@@ -13,7 +13,7 @@ export * from "./registry/tokens.js";
 export * from "./sdk.js";
 export * from "./types.js";
 export * from "./utils/hex.js";
-export * from "./utils/seed.js";
+export * from "./stores/storageStore.js";
 export * from "./wasm/artifacts.js";
 export * from "./wasm/index.js";
 export * from "./zkp/index.js";

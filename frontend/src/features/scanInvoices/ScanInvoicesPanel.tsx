@@ -15,6 +15,7 @@ import {
   generateSingleTeleportProof,
   getStealthClientFromConfig,
   getDeciderClient,
+  useStorageStore,
 } from '@zerc20/sdk';
 import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
@@ -25,11 +26,11 @@ import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
 import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
 import { yieldToUi } from '@features/redeem/yieldToUi';
+import { toAccountKey } from '@utils/accountKey';
 
 interface ScanInvoicesPanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  storageRevision: number;
 }
 
 interface BurnDetail {
@@ -59,58 +60,9 @@ function formatEligibleValue(value: bigint): string {
   return formatUnits(value, 18);
 }
 
-const INVOICE_STORAGE_PREFIX = 'zerc20:invoices:';
-
-function invoiceStorageKey(address: string): string {
-  return `${INVOICE_STORAGE_PREFIX}${normalizeHex(address)}`;
-}
-
-function loadStoredInvoices(address: string): string[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-  try {
-    const stored = window.localStorage.getItem(invoiceStorageKey(address));
-    if (!stored) {
-      return [];
-    }
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) {
-      window.localStorage.removeItem(invoiceStorageKey(address));
-      return [];
-    }
-    const normalized = parsed
-      .filter((value): value is string => typeof value === 'string')
-      .map((value) => {
-        try {
-          return normalizeHex(value);
-        } catch {
-          return null;
-        }
-      })
-      .filter((value): value is string => value !== null);
-    return Array.from(new Set(normalized));
-  } catch {
-    window.localStorage.removeItem(invoiceStorageKey(address));
-    return [];
-  }
-}
-
-function persistInvoices(address: string, invoiceIds: string[]): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    window.localStorage.setItem(invoiceStorageKey(address), JSON.stringify(invoiceIds));
-  } catch {
-    // ignore storage write failures
-  }
-}
-
-export function ScanInvoicesPanel({ config, tokens, storageRevision }: ScanInvoicesPanelProps): JSX.Element {
+export function ScanInvoicesPanel({ config, tokens }: ScanInvoicesPanelProps): JSX.Element {
   const wallet = useWallet();
   const seed = useSeed();
-  const [invoices, setInvoices] = useState<string[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<string>();
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [status, setStatus] = useState<string>();
@@ -122,6 +74,9 @@ export function ScanInvoicesPanel({ config, tokens, storageRevision }: ScanInvoi
   const [isRedeemModalOpen, setRedeemModalOpen] = useState(false);
 
   const availableTokens = useMemo(() => tokens.tokens ?? [], [tokens.tokens]);
+  const accountKey = useMemo(() => toAccountKey(wallet.account), [wallet.account]);
+  const storedInvoices = useStorageStore((state) => (accountKey ? state.invoices[accountKey] ?? [] : []));
+  const setStoredInvoices = useStorageStore((state) => state.setInvoices);
   const connectedToken = useMemo(() => {
     const chain = wallet.chainId;
     if (chain === undefined || chain === null) {
@@ -136,31 +91,65 @@ export function ScanInvoicesPanel({ config, tokens, storageRevision }: ScanInvoi
 
   const isWalletConnected = Boolean(wallet.account && wallet.chainId);
   const isSupportedNetwork = Boolean(connectedToken);
+
+  const invoices = useMemo(() => {
+    if (!accountKey || !connectedToken) {
+      return [];
+    }
+    return storedInvoices.filter((invoiceId) => {
+      try {
+        return extractChainIdFromInvoiceHex(invoiceId) === connectedToken.chainId;
+      } catch {
+        return false;
+      }
+    });
+  }, [accountKey, connectedToken, storedInvoices]);
+
   useEffect(() => {
-    if (!wallet.account || !connectedToken) {
-      setInvoices([]);
-      setSelectedInvoice(undefined);
-      setDetail(null);
-      setIsDetailLoading(false);
+    setSelectedInvoice(undefined);
+    setDetail(null);
+    setIsDetailLoading(false);
+  }, [accountKey, connectedToken]);
+
+  useEffect(() => {
+    if (!selectedInvoice) {
       return;
     }
-    try {
-      const stored = loadStoredInvoices(wallet.account);
-      const filtered = stored.filter((invoiceId) => {
+    if (!invoices.includes(selectedInvoice)) {
+      setSelectedInvoice(undefined);
+      setDetail(null);
+      setRedeemMessage(undefined);
+      setRedeemSteps([]);
+      setRedeemModalOpen(false);
+    }
+  }, [invoices, selectedInvoice]);
+
+  const mergeInvoices = useCallback(
+    (accountAddress: string, invoiceIds: string[], chainId: bigint): { added: number; total: number } => {
+      const normalizedAccount = normalizeHex(accountAddress);
+      const prev = useStorageStore.getState().invoices[normalizedAccount] ?? [];
+      const filteredPrev = prev.filter((invoiceId) => {
         try {
-          return extractChainIdFromInvoiceHex(invoiceId) === connectedToken.chainId;
+          return extractChainIdFromInvoiceHex(invoiceId) === chainId;
         } catch {
           return false;
         }
       });
-      setInvoices(filtered);
-    } catch {
-      setInvoices([]);
-    }
-    setSelectedInvoice(undefined);
-    setDetail(null);
-    setIsDetailLoading(false);
-  }, [wallet.account, connectedToken, storageRevision]);
+      const existing = new Set(filteredPrev);
+      const next = [...filteredPrev];
+      let added = 0;
+      for (const id of invoiceIds) {
+        if (!existing.has(id)) {
+          existing.add(id);
+          next.push(id);
+          added += 1;
+        }
+      }
+      setStoredInvoices(normalizedAccount, next);
+      return { added, total: next.length };
+    },
+    [setStoredInvoices],
+  );
 
   const handleLoadInvoices = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -192,37 +181,14 @@ export function ScanInvoicesPanel({ config, tokens, storageRevision }: ScanInvoi
           keyManagerCanisterId: config.keyManagerCanisterId,
         });
         const ids = await listInvoices(stealthClient, owner, connectedToken.chainId);
-        const normalizedOwner = owner;
         const normalizedIds = ids.map((value) => normalizeHex(value));
-        let added = 0;
-        let nextLength = 0;
-        setInvoices((prev) => {
-          const filteredPrev = prev.filter((invoiceId) => {
-            try {
-              return extractChainIdFromInvoiceHex(invoiceId) === connectedToken.chainId;
-            } catch {
-              return false;
-            }
-          });
-          const existing = new Set(filteredPrev);
-          const next = [...filteredPrev];
-          for (const id of normalizedIds) {
-            if (!existing.has(id)) {
-              existing.add(id);
-              next.push(id);
-              added += 1;
-            }
-          }
-          nextLength = next.length;
-          persistInvoices(normalizedOwner, next);
-          return next;
-        });
-        if (nextLength === 0) {
-          setStatus('No new entries found.');
+        const { added, total } = mergeInvoices(owner, normalizedIds, connectedToken.chainId);
+        if (total === 0) {
+          setStatus(`No invoices were found for ${owner}.`);
         } else if (added === 0) {
-          setStatus(`No new invoices. Stored ${nextLength} invoice(s) for ${owner}.`);
+          setStatus(`No new invoices. Stored ${total} invoice(s) for ${owner}.`);
         } else {
-          setStatus(`Added ${added} new invoice(s). Stored ${nextLength} invoice(s) for ${owner}.`);
+          setStatus(`Added ${added} new invoice(s). Stored ${total} invoice(s) for ${owner}.`);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -232,7 +198,7 @@ export function ScanInvoicesPanel({ config, tokens, storageRevision }: ScanInvoi
         setIsLoading(false);
       }
     },
-    [wallet, connectedToken, config],
+    [wallet, connectedToken, config, mergeInvoices],
   );
 
   const handleInvoiceClick = useCallback(
