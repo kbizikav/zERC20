@@ -2,7 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { formatUnits, parseUnits } from 'ethers';
 
 import { useWallet } from '@app/providers/WalletProvider';
-import type { NormalizedTokens } from '@/types/app';
+import type { NormalizedTokens } from '@zerc20/sdk';
 import {
   TokenEntry,
   createProviderForToken,
@@ -11,7 +11,7 @@ import {
   getZerc20Contract,
   normalizeHex,
   withdrawWithMinter,
-} from '@services/sdk';
+} from '@zerc20/sdk';
 import { getExplorerTxUrl } from '@utils/explorer';
 import { buildSwitchChainOptions } from '@/utils/wallet';
 
@@ -109,12 +109,12 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
 
   const resolveRunner = useCallback(
     (token: TokenEntry) => {
-      if (wallet.provider && wallet.chainId !== undefined && BigInt(wallet.chainId) === token.chainId) {
-        return wallet.provider;
+      if (wallet.chainId !== undefined && BigInt(wallet.chainId) === token.chainId && wallet.publicClient) {
+        return wallet.publicClient;
       }
       return createProviderForToken(token);
     },
-    [wallet.chainId, wallet.provider],
+    [wallet.chainId, wallet.publicClient],
   );
 
   const underlyingDecimalsToUse = useMemo(
@@ -179,7 +179,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       try {
         const runner = resolveRunner(token);
         const contract = getMinterContract(minterAddress, runner);
-        const address: string = await contract.tokenAddress();
+        const address = (await contract.read.tokenAddress()) as string;
         if (!cancelled) {
           setMinterTokenAddress(normalizeHex(address));
         }
@@ -215,7 +215,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       try {
         const runner = resolveRunner(token);
         const contract = getZerc20Contract(token.tokenAddress, runner);
-        const value = await contract.decimals();
+        const value = (await contract.read.decimals()) as bigint | number;
         if (!cancelled) {
           const numeric = Number(value);
           setWrappedDecimals(Number.isFinite(numeric) && numeric >= 0 ? Math.trunc(numeric) : 18);
@@ -251,7 +251,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       try {
         const runner = resolveRunner(token);
         const contract = getZerc20Contract(minterTokenAddress, runner);
-        const value = await contract.decimals();
+        const value = (await contract.read.decimals()) as bigint | number;
         if (!cancelled) {
           const numeric = Number(value);
           setUnderlyingDecimals(Number.isFinite(numeric) && numeric >= 0 ? Math.trunc(numeric) : 18);
@@ -288,15 +288,15 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       setDepositBalanceError(undefined);
       try {
         if (isNativeToken) {
-          const provider = resolveRunner(token);
-          const rawBalance = await provider.getBalance(account);
+          const runner = resolveRunner(token);
+          const rawBalance = await runner.getBalance({ address: account as `0x${string}` });
           if (!cancelled) {
             setDepositBalance(rawBalance);
           }
         } else {
           const runner = resolveRunner(token);
           const contract = getZerc20Contract(minterTokenAddress, runner);
-          const rawBalance = await contract.balanceOf(account);
+          const rawBalance = (await contract.read.balanceOf([account as `0x${string}`])) as bigint;
           if (!cancelled) {
             setDepositBalance(rawBalance);
           }
@@ -340,7 +340,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       try {
         const runner = resolveRunner(token);
         const contract = getZerc20Contract(token.tokenAddress, runner);
-        const rawBalance = await contract.balanceOf(account);
+        const rawBalance = (await contract.read.balanceOf([account as `0x${string}`])) as bigint;
         if (!cancelled) {
           setWithdrawBalance(rawBalance);
         }
@@ -430,7 +430,6 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
 
       try {
         setIsSubmitting(true);
-        const signer = await wallet.ensureSigner();
         const expectedChainId = token.chainId;
 
         if (!wallet.chainId || BigInt(wallet.chainId) !== expectedChainId) {
@@ -439,9 +438,10 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
           await wallet.switchChain(expectedChainId, switchOptions);
         }
 
-        const activeSigner = await wallet.ensureSigner();
+        const walletClient = await wallet.ensureWalletClient();
         const params = {
-          signer: activeSigner,
+          walletClient,
+          publicClient: wallet.publicClient,
           minterAddress: token.minterAddress,
           tokenAddress: minterTokenAddress,
           amount: parsedAmount,

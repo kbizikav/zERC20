@@ -13,34 +13,9 @@ export interface AppConfig {
   tokenSymbol: string;
 }
 
-export interface ArtifactLocationMap {
-  localPk: string;
-  localVk: string;
-  globalPk: string;
-  globalVk: string;
-}
-
-export interface NovaArtifactLocationMap {
-  localPp: string;
-  localVp: string;
-  globalPp: string;
-  globalVp: string;
-}
-
-export interface ArtifactPaths {
-  basePath: string;
-  single: ArtifactLocationMap;
-  batch: NovaArtifactLocationMap;
-}
-
-export interface ResourceConfig {
-  tokensCompressed: string;
-  artifacts: ArtifactPaths;
-}
-
 export interface RuntimeConfig {
   app: AppConfig;
-  resources: ResourceConfig;
+  tokensCompressed: string;
 }
 
 const optionalNumber = (fallback: number) =>
@@ -81,35 +56,12 @@ const envSchema = z.object({
     .trim()
     .min(1, 'VITE_TOKENS_COMPRESSED is required; run scripts/encode-tokens.sh')
     .regex(/^[A-Za-z0-9+/=]+$/, 'VITE_TOKENS_COMPRESSED must be base64-encoded'),
-  VITE_ARTIFACTS_BASE_PATH: z.string().trim().default('/artifacts'),
   VITE_TOKEN_SYMBOL: z
     .string()
     .trim()
     .min(1, 'VITE_TOKEN_SYMBOL must not be empty')
     .catch('zUSD'),
 });
-
-const singleArtifactFiles: ArtifactLocationMap = {
-  localPk: 'withdraw_local_groth16_pk.bin',
-  localVk: 'withdraw_local_groth16_vk.bin',
-  globalPk: 'withdraw_global_groth16_pk.bin',
-  globalVk: 'withdraw_global_groth16_vk.bin',
-};
-
-const batchArtifactFiles: NovaArtifactLocationMap = {
-  localPp: 'withdraw_local_nova_pp.bin',
-  localVp: 'withdraw_local_nova_vp.bin',
-  globalPp: 'withdraw_global_nova_pp.bin',
-  globalVp: 'withdraw_global_nova_vp.bin',
-};
-
-function joinUrl(base: string, path: string): string {
-  if (path.startsWith('http://') || path.startsWith('https://')) {
-    return path;
-  }
-  const normalizedBase = base.endsWith('/') ? base : `${base}/`;
-  return `${normalizedBase}${path}`;
-}
 
 export function resolveRuntimeConfig(env: ImportMetaEnv): RuntimeConfig {
   const coercedEnv = Object.fromEntries(
@@ -131,24 +83,5 @@ export function resolveRuntimeConfig(env: ImportMetaEnv): RuntimeConfig {
     tokenSymbol: parsed.VITE_TOKEN_SYMBOL,
   };
 
-  const basePath = parsed.VITE_ARTIFACTS_BASE_PATH.startsWith('http')
-    ? parsed.VITE_ARTIFACTS_BASE_PATH
-    : parsed.VITE_ARTIFACTS_BASE_PATH.replace(/\/$/, '');
-
-  const withBase = <T extends { [K in keyof T]: string }>(files: T): T => {
-    const entries = Object.entries(files) as [keyof T & string, string][];
-    const withJoined = entries.map(([key, file]) => [key, joinUrl(basePath, file)]);
-    return Object.fromEntries(withJoined) as T;
-  };
-
-  const resources: ResourceConfig = {
-    tokensCompressed: parsed.VITE_TOKENS_COMPRESSED,
-    artifacts: {
-      basePath,
-      single: withBase(singleArtifactFiles),
-      batch: withBase(batchArtifactFiles),
-    },
-  };
-
-  return { app, resources };
+  return { app, tokensCompressed: parsed.VITE_TOKENS_COMPRESSED };
 }

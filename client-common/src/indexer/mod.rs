@@ -43,7 +43,8 @@ pub enum IndexerError {
 
 pub type IndexerResult<T> = Result<T, IndexerError>;
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait IndexerClient: Send + Sync {
     async fn events_by_recipient(
         &self,
@@ -104,7 +105,8 @@ impl HttpIndexerClient {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl IndexerClient for HttpIndexerClient {
     async fn events_by_recipient(
         &self,
@@ -235,7 +237,8 @@ impl TestIndexerClient {
     }
 }
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl IndexerClient for TestIndexerClient {
     async fn events_by_recipient(
         &self,

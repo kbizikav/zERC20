@@ -21,7 +21,10 @@ frontend-app/public/config/*.json
 
 **/node_modules/
 
-frontend/dist/
+**/dist
+
+# typescript build info
+**/.tsbuildinfo/
 
 # ic artifacts
 .dfx

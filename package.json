@@ -1,0 +1,16 @@
+{
+  "name": "zerc20-workspace",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@10.20.0",
+  "workspaces": [
+    "sdk",
+    "frontend"
+  ],
+  "scripts": {
+    "build": "pnpm --filter sdk build",
+    "dev": "pnpm --filter sdk dev",
+    "test": "pnpm --filter sdk test",
+    "typecheck": "pnpm --filter sdk typecheck"
+  }
+}

@@ -9,29 +9,28 @@ import {
   listInvoices,
   extractChainIdFromInvoiceHex,
   normalizeHex,
-  getHubContract,
   getVerifierContract,
-  createProviderForHub,
   createProviderForToken,
   generateBatchTeleportProof,
   generateSingleTeleportProof,
-} from '@services/sdk';
-import { formatUnits, getBytes, zeroPadValue } from 'ethers';
+  getStealthClientFromConfig,
+  getDeciderClient,
+  useStorageStore,
+} from '@zerc20/sdk';
+import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
+import type { NormalizedTokens } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 import { useSeed } from '@/hooks/useSeed';
-import { createDeciderClient, createIndexerClient, getStealthClient } from '@services/clients';
 import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
 import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
 import { yieldToUi } from '@features/redeem/yieldToUi';
+import { toAccountKey } from '@utils/accountKey';
 
 interface ScanInvoicesPanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  artifacts: TeleportArtifacts;
-  storageRevision: number;
 }
 
 interface BurnDetail {
@@ -61,63 +60,9 @@ function formatEligibleValue(value: bigint): string {
   return formatUnits(value, 18);
 }
 
-const INVOICE_STORAGE_PREFIX = 'zerc20:invoices:';
-
-function invoiceStorageKey(address: string): string {
-  return `${INVOICE_STORAGE_PREFIX}${normalizeHex(address)}`;
-}
-
-function loadStoredInvoices(address: string): string[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-  try {
-    const stored = window.localStorage.getItem(invoiceStorageKey(address));
-    if (!stored) {
-      return [];
-    }
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) {
-      window.localStorage.removeItem(invoiceStorageKey(address));
-      return [];
-    }
-    const normalized = parsed
-      .filter((value): value is string => typeof value === 'string')
-      .map((value) => {
-        try {
-          return normalizeHex(value);
-        } catch {
-          return null;
-        }
-      })
-      .filter((value): value is string => value !== null);
-    return Array.from(new Set(normalized));
-  } catch {
-    window.localStorage.removeItem(invoiceStorageKey(address));
-    return [];
-  }
-}
-
-function persistInvoices(address: string, invoiceIds: string[]): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    window.localStorage.setItem(invoiceStorageKey(address), JSON.stringify(invoiceIds));
-  } catch {
-    // ignore storage write failures
-  }
-}
-
-export function ScanInvoicesPanel({
-  config,
-  tokens,
-  artifacts,
-  storageRevision,
-}: ScanInvoicesPanelProps): JSX.Element {
+export function ScanInvoicesPanel({ config, tokens }: ScanInvoicesPanelProps): JSX.Element {
   const wallet = useWallet();
   const seed = useSeed();
-  const [invoices, setInvoices] = useState<string[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<string>();
   const [detail, setDetail] = useState<InvoiceDetail | null>(null);
   const [status, setStatus] = useState<string>();
@@ -129,6 +74,9 @@ export function ScanInvoicesPanel({
   const [isRedeemModalOpen, setRedeemModalOpen] = useState(false);
 
   const availableTokens = useMemo(() => tokens.tokens ?? [], [tokens.tokens]);
+  const accountKey = useMemo(() => toAccountKey(wallet.account), [wallet.account]);
+  const storedInvoices = useStorageStore((state) => (accountKey ? state.invoices[accountKey] ?? [] : []));
+  const setStoredInvoices = useStorageStore((state) => state.setInvoices);
   const connectedToken = useMemo(() => {
     const chain = wallet.chainId;
     if (chain === undefined || chain === null) {
@@ -143,31 +91,65 @@ export function ScanInvoicesPanel({
 
   const isWalletConnected = Boolean(wallet.account && wallet.chainId);
   const isSupportedNetwork = Boolean(connectedToken);
+
+  const invoices = useMemo(() => {
+    if (!accountKey || !connectedToken) {
+      return [];
+    }
+    return storedInvoices.filter((invoiceId) => {
+      try {
+        return extractChainIdFromInvoiceHex(invoiceId) === connectedToken.chainId;
+      } catch {
+        return false;
+      }
+    });
+  }, [accountKey, connectedToken, storedInvoices]);
+
   useEffect(() => {
-    if (!wallet.account || !connectedToken) {
-      setInvoices([]);
-      setSelectedInvoice(undefined);
-      setDetail(null);
-      setIsDetailLoading(false);
+    setSelectedInvoice(undefined);
+    setDetail(null);
+    setIsDetailLoading(false);
+  }, [accountKey, connectedToken]);
+
+  useEffect(() => {
+    if (!selectedInvoice) {
       return;
     }
-    try {
-      const stored = loadStoredInvoices(wallet.account);
-      const filtered = stored.filter((invoiceId) => {
+    if (!invoices.includes(selectedInvoice)) {
+      setSelectedInvoice(undefined);
+      setDetail(null);
+      setRedeemMessage(undefined);
+      setRedeemSteps([]);
+      setRedeemModalOpen(false);
+    }
+  }, [invoices, selectedInvoice]);
+
+  const mergeInvoices = useCallback(
+    (accountAddress: string, invoiceIds: string[], chainId: bigint): { added: number; total: number } => {
+      const normalizedAccount = normalizeHex(accountAddress);
+      const prev = useStorageStore.getState().invoices[normalizedAccount] ?? [];
+      const filteredPrev = prev.filter((invoiceId) => {
         try {
-          return extractChainIdFromInvoiceHex(invoiceId) === connectedToken.chainId;
+          return extractChainIdFromInvoiceHex(invoiceId) === chainId;
         } catch {
           return false;
         }
       });
-      setInvoices(filtered);
-    } catch {
-      setInvoices([]);
-    }
-    setSelectedInvoice(undefined);
-    setDetail(null);
-    setIsDetailLoading(false);
-  }, [wallet.account, connectedToken, storageRevision]);
+      const existing = new Set(filteredPrev);
+      const next = [...filteredPrev];
+      let added = 0;
+      for (const id of invoiceIds) {
+        if (!existing.has(id)) {
+          existing.add(id);
+          next.push(id);
+          added += 1;
+        }
+      }
+      setStoredInvoices(normalizedAccount, next);
+      return { added, total: next.length };
+    },
+    [setStoredInvoices],
+  );
 
   const handleLoadInvoices = useCallback(
     async (event: FormEvent<HTMLFormElement>) => {
@@ -193,39 +175,20 @@ export function ScanInvoicesPanel({
         setIsLoading(true);
         setStatus('Scanning invoices…');
         const owner = normalizeHex(wallet.account);
-        const stealthClient = await getStealthClient(config);
-        const ids = await listInvoices(stealthClient, owner, connectedToken.chainId);
-        const normalizedOwner = owner;
-        const normalizedIds = ids.map((value) => normalizeHex(value));
-        let added = 0;
-        let nextLength = 0;
-        setInvoices((prev) => {
-          const filteredPrev = prev.filter((invoiceId) => {
-            try {
-              return extractChainIdFromInvoiceHex(invoiceId) === connectedToken.chainId;
-            } catch {
-              return false;
-            }
-          });
-          const existing = new Set(filteredPrev);
-          const next = [...filteredPrev];
-          for (const id of normalizedIds) {
-            if (!existing.has(id)) {
-              existing.add(id);
-              next.push(id);
-              added += 1;
-            }
-          }
-          nextLength = next.length;
-          persistInvoices(normalizedOwner, next);
-          return next;
+        const stealthClient = await getStealthClientFromConfig({
+          icReplicaUrl: config.icReplicaUrl,
+          storageCanisterId: config.storageCanisterId,
+          keyManagerCanisterId: config.keyManagerCanisterId,
         });
-        if (nextLength === 0) {
-          setStatus('No new entries found.');
+        const ids = await listInvoices(stealthClient, owner, connectedToken.chainId);
+        const normalizedIds = ids.map((value) => normalizeHex(value));
+        const { added, total } = mergeInvoices(owner, normalizedIds, connectedToken.chainId);
+        if (total === 0) {
+          setStatus(`No invoices were found for ${owner}.`);
         } else if (added === 0) {
-          setStatus(`No new invoices. Stored ${nextLength} invoice(s) for ${owner}.`);
+          setStatus(`No new invoices. Stored ${total} invoice(s) for ${owner}.`);
         } else {
-          setStatus(`Added ${added} new invoice(s). Stored ${nextLength} invoice(s) for ${owner}.`);
+          setStatus(`Added ${added} new invoice(s). Stored ${total} invoice(s) for ${owner}.`);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -235,7 +198,7 @@ export function ScanInvoicesPanel({
         setIsLoading(false);
       }
     },
-    [wallet, connectedToken, config],
+    [wallet, connectedToken, config, mergeInvoices],
   );
 
   const handleInvoiceClick = useCallback(
@@ -284,16 +247,15 @@ export function ScanInvoicesPanel({
         }
         setStatus('Fetching invoice status…');
 
-        const hubProvider = createProviderForHub(tokens.hub);
-        const hubContract = getHubContract(tokens.hub.hubAddress, hubProvider);
-        const indexer = createIndexerClient(config);
-
         const burnDetails: BurnDetail[] = [];
         const invoiceIsSingle = isSingleInvoice(invoiceId);
         const subIds = invoiceIsSingle ? [0] : Array.from({ length: 10 }, (_, idx) => idx);
 
         const tokenProvider = createProviderForToken(connectedToken);
-        const verifierContract = getVerifierContract(connectedToken.verifierAddress, tokenProvider);
+        const verifierContract = getVerifierContract(
+          connectedToken.verifierAddress,
+          tokenProvider,
+        ) as unknown as Parameters<typeof collectRedeemContext>[0]['verifierContract'];
 
         for (const subId of subIds) {
           const secretAndTweak = invoiceIsSingle
@@ -309,10 +271,9 @@ export function ScanInvoicesPanel({
           const context = await collectRedeemContext({
             burn,
             tokens: availableTokens,
-            indexer,
+            hub: tokens.hub,
             verifierContract,
-            hubContract,
-            provider: hubProvider,
+            indexerUrl: config.indexerUrl,
             indexerFetchLimit: config.indexerFetchLimit,
             eventBlockSpan: BigInt(config.eventBlockSpan),
           });
@@ -348,7 +309,7 @@ export function ScanInvoicesPanel({
       if (!detail) {
         return;
       }
-      if (!wallet.signer) {
+      if (!wallet.account) {
         setRedeemMessage('Connect and unlock your wallet before redeeming.');
         return;
       }
@@ -385,20 +346,19 @@ export function ScanInvoicesPanel({
         activateStage('indexer', 'Fetching events from indexer…');
         await yieldToUi();
 
-        const hubProvider = createProviderForHub(tokens.hub);
-        const hubContract = getHubContract(tokens.hub.hubAddress, hubProvider);
-        const indexer = createIndexerClient(config);
         const tokenEntry = burnDetail.context.token;
         const tokenProvider = createProviderForToken(tokenEntry);
-        const verifierRead = getVerifierContract(tokenEntry.verifierAddress, tokenProvider);
+        const verifierRead = getVerifierContract(
+          tokenEntry.verifierAddress,
+          tokenProvider,
+        ) as unknown as Parameters<typeof collectRedeemContext>[0]['verifierContract'];
 
         const refreshedContext = await collectRedeemContext({
           burn: burnDetail.burn,
           tokens: availableTokens,
-          indexer,
+          hub: tokens.hub,
           verifierContract: verifierRead,
-          hubContract,
-          provider: hubProvider,
+          indexerUrl: config.indexerUrl,
           indexerFetchLimit: config.indexerFetchLimit,
           eventBlockSpan: BigInt(config.eventBlockSpan),
         });
@@ -445,7 +405,8 @@ export function ScanInvoicesPanel({
         });
         await yieldToUi();
 
-        const verifierWithSigner = getVerifierContract(refreshedContext.token.verifierAddress, wallet.signer);
+        const walletClient = await wallet.ensureWalletClient();
+        const verifierWithSigner = getVerifierContract(refreshedContext.token.verifierAddress, walletClient);
         const gr = {
           chainId: burnDetail.burn.generalRecipient.chainId,
           recipient: padRecipient(burnDetail.burn.generalRecipient.address),
@@ -456,17 +417,7 @@ export function ScanInvoicesPanel({
         await yieldToUi();
 
         if (eligible.length === 1) {
-          const fields = artifacts.single;
-          if (!fields.localPk || !fields.localVk || !fields.globalPk || !fields.globalVk) {
-            throw new Error('Upload all single teleport Groth16 artifacts before redeeming.');
-          }
           const singleProof = await generateSingleTeleportProof({
-            wasmArtifacts: {
-              localPk: fields.localPk,
-              localVk: fields.localVk,
-              globalPk: fields.globalPk,
-              globalVk: fields.globalVk,
-            },
             aggregationState: refreshedContext.aggregationState,
             recipientFr: burnDetail.burn.generalRecipient.fr,
             secretHex: burnDetail.burn.secret,
@@ -479,34 +430,33 @@ export function ScanInvoicesPanel({
           activateStage('wallet', 'Submitting wallet transaction…');
           await yieldToUi();
 
-          const tx = await verifierWithSigner.singleTeleport(
+          const singleTeleport = verifierWithSigner.write.singleTeleport as (
+            args: readonly [boolean, bigint, typeof gr, `0x${string}`],
+          ) => Promise<`0x${string}`>;
+          const proofCalldata = singleProof.proofCalldata as `0x${string}`;
+          const txHash = await singleTeleport([
             true,
             refreshedContext.aggregationState.latestAggSeq,
             gr,
-            getBytes(singleProof.proofCalldata),
-          );
-          await tx.wait();
+            proofCalldata,
+          ]);
+          const receiptClient = wallet.publicClient ?? createProviderForToken(refreshedContext.token);
+          await receiptClient.waitForTransactionReceipt({ hash: txHash });
           completeStage('wallet');
           await yieldToUi();
-          setRedeemMessage(`Single teleport submitted: ${tx.hash}`);
+          setRedeemMessage(`Single teleport submitted: ${txHash}`);
         } else {
-          const fields = artifacts.batch;
-          if (!fields.localPp || !fields.localVp || !fields.globalPp || !fields.globalVp) {
-            throw new Error('Upload all batch teleport Nova artifacts before redeeming.');
+          const decider = getDeciderClient({ baseUrl: config.deciderUrl });
+          const batchProofInputs = refreshedContext.globalProofs;
+          if (batchProofInputs.length !== eligible.length) {
+            throw new Error('Indexer returned mismatched event/proof counts for batch teleport.');
           }
-          const decider = createDeciderClient(config);
           const batchProof = await generateBatchTeleportProof({
-            wasmArtifacts: {
-              localPp: fields.localPp,
-              localVp: fields.localVp,
-              globalPp: fields.globalPp,
-              globalVp: fields.globalVp,
-            },
             aggregationState: refreshedContext.aggregationState,
             recipientFr: burnDetail.burn.generalRecipient.fr,
             secretHex: burnDetail.burn.secret,
-            events: eligible,
-            proofs: refreshedContext.globalProofs,
+            events: batchProofInputs.map((entry) => entry.event),
+            proofs: batchProofInputs,
             decider,
             onDeciderRequestStart: async () => {
               completeStage('proof');
@@ -521,16 +471,21 @@ export function ScanInvoicesPanel({
           activateStage('wallet', 'Submitting wallet transaction…');
           await yieldToUi();
 
-          const tx = await verifierWithSigner.teleport(
+          const teleport = verifierWithSigner.write.teleport as (
+            args: readonly [boolean, bigint, typeof gr, `0x${string}`],
+          ) => Promise<`0x${string}`>;
+          const deciderProofHex = hexlify(batchProof.deciderProof) as `0x${string}`;
+          const txHash = await teleport([
             true,
             refreshedContext.aggregationState.latestAggSeq,
             gr,
-            batchProof.deciderProof,
-          );
-          await tx.wait();
+            deciderProofHex,
+          ]);
+          const receiptClient = wallet.publicClient ?? createProviderForToken(refreshedContext.token);
+          await receiptClient.waitForTransactionReceipt({ hash: txHash });
           completeStage('wallet');
           await yieldToUi();
-          setRedeemMessage(`Batch teleport submitted: ${tx.hash}`);
+          setRedeemMessage(`Batch teleport submitted: ${txHash}`);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -542,7 +497,7 @@ export function ScanInvoicesPanel({
         setIsLoading(false);
       }
     },
-    [detail, wallet.signer, tokens, artifacts, config, availableTokens],
+    [availableTokens, config, detail, tokens, wallet],
   );
 
   return (
