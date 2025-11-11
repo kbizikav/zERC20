@@ -13,6 +13,8 @@ import {
   createPublicClient,
   createWalletClient,
   custom,
+  defineChain,
+  type Chain,
   type EIP1193Provider,
   type PublicClient,
   type WalletClient,
@@ -60,6 +62,29 @@ const listenersInitialState = {
   chainChanged: null as ((chainId: string | number) => void) | null,
 } as const;
 
+const FALLBACK_RPC_HTTP = ['https://placeholder.invalid'] as const;
+const FALLBACK_NATIVE_CURRENCY = {
+  name: 'Ether',
+  symbol: 'ETH',
+  decimals: 18,
+} as const;
+
+function createInjectedChainConfig(chainId?: number): Chain | undefined {
+  if (chainId === undefined || !Number.isFinite(chainId)) {
+    return undefined;
+  }
+  return defineChain({
+    id: chainId,
+    name: `Chain ${chainId}`,
+    nativeCurrency: FALLBACK_NATIVE_CURRENCY,
+    rpcUrls: {
+      default: {
+        http: FALLBACK_RPC_HTTP,
+      },
+    },
+  });
+}
+
 export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
   const [account, setAccount] = useState<string>();
   const [chainId, setChainId] = useState<number>();
@@ -74,6 +99,7 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
   const abortRef = useRef<AbortController | null>(null);
   const publicClientRef = useRef<PublicClient>();
   const walletClientRef = useRef<WalletClient>();
+  const accountRef = useRef<string>();
 
   const resetListeners = useCallback(() => {
     const { current } = listeners;
@@ -90,6 +116,9 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
   }, []);
 
   useEffect(() => resetListeners, [resetListeners]);
+  useEffect(() => {
+    accountRef.current = account;
+  }, [account]);
 
   const removeViemClients = useCallback(() => {
     publicClientRef.current = undefined;
@@ -99,23 +128,25 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
   }, []);
 
   const instantiateViemClients = useCallback(
-    (accountAddress: string) => {
+    (accountAddress: string, options?: { chainId?: number }) => {
       if (!window.ethereum) {
         throw new WalletProviderError(
           'No injected wallet found. Install MetaMask or another EIP-1193 compatible provider.',
         );
       }
       const normalizedAccount = accountAddress as `0x${string}`;
+      const targetChainId = options?.chainId ?? chainId;
+      const chainConfig = createInjectedChainConfig(targetChainId);
       const transport = custom(window.ethereum as EIP1193Provider);
       const nextWalletClient = createWalletClient({
         account: normalizedAccount,
-        chain: undefined,
+        chain: chainConfig,
         key: 'injected-wallet',
         name: 'Injected Wallet',
         transport,
       });
       const nextPublicClient = createPublicClient({
-        chain: undefined,
+        chain: chainConfig,
         key: 'injected-public',
         name: 'Injected Public',
         transport,
@@ -126,7 +157,7 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
       setPublicClient(nextPublicClient);
       return { nextWalletClient, nextPublicClient };
     },
-    [],
+    [chainId],
   );
 
   const disconnect = useCallback(() => {
@@ -179,7 +210,7 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
       setChainId(Number(network.chainId));
       setStatus('connected');
       if (lowerAccount) {
-        instantiateViemClients(lowerAccount);
+        instantiateViemClients(lowerAccount, { chainId: Number(network.chainId) });
       } else {
         removeViemClients();
       }
@@ -200,7 +231,7 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
               setSigner(refreshedSigner);
               setAccount(accountValue);
               setChainId(Number(refreshedNetwork.chainId));
-              instantiateViemClients(accountValue);
+              instantiateViemClients(accountValue, { chainId: Number(refreshedNetwork.chainId) });
             } catch (cause) {
               setError(new WalletProviderError('Failed to refresh signer.', cause));
               removeViemClients();
@@ -216,6 +247,10 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
             return;
           }
           setChainId(numericChain);
+          const currentAccount = accountRef.current;
+          if (currentAccount) {
+            instantiateViemClients(currentAccount, { chainId: numericChain });
+          }
         };
 
         window.ethereum.on('accountsChanged', handleAccountsChanged);
@@ -237,7 +272,7 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
       setStatus('error');
       throw err;
     }
-  }, [disconnect, resetListeners]);
+  }, [disconnect, instantiateViemClients, removeViemClients, resetListeners]);
 
   const ensureSigner = useCallback(async () => {
     if (signer) {
@@ -287,7 +322,7 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
             const refreshedSigner = await provider.getSigner();
             setSigner(refreshedSigner);
             if (account) {
-              instantiateViemClients(account);
+              instantiateViemClients(account, { chainId: Number(normalized) });
             }
           } catch (cause) {
             setError(new WalletProviderError('Failed to refresh signer after chain switch.', cause));
@@ -358,7 +393,7 @@ export function WalletProvider({ children }: PropsWithChildren): JSX.Element {
                 const refreshedSigner = await provider.getSigner();
                 setSigner(refreshedSigner);
                 if (account) {
-                  instantiateViemClients(account);
+                  instantiateViemClients(account, { chainId: Number(normalized) });
                 }
               } catch (refreshCause) {
                 setError(new WalletProviderError('Failed to refresh signer after chain switch.', refreshCause));

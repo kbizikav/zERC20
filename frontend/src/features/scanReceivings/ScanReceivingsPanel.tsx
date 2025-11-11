@@ -631,13 +631,14 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
           await yieldToUi();
 
           const singleTeleport = verifierWithSigner.write.singleTeleport as (
-            args: readonly [boolean, bigint, typeof gr, Uint8Array],
+            args: readonly [boolean, bigint, typeof gr, `0x${string}`],
           ) => Promise<`0x${string}`>;
+          const proofCalldata = singleProof.proofCalldata as `0x${string}`;
           const txHash = await singleTeleport([
             true,
             refreshedContext.aggregationState.latestAggSeq,
             gr,
-            getBytes(singleProof.proofCalldata),
+            proofCalldata,
           ]);
           const receiptClient = wallet.publicClient ?? createProviderForToken(refreshedContext.token);
           await receiptClient.waitForTransactionReceipt({ hash: txHash });
@@ -671,13 +672,14 @@ export function ScanReceivingsPanel({ config, tokens, storageRevision }: ScanRec
           await yieldToUi();
 
           const teleport = verifierWithSigner.write.teleport as (
-            args: readonly [boolean, bigint, typeof gr, Uint8Array],
+            args: readonly [boolean, bigint, typeof gr, `0x${string}`],
           ) => Promise<`0x${string}`>;
+          const deciderProofHex = hexlify(batchProof.deciderProof) as `0x${string}`;
           const txHash = await teleport([
             true,
             refreshedContext.aggregationState.latestAggSeq,
             gr,
-            batchProof.deciderProof,
+            deciderProofHex,
           ]);
           const receiptClient = wallet.publicClient ?? createProviderForToken(refreshedContext.token);
           await receiptClient.waitForTransactionReceipt({ hash: txHash });
