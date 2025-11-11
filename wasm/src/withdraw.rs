@@ -19,7 +19,6 @@ use zkp::{
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsExternalInput {
-    #[serde(default)]
     pub is_dummy: bool,
     pub value: String,
     pub secret: String,

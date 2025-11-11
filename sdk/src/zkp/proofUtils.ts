@@ -55,7 +55,7 @@ export function appendDummySteps(steps: any[]): void {
   for (let i = 0; i < dummySteps; i += 1) {
     const leafIndex = offset + BigInt(i);
     steps.push({
-      is_dummy: true,
+      isDummy: true,
       value: formatFieldElement('0x0', `dummySteps[${i}].value`),
       secret: formatFieldElement('0x0', `dummySteps[${i}].secret`),
       leafIndex: toLeafIndexString(leafIndex),

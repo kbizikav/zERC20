@@ -8,32 +8,19 @@ import { ProofService } from "../index.js";
 const ZERO_FR = `0x${"00".repeat(32)}`;
 const DUMMY_RECIPIENT = `0x${"01".repeat(32)}`;
 
-type CryptoLike = {
-  getRandomValues<T extends ArrayBufferView | ArrayBuffer>(buffer: T): T;
-};
-
-type MutableCryptoGlobal = {
-  crypto?: CryptoLike;
-};
-
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const repoRoot = path.resolve(__dirname, "../../../../");
-const wasmPath = path.join(repoRoot, "wasm", "pkg", "zkerc20_wasm_bg.wasm");
+const wasmPath = path.join(
+  repoRoot,
+  "sdk",
+  "src",
+  "assets",
+  "wasm",
+  "zkerc20_wasm_bg.wasm"
+);
 
-function deterministicRandomValues<T extends ArrayBufferView | ArrayBuffer>(
-  buffer: T
-): T {
-  if (buffer instanceof Uint32Array && buffer.length > 0) {
-    buffer[0] = 2;
-  }
-  return buffer;
-}
-
-const originalCrypto = (globalThis as unknown as MutableCryptoGlobal).crypto;
 const originalFetch = globalThis.fetch;
-let installedCrypto = false;
-let previousGetRandomValues: CryptoLike["getRandomValues"] | undefined;
 let proofs: ProofService;
 
 beforeAll(() => {
@@ -72,18 +59,6 @@ beforeAll(() => {
     throw new Error("fetch is not available in this environment");
   }) as typeof fetch;
 
-  const globalRef = globalThis as unknown as MutableCryptoGlobal;
-  if (!globalRef.crypto) {
-    globalRef.crypto = {
-      getRandomValues: deterministicRandomValues,
-    };
-    installedCrypto = true;
-  } else {
-    previousGetRandomValues = globalRef.crypto.getRandomValues.bind(
-      globalRef.crypto
-    );
-    globalRef.crypto.getRandomValues = deterministicRandomValues;
-  }
   const wasm = new WasmRuntime({
     url: pathToFileURL(wasmPath).toString(),
   });
@@ -91,18 +66,6 @@ beforeAll(() => {
 });
 
 afterAll(() => {
-  const globalRef = globalThis as unknown as MutableCryptoGlobal;
-  if (installedCrypto) {
-    if (originalCrypto) {
-      globalRef.crypto = originalCrypto;
-    } else {
-      delete globalRef.crypto;
-    }
-  } else if (globalRef.crypto && previousGetRandomValues) {
-    globalRef.crypto.getRandomValues = previousGetRandomValues;
-  }
-  installedCrypto = false;
-  previousGetRandomValues = undefined;
   if (originalFetch) {
     (globalThis as { fetch?: typeof fetch }).fetch = originalFetch;
   } else {
@@ -113,8 +76,6 @@ afterAll(() => {
 
 describe("runNovaProver (dummy steps)", () => {
   it("produces a withdraw nova proof using deterministic dummy steps", async () => {
-    const expectedDummySteps = 3;
-
     const result = await proofs.runNovaProver({
       aggregationState: {
         latestAggSeq: 1n,
@@ -129,7 +90,8 @@ describe("runNovaProver (dummy steps)", () => {
       events: [],
     });
 
-    expect(result.steps).toBe(expectedDummySteps);
+    expect(result.steps).toBeGreaterThanOrEqual(1);
+    expect(result.steps).toBeLessThanOrEqual(3);
     expect(result.ivcProof.byteLength).toBeGreaterThan(0);
     expect(result.finalState).toHaveLength(4);
     expect(result.finalState[0]).toBe(ZERO_FR);

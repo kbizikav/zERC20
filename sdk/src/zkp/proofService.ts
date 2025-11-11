@@ -178,7 +178,7 @@ export class ProofService {
       formatFieldElement("0x0", "z0[3]"),
     ];
     const steps = sortedEvents.map((event, idx) => ({
-      is_dummy: false,
+      isDummy: false,
       value: formatFieldElement(
         toFieldHex(event.value),
         `events[${idx}].value`

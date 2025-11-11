@@ -16,6 +16,6 @@ describe('appendDummySteps', () => {
     const expectedLastLeaf = (maxLeaves - 2n).toString();
     expect(steps.at(-1)?.leafIndex).toBe(expectedLastLeaf);
     expect(steps[0].siblings).toHaveLength(GLOBAL_TRANSFER_TREE_HEIGHT);
-    expect(steps[0].is_dummy).toBe(true);
+    expect(steps[0].isDummy).toBe(true);
   });
 });
