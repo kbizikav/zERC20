@@ -19,12 +19,10 @@ use zkp::{
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct Groth16ProveResult {
-    #[serde(rename = "proofCalldata")]
     proof_calldata: String,
-    #[serde(rename = "publicInputs")]
     public_inputs: Vec<String>,
-    #[serde(rename = "treeDepth")]
     tree_depth: usize,
 }
 
