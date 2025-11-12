@@ -35,9 +35,9 @@ This document explains how the zk-wormhole-enabled ERC-20 (zERC20) system is spl
 | Component | Location | Role |
 | --- | --- | --- |
 | Tree indexer | `indexer/` | Actix HTTP server backed by Postgres. Runs three jobs—event sync, Merkle tree ingestion, and the root prover job that compiles Nova proofs, requests decider proofs, and submits `proveTransferRoot`. |
-| Decider prover | `decider-prover/` | HTTP + Redis queue that loads Nova parameters, accepts `CircuitKind::{Root,WithdrawLocal,WithdrawGlobal}` jobs, and returns decider proofs ready for on-chain verifiers. |
+| Decider prover | `decider-prover/` | HTTP worker that loads Nova parameters, accepts `CircuitKind::{Root,WithdrawLocal,WithdrawGlobal}` jobs, and returns decider proofs ready for on-chain verifiers. |
 | Cross-chain job | `crosschain-job/` | Long-running worker that calls `relayTransferRoot` on every verifier and `Hub.broadcast` for all configured LayerZero EIDs using the shared `config/tokens.json`. |
-| Docker orchestration | `docker/` | Compose files and entrypoints that bundle Redis, Postgres, the decider-prover, tree-indexer, and cross-chain job for local or staged deployments. |
+| Docker orchestration | `docker/` | Compose files and entrypoints that bundle Postgres, the decider-prover, tree-indexer, and cross-chain job for local or staged deployments. |
 
 ### Client SDKs and Applications
 
