@@ -16,20 +16,6 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
 
-  redis:
-    image: redis:7-alpine
-    restart: unless-stopped
-    command: ["redis-server", "--appendonly", "yes"]
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    volumes:
-      - redis-data:/data
-    ports:
-      - "127.0.0.1:6379:6379"
-
   indexer:
     build:
       context: .
@@ -75,4 +61,3 @@ services:
 
 volumes:
   postgres-data:
-  redis-data:
