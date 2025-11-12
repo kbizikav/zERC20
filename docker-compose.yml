@@ -26,7 +26,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/postgres
+      DATABASE_URL: postgres://postgres:password@postgres:5432/postgres
       TOKENS_COMPRESSED: "${TOKENS_COMPRESSED:?TOKENS_COMPRESSED must be set in .env}"
       DECIDER_PROVER_URL: http://host.docker.internal:8081
       ROOT_SUBMITTER_PRIVATE_KEY: "${ROOT_SUBMITTER_PRIVATE_KEY:?ROOT_SUBMITTER_PRIVATE_KEY must be set in .env}"
