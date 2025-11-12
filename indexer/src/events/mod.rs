@@ -8,6 +8,7 @@ use thiserror::Error;
 
 use client_common::contracts::{ContractError, z_erc20::ZErc20Contract};
 use client_common::tokens::TokenMetadata;
+use log::warn;
 
 pub const BLOCK_SPAN_RECOMMENDED: u64 = 5_000;
 pub const FORWARD_SCAN_OVERLAP_RECOMMENDED: u64 = 10;
@@ -166,16 +167,35 @@ impl EventIndexer {
             return Ok(());
         }
 
-        let block_span = self.config.block_span().get();
+        let max_block_span = self.config.block_span().get();
         let forward_overlap = self.config.forward_scan_overlap();
         let mut from = from_block;
+        let mut current_span = max_block_span;
+
         while from <= to_block {
-            let to = to_block.min(from.saturating_add(block_span - 1));
-            let fetched = self
-                .contract
-                .get_indexed_transfer_events(from, to)
-                .await
-                .map_err(|err| EventIndexerError::contract("get_indexed_transfer_events", err))?;
+            let to = to_block.min(from.saturating_add(current_span - 1));
+            let fetched = match self.contract.get_indexed_transfer_events(from, to).await {
+                Ok(events) => events,
+                Err(err) => {
+                    if is_invalid_block_range_error(&err) && current_span > 1 {
+                        let previous_span = current_span;
+                        current_span = (current_span / 2).max(1);
+                        warn!(
+                            "provider rejected block range [{from}, {to}] for token_id {} (contract {}); reducing span from {} to {}",
+                            self.partitions.token_id(),
+                            self.contract.address(),
+                            previous_span,
+                            current_span,
+                        );
+                        continue;
+                    }
+
+                    return Err(EventIndexerError::contract(
+                        "get_indexed_transfer_events",
+                        err,
+                    ));
+                }
+            };
 
             if !fetched.is_empty() {
                 insert_events(&self.pool, self.partitions.token_id(), &fetched).await?;
@@ -183,6 +203,10 @@ impl EventIndexer {
 
             if to == to_block {
                 break;
+            }
+
+            if current_span < max_block_span {
+                current_span = current_span.saturating_mul(2).min(max_block_span);
             }
 
             let next_from = to.saturating_add(1);
@@ -314,6 +338,13 @@ impl EventIndexerPartitions {
 
         Ok(())
     }
+}
+
+fn is_invalid_block_range_error(err: &ContractError) -> bool {
+    let message = err.to_string().to_ascii_lowercase();
+    message.contains("invalid block range")
+        || message.contains("block range params")
+        || message.contains("block range is too large")
 }
 
 async fn ensure_token_record(pool: &PgPool, metadata: &TokenMetadata) -> Result<i64> {
