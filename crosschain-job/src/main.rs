@@ -1,4 +1,4 @@
-use std::{env, path::Path, str::FromStr, time::Duration};
+use std::{collections::HashMap, env, path::Path, str::FromStr, time::Duration};
 
 use alloy::{
     network::Ethereum,
@@ -414,15 +414,38 @@ async fn main() -> Result<()> {
 }
 
 async fn resolve_target_eids(hub: &HubContract, tokens: &[TokenEntry]) -> Result<Vec<u32>> {
-    let mut eids = Vec::with_capacity(tokens.len());
-    for (index, token) in tokens.iter().enumerate() {
-        let info = hub
-            .token_info(index as u64)
-            .await
-            .with_context(|| format!("failed to query hub token info at index {index}"))?;
-        log_token_info_mismatch(token, &info);
-        eids.push(info.eid);
+    let hub_infos = hub
+        .token_infos()
+        .await
+        .context("failed to query hub token infos")?;
+
+    let mut infos_by_chain = HashMap::with_capacity(hub_infos.len());
+    for info in hub_infos {
+        let chain_id = info.chain_id;
+        if infos_by_chain.insert(chain_id, info).is_some() {
+            warn!(
+                "hub reports duplicate token info entries for chain_id {}",
+                chain_id
+            );
+        }
     }
+
+    let mut eids = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        match infos_by_chain.get(&token.chain_id) {
+            Some(info) => {
+                log_token_info_mismatch(token, info);
+                eids.push(info.eid);
+            }
+            None => {
+                warn!(
+                    "token '{}' (chain {}) missing from hub token infos; skipping broadcast target",
+                    token.label, token.chain_id
+                );
+            }
+        }
+    }
+
     Ok(eids)
 }
 
