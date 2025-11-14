@@ -1,21 +1,4 @@
-import initWasm, {
-  build_full_burn_address as wasmBuildFullBurnAddress,
-  decode_full_burn_address as wasmDecodeFullBurnAddress,
-  derive_invoice_batch as wasmDeriveInvoiceBatch,
-  derive_invoice_single as wasmDeriveInvoiceSingle,
-  derive_payment_advice as wasmDerivePaymentAdvice,
-  general_recipient_fr as wasmGeneralRecipientFr,
-  aggregation_merkle_proof as wasmAggregationMerkleProof,
-  aggregation_root as wasmAggregationRoot,
-  fetch_aggregation_tree_state as wasmFetchAggregationTreeState,
-  fetch_transfer_events as wasmFetchTransferEvents,
-  separate_events_by_eligibility as wasmSeparateEventsByEligibility,
-  fetch_local_teleport_merkle_proofs as wasmFetchLocalTeleportMerkleProofs,
-  generate_global_teleport_merkle_proofs as wasmGenerateGlobalTeleportMerkleProofs,
-  SingleWithdrawWasm,
-  WithdrawNovaWasm,
-  seed_message as wasmSeedMessage,
-} from '../assets/wasm/zkerc20_wasm.js';
+import type { SingleWithdrawWasm, WithdrawNovaWasm } from '../assets/wasm/web/zkerc20_wasm.js';
 
 import {
   AggregationTreeState,
@@ -39,8 +22,64 @@ import {
 import { normalizeHex, toBigInt } from '../utils/hex.js';
 import { NUM_BATCH_INVOICES } from '../constants.js';
 
-const DEFAULT_WASM_FILENAME = 'assets/wasm/zkerc20_wasm_bg.wasm';
-const BUNDLED_WASM_URL = new URL('../assets/wasm/zkerc20_wasm_bg.wasm', import.meta.url).toString();
+const DEFAULT_WASM_FILENAME = 'assets/wasm/web/zkerc20_wasm_bg.wasm';
+const BUNDLED_WASM_URL = new URL('../assets/wasm/web/zkerc20_wasm_bg.wasm', import.meta.url).toString();
+
+type WebWasmBindings = typeof import('../assets/wasm/web/zkerc20_wasm.js');
+type CommonWasmBindings = Omit<WebWasmBindings, 'default' | 'initSync'> &
+  Partial<Pick<WebWasmBindings, 'default' | 'initSync'>>;
+type WasmBindings = CommonWasmBindings;
+type WebInitFn = NonNullable<WebWasmBindings['default']>;
+type NodeModule = typeof import('node:module');
+
+let bindingsCache: WasmBindings | undefined;
+let bindingsPromise: Promise<WasmBindings> | undefined;
+
+function isNodeRuntime(): boolean {
+  return typeof process !== 'undefined' && typeof process.versions?.node === 'string';
+}
+
+async function getOrLoadBindings(): Promise<WasmBindings> {
+  if (bindingsCache) {
+    return bindingsCache;
+  }
+  if (!bindingsPromise) {
+    bindingsPromise = resolveBindings();
+  }
+  bindingsCache = await bindingsPromise;
+  return bindingsCache;
+}
+
+async function resolveBindings(): Promise<WasmBindings> {
+  if (isNodeRuntime()) {
+    return loadNodeBindings();
+  }
+  return import('../assets/wasm/web/zkerc20_wasm.js');
+}
+
+async function loadNodeBindings(): Promise<WasmBindings> {
+  const { createRequire } = await loadNodeModule();
+  const require = createRequire(import.meta.url);
+  return require('../assets/wasm/node/zkerc20_wasm.js') as WasmBindings;
+}
+
+async function loadNodeModule(): Promise<NodeModule> {
+  const specifiers = ['node:module', 'module'] as const;
+  let lastError: unknown;
+  for (const specifier of specifiers) {
+    try {
+      const mod = (await import(specifier as string)) as NodeModule;
+      return mod;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError ?? new Error('failed to load node:module for wasm bindings');
+}
+
+function requiresExplicitInit(bindings: WasmBindings): bindings is WasmBindings & { default: WebInitFn } {
+  return typeof bindings.default === 'function';
+}
 
 export interface WasmLocatorGlobal {
   location?: {
@@ -63,6 +102,7 @@ export class WasmRuntime {
   private locator: WasmRuntimeOptions;
   private overrideUrl?: string;
   private initPromise?: Promise<void>;
+  private wasmBindings?: WasmBindings;
 
   constructor(options: WasmRuntimeOptions = {}) {
     this.locator = { ...options };
@@ -85,8 +125,8 @@ export class WasmRuntime {
   }
 
   async getSeedMessage(): Promise<string> {
-    await this.ensureReady();
-    return wasmSeedMessage();
+    const wasm = await this.readyBindings();
+    return wasm.seed_message();
   }
 
   async derivePaymentAdvice(
@@ -95,9 +135,9 @@ export class WasmRuntime {
     recipientChainId: bigint | number,
     recipientAddress: string,
   ): Promise<SecretAndTweak> {
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     return asSecretAndTweak(
-      wasmDerivePaymentAdvice(
+      wasm.derive_payment_advice(
         normalizeHex(seedHex),
         normalizeHex(paymentAdviceIdHex),
         toBigInt(recipientChainId),
@@ -112,9 +152,9 @@ export class WasmRuntime {
     recipientChainId: bigint | number,
     recipientAddress: string,
   ): Promise<SecretAndTweak> {
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     return asSecretAndTweak(
-      wasmDeriveInvoiceSingle(
+      wasm.derive_invoice_single(
         normalizeHex(seedHex),
         normalizeHex(invoiceIdHex),
         toBigInt(recipientChainId),
@@ -131,9 +171,9 @@ export class WasmRuntime {
     recipientAddress: string,
   ): Promise<SecretAndTweak> {
     assertValidInvoiceSubId(subId);
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     return asSecretAndTweak(
-      wasmDeriveInvoiceBatch(
+      wasm.derive_invoice_batch(
         normalizeHex(seedHex),
         normalizeHex(invoiceIdHex),
         subId,
@@ -149,8 +189,8 @@ export class WasmRuntime {
     secretHex: string,
     tweakHex: string,
   ): Promise<BurnArtifacts> {
-    await this.ensureReady();
-    const result = wasmBuildFullBurnAddress(
+    const wasm = await this.readyBindings();
+    const result = wasm.build_full_burn_address(
       toBigInt(recipientChainId),
       normalizeHex(recipientAddress),
       normalizeHex(secretHex),
@@ -160,8 +200,8 @@ export class WasmRuntime {
   }
 
   async decodeFullBurnAddress(payloadHex: string): Promise<BurnArtifacts> {
-    await this.ensureReady();
-    return asBurnArtifacts(wasmDecodeFullBurnAddress(normalizeHex(payloadHex)));
+    const wasm = await this.readyBindings();
+    return asBurnArtifacts(wasm.decode_full_burn_address(normalizeHex(payloadHex)));
   }
 
   async generalRecipientFr(
@@ -169,25 +209,25 @@ export class WasmRuntime {
     recipientAddress: string,
     tweakHex: string,
   ): Promise<string> {
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     return normalizeHex(
-      wasmGeneralRecipientFr(toBigInt(chainId), normalizeHex(recipientAddress), normalizeHex(tweakHex)),
+      wasm.general_recipient_fr(toBigInt(chainId), normalizeHex(recipientAddress), normalizeHex(tweakHex)),
     );
   }
 
   async aggregationRoot(snapshot: readonly string[]): Promise<string> {
-    await this.ensureReady();
-    return normalizeHex(wasmAggregationRoot(snapshot.slice()));
+    const wasm = await this.readyBindings();
+    return normalizeHex(wasm.aggregation_root(snapshot.slice()));
   }
 
   async aggregationMerkleProof(snapshot: readonly string[], index: number): Promise<string[]> {
-    await this.ensureReady();
-    const siblings: string[] = wasmAggregationMerkleProof(snapshot.slice(), index);
+    const wasm = await this.readyBindings();
+    const siblings: string[] = wasm.aggregation_merkle_proof(snapshot.slice(), index);
     return siblings.map((value) => normalizeHex(value));
   }
 
   async fetchAggregationTreeState(params: FetchAggregationTreeStateParams): Promise<AggregationTreeState> {
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     const payload: {
       eventBlockSpan?: number;
       hub: RawHubEntry;
@@ -199,57 +239,57 @@ export class WasmRuntime {
     if (params.eventBlockSpan !== undefined) {
       payload.eventBlockSpan = toSafeNumber(params.eventBlockSpan, 'eventBlockSpan');
     }
-    const rawState: RawAggregationTreeState = await wasmFetchAggregationTreeState(payload);
+    const rawState: RawAggregationTreeState = await wasm.fetch_aggregation_tree_state(payload);
     return deserializeAggregationTreeState(rawState);
   }
 
   async fetchTransferEvents(params: FetchTransferEventsParams): Promise<ChainEvents[]> {
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     const payload = {
       indexerUrl: params.indexerUrl,
       indexerFetchLimit: params.indexerFetchLimit,
       tokens: params.tokens.map(serializeTokenEntry),
       burnAddresses: params.burnAddresses.map((address) => normalizeHex(address)),
     };
-    const rawEvents: RawChainEvents[] = await wasmFetchTransferEvents(payload);
+    const rawEvents: RawChainEvents[] = await wasm.fetch_transfer_events(payload);
     return rawEvents.map((entry) => deserializeChainEvents(entry));
   }
 
   async separateEventsByEligibility(
     params: SeparateEventsByEligibilityParams,
   ): Promise<SeparatedChainEvents[]> {
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     const payload = {
       aggregationState: serializeAggregationTreeState(params.aggregationState),
       events: params.events.map(serializeChainEvents),
     };
-    const rawSeparated: RawSeparatedChainEvents[] = wasmSeparateEventsByEligibility(payload);
+    const rawSeparated: RawSeparatedChainEvents[] = wasm.separate_events_by_eligibility(payload);
     return rawSeparated.map((entry) => deserializeSeparatedChainEvents(entry));
   }
 
   async fetchLocalTeleportMerkleProofs(
     params: FetchLocalTeleportProofsParams,
   ): Promise<LocalTeleportProof[]> {
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     const payload = {
       indexerUrl: params.indexerUrl,
       token: serializeTokenEntry(params.token),
       treeIndex: toBigInt(params.treeIndex),
       events: params.events.map(serializeIndexedEvent),
     };
-    const rawProofs: RawLocalTeleportProof[] = await wasmFetchLocalTeleportMerkleProofs(payload);
+    const rawProofs: RawLocalTeleportProof[] = await wasm.fetch_local_teleport_merkle_proofs(payload);
     return rawProofs.map((proof) => deserializeLocalTeleportProof(proof));
   }
 
   async generateGlobalTeleportMerkleProofs(
     params: GenerateGlobalTeleportProofsParams,
   ): Promise<GlobalTeleportProofWithEvent[]> {
-    await this.ensureReady();
+    const wasm = await this.readyBindings();
     const payload = {
       aggregationState: serializeAggregationTreeState(params.aggregationState),
       proofs: params.chains.map(serializeChainLocalTeleportProofs),
     };
-    const rawProofs: RawGlobalTeleportProof[] = wasmGenerateGlobalTeleportMerkleProofs(payload);
+    const rawProofs: RawGlobalTeleportProof[] = wasm.generate_global_teleport_merkle_proofs(payload);
     return rawProofs.map((proof) => deserializeGlobalTeleportProof(proof));
   }
 
@@ -259,8 +299,8 @@ export class WasmRuntime {
     globalPk: Uint8Array,
     globalVk: Uint8Array,
   ): Promise<SingleWithdrawWasm> {
-    await this.ensureReady();
-    return new SingleWithdrawWasm(localPk, localVk, globalPk, globalVk);
+    const wasm = await this.readyBindings();
+    return new wasm.SingleWithdrawWasm(localPk, localVk, globalPk, globalVk);
   }
 
   async createWithdrawNovaProgram(
@@ -269,8 +309,8 @@ export class WasmRuntime {
     globalPp: Uint8Array,
     globalVp: Uint8Array,
   ): Promise<WithdrawNovaWasm> {
-    await this.ensureReady();
-    return new WithdrawNovaWasm(localPp, localVp, globalPp, globalVp);
+    const wasm = await this.readyBindings();
+    return new wasm.WithdrawNovaWasm(localPp, localVp, globalPp, globalVp);
   }
 
   private async ensureReady(): Promise<void> {
@@ -280,13 +320,32 @@ export class WasmRuntime {
     await this.initPromise;
   }
 
+  private async readyBindings(): Promise<WasmBindings> {
+    await this.ensureReady();
+    return this.getBindings();
+  }
+
+  private getBindings(): WasmBindings {
+    if (!this.wasmBindings) {
+      throw new Error('zkERC20 wasm bindings are not initialized');
+    }
+    return this.wasmBindings;
+  }
+
   private async initialize(): Promise<void> {
+    const bindings = await getOrLoadBindings();
+    if (!requiresExplicitInit(bindings)) {
+      this.wasmBindings = bindings;
+      return;
+    }
+
     const candidates = this.resolveCandidateUrls();
     let lastError: unknown;
     for (let idx = 0; idx < candidates.length; idx++) {
       const candidate = candidates[idx];
       try {
-        await initWasm({ module_or_path: candidate });
+        await bindings.default({ module_or_path: candidate });
+        this.wasmBindings = bindings;
         return;
       } catch (error) {
         lastError = error;
