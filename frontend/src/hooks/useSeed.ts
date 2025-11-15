@@ -1,9 +1,10 @@
 import type { JsonRpcSigner } from 'ethers';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { keccak256, toBytes } from 'viem';
-import { getSeedMessage, useStorageStore } from '@zerc20/sdk';
+import { getSeedMessage } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
 import { toAccountKey } from '@utils/accountKey';
+import { useStorageStore } from '@/state/storageStore';
 
 export interface SeedState {
   seedHex?: string;

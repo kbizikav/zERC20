@@ -11,11 +11,8 @@ import {
   normalizeHex,
   getVerifierContract,
   createProviderForToken,
-  generateBatchTeleportProof,
-  generateSingleTeleportProof,
   getStealthClientFromConfig,
   getDeciderClient,
-  useStorageStore,
 } from '@zerc20/sdk';
 import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
@@ -27,6 +24,8 @@ import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
 import { yieldToUi } from '@features/redeem/yieldToUi';
 import { toAccountKey } from '@utils/accountKey';
+import { useStorageStore } from '@/state/storageStore';
+import { generateBatchTeleportProof, generateSingleTeleportProof } from '@/utils/teleportProofs';
 
 interface ScanInvoicesPanelProps {
   config: AppConfig;
@@ -75,7 +74,7 @@ export function ScanInvoicesPanel({ config, tokens }: ScanInvoicesPanelProps): J
 
   const availableTokens = useMemo(() => tokens.tokens ?? [], [tokens.tokens]);
   const accountKey = useMemo(() => toAccountKey(wallet.account), [wallet.account]);
-  const storedInvoices = useStorageStore((state) => (accountKey ? state.invoices[accountKey] ?? [] : []));
+  const storedInvoices = useStorageStore((state) => (accountKey ? state.invoices[accountKey] : undefined));
   const setStoredInvoices = useStorageStore((state) => state.setInvoices);
   const connectedToken = useMemo(() => {
     const chain = wallet.chainId;
@@ -96,7 +95,8 @@ export function ScanInvoicesPanel({ config, tokens }: ScanInvoicesPanelProps): J
     if (!accountKey || !connectedToken) {
       return [];
     }
-    return storedInvoices.filter((invoiceId) => {
+    const invoicesForAccount = storedInvoices ?? [];
+    return invoicesForAccount.filter((invoiceId) => {
       try {
         return extractChainIdFromInvoiceHex(invoiceId) === connectedToken.chainId;
       } catch {

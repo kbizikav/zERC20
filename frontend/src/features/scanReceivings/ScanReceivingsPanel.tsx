@@ -11,13 +11,9 @@ import {
   createProviderForToken,
   getVerifierContract,
   collectRedeemContext,
-  generateSingleTeleportProof,
-  generateBatchTeleportProof,
   normalizeHex,
   getStealthClientFromConfig,
   getDeciderClient,
-  useStorageStore,
-  type StoredAnnouncement,
 } from '@zerc20/sdk';
 import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
@@ -30,6 +26,8 @@ import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
 import { yieldToUi } from '@features/redeem/yieldToUi';
 import { toAccountKey } from '@utils/accountKey';
+import { generateBatchTeleportProof, generateSingleTeleportProof } from '@/utils/teleportProofs';
+import { useStorageStore, type StoredAnnouncement } from '@/state/storageStore';
 
 interface ScanReceivingsPanelProps {
   config: AppConfig;
@@ -121,7 +119,9 @@ export function ScanReceivingsPanel({ config, tokens }: ScanReceivingsPanelProps
   const storedVetKeyHex = useStorageStore((state) => (accountKey ? state.vetKeys[accountKey] : undefined));
   const setStoredVetKey = useStorageStore((state) => state.setVetKey);
   const removeStoredVetKey = useStorageStore((state) => state.removeVetKey);
-  const storedAnnouncementRecords = useStorageStore((state) => (accountKey ? state.announcements[accountKey] ?? [] : []));
+  const storedAnnouncementRecords = useStorageStore((state) =>
+    accountKey ? state.announcements[accountKey] : undefined,
+  );
   const setStoredAnnouncements = useStorageStore((state) => state.setAnnouncements);
 
   const cachedVetKey = useMemo(() => {
@@ -138,7 +138,7 @@ export function ScanReceivingsPanel({ config, tokens }: ScanReceivingsPanelProps
   }, [accountKey, removeStoredVetKey, storedVetKeyHex]);
 
   const announcements = useMemo(
-    () => deserializeAnnouncements(storedAnnouncementRecords),
+    () => deserializeAnnouncements(storedAnnouncementRecords ?? []),
     [storedAnnouncementRecords],
   );
 

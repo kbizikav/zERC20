@@ -4,10 +4,11 @@ import { AppProviders } from './providers/AppProviders';
 import { useWallet } from './providers/WalletProvider';
 import { Tabs } from '@components/Tabs';
 import { useRuntimeConfig } from '@config/ConfigContext';
-import { configureWasmLocator, getZerc20Contract, loadTokens, useStorageStore } from '@zerc20/sdk';
+import { configureWasmLocator, getZerc20Contract, loadTokens } from '@zerc20/sdk';
 import type { NormalizedTokens } from '@zerc20/sdk';
 import { ConvertPanel, PrivateReceivePanel, PrivateSendPanel, ScanReceivingsPanel } from '@features/index';
 import { buildSwitchChainOptions } from '@/utils/wallet';
+import { useStorageStore } from '@/state/storageStore';
 
 const TAB_SEND = 'send';
 const TAB_RECEIVE = 'receive';

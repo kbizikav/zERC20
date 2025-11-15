@@ -12,19 +12,22 @@
     "typecheck": "tsc -b"
   },
   "dependencies": {
-    "@zerc20/sdk": "workspace:*",
     "@dfinity/agent": "3.4.1",
     "@dfinity/candid": "3.4.1",
     "@dfinity/principal": "3.4.1",
     "@dfinity/vetkeys": "0.4.0",
+    "@noble/curves": "^1.4.0",
+    "@zerc20/sdk": "git+ssh://git@github.com/InternetMaximalism/zerc20-client-sdk.git#init",
     "base64-arraybuffer": "^1.0.2",
     "ethers": "^6.13.4",
     "pako": "^2.1.0",
+    "poseidon-lite": "^0.0.2",
     "qrcode": "^1.5.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "viem": "^2.38.6",
-    "zod": "^3.23.8"
+    "zod": "^3.23.8",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@types/node": "^20.12.12",

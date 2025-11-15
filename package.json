@@ -4,13 +4,12 @@
   "private": true,
   "packageManager": "pnpm@10.20.0",
   "workspaces": [
-    "sdk",
     "frontend"
   ],
   "scripts": {
-    "build": "pnpm --filter sdk build",
-    "dev": "pnpm --filter sdk dev",
-    "test": "pnpm --filter sdk test",
-    "typecheck": "pnpm --filter sdk typecheck"
+    "build": "pnpm --filter frontend build",
+    "dev": "pnpm --filter frontend dev",
+    "test": "pnpm --filter frontend test",
+    "typecheck": "pnpm --filter frontend typecheck"
   }
 }

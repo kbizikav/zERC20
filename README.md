@@ -23,3 +23,7 @@ Container definitions for Postgres plus the `decider-prover`, `tree-indexer`, an
 ```bash
 docker compose up --build
 ```
+
+## Frontend SDK Dependency
+
+The React frontend imports `@zerc20/sdk` directly from the private repository `git@github.com:InternetMaximalism/zerc20-client-sdk.git` (branch `init`). Make sure your GitHub SSH key has access before running any `pnpm` commands so the dependency can be fetched. If you need to work on the SDK itself, clone that repository separately and, if necessary, use `pnpm link` / `pnpm unlink` from within `frontend` to test local changes.
