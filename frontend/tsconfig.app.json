@@ -22,8 +22,6 @@
       "@features/*": ["./src/features/*"],
       "@config/*": ["./src/config/*"],
       "@utils/*": ["./src/utils/*"],
-      "@zerc20/sdk": ["../../zerc20-client-sdk/dist/index"],
-      "@zerc20/sdk/*": ["../../zerc20-client-sdk/dist/*"],
       "viem": ["./node_modules/viem"]
     },
     "tsBuildInfoFile": "./.tsbuildinfo/app.tsbuildinfo"

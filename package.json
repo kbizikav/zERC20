@@ -11,5 +11,10 @@
     "dev": "pnpm --filter frontend dev",
     "test": "pnpm --filter frontend test",
     "typecheck": "pnpm --filter frontend typecheck"
+  },
+  "pnpm": {
+    "overrides": {
+      "@noble/hashes": "1.8.0"
+    }
   }
 }
