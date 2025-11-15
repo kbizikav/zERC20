@@ -387,7 +387,7 @@ function AppContent(): JSX.Element {
   const [isConvertOpen, setIsConvertOpen] = useState<boolean>(false);
 
   useEffect(() => {
-    configureWasmLocator();
+    configureWasmLocator({ url: '/zkerc20_wasm_bg.wasm' });
   }, []);
 
   useEffect(() => {
