@@ -74,7 +74,6 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     mapping(uint32 => uint256) public eidToPosition; // 1-based index, 0 means unregistered
     uint256[ZERO_HASH_COUNT] public zeroHash;
     uint64 public aggSeq;
-    bool public isUpToDate;
 
     /// -----------------------------------------------------------------------
     /// Constructor
@@ -101,7 +100,6 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         for (uint256 i = 0; i < zeroHashInit.length; ++i) {
             zeroHash[i] = zeroHashInit[i];
         }
-        isUpToDate = true;
     }
 
     /// -----------------------------------------------------------------------
@@ -123,7 +121,6 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         transferTreeIndices.push(0);
         tokenInfos.push(info);
         eidToPosition[info.eid] = index + 1;
-        isUpToDate = false;
 
         emit TokenRegistered(info.eid, index, info.chainId, info.token, info.verifier);
     }
@@ -168,7 +165,6 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
             if (!success) revert FeeRefundFailed(refund);
         }
 
-        isUpToDate = true;
         emit AggregationRootUpdated(ctx.aggregationRoot, ctx.nextAggSeq, ctx.snapshot, ctx.transferTreeIndicesSnapshot);
     }
 
@@ -247,7 +243,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// LayerZero Receiver
     /// -----------------------------------------------------------------------
 
-    /// @dev Accepts `(transferRoot, transferTreeIndex)` payloads from registered verifiers and marks the tree dirty.
+    /// @dev Accepts `(transferRoot, transferTreeIndex)` payloads from registered verifiers when indices advance.
     function _lzReceive(Origin calldata origin, bytes32, bytes calldata payload, address, bytes calldata)
         internal
         override
@@ -265,7 +261,6 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         }
         transferRoots[index] = transferRoot;
         transferTreeIndices[index] = transferTreeIndex;
-        isUpToDate = false;
         emit TransferRootUpdated(origin.srcEid, index, transferRoot);
     }
 

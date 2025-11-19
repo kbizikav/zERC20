@@ -122,11 +122,6 @@ impl HubContract {
         Ok(seq)
     }
 
-    pub async fn is_up_to_date(&self) -> ContractResult<bool> {
-        let up_to_date = self.contract_with_provider().isUpToDate().call().await?;
-        Ok(up_to_date)
-    }
-
     pub async fn transfer_root(&self, index: u64) -> ContractResult<U256> {
         let root = self
             .contract_with_provider()

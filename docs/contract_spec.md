@@ -29,7 +29,7 @@
 - Central LayerZero OApp that tracks each token’s latest transfer root (`transferRoots`) and monotonically increasing tree index (`transferTreeIndices`). Registration is owner-gated:
   - `registerToken` inserts a new token with `(chainId, eid, verifier, token)` metadata, allocating a leaf slot (capacity capped by `POSEIDON_MAX_LEAVES = 2^6 = 64`).
   - `updateToken` refreshes metadata without altering ordering (leaf index equals registration order).
-- LayerZero receive path (`_lzReceive`) accepts `(transferRoot, transferTreeIndex)` payloads from verifiers. Updates occur only when the incoming index is newer, and `isUpToDate` flips to `false` to signal pending aggregation.
+- LayerZero receive path (`_lzReceive`) accepts `(transferRoot, transferTreeIndex)` payloads from verifiers. Updates occur only when the incoming index is newer so snapshots remain monotonic between broadcasts.
 - `broadcast` snapshots the current leaves, computes a PoseidonT3 aggregation tree (height 6, zero nodes pre-computed in storage), increments `aggSeq`, and multicasts the `(globalRoot, aggSeq)` payload to the requested target EIDs. Any excess `msg.value` is refunded. The emitted `AggregationRootUpdated` event exposes both the leaf snapshot and their tree indices for auditing.
 - Fee handling: `quoteBroadcast` estimates native fees; `broadcast` verifies sufficient funding and reverts if LayerZero attempts to charge LZ tokens (`LayerZeroTokenFeeUnsupported`). Each `_lzSend` uses identical payload/options.
 
