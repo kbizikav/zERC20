@@ -67,6 +67,22 @@ contract HubTest is TestHelperOz5 {
         hub.broadcast{value: total - 1}(targetEids, options);
     }
 
+    function testBroadcastRevertsWhenNoTargetsProvided() public {
+        uint32[] memory targetEids = new uint32[](0);
+        bytes memory options = _options();
+
+        vm.expectRevert(Hub.EmptyTargetEids.selector);
+        hub.broadcast(targetEids, options);
+    }
+
+    function testQuoteBroadcastRevertsWhenNoTargetsProvided() public {
+        uint32[] memory targetEids = new uint32[](0);
+        bytes memory options = _options();
+
+        vm.expectRevert(Hub.EmptyTargetEids.selector);
+        hub.quoteBroadcast(targetEids, options);
+    }
+
     function testBroadcastPaysFeesAndRefundsExcess() public {
         uint32[] memory targetEids = _targetEids();
         bytes memory options = _options();
@@ -97,6 +113,19 @@ contract HubTest is TestHelperOz5 {
         uint256 balanceAfter = address(this).balance;
         assertEq(balanceBefore - balanceAfter, total, "net cost");
         assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testAggSeqIncrementsWithEachBroadcast() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+
+        vm.deal(address(this), total * 2);
+        hub.broadcast{value: total}(targetEids, options);
+        assertEq(hub.aggSeq(), 1, "first broadcast increments aggSeq");
+
+        hub.broadcast{value: total}(targetEids, options);
+        assertEq(hub.aggSeq(), 2, "second broadcast increments aggSeq");
     }
 
     function testLogLzReceiveOptionZeroValue() public {
