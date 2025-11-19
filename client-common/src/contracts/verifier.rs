@@ -40,6 +40,16 @@ pub struct VerifiersSetEvent {
     pub single_withdraw_local_verifier: Address,
 }
 
+#[derive(Debug, Clone)]
+pub struct TeleportEvent {
+    pub to: Address,
+    pub value: U256,
+    pub is_global: bool,
+    pub root_hint: u64,
+    pub transfer_root: U256,
+    pub general_recipient: GeneralRecipient,
+}
+
 pub struct VerifierContract {
     provider: NormalProvider,
     address: Address,
@@ -353,13 +363,23 @@ impl VerifierContract {
         send_call_with_legacy(call, &signer, self.legacy_tx).await
     }
 
-    pub fn parse_teleport(&self, receipt: &TransactionReceipt) -> ContractResult<(Address, U256)> {
+    pub fn parse_teleport(&self, receipt: &TransactionReceipt) -> ContractResult<TeleportEvent> {
         for log in receipt.logs() {
             match log.log_decode_validate::<Verifier::Teleport>() {
                 Ok(event) => {
-                    let to = event.inner.to;
-                    let value = event.inner.value;
-                    return Ok((to, value));
+                    let evt = event.inner;
+                    return Ok(TeleportEvent {
+                        to: evt.to,
+                        value: evt.value,
+                        is_global: evt.isGlobal,
+                        root_hint: evt.rootHint,
+                        transfer_root: evt.transferRoot,
+                        general_recipient: GeneralRecipient {
+                            chain_id: evt.gr.chainId,
+                            address: evt.gr.recipient.into(),
+                            tweak: evt.gr.tweak.into(),
+                        },
+                    });
                 }
                 Err(_) => continue,
             }

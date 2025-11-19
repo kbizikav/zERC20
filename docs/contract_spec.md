@@ -11,7 +11,7 @@
 
 - Upgradeable ERC-20 that overrides `_afterTokenTransfer` to (1) enforce `value <= 2^248 - 1`, (2) append `(to, value)` to a SHA-256 hash chain truncated to 248 bits, and (3) emit `IndexedTransfer(index++, from, to, value)` for deterministic ordering. This history feeds the proof system (`hashChain` and `index` are public inputs).
 - Maintains `verifier` (allowed to call `teleport`) and `minter` (allowed to mint/burn for the deposit contract). Owner-only setters guard against zero addresses, except that `minter` may be set to `address(0)` on chains that deliberately disable the Minter flow.
-- `teleport(address to, uint256 value)` is invoked solely by the Verifier once a teleport proof succeeds, minting directly to the provided address (event `Teleport` mirrors the burn-proof output).
+- `teleport(address to, uint256 value)` is invoked solely by the Verifier once a teleport proof succeeds, minting directly to the provided address. zERC20 keeps emitting the legacy `Teleport(to, value)` for backwards compatibility, while the Verifier’s `Teleport` event additionally records `{isGlobal, rootHint, transferRoot, GeneralRecipient}` for forensic linking.
 - Exposes auxiliary mint/burn entrypoints for the Minter (`mint`, `burn`) plus a UUPS upgrade hook restricted to `owner`.
 
 ### Verifier (`contracts/src/Verifier.sol`)
@@ -46,7 +46,7 @@
 
 1. **Transfer commitment**: Every zERC20 transfer emits `IndexedTransfer` and updates the truncated SHA-256 `hashChain`. Both `index` and `hashChain` are read by `Verifier.reserveHashChain`, which snapshots them into `reservedHashChains[index]`.
 2. **Transfer root proving**: Indexers execute the Nova circuit that transitions from `oldRoot` to `newRoot` using the reserved checkpoint as a public input. Upon submitting `proveTransferRoot`, the contract verifies the proof, enforces consistency with `reservedHashChains`, and records `provedTransferRoots[newIndex]`. Divergent proofs for the same `newIndex` pause the verifier.
-3. **Teleport (local or global)**: Users compile either a Nova (`teleport`) or Groth16 (`singleTeleport`) proof showing cumulative transfers to burn addresses represented by `GeneralRecipient`. The verifier cross-checks the claimed root (`rootHint` selects either local or global arrays), confirms the recipient hash and chain id match the caller’s environment, ensures the requested total exceeds the previously teleported amount, and mints the delta on zERC20 via `IzERC20.teleport`.
+3. **Teleport (local or global)**: Users compile either a Nova (`teleport`) or Groth16 (`singleTeleport`) proof showing cumulative transfers to burn addresses represented by `GeneralRecipient`. The verifier cross-checks the claimed root (`rootHint` selects either local or global arrays), confirms the recipient hash and chain id match the caller’s environment, ensures the requested total exceeds the previously teleported amount, and mints the delta on zERC20 via `IzERC20.teleport` while emitting `Verifier.Teleport` with `{isGlobal, rootHint, transferRoot, GeneralRecipient}` so every mint is traceable to its origin.
 4. **Global aggregation**: Verifiers periodically call `relayTransferRoot` so the Hub ingests `(root, index)` through LayerZero. Once multiple verifiers have contributed, the Hub calls `broadcast`, which Poseidon-aggregates the per-token roots, increments `aggSeq`, and sends the new global root back to every verifier. These global roots enable cross-chain teleports (`isGlobal=true`) without waiting for remote relays.
 
 ### Deposit / Redemption Flow

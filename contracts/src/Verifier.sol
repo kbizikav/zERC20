@@ -26,7 +26,14 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     event GlobalRootSaved(uint64 indexed aggSeq, uint256 root);
     event EmergencyTriggered(uint64 indexed index, uint256 root1, uint256 root2);
     event DeactivateEmergency();
-    event Teleport(address indexed to, uint256 value);
+    event Teleport(
+        address indexed to,
+        uint256 value,
+        bool isGlobal,
+        uint64 rootHint,
+        uint256 transferRoot,
+        GeneralRecipientLib.GeneralRecipient gr
+    );
     event VerifiersSet(
         address rootDecider,
         address withdrawGlobalDecider,
@@ -301,7 +308,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         totalTeleported[recipient] += diff;
         address recipientAddr = address(uint160(uint256(gr.recipient)));
         IzERC20(_token).teleport(recipientAddr, diff);
-        emit Teleport(recipientAddr, diff);
+        emit Teleport(recipientAddr, diff, isGlobal, rootHint, transferRoot, gr);
     }
 
     /// -----------------------------------------------------------------------
