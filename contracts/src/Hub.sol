@@ -202,6 +202,20 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         }
     }
 
+    /// @notice Computes the aggregation root for the current transfer roots without mutating state.
+    /// @dev Mirrors the tree calculation performed inside `_computeBroadcastContext` so off-chain agents can poll freshness.
+    /// @return aggregationRoot The Poseidon aggregation root derived from the latest transfer roots snapshot.
+    function currentAggregationRoot() external view returns (uint256 aggregationRoot) {
+        uint256 len = transferRoots.length;
+        uint256[] memory leaves = new uint256[](len);
+        for (uint256 i = 0; i < len; ++i) {
+            leaves[i] = transferRoots[i];
+        }
+
+        uint256[ZERO_HASH_COUNT] memory zeroHashCache = zeroHash;
+        aggregationRoot = PoseidonAggregationLib.computeAggregationRoot(leaves, zeroHashCache);
+    }
+
     /// @dev Copies current leaves, computes the Poseidon aggregation root, and prepares the outbound payload/seq.
     function _computeBroadcastContext() internal view returns (BroadcastContext memory ctx) {
         uint256 len = transferRoots.length;

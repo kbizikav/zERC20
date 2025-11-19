@@ -177,6 +177,15 @@ impl HubContract {
         Ok(res.into_iter().map(HubTokenInfo::from).collect())
     }
 
+    pub async fn current_aggregation_root(&self) -> ContractResult<U256> {
+        let root = self
+            .contract_with_provider()
+            .currentAggregationRoot()
+            .call()
+            .await?;
+        Ok(root)
+    }
+
     pub async fn quote_broadcast(
         &self,
         target_eids: Vec<u32>,
