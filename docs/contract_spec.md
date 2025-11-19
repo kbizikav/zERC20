@@ -58,4 +58,4 @@
 
 - **Value range**: Both zERC20 transfer values and hash-chain limbs are limited to 248 bits to stay within the BN254 scalar field. Violations revert (`ValueTooLarge`) before any state change.
 - **Emergency handling**: Any Nova proof inconsistency pauses the Verifier, preventing further teleports or relays until the owner rotates deciders/verifiers and calls `deactivateEmergency`.
-- **LayerZero hygiene**: Verifier and Hub both inherit `OAppUpgradeable`, restricting message acceptance to known endpoints (`hubEid` on Verifier, registered EIDs on Hub). Payload lengths and tree indices are validated before state mutation.
+- **LayerZero hygiene**: Verifier and Hub both inherit `OAppUpgradeable`, restricting message acceptance to known endpoints (`hubEid` on Verifier, registered EIDs on Hub). Payload lengths and tree indices are validated before state mutation. During `initialize`, the `_delegate` argument MUST be the same address that will own the contract so that LayerZero callbacks and owner-only admin functions stay aligned.

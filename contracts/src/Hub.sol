@@ -84,6 +84,9 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         _disableInitializers();
     }
 
+    /// @notice Initializes the Hub's LayerZero endpoint/delegate pairing alongside upgrade hooks.
+    /// @param endpoint LayerZero endpoint used for cross-chain messaging.
+    /// @param delegate Address that MUST become both the contract owner and LayerZero delegate so admin controls and callbacks share the same authority.
     function initialize(address endpoint, address delegate) external initializer {
         __OApp_init(endpoint, delegate);
         __UUPSUpgradeable_init();

@@ -93,7 +93,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// @param token_ zERC20 token whose hash chain is reserved/minted against.
     /// @param hubEid_ LayerZero endpoint ID of the Hub contract.
     /// @param endpoint LayerZero endpoint address (forwarded to OApp init).
-    /// @param delegate Relayer address allowed to execute LayerZero callbacks.
+    /// @param delegate Address that MUST be the contract owner; it is set as both Ownable owner and LayerZero delegate.
     /// @param rootDecider_ Nova verifier for transfer-root transitions.
     /// @param withdrawGlobalDecider_ Nova verifier for global teleport proofs.
     /// @param withdrawLocalDecider_ Nova verifier for local teleport proofs.
