@@ -167,7 +167,8 @@ mod tests {
             let calculated_root = proof.get_root(Fr::ZERO, index);
             assert_eq!(calculated_root, tree.get_root());
 
-            tree.insert(address, value);
+            tree.insert(address, value)
+                .expect("test tree insert within capacity");
             let leaf_hash = Leaf { address, value }.hash();
             let calculated_root = proof.get_root(leaf_hash, index);
             assert_eq!(calculated_root, tree.get_root());
