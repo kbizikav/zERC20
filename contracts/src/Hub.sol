@@ -58,6 +58,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     error NativeFeeMismatch(uint256 provided, uint256 required);
     error LayerZeroTokenFeeUnsupported(uint32 eid, uint256 lzTokenFee);
     error FeeRefundFailed(uint256 amount);
+    error EmptyTargetEids();
 
     /// -----------------------------------------------------------------------
     /// Constants & Storage
@@ -146,6 +147,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// @param targetEids LayerZero endpoint IDs that must receive the global root.
     /// @param lzOptions LayerZero execution parameters (gas, native drop, etc.).
     function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
+        if (targetEids.length == 0) revert EmptyTargetEids();
         BroadcastContext memory ctx = _computeBroadcastContext();
         bytes memory options = lzOptions;
         MessagingFee[] memory fees = new MessagingFee[](targetEids.length);
@@ -177,6 +179,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         view
         returns (uint256 totalNativeFee)
     {
+        if (targetEids.length == 0) revert EmptyTargetEids();
         bytes memory options = lzOptions;
         bytes memory dummyPayload = abi.encode(uint256(0), 1);
         totalNativeFee = _quoteBroadcast(targetEids, dummyPayload, options, new MessagingFee[](targetEids.length));
