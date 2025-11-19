@@ -37,7 +37,7 @@
 
 - UUPS upgradeable wrapper that mints/burns zERC20 in exchange for native or ERC-20 liquidity:
   - If `tokenAddress == address(0)`, `depositNative` accepts `msg.value` and mints zERC20; `withdrawNative` burns and transfers native currency, reverting on insufficient balance or failed send.
-  - Otherwise, `depositToken` pulls ERC-20 via `SafeERC20`, mints zERC20, and `withdrawToken` performs the inverse path after verifying contract liquidity.
+  - Otherwise, `depositToken` pulls ERC-20 via `SafeERC20`, measures the actual tokens received (to handle fee-on-transfer or rebasing tokens), mints the received amount 1:1 of zERC20, and `withdrawToken` performs the inverse path after verifying contract liquidity.
 - Only zERC20 configured at initialization can be minted/burned (`IMintableBurnableERC20`). All entrypoints guard zero amounts, enforce role separation (users call deposit/withdraw; contract owner solely controls upgrades), and rely on external audits of zERC20’s `minter` assignment.
 
 ## Key Flows

@@ -37,6 +37,8 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     error NativeTransferFailed();
     error InsufficientNativeLiquidity(uint256 available, uint256 requested);
     error InsufficientTokenLiquidity(uint256 available, uint256 requested);
+    error TokenBalanceDidNotIncrease(uint256 previousBalance, uint256 currentBalance);
+    error NoTokensReceived();
 
     /// ---------------------------------------------------------------------
     /// Storage
@@ -91,10 +93,18 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
         if (tokenAddress == address(0)) revert TokenDisabled();
         if (amount == 0) revert ZeroAmount();
 
+        uint256 balanceBefore = IERC20Upgradeable(tokenAddress).balanceOf(address(this));
         IERC20Upgradeable(tokenAddress).safeTransferFrom(msg.sender, address(this), amount);
-        IMintableBurnableERC20(zerc20Token).mint(msg.sender, amount);
+        uint256 balanceAfter = IERC20Upgradeable(tokenAddress).balanceOf(address(this));
 
-        emit TokenDeposited(msg.sender, amount);
+        if (balanceAfter < balanceBefore) revert TokenBalanceDidNotIncrease(balanceBefore, balanceAfter);
+
+        uint256 received = balanceAfter - balanceBefore;
+        if (received == 0) revert NoTokensReceived();
+
+        IMintableBurnableERC20(zerc20Token).mint(msg.sender, received);
+
+        emit TokenDeposited(msg.sender, received);
     }
 
     /// ---------------------------------------------------------------------
