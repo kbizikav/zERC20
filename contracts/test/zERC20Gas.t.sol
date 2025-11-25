@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
+import {TestHelperOz5, EndpointV2Mock} from "./utils/TestHelperOz5.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice Compares transfer gas costs between the custom zERC20 and a baseline ERC20.
-contract zERC20GasTest is Test {
+contract zERC20GasTest is TestHelperOz5 {
     zERC20 internal zToken;
     SimpleERC20 internal standardToken;
+    EndpointV2Mock internal endpoint;
 
     uint256 internal constant INITIAL_SUPPLY = 1_000_000 ether;
     uint256 internal constant TRANSFER_AMOUNT = 1 ether;
@@ -18,8 +19,9 @@ contract zERC20GasTest is Test {
     address internal constant STANDARD_RECIPIENT = address(0xBEE0);
 
     function setUp() public {
+        endpoint = _deployEndpoint(101);
         zERC20 impl = new zERC20();
-        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this)));
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this), address(endpoint)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         zToken = zERC20(address(proxy));
         zToken.setMinter(address(this));

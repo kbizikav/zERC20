@@ -2,15 +2,15 @@
 pragma solidity 0.8.30;
 
 import {IzERC20} from "./interfaces/IzERC20.sol";
-import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {OFTUpgradeable} from "./utils/layerzero/oft/OFTUpgradeable.sol";
 
 /// @title zERC20
 /// @notice Upgradeable ERC20 token that feeds the zk circuits by enforcing 248-bit transfer values,
 ///         hashing `(to, value)` pairs into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
-contract zERC20 is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable, IzERC20 {
+///         Also implements the LayerZero V2 OFT interface for omnichain transfers.
+contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     /// @notice Emitted when the verifier address changes.
     event VerifierUpdated(address indexed newVerifier);
     /// @notice Emitted when the minter address changes.
@@ -45,15 +45,16 @@ contract zERC20 is ERC20Upgradeable, OwnableUpgradeable, UUPSUpgradeable, IzERC2
     /// @notice Initializes token metadata and ownership.
     /// @param name_ ERC20 name.
     /// @param symbol_ ERC20 symbol.
-    /// @param initialOwner Account receiving ownership and upgrade authority.
-    function initialize(string memory name_, string memory symbol_, address initialOwner) external initializer {
-        if (initialOwner == address(0)) revert ZeroAddress();
+    /// @param initialOwner Account receiving ownership, LayerZero delegate permissions, and upgrade authority.
+    /// @param endpoint LayerZero endpoint used for OFT messaging.
+    function initialize(string memory name_, string memory symbol_, address initialOwner, address endpoint)
+        external
+        initializer
+    {
+        if (initialOwner == address(0) || endpoint == address(0)) revert ZeroAddress();
 
-        __ERC20_init(name_, symbol_);
-        __Ownable_init();
+        __OFT_init(name_, symbol_, endpoint, initialOwner);
         __UUPSUpgradeable_init();
-
-        _transferOwnership(initialOwner);
     }
 
     /// @dev Restricts upgrade authorization to the owner.

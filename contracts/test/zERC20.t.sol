@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {Test} from "forge-std/Test.sol";
+import {TestHelperOz5, EndpointV2Mock} from "./utils/TestHelperOz5.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {ShaHashChainLib} from "../src/utils/ShaHashChainLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-contract ZERC20Test is Test {
+contract ZERC20Test is TestHelperOz5 {
     zERC20 internal token;
+    EndpointV2Mock internal endpoint;
 
     address internal constant ALICE = address(0xA11CE);
     address internal constant BOB = address(0xB0B);
@@ -17,13 +18,14 @@ contract ZERC20Test is Test {
     event VerifierUpdated(address indexed newVerifier);
 
     function setUp() public {
-        token = _deployToken(address(this));
+        endpoint = _deployEndpoint(101);
+        token = _deployToken(address(this), endpoint);
         token.setMinter(address(this));
     }
 
-    function _deployToken(address owner) private returns (zERC20) {
+    function _deployToken(address owner, EndpointV2Mock endpointMock) private returns (zERC20) {
         zERC20 impl = new zERC20();
-        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner));
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner, address(endpointMock)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return zERC20(address(proxy));
     }

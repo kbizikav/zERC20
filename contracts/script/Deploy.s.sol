@@ -122,7 +122,8 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         bytes32 baseSalt = _loadBaseSalt();
 
         zERC20 tokenImpl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}();
-        bytes memory tokenInit = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
+        bytes memory tokenInit =
+            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, endpoint));
         ERC1967Proxy tokenProxy =
             new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(tokenImpl), tokenInit);
         zERC20 token = zERC20(address(tokenProxy));

@@ -69,7 +69,7 @@ contract DeployLocal is DeterministicDeployer {
         _configureEndpoint(verifierEndpoint, cfg.hubEid, sendLibAddr);
 
         Hub hub = _deployHub(cfg, deployer, hubEndpoint, baseSalt);
-        zERC20 token = _deployToken(cfg, deployer, baseSalt);
+        zERC20 token = _deployToken(cfg, deployer, verifierEndpoint, baseSalt);
         Verifier verifier = _deployVerifierSuite(cfg, deployer, verifierEndpoint, token, baseSalt);
 
         _finalizeDeployment(cfg, deployer, hub, token, verifier);
@@ -117,10 +117,14 @@ contract DeployLocal is DeterministicDeployer {
         console2.log("Hub proxy deployed at", address(hub));
     }
 
-    function _deployToken(Config memory cfg, address deployer, bytes32 baseSalt) private returns (zERC20 token) {
+    function _deployToken(Config memory cfg, address deployer, EndpointV2Mock endpoint, bytes32 baseSalt)
+        private
+        returns (zERC20 token)
+    {
         address owner = cfg.tokenOwner == address(0) ? deployer : cfg.tokenOwner;
         zERC20 impl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}();
-        bytes memory initData = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
+        bytes memory initData =
+            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, address(endpoint)));
         ERC1967Proxy proxy =
             new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(impl), initData);
         token = zERC20(address(proxy));
