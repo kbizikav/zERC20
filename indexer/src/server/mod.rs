@@ -556,6 +556,7 @@ fn map_merkle_error(err: DbMerkleTreeError) -> actix_web::Error {
         DbMerkleTreeError::InvalidTokenId { .. }
         | DbMerkleTreeError::InvalidHeight { .. }
         | DbMerkleTreeError::LeafIndexOverflow
+        | DbMerkleTreeError::TreeFull { .. }
         | DbMerkleTreeError::InvalidProofTargetZero
         | DbMerkleTreeError::TargetIndexTooHigh { .. }
         | DbMerkleTreeError::RetentionWindowExceeded { .. }

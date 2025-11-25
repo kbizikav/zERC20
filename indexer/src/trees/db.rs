@@ -18,6 +18,7 @@ use zkp::utils::{
 };
 
 pub const HISTORY_WINDOW_RECOMMENDED: u64 = 100;
+const MAX_TREE_HEIGHT: u32 = 127;
 const MERKLE_NODES_TABLE: &str = "merkle_nodes_current";
 const MERKLE_UPDATES_TABLE: &str = "merkle_node_updates";
 const MERKLE_SNAPSHOTS_TABLE: &str = "merkle_snapshots";
@@ -29,10 +30,18 @@ pub type Result<T> = std::result::Result<T, DbMerkleTreeError>;
 pub enum DbMerkleTreeError {
     #[error("invalid token id {token_id} for partitioned tables")]
     InvalidTokenId { token_id: i64 },
-    #[error("merkle tree height must be positive")]
-    InvalidHeight { height: u32 },
+    #[error("merkle tree height must be in 1..={max_height}, got {height}")]
+    InvalidHeight { height: u32, max_height: u32 },
     #[error("overflow computing next leaf index")]
     LeafIndexOverflow,
+    #[error(
+        "merkle tree full: height {height} supports {capacity} leaves, attempted index {index}"
+    )]
+    TreeFull {
+        height: u32,
+        capacity: u128,
+        index: u64,
+    },
     #[error("cannot prove merkle state for index 0")]
     InvalidProofTargetZero,
     #[error("merkle tree empty: proof unavailable")]
@@ -206,8 +215,11 @@ impl DbIncrementalMerkleTree {
         height: u32,
         config: DbMerkleTreeConfig,
     ) -> Result<Self> {
-        if height == 0 {
-            return Err(DbMerkleTreeError::InvalidHeight { height });
+        if height == 0 || height > MAX_TREE_HEIGHT {
+            return Err(DbMerkleTreeError::InvalidHeight {
+                height,
+                max_height: MAX_TREE_HEIGHT,
+            });
         }
 
         let partitions = TreePartitions::new(token_id)?;
@@ -238,6 +250,14 @@ impl DbIncrementalMerkleTree {
         self.lock_token_row(&mut tx).await?;
 
         let latest_index = self.latest_index_internal(&mut tx).await?;
+        let max_leaves = max_leaf_capacity(self.height);
+        if u128::from(latest_index) >= max_leaves {
+            return Err(DbMerkleTreeError::TreeFull {
+                height: self.height,
+                capacity: max_leaves,
+                index: latest_index,
+            });
+        }
         let next_index = latest_index + 1;
         let leaf_index = next_index
             .checked_sub(1)
@@ -772,6 +792,11 @@ fn compute_zero_hashes(height: u32) -> Vec<Fr> {
         hashes.push(current);
     }
     hashes
+}
+
+fn max_leaf_capacity(height: u32) -> u128 {
+    let theoretical = 1u128 << height;
+    theoretical.min(u128::from(u64::MAX))
 }
 
 fn fr_to_bytes(value: Fr) -> [u8; 32] {

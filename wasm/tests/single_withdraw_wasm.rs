@@ -103,7 +103,9 @@ fn build_witness_input(
         compute_burn_address_from_secret(recipient_fr, secret_fr).expect("secret satisfies PoW");
     let leaf_address = fr_to_address(leaf_address_fr);
 
-    let index = tree.insert(leaf_address, value_u256);
+    let index = tree
+        .insert(leaf_address, value_u256)
+        .expect("test tree insert should succeed");
     let proof = tree.prove(index);
     assert_eq!(proof.siblings.len(), tree_height);
 

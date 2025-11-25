@@ -208,10 +208,11 @@ struct BroadcastJob {
     interval: Duration,
     target_eids: Vec<u32>,
     fee_buffer_bps: u64,
+    last_broadcast_root: Option<U256>,
 }
 
 impl BroadcastJob {
-    async fn run(self) {
+    async fn run(mut self) {
         if let Err(err) = self.execute_once().await {
             error!("initial Hub.broadcast failed: {err:?}");
         }
@@ -225,20 +226,24 @@ impl BroadcastJob {
         }
     }
 
-    async fn execute_once(&self) -> Result<()> {
+    async fn execute_once(&mut self) -> Result<()> {
         if self.target_eids.is_empty() {
             warn!("skipping Hub.broadcast because no target EIDs were discovered");
             return Ok(());
         }
 
-        let up_to_date = self
+        let current_root = self
             .contract
-            .is_up_to_date()
+            .current_aggregation_root()
             .await
-            .context("failed to query hub freshness")?;
-        if up_to_date {
-            info!("skipping Hub.broadcast because the aggregation snapshot is already up to date");
-            return Ok(());
+            .context("failed to compute current aggregation root")?;
+        if let Some(last_root) = self.last_broadcast_root {
+            if last_root == current_root {
+                info!(
+                    "skipping Hub.broadcast because aggregation root {current_root:#x} was already relayed"
+                );
+                return Ok(());
+            }
         }
 
         let options = Bytes::copy_from_slice(&self.lz_options);
@@ -272,11 +277,13 @@ impl BroadcastJob {
 
         if let Some(event) = parse_broadcast_receipt(&self.contract, &receipt) {
             info!(
-                "Hub.broadcast confirmed (agg_seq={}, snapshot_len={})",
-                event.agg_seq, event.snapshot_len
+                "Hub.broadcast confirmed (agg_seq={}, snapshot_len={}, root={:#x})",
+                event.agg_seq, event.snapshot_len, event.root
             );
+            self.last_broadcast_root = Some(event.root);
         } else {
             warn!("Hub.broadcast receipt did not contain AggregationRootUpdated event");
+            self.last_broadcast_root = Some(current_root);
         }
 
         Ok(())
@@ -286,6 +293,7 @@ impl BroadcastJob {
 struct BroadcastReceiptInfo {
     agg_seq: u64,
     snapshot_len: usize,
+    root: U256,
 }
 
 fn parse_broadcast_receipt(
@@ -296,6 +304,7 @@ fn parse_broadcast_receipt(
         Ok(event) => Some(BroadcastReceiptInfo {
             agg_seq: event.agg_seq,
             snapshot_len: event.snapshot.len(),
+            root: event.root,
         }),
         Err(_) => None,
     }
@@ -361,6 +370,7 @@ async fn main() -> Result<()> {
                 interval: Duration::from_secs(cli.broadcast_interval_secs.max(1)),
                 target_eids,
                 fee_buffer_bps: cli.broadcast_fee_buffer_bps,
+                last_broadcast_root: None,
             })
         }
         None => {
@@ -380,6 +390,7 @@ async fn main() -> Result<()> {
         }
 
         if let Some(job) = broadcast_job.take() {
+            let mut job = job;
             job.execute_once()
                 .await
                 .with_context(|| "Hub.broadcast execution failed in --once mode".to_string())?;

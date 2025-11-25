@@ -26,7 +26,14 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     event GlobalRootSaved(uint64 indexed aggSeq, uint256 root);
     event EmergencyTriggered(uint64 indexed index, uint256 root1, uint256 root2);
     event DeactivateEmergency();
-    event Teleport(address indexed to, uint256 value);
+    event Teleport(
+        address indexed to,
+        uint256 value,
+        bool isGlobal,
+        uint64 rootHint,
+        uint256 transferRoot,
+        GeneralRecipientLib.GeneralRecipient gr
+    );
     event VerifiersSet(
         address rootDecider,
         address withdrawGlobalDecider,
@@ -93,7 +100,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// @param token_ zERC20 token whose hash chain is reserved/minted against.
     /// @param hubEid_ LayerZero endpoint ID of the Hub contract.
     /// @param endpoint LayerZero endpoint address (forwarded to OApp init).
-    /// @param delegate Relayer address allowed to execute LayerZero callbacks.
+    /// @param delegate Address that MUST be the contract owner; it is set as both Ownable owner and LayerZero delegate.
     /// @param rootDecider_ Nova verifier for transfer-root transitions.
     /// @param withdrawGlobalDecider_ Nova verifier for global teleport proofs.
     /// @param withdrawLocalDecider_ Nova verifier for local teleport proofs.
@@ -301,7 +308,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         totalTeleported[recipient] += diff;
         address recipientAddr = address(uint160(uint256(gr.recipient)));
         IzERC20(_token).teleport(recipientAddr, diff);
-        emit Teleport(recipientAddr, diff);
+        emit Teleport(recipientAddr, diff, isGlobal, rootHint, transferRoot, gr);
     }
 
     /// -----------------------------------------------------------------------

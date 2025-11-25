@@ -236,11 +236,14 @@ mod tests {
         ];
 
         let mut tree = IncrementalMerkleTree::new(DEPTH);
-        tree.insert(Address::ZERO, U256::ZERO);
+        tree.insert(Address::ZERO, U256::ZERO)
+            .expect("test tree insert should succeed");
 
         let mut indices = vec![];
         for i in 0..4 {
-            let index = tree.insert(fr_to_address(addresses[i]), values[i]);
+            let index = tree
+                .insert(fr_to_address(addresses[i]), values[i])
+                .expect("test tree insert should succeed");
             indices.push(index);
         }
         let root = tree.get_root();
