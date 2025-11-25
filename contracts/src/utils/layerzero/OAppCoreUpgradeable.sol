@@ -15,7 +15,10 @@ abstract contract OAppCoreUpgradeable is Initializable, OwnableUpgradeable, IOAp
 
     /**
      * @notice Initializes the core OApp state.
-     * @dev Must be called during contract initialization.
+     * @dev Must be called during contract initialization. `_delegate` becomes the contract owner and
+     * LayerZero endpoint delegate, so it MUST be the owner address that is allowed to manage peers.
+     * @param _endpoint LayerZero endpoint address.
+     * @param _delegate Address that will assume ownership and delegate permissions.
      */
     /// forge-lint: disable-next-line(mixed-case-function)
     function __OAppCore_init(address _endpoint, address _delegate) internal onlyInitializing {
@@ -46,6 +49,8 @@ abstract contract OAppCoreUpgradeable is Initializable, OwnableUpgradeable, IOAp
 
     /**
      * @inheritdoc IOAppCore
+     * @dev The delegate address should match the contract owner so that LayerZero callbacks and Ownable
+     * permissions stay aligned.
      */
     function setDelegate(address _delegate) public virtual override onlyOwner {
         if (_delegate == address(0)) revert InvalidDelegate();
