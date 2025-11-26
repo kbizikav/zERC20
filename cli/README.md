@@ -1,8 +1,10 @@
 # zERC20 CLI
 
-Rust CLI for sending zERC20 transfers and redeeming stealth burns. Load environment variables from
-`.env` (see `.env.example`); set `TOKENS_FILE_PATH` to `../config/tokens.json` (or another tokens
-file). Run commands from the `cli/` directory:
+ Rust CLI for sending zERC20 transfers and redeeming stealth burns. Load environment variables from
+ `.env` (see `.env.example`); set `TOKENS_FILE_PATH` to `../config/tokens.json` (or another tokens
+ file), and provide the Internet Computer endpoints: `IC_REPLICA_URL`, `KEY_MANAGER_CANISTER_ID`,
+ and `STORAGE_CANISTER_ID` must be set (env vars or CLI flags). Run commands from the `cli/`
+ directory:
 
 ```bash
 cargo run -r -- <command> ...
