@@ -8,20 +8,6 @@ file). Run commands from the `cli/` directory:
 cargo run -r -- <command> ...
 ```
 
-## Quick public transfer
-
-Send a normal ERC-20 transfer on a configured chain:
-
-```bash
-cargo run -r -- transfer \
-  --chain-id <CHAIN_ID> \
-  --to 0x0000000000000000000000000000000000000001 \
-  --amount 1000000000000000000
-```
-
-Amounts are raw token units (e.g., `1e18` for 18-decimal tokens). The CLI prints the sender, token
-label, and submitted transaction hash.
-
 ## Invoice flow (single)
 
 Issue an invoice, fund it, check eligibility, and redeem with proofs (ensure `NOVA_ARTIFACTS_DIR`
