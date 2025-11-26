@@ -18,8 +18,10 @@ Before starting any node, make sure the Nova artifacts and Solidity verifiers ex
 
 ## Docker Orchestration
 
-Container definitions for Postgres plus the `decider-prover`, `tree-indexer`, and `crosschain-job` services live under `docker/` with a root-level `docker-compose.yml`. Build and start everything with:
+Container definitions for Postgres plus the `tree-indexer`, and `crosschain-job` services live under `docker/` with a root-level `docker-compose.yml`. Build and start everything with:
 
 ```bash
 docker compose up --build
 ```
+
+
