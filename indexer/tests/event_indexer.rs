@@ -65,6 +65,7 @@ async fn event_indexer_syncs_against_anvil() -> Result<()> {
     let deployer_key =
         parse_private_key("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")?;
     let deployer_address = get_address_from_private_key(deployer_key);
+    let endpoint = deployer_address; // reuse deployer as a dummy LayerZero endpoint for local tests
 
     let contract = ZErc20Contract::deploy(
         provider.clone(),
@@ -72,6 +73,7 @@ async fn event_indexer_syncs_against_anvil() -> Result<()> {
         "TestToken".to_string(),
         "TT".to_string(),
         deployer_address,
+        endpoint,
     )
     .await
     .context("failed to deploy zERC20 contract")?;

@@ -65,6 +65,7 @@ impl ZErc20Contract {
         name_: String,
         symbol_: String,
         owner: Address,
+        endpoint: Address,
     ) -> anyhow::Result<Self> {
         let signer = get_provider_with_signer(&provider, private_key);
         let implementation = zERC20::deploy(signer.clone()).await?;
@@ -74,6 +75,7 @@ impl ZErc20Contract {
             name_: name_,
             symbol_: symbol_,
             initialOwner: owner,
+            endpoint,
         }
         .abi_encode();
 
