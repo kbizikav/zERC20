@@ -22,7 +22,6 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     struct MinterStorage {
         address zerc20Token;
         address tokenAddress;
-        uint256[46] __gap;
     }
 
     function _getMinterStorage() private pure returns (MinterStorage storage $) {

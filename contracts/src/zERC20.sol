@@ -20,7 +20,6 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
         uint256 index;
         address verifier;
         address minter;
-        uint256[45] __gap;
     }
 
     function _getZERC20Storage() private pure returns (ZERC20Storage storage $) {
