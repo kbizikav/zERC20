@@ -56,7 +56,6 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         uint32 hubEid;
         address endpoint;
         address delegate; // optional
-        address liquidityManager; // optional
         address owner; // optional
         uint8 tokenDecimals;
     }
@@ -94,7 +93,6 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         cfg.hubEid = uint32(vm.envUint("HUB_EID"));
         cfg.endpoint = vm.envAddress("VERIFIER_ENDPOINT");
         cfg.delegate = vm.envOr("VERIFIER_DELEGATE", address(0));
-        cfg.liquidityManager = vm.envOr("LIQUIDITY_MANAGER", address(0));
         cfg.owner = vm.envOr("TOKEN_OWNER", address(0));
         uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
         require(decimals <= type(uint8).max, "tokenDecimals too large");
@@ -118,7 +116,6 @@ contract DeployVerifierAndToken is DeterministicDeployer {
 
         address owner = cfg.owner == address(0) ? deployer : cfg.owner;
         address delegate = cfg.delegate;
-        address liquidityManager = cfg.liquidityManager;
         uint32 hubEid = cfg.hubEid;
         address endpoint = cfg.endpoint;
         bytes32 baseSalt = _loadBaseSalt();
@@ -144,11 +141,6 @@ contract DeployVerifierAndToken is DeterministicDeployer {
 
         token.setVerifier(address(verifier));
         console2.log("  verifier set to", address(verifier));
-
-        if (liquidityManager != address(0)) {
-            token.setMinter(liquidityManager);
-            console2.log("  liquidity manager set as minter", liquidityManager);
-        }
 
         vm.stopBroadcast();
     }
