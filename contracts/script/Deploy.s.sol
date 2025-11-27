@@ -56,7 +56,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         uint32 hubEid;
         address endpoint;
         address delegate; // optional
-        address minter; // optional
+        address liquidityManager; // optional
         address owner; // optional
     }
 
@@ -93,7 +93,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         cfg.hubEid = uint32(vm.envUint("HUB_EID"));
         cfg.endpoint = vm.envAddress("VERIFIER_ENDPOINT");
         cfg.delegate = vm.envOr("VERIFIER_DELEGATE", address(0));
-        cfg.minter = vm.envOr("ZERC20_MINTER", address(0));
+        cfg.liquidityManager = vm.envOr("LIQUIDITY_MANAGER", address(0));
         cfg.owner = vm.envOr("TOKEN_OWNER", address(0));
 
         require(bytes(cfg.tokenName).length != 0, "tokenName missing");
@@ -110,13 +110,10 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         if (cfg.delegate == address(0)) {
             cfg.delegate = deployer;
         }
-        if (cfg.minter == address(0)) {
-            cfg.minter = deployer;
-        }
 
         address owner = cfg.owner == address(0) ? deployer : cfg.owner;
         address delegate = cfg.delegate;
-        address minter = cfg.minter;
+        address liquidityManager = cfg.liquidityManager;
         uint32 hubEid = cfg.hubEid;
         address endpoint = cfg.endpoint;
         bytes32 baseSalt = _loadBaseSalt();
@@ -143,8 +140,10 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         token.setVerifier(address(verifier));
         console2.log("  verifier set to", address(verifier));
 
-        token.setMinter(minter);
-        console2.log("  minter set to", minter);
+        if (liquidityManager != address(0)) {
+            token.setMinter(liquidityManager);
+            console2.log("  liquidity manager set as minter", liquidityManager);
+        }
 
         vm.stopBroadcast();
     }

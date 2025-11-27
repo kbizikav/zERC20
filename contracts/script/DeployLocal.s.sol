@@ -25,7 +25,7 @@ contract DeployLocal is DeterministicDeployer {
         uint64 verifierChainId;
         address hubDelegate;
         address verifierDelegate;
-        address minter;
+        address liquidityManager;
         address tokenOwner;
         bool shareEndpoint;
         bool registerOnHub;
@@ -87,7 +87,7 @@ contract DeployLocal is DeterministicDeployer {
         cfg.verifierChainId = uint64(vm.envOr("VERIFIER_CHAIN_ID", uint256(block.chainid)));
         cfg.hubDelegate = vm.envOr("HUB_DELEGATE", address(0));
         cfg.verifierDelegate = vm.envOr("VERIFIER_DELEGATE", address(0));
-        cfg.minter = vm.envOr("ZERC20_MINTER", address(0));
+        cfg.liquidityManager = vm.envOr("LIQUIDITY_MANAGER", address(0));
         cfg.tokenOwner = vm.envOr("TOKEN_OWNER", address(0));
         cfg.shareEndpoint = vm.envOr("SHARE_ENDPOINTS", uint256(0)) != 0;
         cfg.registerOnHub = vm.envOr("REGISTER_ON_HUB", uint256(1)) != 0;
@@ -256,9 +256,12 @@ contract DeployLocal is DeterministicDeployer {
     function _finalizeDeployment(Config memory cfg, address deployer, Hub hub, zERC20 token, Verifier verifier)
         private
     {
-        address minter = cfg.minter == address(0) ? deployer : cfg.minter;
-        token.setMinter(minter);
-        console2.log("Token minter set to", minter);
+        if (cfg.liquidityManager != address(0)) {
+            token.setMinter(cfg.liquidityManager);
+            console2.log("Token minter set to liquidity manager", cfg.liquidityManager);
+        } else {
+            console2.log("Token minter left unset (provide LIQUIDITY_MANAGER to wire)");
+        }
 
         if (cfg.wirePeers) {
             _wirePeers(cfg, hub, verifier);

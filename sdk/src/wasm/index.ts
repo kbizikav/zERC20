@@ -557,7 +557,8 @@ interface RawTokenEntry {
   label: string;
   token_address: string;
   verifier_address: string;
-  minter_address?: string;
+  liquidity_manager_address?: string;
+  adaptor_address?: string;
   chain_id: NumericValue;
   deployed_block_number: NumericValue;
   rpc_urls: string[];
@@ -637,7 +638,10 @@ function serializeTokenEntry(entry: TokenEntryConfig): RawTokenEntry {
     label: entry.label,
     token_address: normalizeHex(entry.tokenAddress),
     verifier_address: normalizeHex(entry.verifierAddress),
-    minter_address: entry.minterAddress ? normalizeHex(entry.minterAddress) : undefined,
+    liquidity_manager_address: entry.liquidityManagerAddress
+      ? normalizeHex(entry.liquidityManagerAddress)
+      : undefined,
+    adaptor_address: entry.adaptorAddress ? normalizeHex(entry.adaptorAddress) : undefined,
     chain_id: entry.chainId,
     deployed_block_number: entry.deployedBlockNumber,
     rpc_urls: copyRpcUrls(entry.rpcUrls, `${entry.label}.rpcUrls`),

@@ -29,7 +29,7 @@ The scripts consume environment variables through `vm.env*` helpers. Place the v
 - `HUB_EID` (uint32): Hub endpoint identifier the verifier should target
 - `VERIFIER_ENDPOINT` (address): LayerZero endpoint contract on the verifier chain
 - `VERIFIER_DELEGATE` (address, optional): Account that can update verifier LayerZero config; defaults to the broadcaster wallet if omitted
-- `ZERC20_MINTER` (address, optional): Default account granted the `MINTER_ROLE` on the token
+- `LIQUIDITY_MANAGER` (address, optional): LiquidityManager allowed to mint/burn the token; omit to leave the role unset
 
 ### Sample `.env`
 ```bash
@@ -45,7 +45,7 @@ TOKEN_SYMBOL=zUSD
 HUB_EID=40245
 VERIFIER_ENDPOINT=0x6EDCE65403992e310A62460808c4b910D972f10f
 # VERIFIER_DELEGATE=0xYourVerifierDelegate # optional; defaults to PRIVATE_KEY holder
-# ZERC20_MINTER=0x0000000000000000000000000000000000000000
+# LIQUIDITY_MANAGER=0x0000000000000000000000000000000000000000
 
 # Peer configuration scripts
 # HUB_ADDRESS=0xHubOnThisChain
@@ -87,7 +87,34 @@ forge script script/Deploy.s.sol:DeployVerifierAndToken \
   --broadcast \
   -vvvv
 ```
-The minter value can be omitted (it defaults to the broadcaster when unset). The script logs the addresses of the token, verifier, and each deployed Nova decider contract and wires the verifier into the token automatically.
+Setting `LIQUIDITY_MANAGER` is optional; omit it to leave the token minter role unset. The script logs the addresses of the token, verifier, and each deployed Nova decider contract and wires the verifier into the token automatically.
+
+Deploying Liquidity Manager and Adaptor
+---------------------------------------
+The `DeployLiquidity` script deploys an upgradeable `LiquidityManager` and, when provided a Stargate address, a stateless `Adaptor` wired to that manager.
+
+Required env:
+- `LIQUIDITY_ZERC20_TOKEN` (address): zERC20 token the manager mints/burns.
+- `LIQUIDITY_UNDERLYING_TOKEN` (address): Underlying ERC20 held by the manager.
+- `LIQUIDITY_TARGET` (uint256): Target liquidity level that drives rewards/fees.
+- `PRIVATE_KEY` (uint256): Broadcaster key.
+
+Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
+- `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
+- `LIQUIDITY_REWARD_SLOPE_BPS` (uint256): Reward slope in bps (defaults to 0 = no rewards).
+- `LIQUIDITY_FEE_LAMBDA1_BPS` (uint256): Fee λ1 in bps (defaults to 40).
+- `LIQUIDITY_FEE_LAMBDA2_BPS` (uint256): Fee λ2 in bps (defaults to 9954).
+- `LIQUIDITY_FEE_DELTA1_BPS` / `LIQUIDITY_FEE_DELTA2_BPS` (uint256): Fee deltas in bps (defaults 6000 / 500).
+- `SET_LIQUIDITY_AS_MINTER` (uint256): Non-zero to set the manager as the token minter (defaults to 1).
+- `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
+
+Example:
+```bash
+forge script script/DeployLiquidity.s.sol:DeployLiquidity \
+  --rpc-url $VERIFIER_RPC \
+  --broadcast \
+  -vvvv
+```
 
 Registering the Token on the Hub
 --------------------------------

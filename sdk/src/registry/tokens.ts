@@ -8,7 +8,8 @@ export interface TokenEntry {
   label: string;
   tokenAddress: string;
   verifierAddress: string;
-  minterAddress?: string;
+  liquidityManagerAddress?: string;
+  adaptorAddress?: string;
   chainId: bigint;
   deployedBlockNumber: bigint;
   rpcUrls: string[];
@@ -141,10 +142,15 @@ export function normalizeTokensFile(file: TokensFile): TokensFile {
   file.tokens = file.tokens.map((entry) => {
     const record = expectRecord(entry, 'token entry');
     const label = getStringField(record, ['label'], 'token label');
-    const minterAddressValue = getOptionalStringField(
+    const liquidityManagerAddressValue = getOptionalStringField(
       record,
-      ['minterAddress', 'minter_address'],
-      `${label}.minterAddress`,
+      ['liquidityManagerAddress', 'liquidity_manager_address', 'minterAddress', 'minter_address'],
+      `${label}.liquidityManagerAddress`,
+    );
+    const adaptorAddressValue = getOptionalStringField(
+      record,
+      ['adaptorAddress', 'adaptor_address'],
+      `${label}.adaptorAddress`,
     );
     return {
       label,
@@ -154,7 +160,8 @@ export function normalizeTokensFile(file: TokensFile): TokensFile {
       verifierAddress: toHexAddress(
         getStringField(record, ['verifierAddress', 'verifier_address'], `${label}.verifierAddress`),
       ),
-      minterAddress: minterAddressValue ? toHexAddress(minterAddressValue) : undefined,
+      liquidityManagerAddress: liquidityManagerAddressValue ? toHexAddress(liquidityManagerAddressValue) : undefined,
+      adaptorAddress: adaptorAddressValue ? toHexAddress(adaptorAddressValue) : undefined,
       chainId: parseBigInt(
         getValueField<MaybeString>(record, ['chainId', 'chain_id'], `${label}.chainId`),
         `${label}.chainId`,
