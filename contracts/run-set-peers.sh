@@ -6,8 +6,8 @@ usage() {
 Usage: run-set-peers.sh [--file PATH] [--metadata-file PATH] [--] [forge flags...]
 
 Reads a tokens.json-formatted file, loads LayerZero endpoint metadata, and runs
-SetPeers.s.sol (SetHubPeers once, SetVerifierPeers per token) with environment variables
-derived from the configuration.
+SetPeers.s.sol (SetHubPeers once, SetVerifierPeers per token, SetTokenPeers per token)
+with environment variables derived from the configuration.
 
 Options:
   --file PATH          Path to tokens.json (defaults to ../config/tokens.json)
@@ -315,5 +315,51 @@ for i in "${!TOKEN_LABELS[@]}"; do
       forge script script/SetPeers.s.sol:SetVerifierPeers --rpc-url "$verifier_rpc" "${forge_args[@]}"
   )
 done
+
+if ((token_count > 1)); then
+  peer_count=$((token_count - 1))
+  echo "Running SetTokenPeers for ${token_count} chain(s); each token will set ${peer_count} peer(s)"
+  for i in "${!TOKEN_LABELS[@]}"; do
+    label="${TOKEN_LABELS[$i]}"
+    token_addr="${TOKEN_ADDRESSES[$i]}"
+    token_rpc="${VERIFIER_RPCS[$i]}"
+
+    legacy_flag="${TOKEN_LEGACY_TX[$i]}"
+    legacy_flag_lower=$(printf '%s' "$legacy_flag" | tr '[:upper:]' '[:lower:]')
+
+    peer_eids=()
+    peer_addrs=()
+    for j in "${!TOKEN_LABELS[@]}"; do
+      if [[ "$i" == "$j" ]]; then
+        continue
+      fi
+      peer_eids+=("${VERIFIER_EIDS[$j]}")
+      peer_addrs+=("${TOKEN_ADDRESSES[$j]}")
+    done
+
+    peer_eids_str=$(join_by_comma "${peer_eids[@]}")
+    peer_addrs_str=$(join_by_comma "${peer_addrs[@]}")
+
+    if [[ "$legacy_flag_lower" == "true" ]]; then
+      echo "Running SetTokenPeers for '${label}' via $token_rpc (legacy tx)"
+    else
+      echo "Running SetTokenPeers for '${label}' via $token_rpc"
+    fi
+    (
+      cd "$SCRIPT_DIR"
+      forge_args=("${FORGE_ARGS[@]}")
+      if [[ "$legacy_flag_lower" == "true" ]]; then
+        forge_args+=(--legacy)
+      fi
+      env \
+        "TOKEN_ADDRESS=$token_addr" \
+        "PEER_ADDRESSES=$peer_addrs_str" \
+        "PEER_EIDS=$peer_eids_str" \
+        forge script script/SetPeers.s.sol:SetTokenPeers --rpc-url "$token_rpc" "${forge_args[@]}"
+    )
+  done
+else
+  echo "Skipping SetTokenPeers: only one token entry present"
+fi
 
 echo "SetPeers scripts completed"
