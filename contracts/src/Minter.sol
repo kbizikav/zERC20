@@ -7,6 +7,7 @@ import {SafeERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ER
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /**
  * @title Minter
@@ -15,6 +16,21 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
  */
 contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeable {
     using SafeERC20Upgradeable for IERC20Upgradeable;
+    using SlotDerivation for string;
+
+    /// @custom:storage-location erc7201:zerc20.storage.minter
+    struct MinterStorage {
+        address zerc20Token;
+        address tokenAddress;
+        uint256[46] __gap;
+    }
+
+    function _getMinterStorage() private pure returns (MinterStorage storage $) {
+        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.minter");
+        assembly {
+            $.slot := slot
+        }
+    }
 
     /// @notice Emitted when native assets are deposited and wrapped.
     event NativeDeposited(address indexed account, uint256 amount);
@@ -44,11 +60,6 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// Storage
     /// ---------------------------------------------------------------------
 
-    /// @notice Address of the zerc20 token that exposes mint / burn functions.
-    address public zerc20Token;
-    /// @notice Address of the underlying token being wrapped (zero address represents native token).
-    address public tokenAddress;
-
     constructor() {
         _disableInitializers();
     }
@@ -65,10 +76,21 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
 
-        zerc20Token = zerc20Token_;
-        tokenAddress = tokenAddress_;
+        MinterStorage storage $ = _getMinterStorage();
+        $.zerc20Token = zerc20Token_;
+        $.tokenAddress = tokenAddress_;
 
         _transferOwnership(initialOwner);
+    }
+
+    /// @notice Address of the zerc20 token that exposes mint / burn functions.
+    function zerc20Token() public view returns (address) {
+        return _getMinterStorage().zerc20Token;
+    }
+
+    /// @notice Address of the underlying token being wrapped (zero address represents native token).
+    function tokenAddress() public view returns (address) {
+        return _getMinterStorage().tokenAddress;
     }
 
     /// ---------------------------------------------------------------------
@@ -78,11 +100,11 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// @notice Accepts native currency and mints zERC20 1:1, matching the deposit flow in the spec.
     /// @dev Only callable when `tokenAddress` is zero (native mode).
     function depositNative() external payable nonReentrant {
-        if (tokenAddress != address(0)) revert NativeDisabled();
+        if (tokenAddress() != address(0)) revert NativeDisabled();
         uint256 amount = msg.value;
         if (amount == 0) revert ZeroAmount();
 
-        IMintableBurnableERC20(zerc20Token).mint(msg.sender, amount);
+        IMintableBurnableERC20(zerc20Token()).mint(msg.sender, amount);
         emit NativeDeposited(msg.sender, amount);
     }
 
@@ -90,19 +112,20 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// @dev Only callable when `tokenAddress` is non-zero (ERC20 mode).
     /// @param amount Quantity of underlying tokens to deposit and wrap.
     function depositToken(uint256 amount) external nonReentrant {
-        if (tokenAddress == address(0)) revert TokenDisabled();
+        address tokenAddress_ = tokenAddress();
+        if (tokenAddress_ == address(0)) revert TokenDisabled();
         if (amount == 0) revert ZeroAmount();
 
-        uint256 balanceBefore = IERC20Upgradeable(tokenAddress).balanceOf(address(this));
-        IERC20Upgradeable(tokenAddress).safeTransferFrom(msg.sender, address(this), amount);
-        uint256 balanceAfter = IERC20Upgradeable(tokenAddress).balanceOf(address(this));
+        uint256 balanceBefore = IERC20Upgradeable(tokenAddress_).balanceOf(address(this));
+        IERC20Upgradeable(tokenAddress_).safeTransferFrom(msg.sender, address(this), amount);
+        uint256 balanceAfter = IERC20Upgradeable(tokenAddress_).balanceOf(address(this));
 
         if (balanceAfter < balanceBefore) revert TokenBalanceDidNotIncrease(balanceBefore, balanceAfter);
 
         uint256 received = balanceAfter - balanceBefore;
         if (received == 0) revert NoTokensReceived();
 
-        IMintableBurnableERC20(zerc20Token).mint(msg.sender, received);
+        IMintableBurnableERC20(zerc20Token()).mint(msg.sender, received);
 
         emit TokenDeposited(msg.sender, received);
     }
@@ -115,13 +138,13 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// @dev Only callable when `tokenAddress` is zero (native mode).
     /// @param amount Quantity of wrapped tokens to burn / native currency to redeem.
     function withdrawNative(uint256 amount) external nonReentrant {
-        if (tokenAddress != address(0)) revert NativeDisabled();
+        if (tokenAddress() != address(0)) revert NativeDisabled();
         if (amount == 0) revert ZeroAmount();
 
         uint256 available = address(this).balance;
         if (available < amount) revert InsufficientNativeLiquidity(available, amount);
 
-        IMintableBurnableERC20(zerc20Token).burn(msg.sender, amount);
+        IMintableBurnableERC20(zerc20Token()).burn(msg.sender, amount);
 
         (bool success,) = msg.sender.call{value: amount}("");
         if (!success) revert NativeTransferFailed();
@@ -133,14 +156,15 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// @dev Only callable when `tokenAddress` is non-zero (ERC20 mode).
     /// @param amount Quantity of wrapped tokens to burn / ERC20 to redeem.
     function withdrawToken(uint256 amount) external nonReentrant {
-        if (tokenAddress == address(0)) revert TokenDisabled();
+        address tokenAddress_ = tokenAddress();
+        if (tokenAddress_ == address(0)) revert TokenDisabled();
         if (amount == 0) revert ZeroAmount();
 
-        uint256 available = IERC20Upgradeable(tokenAddress).balanceOf(address(this));
+        uint256 available = IERC20Upgradeable(tokenAddress_).balanceOf(address(this));
         if (available < amount) revert InsufficientTokenLiquidity(available, amount);
 
-        IMintableBurnableERC20(zerc20Token).burn(msg.sender, amount);
-        IERC20Upgradeable(tokenAddress).safeTransfer(msg.sender, amount);
+        IMintableBurnableERC20(zerc20Token()).burn(msg.sender, amount);
+        IERC20Upgradeable(tokenAddress_).safeTransfer(msg.sender, amount);
 
         emit TokenWithdrawn(msg.sender, amount);
     }
@@ -150,6 +174,4 @@ contract Minter is OwnableUpgradeable, UUPSUpgradeable, ReentrancyGuardUpgradeab
     /// ---------------------------------------------------------------------
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
-
-    uint256[46] private __gap;
 }
