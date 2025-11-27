@@ -19,13 +19,14 @@ contract ZERC20Test is TestHelperOz5 {
 
     function setUp() public {
         endpoint = _deployEndpoint(101);
-        token = _deployToken(address(this), endpoint);
+        token = _deployToken(address(this), endpoint, 18);
         token.setMinter(address(this));
     }
 
-    function _deployToken(address owner, EndpointV2Mock endpointMock) private returns (zERC20) {
+    function _deployToken(address owner, EndpointV2Mock endpointMock, uint8 decimals_) private returns (zERC20) {
         zERC20 impl = new zERC20();
-        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner, address(endpointMock)));
+        bytes memory initData =
+            abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner, address(endpointMock), decimals_));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return zERC20(address(proxy));
     }
@@ -84,6 +85,25 @@ contract ZERC20Test is TestHelperOz5 {
 
         uint256 expectedHash = ShaHashChainLib.compute(0, ALICE, value);
         assertEq(token.hashChain(), expectedHash, "hash chain after teleport");
+    }
+
+    function testInitializeSupportsCustomDecimals() public {
+        uint8 customDecimals = 8;
+        zERC20 customToken = _deployToken(address(this), endpoint, customDecimals);
+        assertEq(customToken.decimals(), customDecimals, "custom decimals stored");
+        assertEq(
+            customToken.decimalConversionRate(),
+            10 ** (customDecimals - customToken.sharedDecimals()),
+            "conversion rate uses custom decimals"
+        );
+    }
+
+    function testInitializeRejectsBelowSharedDecimals() public {
+        zERC20 impl = new zERC20();
+        vm.expectRevert(zERC20.InvalidDecimals.selector);
+        new ERC1967Proxy(
+            address(impl), abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this), address(endpoint), 5))
+        );
     }
 
     function testMintOnlyMinter() public {

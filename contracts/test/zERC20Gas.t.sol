@@ -21,7 +21,8 @@ contract zERC20GasTest is TestHelperOz5 {
     function setUp() public {
         endpoint = _deployEndpoint(101);
         zERC20 impl = new zERC20();
-        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this), address(endpoint)));
+        bytes memory initData =
+            abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this), address(endpoint), 18));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         zToken = zERC20(address(proxy));
         zToken.setMinter(address(this));

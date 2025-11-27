@@ -20,6 +20,7 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
         uint256 index;
         address verifier;
         address minter;
+        uint8 decimals;
     }
 
     function _getZERC20Storage() private pure returns (ZERC20Storage storage $) {
@@ -42,6 +43,8 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     error ZeroAddress();
     /// @notice Reverts when a value exceeds the supported 248-bit range.
     error ValueTooLarge();
+    /// @notice Reverts when the requested decimals are incompatible with shared decimals.
+    error InvalidDecimals();
 
     /// @notice Locks implementation contracts on deployment.
     constructor() {
@@ -53,12 +56,18 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     /// @param symbol_ ERC20 symbol.
     /// @param initialOwner Account receiving ownership, LayerZero delegate permissions, and upgrade authority.
     /// @param endpoint LayerZero endpoint used for OFT messaging.
-    function initialize(string memory name_, string memory symbol_, address initialOwner, address endpoint)
-        external
-        initializer
-    {
+    /// @param decimals_ Token decimals; must be >= shared decimals.
+    function initialize(
+        string memory name_,
+        string memory symbol_,
+        address initialOwner,
+        address endpoint,
+        uint8 decimals_
+    ) external initializer {
         if (initialOwner == address(0) || endpoint == address(0)) revert ZeroAddress();
+        if (decimals_ < sharedDecimals()) revert InvalidDecimals();
 
+        _getZERC20Storage().decimals = decimals_;
         __OFT_init(name_, symbol_, endpoint, initialOwner);
         __UUPSUpgradeable_init();
     }
@@ -79,6 +88,11 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     /// @notice Address allowed to call verifier-only functions such as teleport.
     function verifier() public view returns (address) {
         return _getZERC20Storage().verifier;
+    }
+
+    /// @notice Returns the token decimals.
+    function decimals() public view override returns (uint8) {
+        return _getZERC20Storage().decimals;
     }
 
     /// @notice Address allowed to mint and burn under the minter role.

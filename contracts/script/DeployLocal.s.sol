@@ -27,6 +27,7 @@ contract DeployLocal is DeterministicDeployer {
         address verifierDelegate;
         address liquidityManager;
         address tokenOwner;
+        uint8 tokenDecimals;
         bool shareEndpoint;
         bool registerOnHub;
         bool wirePeers;
@@ -89,6 +90,10 @@ contract DeployLocal is DeterministicDeployer {
         cfg.verifierDelegate = vm.envOr("VERIFIER_DELEGATE", address(0));
         cfg.liquidityManager = vm.envOr("LIQUIDITY_MANAGER", address(0));
         cfg.tokenOwner = vm.envOr("TOKEN_OWNER", address(0));
+        uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
+        require(decimals <= type(uint8).max, "tokenDecimals too large");
+        require(decimals >= 6, "tokenDecimals below sharedDecimals");
+        cfg.tokenDecimals = uint8(decimals);
         cfg.shareEndpoint = vm.envOr("SHARE_ENDPOINTS", uint256(0)) != 0;
         cfg.registerOnHub = vm.envOr("REGISTER_ON_HUB", uint256(1)) != 0;
         cfg.wirePeers = vm.envOr("WIRE_PEERS", uint256(1)) != 0;
@@ -123,8 +128,9 @@ contract DeployLocal is DeterministicDeployer {
     {
         address owner = cfg.tokenOwner == address(0) ? deployer : cfg.tokenOwner;
         zERC20 impl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}();
-        bytes memory initData =
-            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, address(endpoint)));
+        bytes memory initData = abi.encodeCall(
+            zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, address(endpoint), cfg.tokenDecimals)
+        );
         ERC1967Proxy proxy =
             new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(impl), initData);
         token = zERC20(address(proxy));

@@ -58,6 +58,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         address delegate; // optional
         address liquidityManager; // optional
         address owner; // optional
+        uint8 tokenDecimals;
     }
 
     struct VerifierArgs {
@@ -95,6 +96,10 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         cfg.delegate = vm.envOr("VERIFIER_DELEGATE", address(0));
         cfg.liquidityManager = vm.envOr("LIQUIDITY_MANAGER", address(0));
         cfg.owner = vm.envOr("TOKEN_OWNER", address(0));
+        uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
+        require(decimals <= type(uint8).max, "tokenDecimals too large");
+        require(decimals >= 6, "tokenDecimals below sharedDecimals");
+        cfg.tokenDecimals = uint8(decimals);
 
         require(bytes(cfg.tokenName).length != 0, "tokenName missing");
         require(bytes(cfg.tokenSymbol).length != 0, "tokenSymbol missing");
@@ -120,7 +125,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
 
         zERC20 tokenImpl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}();
         bytes memory tokenInit =
-            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, endpoint));
+            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, endpoint, cfg.tokenDecimals));
         ERC1967Proxy tokenProxy =
             new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(tokenImpl), tokenInit);
         zERC20 token = zERC20(address(tokenProxy));
