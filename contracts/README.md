@@ -138,7 +138,7 @@ After every hub/verifier pair has been deployed and registered, wire the LayerZe
 1. **Hub chain:** run `SetHubPeers` once to map every remote verifier EID to its address and register the associated token if it has not been registered yet.
 2. **Each verifier chain:** run `SetVerifierPeers` separately so the verifier points back to the hub.
 
-> Shortcut: the repo ships with `./run-set-peers.sh`, which reads `config/tokens.json` (per-entry `eid` required) and exports the required environment variables before running both scripts in order. Provide extra forge flags after `--` (for example `./run-set-peers.sh -- --broadcast -vv`) and ensure `PRIVATE_KEY` is set in your shell.
+> Shortcut: the repo ships with `./run_set_peers.py` (with a `./run-set-peers.sh` wrapper), which reads `config/tokens.json` (per-entry `eid` required) and exports the required environment variables before running both scripts in order. Provide extra forge flags after `--` (for example `./run_set_peers.py -- --broadcast -vv`) and ensure `PRIVATE_KEY` is set in your shell.
 
 ```bash
 # Step 1: run on the hub chain (all verifiers at once)
