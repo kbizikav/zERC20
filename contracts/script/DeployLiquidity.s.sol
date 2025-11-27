@@ -2,8 +2,8 @@
 pragma solidity ^0.8.20;
 
 import {console2} from "forge-std/console2.sol";
-import {Adaptor} from "../src/Adaptor.sol";
-import {LiquidityManager} from "../src/LiquidityManager.sol";
+import {Adaptor} from "../src/liquidity/Adaptor.sol";
+import {LiquidityManager} from "../src/liquidity/LiquidityManager.sol";
 import {FeeLib} from "../src/libraries/FeeLib.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";

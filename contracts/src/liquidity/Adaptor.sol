@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.30;
 
-import {ILiquidityManager} from "./interfaces/ILiquidityManager.sol";
-import {IStargate, Ticket} from "./interfaces/IStargate.sol";
-import {IzERC20} from "./interfaces/IzERC20.sol";
+import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
+import {IStargate, Ticket} from "../interfaces/IStargate.sol";
+import {IzERC20} from "../interfaces/IzERC20.sol";
 import {
     SendParam,
     MessagingFee,
@@ -58,8 +58,8 @@ contract Adaptor is ILayerZeroComposer {
     event ReturnZerc20(address indexed to, uint32 indexed dstEid, uint256 amountReturned);
 
     constructor(address _liquidityManager, address _stargate) {
-        require(_liquidityManager != address(0), ZeroAddress());
-        require(_stargate != address(0), ZeroAddress());
+        if (_liquidityManager == address(0)) revert ZeroAddress();
+        if (_stargate == address(0)) revert ZeroAddress();
         LIQUIDITY_MANAGER = ILiquidityManager(_liquidityManager);
         UNDERLYING_TOKEN = IERC20(LIQUIDITY_MANAGER.underlyingToken());
         ZERC20 = IzERC20(address(LIQUIDITY_MANAGER.zerc20()));
@@ -73,7 +73,7 @@ contract Adaptor is ILayerZeroComposer {
         payable
         returns (uint256 amountOut)
     {
-        require(ZERC20.transferFrom(msg.sender, address(this), amount), TokenPullFailed());
+        if (!ZERC20.transferFrom(msg.sender, address(this), amount)) revert TokenPullFailed();
         if (ZERC20.balanceOf(address(this)) < amount) revert InsufficientZerc20();
         FeeQuote memory quote = _quoteFee(amount, request);
         bool success;
