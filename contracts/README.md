@@ -107,6 +107,7 @@ Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
 - `LIQUIDITY_FEE_DELTA1_BPS` / `LIQUIDITY_FEE_DELTA2_BPS` (uint256): Fee deltas in bps (defaults 6000 / 500).
 - `SET_LIQUIDITY_AS_MINTER` (uint256): Non-zero to set the manager as the token minter (defaults to 1).
 - `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
+- Defaults can also be sourced from `config/chain-config.json` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence.
 
 Example:
 ```bash

@@ -6,13 +6,13 @@ import {Adaptor} from "../src/liquidity/Adaptor.sol";
 import {LiquidityManager} from "../src/liquidity/LiquidityManager.sol";
 import {FeeLib} from "../src/libraries/FeeLib.sol";
 import {zERC20} from "../src/zERC20.sol";
-import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 
 /// @notice Deploys LiquidityManager (upgradeable proxy) and optionally the Adaptor that unwraps + bridges through Stargate.
 /// Required env:
 /// - LIQUIDITY_ZERC20_TOKEN (address): zERC20 token address that the manager mints/burns.
-/// - LIQUIDITY_UNDERLYING_TOKEN (address): ERC20 token held as liquidity.
+/// - LIQUIDITY_UNDERLYING_TOKEN (address): ERC20 token held as liquidity (or set in chain-config).
 /// - LIQUIDITY_TARGET (uint256): Target liquidity level used for rewards/fees.
 /// - PRIVATE_KEY (uint256): Broadcaster private key.
 /// Optional env:
@@ -23,8 +23,11 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
 /// - LIQUIDITY_FEE_DELTA1_BPS (uint256): Fee curve δ1 in bps of target (defaults to 6_000).
 /// - LIQUIDITY_FEE_DELTA2_BPS (uint256): Fee curve δ2 in bps of target (defaults to 500).
 /// - SET_LIQUIDITY_AS_MINTER (uint256): When non-zero, attempts to set the manager as zERC20 minter (defaults to 1).
-/// - ADAPTOR_STARGATE (address): Stargate endpoint; when set, deploys the Adaptor wired to the manager.
+/// - ADAPTOR_STARGATE (address): Stargate endpoint; when set, deploys the Adaptor wired to the manager (or set in chain-config).
+/// - CHAIN_CONFIG_PATH (string): Optional path to per-chain defaults (underlyingToken/stargate); falls back to `config/chain-config.json`.
 contract DeployLiquidity is DeterministicDeployer {
+    string internal constant DEFAULT_CHAIN_CONFIG_PATH = "config/chain-config.json";
+
     struct Config {
         address zerc20Token;
         address underlyingToken;
@@ -35,6 +38,15 @@ contract DeployLiquidity is DeterministicDeployer {
         FeeLib.RewardParams reward;
         FeeLib.FeeParams fee;
     }
+
+    struct ChainConfig {
+        address underlyingToken;
+        address stargate;
+    }
+
+    error Zerc20TokenRequired();
+    error UnderlyingTokenRequired();
+    error LiquidityTargetRequired();
 
     function run() external {
         Config memory cfg = _loadConfig();
@@ -87,11 +99,13 @@ contract DeployLiquidity is DeterministicDeployer {
     }
 
     function _loadConfig() internal view returns (Config memory cfg) {
+        ChainConfig memory chainCfg = _loadChainConfig();
+
         cfg.zerc20Token = vm.envAddress("LIQUIDITY_ZERC20_TOKEN");
-        cfg.underlyingToken = vm.envAddress("LIQUIDITY_UNDERLYING_TOKEN");
+        cfg.underlyingToken = vm.envOr("LIQUIDITY_UNDERLYING_TOKEN", chainCfg.underlyingToken);
         cfg.target = vm.envUint("LIQUIDITY_TARGET");
         cfg.owner = vm.envOr("LIQUIDITY_OWNER", address(0));
-        cfg.stargate = vm.envOr("ADAPTOR_STARGATE", address(0));
+        cfg.stargate = vm.envOr("ADAPTOR_STARGATE", chainCfg.stargate);
         cfg.setMinter = vm.envOr("SET_LIQUIDITY_AS_MINTER", uint256(1)) != 0;
         cfg.reward = FeeLib.RewardParams({
             liquiditySlopeBps: vm.envOr("LIQUIDITY_REWARD_SLOPE_BPS", uint256(0))
@@ -102,5 +116,55 @@ contract DeployLiquidity is DeterministicDeployer {
             delta1Bps: vm.envOr("LIQUIDITY_FEE_DELTA1_BPS", uint256(6_000)),
             delta2Bps: vm.envOr("LIQUIDITY_FEE_DELTA2_BPS", uint256(500))
         });
+
+        if (cfg.zerc20Token == address(0)) revert Zerc20TokenRequired();
+        if (cfg.underlyingToken == address(0)) revert UnderlyingTokenRequired();
+        if (cfg.target == 0) revert LiquidityTargetRequired();
+    }
+
+    function _loadChainConfig() internal view returns (ChainConfig memory chainCfg) {
+        string memory path = vm.envOr("CHAIN_CONFIG_PATH", DEFAULT_CHAIN_CONFIG_PATH);
+
+        string memory json;
+        try vm.readFile(path) returns (string memory data) {
+            json = data;
+        } catch (bytes memory) {
+            return chainCfg;
+        }
+
+        string memory base = string.concat(".chains[\"", _toString(block.chainid), "\"]");
+        chainCfg.underlyingToken = _parseAddress(json, string.concat(base, ".underlyingToken"));
+        chainCfg.stargate = _parseAddress(json, string.concat(base, ".stargate"));
+    }
+
+    function _parseAddress(string memory json, string memory key) private view returns (address value) {
+        try vm.parseJsonAddress(json, key) returns (address parsed) {
+            value = parsed;
+        } catch (bytes memory) {
+            value = address(0);
+        }
+    }
+
+    function _toString(uint256 value) internal pure returns (string memory) {
+        if (value == 0) {
+            return "0";
+        }
+
+        uint256 temp = value;
+        uint256 digits;
+
+        while (temp != 0) {
+            digits++;
+            temp /= 10;
+        }
+
+        bytes memory buffer = new bytes(digits);
+        while (value != 0) {
+            digits -= 1;
+            buffer[digits] = bytes1(uint8(48 + (value % 10)));
+            value /= 10;
+        }
+
+        return string(buffer);
     }
 }
