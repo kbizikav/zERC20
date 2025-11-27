@@ -153,6 +153,8 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
         verifier_address: deployer_address,
         liquidity_manager_address: None,
         adaptor_address: None,
+        eid: None,
+        layerzero_endpoint: None,
         chain_id: DEFAULT_ANVIL_CHAIN_ID,
         deployed_block_number: 0,
         rpc_urls: vec![rpc_url.clone()],
