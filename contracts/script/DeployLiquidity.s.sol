@@ -11,13 +11,13 @@ import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 
 /// @notice Deploys LiquidityManager (upgradeable proxy) and optionally the Adaptor that unwraps + bridges through Stargate.
 /// Required env:
-/// - LIQUIDITY_ZERC20_TOKEN (address): zERC20 token address that the manager mints/burns.
-/// - LIQUIDITY_UNDERLYING_TOKEN (address): ERC20 token held as liquidity (or set in chain-config).
-/// - LIQUIDITY_TARGET (uint256): Target liquidity level used for rewards/fees.
+/// - ZERC20 (address): zERC20 token address that the manager mints/burns.
 /// - PRIVATE_KEY (uint256): Broadcaster private key.
 /// Optional env:
+/// - LIQUIDITY_UNDERLYING_TOKEN (address): ERC20 token held as liquidity (or set in chain-config).
+/// - LIQUIDITY_TARGET (uint256): Target liquidity level used for rewards/fees (defaults to 1_000_000e6).
 /// - LIQUIDITY_OWNER (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
-/// - LIQUIDITY_REWARD_SLOPE_BPS (uint256): Reward slope in bps (defaults to 0 = no reward).
+/// - LIQUIDITY_REWARD_SLOPE_BPS (uint256): Reward slope in bps (defaults to 100).
 /// - LIQUIDITY_FEE_LAMBDA1_BPS (uint256): Fee curve λ1 in bps (defaults to 40).
 /// - LIQUIDITY_FEE_LAMBDA2_BPS (uint256): Fee curve λ2 in bps (defaults to 9_954).
 /// - LIQUIDITY_FEE_DELTA1_BPS (uint256): Fee curve δ1 in bps of target (defaults to 6_000).
@@ -101,14 +101,14 @@ contract DeployLiquidity is DeterministicDeployer {
     function _loadConfig() internal view returns (Config memory cfg) {
         ChainConfig memory chainCfg = _loadChainConfig();
 
-        cfg.zerc20Token = vm.envAddress("LIQUIDITY_ZERC20_TOKEN");
+        cfg.zerc20Token = vm.envAddress("ZERC20");
         cfg.underlyingToken = vm.envOr("LIQUIDITY_UNDERLYING_TOKEN", chainCfg.underlyingToken);
-        cfg.target = vm.envUint("LIQUIDITY_TARGET");
+        cfg.target = vm.envOr("LIQUIDITY_TARGET", uint256(1_000_000e6));
         cfg.owner = vm.envOr("LIQUIDITY_OWNER", address(0));
         cfg.stargate = vm.envOr("ADAPTOR_STARGATE", chainCfg.stargate);
         cfg.setMinter = vm.envOr("SET_LIQUIDITY_AS_MINTER", uint256(1)) != 0;
         cfg.reward = FeeLib.RewardParams({
-            liquiditySlopeBps: vm.envOr("LIQUIDITY_REWARD_SLOPE_BPS", uint256(0))
+            liquiditySlopeBps: vm.envOr("LIQUIDITY_REWARD_SLOPE_BPS", uint256(100))
         });
         cfg.fee = FeeLib.FeeParams({
             lambda1Bps: vm.envOr("LIQUIDITY_FEE_LAMBDA1_BPS", uint256(40)),

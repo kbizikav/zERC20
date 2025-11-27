@@ -94,14 +94,14 @@ Deploying Liquidity Manager and Adaptor
 The `DeployLiquidity` script deploys an upgradeable `LiquidityManager` and, when provided a Stargate address, a stateless `Adaptor` wired to that manager.
 
 Required env:
-- `LIQUIDITY_ZERC20_TOKEN` (address): zERC20 token the manager mints/burns.
+- `ZERC20` (address): zERC20 token the manager mints/burns.
 - `LIQUIDITY_UNDERLYING_TOKEN` (address): Underlying ERC20 held by the manager.
-- `LIQUIDITY_TARGET` (uint256): Target liquidity level that drives rewards/fees.
 - `PRIVATE_KEY` (uint256): Broadcaster key.
 
 Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
+- `LIQUIDITY_TARGET` (uint256): Target liquidity level that drives rewards/fees (defaults to 1_000_000e6).
 - `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
-- `LIQUIDITY_REWARD_SLOPE_BPS` (uint256): Reward slope in bps (defaults to 0 = no rewards).
+- `LIQUIDITY_REWARD_SLOPE_BPS` (uint256): Reward slope in bps (defaults to 100).
 - `LIQUIDITY_FEE_LAMBDA1_BPS` (uint256): Fee λ1 in bps (defaults to 40).
 - `LIQUIDITY_FEE_LAMBDA2_BPS` (uint256): Fee λ2 in bps (defaults to 9954).
 - `LIQUIDITY_FEE_DELTA1_BPS` / `LIQUIDITY_FEE_DELTA2_BPS` (uint256): Fee deltas in bps (defaults 6000 / 500).
