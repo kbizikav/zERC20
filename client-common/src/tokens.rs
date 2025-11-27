@@ -28,6 +28,10 @@ pub struct TokenEntry {
     pub liquidity_manager_address: Option<Address>,
     #[serde(default, alias = "adaptorAddress")]
     pub adaptor_address: Option<Address>,
+    #[serde(default)]
+    pub eid: Option<u32>,
+    #[serde(default, alias = "layerzeroEndpoint", alias = "layerZeroEndpoint")]
+    pub layerzero_endpoint: Option<Address>,
     pub chain_id: u64,
     pub deployed_block_number: u64,
     #[serde(default)]
@@ -40,6 +44,10 @@ pub struct TokenEntry {
 pub struct HubEntry {
     pub hub_address: Address,
     pub chain_id: u64,
+    #[serde(default)]
+    pub eid: Option<u32>,
+    #[serde(default, alias = "layerzeroEndpoint", alias = "layerZeroEndpoint")]
+    pub layerzero_endpoint: Option<Address>,
     #[serde(default)]
     pub rpc_urls: Vec<String>,
 }

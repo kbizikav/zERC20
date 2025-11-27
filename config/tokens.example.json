@@ -7,6 +7,8 @@
       "liquidity_manager_address": null,
       "adaptor_address": null,
       "chain_id": 31337,
+      "eid": 101,
+      "layerzero_endpoint": "0x0000000000000000000000000000000000000001",
       "deployed_block_number": 0,
       "rpc_urls": [
         "http://127.0.0.1:8545"
@@ -16,6 +18,8 @@
   "hub": {
     "hub_address": "0x610178dA211FEF7D417bC0e6FeD39F05609AD788",
     "chain_id": 31337,
+    "eid": 100,
+    "layerzero_endpoint": "0x0000000000000000000000000000000000000002",
     "rpc_urls": [
       "http://127.0.0.1:8545"
     ]

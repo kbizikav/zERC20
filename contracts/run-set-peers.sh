@@ -3,15 +3,14 @@ set -euo pipefail
 
 usage() {
   cat <<'EOF'
-Usage: run-set-peers.sh [--file PATH] [--metadata-file PATH] [--] [forge flags...]
+Usage: run-set-peers.sh [--file PATH] [--] [forge flags...]
 
-Reads a tokens.json-formatted file, loads LayerZero endpoint metadata, and runs
+Reads a tokens.json-formatted file (requires per-entry EIDs) and runs
 SetPeers.s.sol (SetHubPeers once, SetVerifierPeers per token, SetTokenPeers per token)
 with environment variables derived from the configuration.
 
 Options:
   --file PATH          Path to tokens.json (defaults to ../config/tokens.json)
-  --metadata-file PATH LayerZero deployments JSON (defaults to layerzero_deployments.json)
   --help            Show this help message and exit
   --                Stop option parsing; following args are passed to forge script
 
@@ -21,14 +20,13 @@ Environment:
 Examples:
   ./run-set-peers.sh
   ./run-set-peers.sh --file ../config/tokens.prod.json -- --broadcast -vv
-  # Defaults add '--broadcast --verify -vvvv' when no forge flags are provided
+  # Defaults add '--broadcast' when no forge flags are provided
 EOF
 }
 
 SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 ROOT_DIR=$(cd "$SCRIPT_DIR/.." && pwd)
 TOKENS_FILE="$ROOT_DIR/config/tokens.json"
-METADATA_FILE="$SCRIPT_DIR/layerzero_deployments.json"
 FORGE_ARGS=()
 
 while (($#)); do
@@ -39,14 +37,6 @@ while (($#)); do
         exit 1
       fi
       TOKENS_FILE="$2"
-      shift 2
-      ;;
-    --metadata-file)
-      if (($# == 1)); then
-        echo "error: --metadata-file expects a value" >&2
-        exit 1
-      fi
-      METADATA_FILE="$2"
       shift 2
       ;;
     --help)
@@ -91,94 +81,6 @@ if [[ -z "${PRIVATE_KEY:-}" ]]; then
   exit 1
 fi
 
-if [[ ! -f "$METADATA_FILE" ]]; then
-  echo "error: LayerZero metadata file not found at $METADATA_FILE" >&2
-  exit 1
-fi
-echo "Reading LayerZero metadata from $METADATA_FILE"
-if ! LZ_METADATA=$(<"$METADATA_FILE"); then
-  echo "error: failed to read LayerZero metadata from $METADATA_FILE" >&2
-  exit 1
-fi
-
-fetch_eid_for_chain() {
-  local chain_id=$1
-  local matches=()
-  while IFS=$'\t' read -r eid name env version; do
-    if [[ -n "$eid" && "$eid" != "null" ]]; then
-      matches+=("$eid|$name|$env|$version")
-    fi
-  done < <(
-    jq -r --argjson target "$chain_id" '
-      to_entries[]
-      | .value as $cfg
-      | ($cfg.deployments // [])[]
-      | select(
-          (try ($cfg.chainDetails.nativeChainId | tonumber) catch empty) == $target
-          or (try ($cfg.chainDetails.native_chain_id | tonumber) catch empty) == $target
-          or (try ($cfg.chainDetails.chainId | tonumber) catch empty) == $target
-          or (try ($cfg.chainDetails.evmChainId | tonumber) catch empty) == $target
-          or (try ($cfg.chainDetails.evm_chain_id | tonumber) catch empty) == $target
-          or (try (.nativeChainId | tonumber) catch empty) == $target
-          or (try (.native_chain_id | tonumber) catch empty) == $target
-          or (try (.chainId | tonumber) catch empty) == $target
-          or (try (.evmChainId | tonumber) catch empty) == $target
-          or (try (.evm_chain_id | tonumber) catch empty) == $target
-        )
-      | [
-          (.eid // .endpoint_id // .endpointId // .endpointIdV2 // empty),
-          ($cfg.chainKey // ""),
-          (.stage // $cfg.stage // $cfg.chainDetails.chainStatus // ""),
-          ((.version // $cfg.version // null) | if . == null then "" else tostring end)
-        ]
-      | @tsv
-    ' <<<"$LZ_METADATA"
-  )
-
-  if ((${#matches[@]} == 0)); then
-    echo "error: no LayerZero endpoint id found for chain_id $chain_id" >&2
-    return 1
-  fi
-  if ((${#matches[@]} > 1)); then
-    local -a highest_matches=()
-    local highest_version=-1
-    for match in "${matches[@]}"; do
-      IFS="|" read -r eid name env version <<<"$match"
-      local version_num=0
-      if [[ "$version" =~ ^[0-9]+$ ]]; then
-        version_num=$version
-      fi
-      if ((version_num > highest_version)); then
-        highest_version=$version_num
-        highest_matches=("$match")
-      elif ((version_num == highest_version)); then
-        highest_matches+=("$match")
-      fi
-    done
-
-    if ((${#highest_matches[@]} == 1)); then
-      matches=("${highest_matches[0]}")
-      IFS="|" read -r eid name env version <<<"${matches[0]}"
-      echo "info: multiple LayerZero endpoints found for chain_id $chain_id; selecting eid=$eid (version=${version:-unknown}, name=${name:-unknown}, environment=${env:-unknown})" >&2
-    else
-      echo "error: multiple LayerZero endpoint ids found for chain_id $chain_id with the same highest version $highest_version:" >&2
-      for match in "${highest_matches[@]}"; do
-        IFS="|" read -r eid name env version <<<"$match"
-        echo "  eid=$eid name=${name:-unknown} environment=${env:-unknown} version=${version:-unknown}" >&2
-      done
-      echo "Adjust the metadata source or tokens file to disambiguate." >&2
-      return 1
-    fi
-  fi
-
-  IFS="|" read -r eid _ _ _ <<<"${matches[0]}"
-  if [[ -z "$eid" ]]; then
-    echo "error: LayerZero metadata entry for chain_id $chain_id missing endpoint id" >&2
-    return 1
-  fi
-  echo "$eid"
-}
-
 HUB_ADDRESS=$(jq -r '(.hub // empty) | (.hub_address // .hubAddress // empty)' "$TOKENS_FILE")
 if [[ -z "$HUB_ADDRESS" ]]; then
   echo "error: hub_address missing from $TOKENS_FILE" >&2
@@ -201,8 +103,9 @@ if [[ -z "$HUB_RPC" ]]; then
   exit 1
 fi
 
-if ! HUB_EID_VALUE=$(fetch_eid_for_chain "$HUB_CHAIN_ID"); then
-  echo "error: failed to resolve hub endpoint id" >&2
+HUB_EID_VALUE=$(jq -r '(.hub // empty) | (.eid // "") | tostring' "$TOKENS_FILE")
+if [[ -z "$HUB_EID_VALUE" || "$HUB_EID_VALUE" == "null" ]]; then
+  echo "error: hub.eid missing from $TOKENS_FILE" >&2
   exit 1
 fi
 
@@ -215,7 +118,7 @@ declare -a VERIFIER_RPCS=()
 declare -a TOKEN_LEGACY_TX=()
 
 token_count=0
-while IFS=$'\t' read -r label verifier_addr token_addr chain_id rpc_url legacy_tx; do
+while IFS=$'\t' read -r label verifier_addr token_addr chain_id rpc_url legacy_tx eid; do
   if [[ -z "$label" ]]; then
     echo "error: token entry missing label" >&2
     exit 1
@@ -237,10 +140,12 @@ while IFS=$'\t' read -r label verifier_addr token_addr chain_id rpc_url legacy_t
     exit 1
   fi
 
-  if ! verifier_eid=$(fetch_eid_for_chain "$chain_id"); then
-    echo "error: failed to resolve endpoint id for token '$label' (chain_id $chain_id)" >&2
+  if [[ -z "$eid" || "$eid" == "null" ]]; then
+    echo "error: token '$label' missing eid" >&2
     exit 1
   fi
+
+  verifier_eid="$eid"
 
   TOKEN_LABELS+=("$label")
   VERIFIER_ADDRESSES+=("$verifier_addr")
@@ -260,7 +165,8 @@ done < <(jq -r '.tokens[] |
       if type == "array" then (if length > 0 then .[0] else "" end)
       elif type == "string" then .
       else "" end),
-    (if (.legacy_tx // .legacyTx // false) then "true" else "false" end)
+    (if (.legacy_tx // .legacyTx // false) then "true" else "false" end),
+    ((.eid // "") | tostring)
   ] | @tsv' "$TOKENS_FILE")
 
 if ((token_count == 0)); then
