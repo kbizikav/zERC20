@@ -87,12 +87,12 @@ impl VerifierContract {
     }
 
     pub async fn token(&self) -> ContractResult<Address> {
-        let addr = self.contract_with_provider().TOKEN().call().await?;
+        let addr = self.contract_with_provider().token().call().await?;
         Ok(addr)
     }
 
     pub async fn hub_eid(&self) -> ContractResult<u32> {
-        let eid = self.contract_with_provider().HUB_EID().call().await?;
+        let eid = self.contract_with_provider().hubEid().call().await?;
         Ok(eid)
     }
 

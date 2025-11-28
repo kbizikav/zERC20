@@ -425,7 +425,7 @@ function AppContent(): JSX.Element {
   const isReady = useMemo(() => Boolean(tokens && !loadingMessage && !error), [tokens, loadingMessage, error]);
 
   const hasConvertTokens = useMemo(
-    () => Boolean(tokens?.tokens?.some((entry) => Boolean(entry.minterAddress))),
+    () => Boolean(tokens?.tokens?.some((entry) => Boolean(entry.liquidityManagerAddress))),
     [tokens?.tokens],
   );
 
