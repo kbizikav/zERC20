@@ -116,3 +116,70 @@ fn parse_u64_from_value(value: &Value) -> Option<u64> {
         .as_u64()
         .or_else(|| value.as_str().and_then(|s| s.parse::<u64>().ok()))
 }
+
+#[derive(Debug, Clone)]
+pub struct ComposeTxSummary {
+    pub hash: String,
+    pub summary: String,
+}
+
+pub fn lz_compose_txs(value: &Value) -> Vec<ComposeTxSummary> {
+    value
+        .get("txs")
+        .and_then(|v| v.as_array())
+        .map(|txs| {
+            txs.iter()
+                .enumerate()
+                .map(|(idx, tx)| {
+                    let hash = tx
+                        .get("txHash")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("-")
+                        .to_string();
+                    let from = tx.get("from").and_then(|v| v.as_str()).unwrap_or("-");
+                    let to = tx.get("to").and_then(|v| v.as_str()).unwrap_or("-");
+                    let block = tx
+                        .get("blockNumber")
+                        .and_then(parse_u64_from_value)
+                        .map(|n| n.to_string())
+                        .unwrap_or_else(|| "-".to_string());
+                    let ts = tx
+                        .get("blockTimestamp")
+                        .and_then(parse_u64_from_value)
+                        .map(|n| n.to_string());
+                    let block_desc = ts
+                        .map(|ts| format!("{block} (timestamp {ts})"))
+                        .unwrap_or(block);
+                    ComposeTxSummary {
+                        hash: hash.clone(),
+                        summary: format!(
+                            "#{} hash={} from={} to={} block={}",
+                            idx + 1,
+                            hash,
+                            from,
+                            to,
+                            block_desc
+                        ),
+                    }
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+pub fn lz_compose_failed_txs(value: &Value) -> Vec<String> {
+    value
+        .get("failedTx")
+        .and_then(|v| v.as_array())
+        .map(|txs| {
+            txs.iter()
+                .enumerate()
+                .map(|(idx, tx)| {
+                    let hash = tx.get("txHash").and_then(|v| v.as_str()).unwrap_or("-");
+                    let err = tx.get("txError").and_then(|v| v.as_str()).unwrap_or("-");
+                    format!("#{} hash={} error={}", idx + 1, hash, err)
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
