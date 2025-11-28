@@ -153,7 +153,7 @@ async fn unwrap_cross_chain(
     println!("Caller address      : {}", caller);
     println!("Amount              : {}", amount);
 
-    let return_extra_options = build_extra_options(RECEIVE_GAS, 0)
+    let return_extra_options = build_extra_options(RECEIVE_GAS, 0, &[])
         .context("failed to build initial bridge extra options")?;
     let return_bridge_request = BridgeRequest {
         dst_eid: src_eid,
@@ -182,7 +182,8 @@ async fn unwrap_cross_chain(
     let native_bridge_fee_with_buffer_u128: u128 = native_bridge_fee_with_buffer
         .try_into()
         .expect("scaled fee checked to fit into u128");
-    let extra_options = build_extra_options(COMPOSE_GAS, native_bridge_fee_with_buffer_u128)
+    let compose_options = vec![(COMPOSE_GAS, native_bridge_fee_with_buffer_u128)];
+    let extra_options = build_extra_options(RECEIVE_GAS, 0, &compose_options)
         .context("failed to build extra options")?;
 
     let fee_quote = adaptor

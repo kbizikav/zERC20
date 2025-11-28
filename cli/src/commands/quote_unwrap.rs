@@ -15,6 +15,7 @@ use crate::{
 
 const WORKER_ID_EXECUTOR: u8 = 1;
 const OPTION_TYPE_LZ_RECEIVE: u8 = 1;
+const OPTION_TYPE_LZ_COMPOSE: u8 = 3;
 const OPTIONS_TYPE_3: u16 = 3;
 
 pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B256) -> Result<()> {
@@ -29,7 +30,16 @@ pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B25
         .eid
         .with_context(|| format!("destination chain {} is missing an eid", args.dst_chain_id))?;
 
-    let extra_options = build_extra_options(args.lz_receive_gas, args.lz_receive_value)?;
+    let mut lz_compose = Vec::new();
+    match (args.lz_compose_gas, args.lz_compose_value) {
+        (Some(gas), Some(value)) => lz_compose.push((gas, value)),
+        (Some(gas), None) => lz_compose.push((gas, 0)),
+        (None, Some(_)) => bail!("lz_compose_value requires lz_compose_gas"),
+        (None, None) => {}
+    };
+
+    let extra_options =
+        build_extra_options(args.lz_receive_gas, args.lz_receive_value, &lz_compose)?;
     let compose_msg = args.compose_msg.clone().unwrap_or_default();
     let oft_cmd = args.oft_cmd.clone().unwrap_or_default();
 
@@ -99,14 +109,38 @@ pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B25
     Ok(())
 }
 
-pub(crate) fn build_extra_options(lz_receive_gas: u32, lz_receive_value: u128) -> Result<Bytes> {
-    let gas = u128::from(lz_receive_gas);
-    let gas_bytes = gas.to_be_bytes();
-    let mut option = Vec::from(gas_bytes);
+pub(crate) fn build_extra_options(
+    lz_receive_gas: u32,
+    lz_receive_value: u128,
+    lz_compose: &[(u32, u128)],
+) -> Result<Bytes> {
+    let mut options = Vec::new();
+    options.extend_from_slice(&OPTIONS_TYPE_3.to_be_bytes());
+
+    let mut receive_option = Vec::from(u128::from(lz_receive_gas).to_be_bytes());
     if lz_receive_value > 0 {
-        option.extend_from_slice(&lz_receive_value.to_be_bytes());
+        receive_option.extend_from_slice(&lz_receive_value.to_be_bytes());
+    }
+    push_executor_option(&mut options, OPTION_TYPE_LZ_RECEIVE, receive_option)?;
+
+    for (index, (lz_compose_gas, lz_compose_value)) in lz_compose.iter().enumerate() {
+        ensure!(
+            index <= u16::MAX as usize,
+            "compose option index {} exceeds u16::MAX",
+            index
+        );
+        let mut compose_option = Vec::from((index as u16).to_be_bytes());
+        compose_option.extend_from_slice(&u128::from(*lz_compose_gas).to_be_bytes());
+        if *lz_compose_value > 0 {
+            compose_option.extend_from_slice(&lz_compose_value.to_be_bytes());
+        }
+        push_executor_option(&mut options, OPTION_TYPE_LZ_COMPOSE, compose_option)?;
     }
 
+    Ok(Bytes::from(options))
+}
+
+fn push_executor_option(options: &mut Vec<u8>, option_type: u8, option: Vec<u8>) -> Result<()> {
     let option_size = option
         .len()
         .checked_add(1)
@@ -117,12 +151,10 @@ pub(crate) fn build_extra_options(lz_receive_gas: u32, lz_receive_value: u128) -
         option_size
     );
 
-    let mut options = Vec::new();
-    options.extend_from_slice(&OPTIONS_TYPE_3.to_be_bytes());
     options.push(WORKER_ID_EXECUTOR);
     options.extend_from_slice(&(option_size as u16).to_be_bytes());
-    options.push(OPTION_TYPE_LZ_RECEIVE);
+    options.push(option_type);
     options.extend_from_slice(&option);
 
-    Ok(Bytes::from(options))
+    Ok(())
 }

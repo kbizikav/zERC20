@@ -215,6 +215,14 @@ pub struct QuoteUnwrapArgs {
     #[arg(long, default_value_t = 0)]
     pub lz_receive_value: u128,
 
+    /// Gas limit used on the destination lzCompose; encoded into extraOptions when set.
+    #[arg(long, value_name = "GAS")]
+    pub lz_compose_gas: Option<u32>,
+
+    /// msg.value forwarded to lzCompose on the destination chain.
+    #[arg(long, value_name = "WEI")]
+    pub lz_compose_value: Option<u128>,
+
     /// Recipient of the bridged underlying token (defaults to signer).
     #[arg(long, value_parser = parse_address)]
     pub receiver: Option<Address>,
