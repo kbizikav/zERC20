@@ -18,7 +18,7 @@ use client_common::{
 use commands::{
     balance, invoice, private_transfer, receive_transfer, scan_receive_transfers,
     shared::{parse_address, parse_b256, parse_u256},
-    transfer,
+    transfer, wrap,
 };
 use hex;
 use reqwest::Url;
@@ -101,6 +101,8 @@ enum Command {
     ReceiveTransfer(ReceiveTransferArgs),
     /// Scan storage announcements and persist inbound transfers locally.
     ScanReceiveTransfers(ScanReceiveTransfersArgs),
+    /// Wrap underlying tokens into zERC20 via the liquidity manager.
+    Wrap(WrapArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -174,6 +176,21 @@ pub struct ScanReceiveTransfersArgs {
     /// Authorization TTL in seconds for requesting the encrypted view key.
     #[arg(long, env = "SCAN_AUTHORIZATION_TTL", default_value_t = 600)]
     pub authorization_ttl_seconds: u64,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct WrapArgs {
+    /// Chain identifier used to select the token entry.
+    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
+    pub chain_id: u64,
+
+    /// Token amount to wrap (accepts decimal or 0x-prefixed hex units).
+    #[arg(long, value_parser = parse_u256)]
+    pub amount: U256,
+
+    /// Receiver address for the wrapped zERC20 (defaults to signer).
+    #[arg(long, value_parser = parse_address)]
+    pub receiver: Option<Address>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -277,6 +294,7 @@ async fn main() -> Result<()> {
         Command::ScanReceiveTransfers(args) => {
             scan_receive_transfers::run(&cli.common, args, &tokens, private_key).await?
         }
+        Command::Wrap(args) => wrap::run(args, &tokens, private_key).await?,
     }
 
     Ok(())

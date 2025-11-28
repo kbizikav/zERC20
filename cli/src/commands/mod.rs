@@ -6,3 +6,4 @@ pub mod scan_receive_transfers;
 pub mod shared;
 pub mod teleport;
 pub mod transfer;
+pub mod wrap;
