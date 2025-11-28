@@ -1,7 +1,7 @@
 use alloy::{
     network::Ethereum,
     primitives::{Address, B256, Bytes, U256},
-    providers::PendingTransactionBuilder,
+    providers::{PendingTransactionBuilder, Provider as _},
     sol_types::SolValue,
 };
 use anyhow::{Context, Result, bail, ensure};
@@ -23,6 +23,7 @@ use crate::{
     },
 };
 
+const RECEIVE_GAS: u32 = 200_000;
 const COMPOSE_GAS: u32 = 600_000;
 
 pub async fn run(args: &UnwrapArgs, tokens: &[TokenEntry], private_key: B256) -> Result<()> {
@@ -129,6 +130,9 @@ async fn unwrap_cross_chain(
     let adaptor_address = dst_entry
         .adaptor_address
         .with_context(|| format!("token '{}' is missing an adaptor address", dst_entry.label))?;
+    let src_eid = src_entry
+        .eid
+        .with_context(|| format!("source chain {} is missing an eid", src_entry.chain_id))?;
     let dst_eid = dst_entry
         .eid
         .with_context(|| format!("destination chain {} is missing an eid", dst_entry.chain_id))?;
@@ -149,9 +153,11 @@ async fn unwrap_cross_chain(
     println!("Caller address      : {}", caller);
     println!("Amount              : {}", amount);
 
-    let mut bridge_request = BridgeRequest {
-        dst_eid,
-        extra_options: Bytes::new(),
+    let return_extra_options = build_extra_options(RECEIVE_GAS, 0)
+        .context("failed to build initial bridge extra options")?;
+    let return_bridge_request = BridgeRequest {
+        dst_eid: src_eid,
+        extra_options: return_extra_options,
         compose_msg: Bytes::new(),
         oft_cmd: Bytes::new(),
         refund_address: caller,
@@ -159,8 +165,28 @@ async fn unwrap_cross_chain(
         min_amount_out: U256::ZERO,
     };
 
+    let return_fee_quote = adaptor
+        .quote_fee(amount, return_bridge_request.clone())
+        .await
+        .context("failed to quote unwrap on destination adaptor")?;
+    let native_bridge_fee_with_buffer = return_fee_quote
+        .native_bridge_fee
+        .checked_mul(U256::from(3))
+        .and_then(|v| v.checked_div(U256::from(2)))
+        .context("failed to scale native bridge fee by 1.5x")?;
+    ensure!(
+        native_bridge_fee_with_buffer <= U256::from(u128::MAX),
+        "scaled native bridge fee {} exceeds u128::MAX",
+        native_bridge_fee_with_buffer
+    );
+    let native_bridge_fee_with_buffer_u128: u128 = native_bridge_fee_with_buffer
+        .try_into()
+        .expect("scaled fee checked to fit into u128");
+    let extra_options = build_extra_options(COMPOSE_GAS, native_bridge_fee_with_buffer_u128)
+        .context("failed to build extra options")?;
+
     let fee_quote = adaptor
-        .quote_fee(amount, bridge_request.clone())
+        .quote_fee(amount, return_bridge_request.clone())
         .await
         .context("failed to quote unwrap on destination adaptor")?;
     let token_fee = fee_quote
@@ -175,30 +201,13 @@ async fn unwrap_cross_chain(
         );
     }
 
-    let scaled_value = fee_quote
-        .native_bridge_fee
-        .checked_mul(U256::from(3))
-        .and_then(|v| v.checked_div(U256::from(2)))
-        .context("failed to scale native bridge fee by 1.5x")?;
-    ensure!(
-        scaled_value <= U256::from(u128::MAX),
-        "scaled native bridge fee {} exceeds u128::MAX",
-        scaled_value
-    );
-    let scaled_value_u128: u128 = scaled_value
-        .try_into()
-        .expect("scaled fee checked to fit into u128");
-    let extra_options = build_extra_options(COMPOSE_GAS, scaled_value_u128)
-        .context("failed to build extra options")?;
-    bridge_request.extra_options = extra_options.clone();
-
-    let compose_payload = Adaptor::BridgeRequest::from(bridge_request.clone()).abi_encode();
+    let compose_payload = Adaptor::BridgeRequest::from(return_bridge_request.clone()).abi_encode();
 
     let send_param = SendParam {
         dst_eid,
         to: address_to_b256(adaptor.address()),
         amount_ld: amount,
-        min_amount_ld: U256::ZERO,
+        min_amount_ld: amount,
         extra_options,
         compose_msg: Bytes::from(compose_payload),
         oft_cmd: Bytes::new(),
@@ -215,9 +224,24 @@ async fn unwrap_cross_chain(
         );
     }
 
+    let native_balance = src_entry
+        .provider()?
+        .get_balance(caller)
+        .await
+        .context("failed to fetch native balance for send fee")?;
+    ensure!(
+        native_balance > send_fee.native_fee,
+        "insufficient native balance: have {}, need more than {}",
+        native_balance,
+        send_fee.native_fee
+    );
+
     println!("Token unwrap fee    : {}", fee_quote.token_unwrap_fee);
     println!("Token bridge fee    : {}", fee_quote.token_bridge_fee);
-    println!("Minimum amount out  : {}", U256::ZERO);
+    println!(
+        "Minimum amount out  : {}",
+        return_bridge_request.min_amount_out
+    );
     println!("Native send fee     : {}", send_fee.native_fee);
 
     let pending = zerc20
