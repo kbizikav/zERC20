@@ -26,9 +26,10 @@ use zkp::{
 wasm_bindgen_test_configure!(run_in_browser);
 
 #[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
 struct ProveResult {
+    #[serde(rename = "finalState")]
     final_state: Vec<String>,
+    #[serde(rename = "ivcProof")]
     ivc_proof: String,
     steps: usize,
 }
@@ -71,14 +72,11 @@ fn test_withdraw_nova_wasm_prove() {
     ];
 
     let mut tree = IncrementalMerkleTree::new(TRANSFER_TREE_HEIGHT);
-    tree.insert(Address::ZERO, U256::ZERO)
-        .expect("test tree insert should succeed");
+    tree.insert(Address::ZERO, U256::ZERO);
 
     let mut indices = vec![];
     for i in 0..4 {
-        let index = tree
-            .insert(fr_to_address(addresses[i]), values[i])
-            .expect("test tree insert should succeed");
+        let index = tree.insert(fr_to_address(addresses[i]), values[i]);
         indices.push(index);
     }
     let root = tree.get_root();

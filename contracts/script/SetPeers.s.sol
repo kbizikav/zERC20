@@ -6,7 +6,6 @@ import {console2} from "forge-std/console2.sol";
 
 import {Hub} from "../src/Hub.sol";
 import {Verifier} from "../src/Verifier.sol";
-import {zERC20} from "../src/zERC20.sol";
 
 /**
  * @notice Shared helpers for peer configuration scripts.
@@ -142,44 +141,6 @@ contract SetVerifierPeers is PeerScriptBase {
         console2.log("  hub address", hubAddress);
         console2.log("  hub eid", uint256(hubEid));
         Verifier(verifierAddress).setPeer(hubEid, hubPeer);
-        vm.stopBroadcast();
-    }
-}
-
-/**
- * @notice Broadcast from a token chain to wire zERC20 OFT peers.
- *
- * Environment:
- * - TOKEN_ADDRESS (address)       : zERC20 token address on the current chain.
- * - PEER_ADDRESSES (address[])    : Comma-separated list of remote zERC20 token addresses.
- * - PEER_EIDS (uint256[])         : Comma-separated list of remote endpoint IDs matching `PEER_ADDRESSES`.
- *
- * Example:
- * forge script script/SetPeers.s.sol:SetTokenPeers --rpc-url $TOKEN_RPC --broadcast -vvvv
- */
-contract SetTokenPeers is PeerScriptBase {
-    function run() external {
-        address tokenAddress = vm.envAddress("TOKEN_ADDRESS");
-        address[] memory peerAddresses = vm.envAddress("PEER_ADDRESSES", ",");
-        uint256[] memory peerEidsRaw = vm.envUint("PEER_EIDS", ",");
-        uint256 broadcasterKey = vm.envUint("PRIVATE_KEY");
-
-        _requireNonEmpty(peerAddresses.length, "PEER_ADDRESSES");
-        _requireEqualLength(peerAddresses.length, peerEidsRaw.length, "PEER_ADDRESSES", "PEER_EIDS");
-
-        uint32[] memory peerEids = new uint32[](peerEidsRaw.length);
-        for (uint256 i = 0; i < peerEidsRaw.length; ++i) {
-            peerEids[i] = _toUint32(peerEidsRaw[i]);
-        }
-
-        vm.startBroadcast(broadcasterKey);
-        zERC20 token = zERC20(tokenAddress);
-        for (uint256 i = 0; i < peerAddresses.length; ++i) {
-            bytes32 peer = _addressToBytes32(peerAddresses[i]);
-            console2.log("Setting token peer", peerAddresses[i]);
-            console2.log("  eid", uint256(peerEids[i]));
-            token.setPeer(peerEids[i], peer);
-        }
         vm.stopBroadcast();
     }
 }

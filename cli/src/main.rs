@@ -7,7 +7,7 @@ use std::{
 mod commands;
 mod proof;
 
-use alloy::primitives::{Address, B256, Bytes, U256};
+use alloy::primitives::{Address, B256, U256};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use client_common::{
@@ -16,9 +16,9 @@ use client_common::{
     tokens::{HubEntry, TokenEntry, TokensFile},
 };
 use commands::{
-    balance, invoice, private_transfer, quote_unwrap, receive_transfer, scan_receive_transfers,
-    shared::{parse_address, parse_b256, parse_bytes, parse_u256},
-    transfer, unwrap, wrap,
+    invoice, private_transfer, receive_transfer, scan_receive_transfers,
+    shared::{parse_address, parse_b256, parse_u256},
+    transfer,
 };
 use hex;
 use reqwest::Url;
@@ -91,8 +91,6 @@ enum Command {
     /// Invoice management helpers backed by the storage canister.
     #[command(subcommand)]
     Invoice(InvoiceCommand),
-    /// Display zERC20 and underlying token balances for the configured account.
-    Balance(BalanceArgs),
     /// Execute a public ERC-20 transfer.
     Transfer(TransferArgs),
     /// Execute a stealthy burn transfer via FullBurnAddress.
@@ -101,12 +99,6 @@ enum Command {
     ReceiveTransfer(ReceiveTransferArgs),
     /// Scan storage announcements and persist inbound transfers locally.
     ScanReceiveTransfers(ScanReceiveTransfersArgs),
-    /// Wrap underlying tokens into zERC20 via the liquidity manager.
-    Wrap(WrapArgs),
-    /// Quote unwrap + bridge fees for all adaptor-enabled chains.
-    QuoteUnwrap(QuoteUnwrapArgs),
-    /// Unwrap zERC20 locally or via adaptor compose.
-    Unwrap(UnwrapArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -119,13 +111,6 @@ enum InvoiceCommand {
     Receive(InvoiceReceiveArgs),
     /// Display eligible transfer events for an invoice without submitting proofs.
     Status(InvoiceReceiveArgs),
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct BalanceArgs {
-    /// Chain identifier used to select the token entry.
-    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
-    pub chain_id: u64,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -180,83 +165,6 @@ pub struct ScanReceiveTransfersArgs {
     /// Authorization TTL in seconds for requesting the encrypted view key.
     #[arg(long, env = "SCAN_AUTHORIZATION_TTL", default_value_t = 600)]
     pub authorization_ttl_seconds: u64,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct WrapArgs {
-    /// Chain identifier used to select the token entry.
-    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
-    pub chain_id: u64,
-
-    /// Token amount to wrap (accepts decimal or 0x-prefixed hex units).
-    #[arg(long, value_parser = parse_u256)]
-    pub amount: U256,
-
-    /// Receiver address for the wrapped zERC20 (defaults to signer).
-    #[arg(long, value_parser = parse_address)]
-    pub receiver: Option<Address>,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct QuoteUnwrapArgs {
-    /// Amount of zERC20 to unwrap and bridge (accepts decimal or 0x-prefixed hex units).
-    #[arg(long, value_parser = parse_u256)]
-    pub amount: U256,
-
-    /// Destination chain identifier; resolved to the LayerZero EID from tokens.json.
-    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
-    pub dst_chain_id: u64,
-
-    /// Gas limit used on the destination lzReceive; encoded into extraOptions.
-    #[arg(long, default_value_t = 200000)]
-    pub lz_receive_gas: u32,
-
-    /// msg.value forwarded to lzReceive on the destination chain.
-    #[arg(long, default_value_t = 0)]
-    pub lz_receive_value: u128,
-
-    /// Gas limit used on the destination lzCompose; encoded into extraOptions when set.
-    #[arg(long, value_name = "GAS")]
-    pub lz_compose_gas: Option<u32>,
-
-    /// msg.value forwarded to lzCompose on the destination chain.
-    #[arg(long, value_name = "WEI")]
-    pub lz_compose_value: Option<u128>,
-
-    /// Recipient of the bridged underlying token (defaults to signer).
-    #[arg(long, value_parser = parse_address)]
-    pub receiver: Option<Address>,
-
-    /// Address receiving any unused native bridge fee refund (defaults to signer).
-    #[arg(long, value_parser = parse_address)]
-    pub refund_address: Option<Address>,
-
-    /// Minimum amount expected on destination (defaults to the input amount).
-    #[arg(long, value_parser = parse_u256)]
-    pub min_amount_out: Option<U256>,
-
-    /// Optional compose message payload passed through Stargate.
-    #[arg(long, value_parser = parse_bytes)]
-    pub compose_msg: Option<Bytes>,
-
-    /// Optional OFT command payload passed through Stargate.
-    #[arg(long, value_parser = parse_bytes)]
-    pub oft_cmd: Option<Bytes>,
-}
-
-#[derive(Args, Debug, Clone)]
-pub struct UnwrapArgs {
-    /// Chain identifier used to select the source token entry.
-    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
-    pub chain_id: u64,
-
-    /// Destination chain identifier; unwraps locally when matching the source.
-    #[arg(long, value_name = "CHAIN_ID")]
-    pub dst_chain_id: u64,
-
-    /// Amount of zERC20 to unwrap (accepts decimal or 0x-prefixed hex units).
-    #[arg(long, value_parser = parse_u256)]
-    pub amount: U256,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -349,7 +257,6 @@ async fn main() -> Result<()> {
         Command::Invoice(InvoiceCommand::Status(args)) => {
             invoice::status(&cli.common, args, &tokens, hub.as_ref(), private_key).await?
         }
-        Command::Balance(args) => balance::run(args, &tokens, private_key).await?,
         Command::Transfer(args) => transfer::run(args, &tokens, private_key).await?,
         Command::PrivateTransfer(args) => {
             private_transfer::run(&cli.common, args, &tokens, private_key).await?
@@ -360,9 +267,6 @@ async fn main() -> Result<()> {
         Command::ScanReceiveTransfers(args) => {
             scan_receive_transfers::run(&cli.common, args, &tokens, private_key).await?
         }
-        Command::Wrap(args) => wrap::run(args, &tokens, private_key).await?,
-        Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
-        Command::Unwrap(args) => unwrap::run(args, &tokens, private_key).await?,
     }
 
     Ok(())

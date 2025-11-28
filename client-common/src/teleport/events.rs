@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use alloy::primitives::{Address, U256};
 use anyhow::Context;
 use api_types::indexer::IndexedEvent;
-use serde::{Deserialize, Serialize};
 
 use crate::{
     contracts::z_erc20::ZErc20Contract, indexer::IndexerClient,
@@ -67,7 +66,6 @@ pub async fn fetch_transfer_events(
     Ok(all_events)
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct EventsWithEligibility {
     pub eligible: Vec<IndexedEvent>,
     pub ineligible: Vec<IndexedEvent>,

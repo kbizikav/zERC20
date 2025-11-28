@@ -1,12 +1,11 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {IOFT} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
 import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
 
 /// @title IzERC20
-/// @notice zERC20 interface that extends ERC20 + OFT with teleport semantics and indexed transfer hashing.
-interface IzERC20 is IOFT, IERC20Upgradeable {
+/// @notice zERC20 interface that extends ERC20 with teleport semantics and indexed transfer hashing.
+interface IzERC20 is IERC20Upgradeable {
     /// @notice Emitted after every transfer, capturing the leaf index and transfer tuple.
     event IndexedTransfer(uint256 indexed index, address from, address to, uint256 value);
 
@@ -25,10 +24,4 @@ interface IzERC20 is IOFT, IERC20Upgradeable {
     /// @param to Recipient address that receives the minted tokens.
     /// @param value Amount of tokens to mint.
     function teleport(address to, uint256 value) external;
-
-    /// @notice Mints tokens under the liquidity manager / minter role.
-    function mint(address to, uint256 amount) external;
-
-    /// @notice Burns tokens under the liquidity manager / minter role.
-    function burn(address from, uint256 amount) external;
 }

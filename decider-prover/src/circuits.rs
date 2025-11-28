@@ -13,27 +13,19 @@ use zkp::nova::{
 };
 use zkp::utils::poseidon::utils::circom_poseidon_config;
 
-use crate::{config::CircuitEnablement, errors::ProverError};
+use crate::errors::ProverError;
 
 pub struct ProverEngine {
-    root: Option<CircuitContext<RootCircuit<Fr>>>,
+    root: CircuitContext<RootCircuit<Fr>>,
     withdraw_local: Option<CircuitContext<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>>,
-    withdraw_global: Option<CircuitContext<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>>,
+    withdraw_global: CircuitContext<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>,
 }
 
 impl ProverEngine {
-    pub fn load(artifacts_dir: &Path, circuits: &CircuitEnablement) -> Result<Self, ProverError> {
+    pub fn load(artifacts_dir: &Path, enable_withdraw_local: bool) -> Result<Self, ProverError> {
         let poseidon = circom_poseidon_config::<Fr>();
-        let root = if circuits.root() {
-            Some(CircuitContext::load(
-                "root",
-                artifacts_dir,
-                poseidon.clone(),
-            )?)
-        } else {
-            None
-        };
-        let withdraw_local = if circuits.withdraw_local() {
+        let root = CircuitContext::load("root", artifacts_dir, poseidon.clone())?;
+        let withdraw_local = if enable_withdraw_local {
             Some(CircuitContext::load(
                 "withdraw_local",
                 artifacts_dir,
@@ -42,15 +34,7 @@ impl ProverEngine {
         } else {
             None
         };
-        let withdraw_global = if circuits.withdraw_global() {
-            Some(CircuitContext::load(
-                "withdraw_global",
-                artifacts_dir,
-                poseidon,
-            )?)
-        } else {
-            None
-        };
+        let withdraw_global = CircuitContext::load("withdraw_global", artifacts_dir, poseidon)?;
 
         Ok(Self {
             root,
@@ -65,27 +49,19 @@ impl ProverEngine {
         ivc_proof_bytes: &[u8],
     ) -> Result<Vec<u8>, ProverError> {
         match circuit {
-            CircuitKind::Root => self
-                .root
-                .as_ref()
-                .ok_or_else(|| disabled_circuit_error(&circuit))?
-                .generate(ivc_proof_bytes),
+            CircuitKind::Root => self.root.generate(ivc_proof_bytes),
             CircuitKind::WithdrawLocal => self
                 .withdraw_local
                 .as_ref()
-                .ok_or_else(|| disabled_circuit_error(&circuit))?
+                .ok_or_else(|| {
+                    ProverError::InvalidInput(
+                        "withdraw_local circuit is disabled in the prover".to_owned(),
+                    )
+                })?
                 .generate(ivc_proof_bytes),
-            CircuitKind::WithdrawGlobal => self
-                .withdraw_global
-                .as_ref()
-                .ok_or_else(|| disabled_circuit_error(&circuit))?
-                .generate(ivc_proof_bytes),
+            CircuitKind::WithdrawGlobal => self.withdraw_global.generate(ivc_proof_bytes),
         }
     }
-}
-
-fn disabled_circuit_error(circuit: &CircuitKind) -> ProverError {
-    ProverError::InvalidInput(format!("{circuit} circuit is disabled in the prover"))
 }
 
 struct CircuitContext<C>

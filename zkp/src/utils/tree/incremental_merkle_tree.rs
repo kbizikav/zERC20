@@ -6,25 +6,6 @@ use crate::utils::tree::gadgets::leaf_hash::compute_leaf_hash;
 use crate::utils::tree::merkle_tree::{MerkleProof, MerkleTree};
 use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
-use thiserror::Error;
-
-const MAX_TREE_HEIGHT: u32 = 127;
-
-#[derive(Debug, Error, PartialEq, Eq)]
-pub enum IncrementalMerkleTreeError {
-    #[error("tree height {height} exceeds supported limit of {max_height}")]
-    HeightTooLarge { height: usize, max_height: usize },
-    #[error(
-        "incremental merkle tree full: height {height} supports {capacity} leaves, attempted index {index}"
-    )]
-    TreeFull {
-        height: usize,
-        capacity: u128,
-        index: u64,
-    },
-}
-
-pub type Result<T> = std::result::Result<T, IncrementalMerkleTreeError>;
 
 pub struct Leaf {
     pub address: Address,
@@ -65,19 +46,10 @@ impl IncrementalMerkleTree {
         }
     }
 
-    pub fn insert(&mut self, address: Address, value: U256) -> Result<u64> {
+    pub fn insert(&mut self, address: Address, value: U256) -> u64 {
         let leaf = Leaf { address, value };
         let leaf_hash = leaf.hash();
         let index = self.index;
-        let height = self.tree.height();
-        let max_leaves = max_leaf_capacity(height)?;
-        if u128::from(index) >= max_leaves {
-            return Err(IncrementalMerkleTreeError::TreeFull {
-                height,
-                capacity: max_leaves,
-                index,
-            });
-        }
         self.tree.update_leaf(index, leaf_hash);
         self.hash_chain = hash_chain(self.hash_chain, leaf.address, leaf.value);
         self.leaves.insert(index, leaf);
@@ -85,11 +57,8 @@ impl IncrementalMerkleTree {
             .entry(address)
             .or_default()
             .push(index);
-        self.index = self
-            .index
-            .checked_add(1)
-            .expect("leaf capacity check prevents index overflow");
-        Ok(index)
+        self.index += 1;
+        index
     }
 
     pub fn get_root(&self) -> Fr {
@@ -98,43 +67,5 @@ impl IncrementalMerkleTree {
 
     pub fn prove(&self, index: u64) -> MerkleProof {
         self.tree.prove(index)
-    }
-}
-
-fn max_leaf_capacity(height: usize) -> Result<u128> {
-    let height_u32 =
-        u32::try_from(height).map_err(|_| IncrementalMerkleTreeError::HeightTooLarge {
-            height,
-            max_height: MAX_TREE_HEIGHT as usize,
-        })?;
-    if height_u32 > MAX_TREE_HEIGHT {
-        return Err(IncrementalMerkleTreeError::HeightTooLarge {
-            height,
-            max_height: MAX_TREE_HEIGHT as usize,
-        });
-    }
-    let theoretical = 1u128 << height_u32;
-    let practical_limit = theoretical.min(u128::from(u64::MAX));
-    Ok(practical_limit)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn insert_rejects_capacity_overflow() {
-        let mut tree = IncrementalMerkleTree::new(2);
-        for _ in 0..4 {
-            tree.insert(Address::ZERO, U256::from(1u64))
-                .expect("within capacity");
-        }
-        let err = tree.insert(Address::ZERO, U256::from(1u64)).unwrap_err();
-        assert!(matches!(
-            err,
-            IncrementalMerkleTreeError::TreeFull { capacity, .. } if capacity == 4
-        ));
-        assert_eq!(tree.index, 4);
-        assert_eq!(tree.address_to_indices[&Address::ZERO].len(), 4);
     }
 }

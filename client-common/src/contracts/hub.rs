@@ -122,6 +122,11 @@ impl HubContract {
         Ok(seq)
     }
 
+    pub async fn is_up_to_date(&self) -> ContractResult<bool> {
+        let up_to_date = self.contract_with_provider().isUpToDate().call().await?;
+        Ok(up_to_date)
+    }
+
     pub async fn transfer_root(&self, index: u64) -> ContractResult<U256> {
         let root = self
             .contract_with_provider()
@@ -175,15 +180,6 @@ impl HubContract {
     pub async fn token_infos(&self) -> ContractResult<Vec<HubTokenInfo>> {
         let res = self.contract_with_provider().getTokenInfos().call().await?;
         Ok(res.into_iter().map(HubTokenInfo::from).collect())
-    }
-
-    pub async fn current_aggregation_root(&self) -> ContractResult<U256> {
-        let root = self
-            .contract_with_provider()
-            .currentAggregationRoot()
-            .call()
-            .await?;
-        Ok(root)
     }
 
     pub async fn quote_broadcast(

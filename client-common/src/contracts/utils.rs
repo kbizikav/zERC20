@@ -105,9 +105,12 @@ where
     D: CallDecoder,
 {
     let call = if use_legacy {
-        let gas_price = provider.get_gas_price().await.map_err(|err| {
-            ContractError::transport("fetching gas price for legacy transfer", err)
-        })?;
+        let gas_price = provider
+            .get_gas_price()
+            .await
+            .map_err(|err| {
+                ContractError::transport("fetching gas price for legacy transfer", err)
+            })?;
         call.gas_price(gas_price)
     } else {
         call

@@ -44,6 +44,7 @@ WORKDIR /app
 
 COPY --from=builder /workspace/target/release/crosschain-job /usr/local/bin/crosschain-job
 
-ENV RUST_LOG=info
+ENV TOKENS_FILE_PATH=/config/tokens.json \
+    RUST_LOG=info
 
 ENTRYPOINT ["/usr/local/bin/crosschain-job"]

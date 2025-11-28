@@ -1,6 +1,5 @@
 use crate::contracts::{
     ContractError, ContractResult,
-    adaptor::{MessagingFee, SendParam},
     utils::{NormalProvider, get_provider_with_signer, send_call_with_legacy, uint256_as_u64},
 };
 use alloy::network::Ethereum;
@@ -66,7 +65,6 @@ impl ZErc20Contract {
         name_: String,
         symbol_: String,
         owner: Address,
-        endpoint: Address,
     ) -> anyhow::Result<Self> {
         let signer = get_provider_with_signer(&provider, private_key);
         let implementation = zERC20::deploy(signer.clone()).await?;
@@ -76,7 +74,6 @@ impl ZErc20Contract {
             name_: name_,
             symbol_: symbol_,
             initialOwner: owner,
-            endpoint,
         }
         .abi_encode();
 
@@ -189,32 +186,6 @@ impl ZErc20Contract {
         Ok(bal)
     }
 
-    pub async fn quote_send(&self, send_param: SendParam) -> ContractResult<MessagingFee> {
-        let contract = zERC20::new(self.address, self.provider.clone());
-        let param = zERC20::SendParam::from(send_param);
-        let fee = contract.quoteSend(param, false).call().await?;
-        Ok(MessagingFee::from(fee))
-    }
-
-    pub async fn send(
-        &self,
-        private_key: B256,
-        send_param: SendParam,
-        fee: MessagingFee,
-        refund_address: Address,
-    ) -> ContractResult<PendingTransactionBuilder<Ethereum>> {
-        let signer = get_provider_with_signer(&self.provider, private_key);
-        let contract = zERC20::new(self.address, signer.clone());
-        let param = zERC20::SendParam::from(send_param);
-        let fee_param = zERC20::MessagingFee::from(fee);
-        let native_fee = fee_param.nativeFee;
-        let call = contract
-            .send(param, fee_param, refund_address)
-            .value(native_fee)
-            .with_cloned_provider();
-        send_call_with_legacy(call, &signer, self.legacy_tx).await
-    }
-
     pub async fn get_indexed_transfer_events(
         &self,
         from_block: u64,
@@ -272,37 +243,5 @@ impl ZErc20Contract {
             .await
             .map_err(|err| ContractError::transport("get_block_number", err))?;
         Ok(n)
-    }
-}
-
-impl From<SendParam> for zERC20::SendParam {
-    fn from(value: SendParam) -> Self {
-        Self {
-            dstEid: value.dst_eid,
-            to: value.to,
-            amountLD: value.amount_ld,
-            minAmountLD: value.min_amount_ld,
-            extraOptions: value.extra_options,
-            composeMsg: value.compose_msg,
-            oftCmd: value.oft_cmd,
-        }
-    }
-}
-
-impl From<zERC20::MessagingFee> for MessagingFee {
-    fn from(value: zERC20::MessagingFee) -> Self {
-        Self {
-            native_fee: value.nativeFee,
-            lz_token_fee: value.lzTokenFee,
-        }
-    }
-}
-
-impl From<MessagingFee> for zERC20::MessagingFee {
-    fn from(value: MessagingFee) -> Self {
-        Self {
-            nativeFee: value.native_fee,
-            lzTokenFee: value.lz_token_fee,
-        }
     }
 }

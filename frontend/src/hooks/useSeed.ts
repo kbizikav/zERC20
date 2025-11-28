@@ -1,9 +1,7 @@
-import type { JsonRpcSigner } from 'ethers';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { keccak256, toBytes } from 'viem';
-import { getSeedMessage, useStorageStore } from '@zerc20/sdk';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { getBytes, JsonRpcSigner, keccak256 } from 'ethers';
+import { seedDerivationMessage } from '@services/sdk/operations/privateSend.js';
 import { useWallet } from '@app/providers/WalletProvider';
-import { toAccountKey } from '@utils/accountKey';
 
 export interface SeedState {
   seedHex?: string;
@@ -13,46 +11,56 @@ export interface SeedState {
   clearSeed: () => void;
 }
 
+const SEED_STORAGE_PREFIX = 'zerc20:seed:';
+
+const memorySeedCache = new Map<string, string>();
 const pendingSeedDerivations = new Map<string, Promise<string>>();
 
-const useStorageHydration = (): boolean => {
-  const [hydrated, setHydrated] = useState(() => useStorageStore.persist?.hasHydrated?.() ?? false);
-
-  useEffect(() => {
-    if (hydrated) {
-      return;
-    }
-    const unsubscribe = useStorageStore.persist?.onFinishHydration?.(() => {
-      setHydrated(true);
-    });
-    return () => {
-      unsubscribe?.();
-    };
-  }, [hydrated]);
-
-  return hydrated;
-};
-
-function normalizeSeedError(error: unknown): string {
-  if (typeof error === 'string') {
-    return error;
-  }
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-  return 'Failed to authorize privacy features. Check your wallet and try again.';
+function seedStorageKey(account: string): string {
+  return `${SEED_STORAGE_PREFIX}${account}`;
 }
 
 function loadStoredSeed(account: string): string | undefined {
-  return useStorageStore.getState().seeds[account];
+  if (memorySeedCache.has(account)) {
+    return memorySeedCache.get(account);
+  }
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+  try {
+    const stored = window.localStorage.getItem(seedStorageKey(account));
+    if (stored && /^0x[0-9a-fA-F]+$/.test(stored)) {
+      memorySeedCache.set(account, stored);
+      return stored;
+    }
+  } catch {
+    // ignore storage errors
+  }
+  return undefined;
 }
 
 function persistSeed(account: string, seed: string): void {
-  useStorageStore.getState().setSeed(account, seed);
+  memorySeedCache.set(account, seed);
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.setItem(seedStorageKey(account), seed);
+  } catch {
+    // ignore storage write failures
+  }
 }
 
-function removeStoredSeed(account: string): void {
-  useStorageStore.getState().removeSeed(account);
+function forgetSeed(account: string): void {
+  memorySeedCache.delete(account);
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    window.localStorage.removeItem(seedStorageKey(account));
+  } catch {
+    // ignore storage errors
+  }
 }
 
 async function deriveSeedForAccount(
@@ -60,40 +68,35 @@ async function deriveSeedForAccount(
   ensureSigner: () => Promise<JsonRpcSigner>,
   force: boolean,
 ): Promise<string> {
-  if (!account.startsWith('0x')) {
-    throw new Error('Wallet address must be a hex string.');
-  }
   if (!force) {
     const cached = loadStoredSeed(account);
     if (cached) {
       return cached;
     }
-  }
-
-  const pending = pendingSeedDerivations.get(account);
-  if (pending) {
-    return pending;
-  }
-
-  if (force) {
-    removeStoredSeed(account);
+    const pending = pendingSeedDerivations.get(account);
+    if (pending) {
+      return pending;
+    }
+  } else {
+    forgetSeed(account);
   }
 
   const derivation = (async () => {
-    const message = await getSeedMessage();
     const signer = await ensureSigner();
+    const message = await seedDerivationMessage();
     const signature = await signer.signMessage(message);
-    const digest = keccak256(toBytes(signature));
+    const digest = keccak256(getBytes(signature));
     persistSeed(account, digest);
     return digest;
   })();
 
   pendingSeedDerivations.set(account, derivation);
   try {
-    return await derivation;
+    const result = await derivation;
+    return result;
   } finally {
-    const current = pendingSeedDerivations.get(account);
-    if (current === derivation) {
+    const currentPending = pendingSeedDerivations.get(account);
+    if (currentPending === derivation) {
       pendingSeedDerivations.delete(account);
     }
   }
@@ -101,24 +104,17 @@ async function deriveSeedForAccount(
 
 export function useSeed(): SeedState {
   const { ensureSigner, account } = useWallet();
-  const accountKey = useMemo(() => toAccountKey(account), [account]);
-  const storedSeed = useStorageStore((state) => (accountKey ? state.seeds[accountKey] : undefined));
-  const storageHydrated = useStorageHydration();
   const [seedHex, setSeedHex] = useState<string>();
   const [error, setError] = useState<string>();
   const [isDeriving, setIsDeriving] = useState(false);
-  const accountRef = useRef(accountKey);
-
-  useEffect(() => {
-    accountRef.current = accountKey;
-  }, [accountKey]);
+  const accountRef = useRef(account);
 
   const clearSeed = useCallback(() => {
     const currentAccount = accountRef.current;
     setSeedHex(undefined);
     setError(undefined);
     if (currentAccount) {
-      removeStoredSeed(currentAccount);
+      forgetSeed(currentAccount);
     }
   }, []);
 
@@ -136,7 +132,7 @@ export function useSeed(): SeedState {
       }
       return digest;
     } catch (err) {
-      const message = normalizeSeedError(err);
+      const message = err instanceof Error ? err.message : String(err);
       setError(message);
       throw err;
     } finally {
@@ -145,22 +141,9 @@ export function useSeed(): SeedState {
   }, [ensureSigner]);
 
   useEffect(() => {
-    if (!accountKey) {
+    accountRef.current = account;
+    if (!account) {
       setSeedHex(undefined);
-      setError(undefined);
-      setIsDeriving(false);
-      return;
-    }
-
-    if (!storageHydrated) {
-      setSeedHex(undefined);
-      setError(undefined);
-      setIsDeriving(true);
-      return;
-    }
-
-    if (storedSeed) {
-      setSeedHex(storedSeed);
       setError(undefined);
       setIsDeriving(false);
       return;
@@ -169,23 +152,32 @@ export function useSeed(): SeedState {
     setSeedHex(undefined);
     setError(undefined);
 
+    const cached = loadStoredSeed(account);
+    if (cached) {
+      setSeedHex(cached);
+      setError(undefined);
+      setIsDeriving(false);
+      return;
+    }
+
     let cancelled = false;
     setIsDeriving(true);
     setError(undefined);
-    deriveSeedForAccount(accountKey, ensureSigner, false)
+
+    deriveSeedForAccount(account, ensureSigner, false)
       .then((digest) => {
-        if (!cancelled && accountRef.current === accountKey) {
+        if (!cancelled && accountRef.current === account) {
           setSeedHex(digest);
         }
       })
       .catch((err) => {
-        if (!cancelled && accountRef.current === accountKey) {
-          const message = normalizeSeedError(err);
+        if (!cancelled && accountRef.current === account) {
+          const message = err instanceof Error ? err.message : String(err);
           setError(message);
         }
       })
       .finally(() => {
-        if (!cancelled && accountRef.current === accountKey) {
+        if (!cancelled && accountRef.current === account) {
           setIsDeriving(false);
         }
       });
@@ -193,7 +185,7 @@ export function useSeed(): SeedState {
     return () => {
       cancelled = true;
     };
-  }, [accountKey, ensureSigner, storageHydrated, storedSeed]);
+  }, [account, ensureSigner]);
 
   return {
     seedHex,

@@ -1,13 +1,10 @@
 use std::str::FromStr;
 
-use alloy::primitives::{Address, B256, Bytes, U256};
-use anyhow::{Context, Result, anyhow, bail};
+use alloy::primitives::{Address, B256, U256};
+use anyhow::{Context, Result, bail};
 use candid::Principal;
 use client_common::{
-    contracts::{
-        hub::HubContract, liquidity_manager::LiquidityManagerContract, verifier::VerifierContract,
-        z_erc20::ZErc20Contract,
-    },
+    contracts::{hub::HubContract, verifier::VerifierContract, z_erc20::ZErc20Contract},
     tokens::{HubEntry, TokenEntry},
 };
 use hex;
@@ -75,26 +72,6 @@ pub fn parse_u256(value: &str) -> Result<U256, String> {
     }
 }
 
-pub fn parse_bytes(value: &str) -> Result<Bytes, String> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Ok(Bytes::new());
-    }
-
-    let normalized = trimmed.strip_prefix("0x").unwrap_or(trimmed);
-    let padded = if normalized.len() % 2 == 1 {
-        let mut with_leading_zero = String::with_capacity(normalized.len() + 1);
-        with_leading_zero.push('0');
-        with_leading_zero.push_str(normalized);
-        with_leading_zero
-    } else {
-        normalized.to_string()
-    };
-
-    let decoded = hex::decode(padded).map_err(|err| err.to_string())?;
-    Ok(Bytes::from(decoded))
-}
-
 fn parse_hex_to_u256(hex_str: &str) -> Result<U256, String> {
     if hex_str.is_empty() {
         return Ok(U256::ZERO);
@@ -142,17 +119,6 @@ pub fn build_verifier(entry: &TokenEntry) -> Result<VerifierContract> {
 pub fn build_hub(entry: &HubEntry) -> Result<HubContract> {
     let provider = entry.provider()?;
     Ok(HubContract::new(provider, entry.hub_address))
-}
-
-pub fn build_liquidity_manager(entry: &TokenEntry) -> Result<LiquidityManagerContract> {
-    let address = entry.liquidity_manager_address.ok_or_else(|| {
-        anyhow!(
-            "token '{}' is missing a liquidity manager address",
-            entry.label
-        )
-    })?;
-    let provider = entry.provider()?;
-    Ok(LiquidityManagerContract::new(provider, address).with_legacy_tx(entry.legacy_tx))
 }
 
 pub async fn build_stealth_client(common: &CommonArgs) -> Result<StealthCanisterClient> {

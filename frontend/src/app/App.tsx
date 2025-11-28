@@ -4,9 +4,11 @@ import { AppProviders } from './providers/AppProviders';
 import { useWallet } from './providers/WalletProvider';
 import { Tabs } from '@components/Tabs';
 import { useRuntimeConfig } from '@config/ConfigContext';
-import { configureWasmLocator, getZerc20Contract, loadTokens, useStorageStore } from '@zerc20/sdk';
-import type { NormalizedTokens } from '@zerc20/sdk';
+import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
+import { loadTeleportArtifacts, loadTokens } from '@services/resources';
+import { getZerc20Contract } from '@services/sdk';
 import { ConvertPanel, PrivateReceivePanel, PrivateSendPanel, ScanReceivingsPanel } from '@features/index';
+import { configureWasmLocator } from '@services/sdk/wasm/index.js';
 import { buildSwitchChainOptions } from '@/utils/wallet';
 
 const TAB_SEND = 'send';
@@ -189,10 +191,10 @@ function ConnectionCard({
   useEffect(() => {
     let cancelled = false;
     const account = wallet.account;
-    const runner = wallet.walletClient ?? wallet.publicClient;
+    const provider = wallet.provider;
     const token = activeToken;
 
-    if (!account || !runner || !token) {
+    if (!account || !provider || !token) {
       setFormattedBalance(undefined);
       setBalanceError(undefined);
       setBalanceLoading(false);
@@ -203,9 +205,11 @@ function ConnectionCard({
       setBalanceLoading(true);
       setBalanceError(undefined);
       try {
-        const contract = getZerc20Contract(token.tokenAddress, runner);
-        const rawBalance = (await contract.read.balanceOf([account as `0x${string}`])) as bigint;
-        const decimalsValue = (await contract.read.decimals()) as bigint | number;
+        const contract = getZerc20Contract(token.tokenAddress, provider);
+        const [rawBalance, decimalsValue] = await Promise.all([
+          contract.balanceOf(account),
+          contract.decimals(),
+        ]);
         if (cancelled) {
           return;
         }
@@ -232,7 +236,7 @@ function ConnectionCard({
     return () => {
       cancelled = true;
     };
-  }, [wallet.account, wallet.publicClient, wallet.walletClient, activeToken]);
+  }, [wallet.account, wallet.provider, activeToken]);
 
   const handleClearStorage = useCallback(() => {
     if (!onClearStorage) {
@@ -380,9 +384,11 @@ function AppContent(): JSX.Element {
   const runtime = useRuntimeConfig();
   const { tokenSymbol } = runtime.app;
   const [tokens, setTokens] = useState<NormalizedTokens | null>(null);
+  const [artifacts, setArtifacts] = useState<TeleportArtifacts | null>(null);
   const [loadingMessage, setLoadingMessage] = useState<string>('Loading configuration…');
   const [error, setError] = useState<string>();
   const [activeTab, setActiveTab] = useState<ActiveTab>(TAB_SEND);
+  const [storageRevision, setStorageRevision] = useState<number>(0);
   const [isConvertOpen, setIsConvertOpen] = useState<boolean>(false);
 
   useEffect(() => {
@@ -395,9 +401,14 @@ function AppContent(): JSX.Element {
       try {
         setError(undefined);
         setLoadingMessage('Loading token metadata…');
-        const loadedTokens = await loadTokens(runtime.tokensCompressed);
+        const loadedTokens = await loadTokens(runtime.resources.tokensCompressed);
         if (cancelled) return;
         setTokens(loadedTokens);
+
+        setLoadingMessage('Loading proving artifacts…');
+        const loadedArtifacts = await loadTeleportArtifacts(runtime.resources.artifacts);
+        if (cancelled) return;
+        setArtifacts(loadedArtifacts);
         setLoadingMessage('');
       } catch (err) {
         if (cancelled) {
@@ -420,12 +431,15 @@ function AppContent(): JSX.Element {
     return () => {
       cancelled = true;
     };
-  }, [runtime.tokensCompressed]);
+  }, [runtime.resources]);
 
-  const isReady = useMemo(() => Boolean(tokens && !loadingMessage && !error), [tokens, loadingMessage, error]);
+  const isReady = useMemo(
+    () => Boolean(tokens && artifacts && !loadingMessage && !error),
+    [tokens, artifacts, loadingMessage, error],
+  );
 
   const hasConvertTokens = useMemo(
-    () => Boolean(tokens?.tokens?.some((entry) => Boolean(entry.liquidityManagerAddress))),
+    () => Boolean(tokens?.tokens?.some((entry) => Boolean(entry.minterAddress))),
     [tokens?.tokens],
   );
 
@@ -447,8 +461,12 @@ function AppContent(): JSX.Element {
   );
 
   const handleClearStorage = useCallback(() => {
+    if (typeof window === 'undefined') {
+      return false;
+    }
     try {
-      useStorageStore.getState().clearAll();
+      window.localStorage.clear();
+      setStorageRevision((prev) => prev + 1);
       return true;
     } catch {
       return false;
@@ -483,7 +501,7 @@ function AppContent(): JSX.Element {
       />
 
       <main className="panels">
-        {isReady && tokens ? (
+        {isReady && tokens && artifacts ? (
           <>
             {activeTab === TAB_SEND && (
               <section
@@ -502,7 +520,12 @@ function AppContent(): JSX.Element {
                 id={`panel-${TAB_RECEIVINGS}`}
                 aria-labelledby={`tab-${TAB_RECEIVINGS}`}
               >
-                <ScanReceivingsPanel config={runtime.app} tokens={tokens} />
+                <ScanReceivingsPanel
+                  config={runtime.app}
+                  tokens={tokens}
+                  artifacts={artifacts}
+                  storageRevision={storageRevision}
+                />
               </section>
             )}
             {activeTab === TAB_RECEIVE && (
@@ -515,13 +538,15 @@ function AppContent(): JSX.Element {
                 <PrivateReceivePanel
                   config={runtime.app}
                   tokens={tokens}
+                  artifacts={artifacts}
+                  storageRevision={storageRevision}
                 />
               </section>
             )}
           </>
         ) : (
           <section className="card" role="status" aria-live="polite">
-            <p>Waiting for configuration and token metadata…</p>
+            <p>Waiting for configuration and assets…</p>
           </section>
         )}
       </main>

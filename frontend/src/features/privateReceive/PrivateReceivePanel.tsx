@@ -1,9 +1,10 @@
 import { FormEvent, useCallback, useMemo, useRef, useState } from 'react';
-import { normalizeHex, prepareInvoiceIssue, submitInvoice, getStealthClientFromConfig } from '@zerc20/sdk';
+import { normalizeHex, prepareInvoiceIssue, submitInvoice } from '@services/sdk';
 import { getBytes, parseEther } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens } from '@zerc20/sdk';
+import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
 import { useWallet } from '@app/providers/WalletProvider';
+import { getStealthClient } from '@services/clients';
 import { useSeed } from '@/hooks/useSeed';
 import { toDataURL } from 'qrcode';
 import { ScanInvoicesPanel } from '@features/scanInvoices/ScanInvoicesPanel';
@@ -11,6 +12,8 @@ import { ScanInvoicesPanel } from '@features/scanInvoices/ScanInvoicesPanel';
 interface PrivateReceivePanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
+  artifacts: TeleportArtifacts;
+  storageRevision: number;
 }
 
 interface InvoiceResult {
@@ -25,7 +28,7 @@ interface InvoiceResult {
   signatureMessage: string;
 }
 
-export function PrivateReceivePanel({ config, tokens }: PrivateReceivePanelProps): JSX.Element {
+export function PrivateReceivePanel({ config, tokens, artifacts, storageRevision }: PrivateReceivePanelProps): JSX.Element {
   const wallet = useWallet();
   const seed = useSeed();
   const [isBatch, setIsBatch] = useState(false);
@@ -87,11 +90,7 @@ export function PrivateReceivePanel({ config, tokens }: PrivateReceivePanelProps
         const recipientAddress = normalizeHex(wallet.account);
 
         setStatus('Preparing invoice artifacts…');
-        const stealthClient = await getStealthClientFromConfig({
-          icReplicaUrl: config.icReplicaUrl,
-          storageCanisterId: config.storageCanisterId,
-          keyManagerCanisterId: config.keyManagerCanisterId,
-        });
+        const stealthClient = await getStealthClient(config);
         const artifacts = await prepareInvoiceIssue({
           client: stealthClient,
           seedHex,
@@ -362,7 +361,12 @@ export function PrivateReceivePanel({ config, tokens }: PrivateReceivePanelProps
       </section>
       {isInvoiceManagerOpen && (
         <div id="invoice-manager-panel">
-          <ScanInvoicesPanel config={config} tokens={tokens} />
+          <ScanInvoicesPanel
+            config={config}
+            tokens={tokens}
+            artifacts={artifacts}
+            storageRevision={storageRevision}
+          />
         </div>
       )}
     </>

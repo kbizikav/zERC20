@@ -2,17 +2,16 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { formatUnits, parseUnits } from 'ethers';
 
 import { useWallet } from '@app/providers/WalletProvider';
-import type { NormalizedTokens } from '@zerc20/sdk';
+import type { NormalizedTokens } from '@/types/app';
 import {
   TokenEntry,
   createProviderForToken,
-  getErc20Contract,
-  getLiquidityManagerContract,
+  depositWithMinter,
+  getMinterContract,
   getZerc20Contract,
   normalizeHex,
-  unwrapWithLiquidityManager,
-  wrapWithLiquidityManager,
-} from '@zerc20/sdk';
+  withdrawWithMinter,
+} from '@services/sdk';
 import { getExplorerTxUrl } from '@utils/explorer';
 import { buildSwitchChainOptions } from '@/utils/wallet';
 
@@ -57,13 +56,17 @@ function parseDecimalAmount(value: string, decimals: number, label: string): big
   }
 }
 
+function isZeroAddress(value: string): boolean {
+  return BigInt(normalizeHex(value)) === 0n;
+}
+
 export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): JSX.Element {
   const wallet = useWallet();
-  const liquidityEnabledTokens = useMemo(
-    () => (tokens.tokens ?? []).filter((entry) => Boolean(entry.liquidityManagerAddress)),
+  const minterEnabledTokens = useMemo(
+    () => (tokens.tokens ?? []).filter((entry) => Boolean(entry.minterAddress)),
     [tokens.tokens],
   );
-  const [selectedLabel, setSelectedLabel] = useState<string>(() => liquidityEnabledTokens[0]?.label ?? '');
+  const [selectedLabel, setSelectedLabel] = useState<string>(() => minterEnabledTokens[0]?.label ?? '');
   const [action, setAction] = useState<ConvertAction>('deposit');
   const [amount, setAmount] = useState('');
   const [underlyingDecimals, setUnderlyingDecimals] = useState<number>(18);
@@ -78,37 +81,40 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
   const [isWithdrawBalanceLoading, setIsWithdrawBalanceLoading] = useState(false);
   const [depositBalanceError, setDepositBalanceError] = useState<string>();
   const [withdrawBalanceError, setWithdrawBalanceError] = useState<string>();
-  const [underlyingTokenAddress, setUnderlyingTokenAddress] = useState<string>();
-  const [isUnderlyingTokenLoading, setIsUnderlyingTokenLoading] = useState(false);
-  const [underlyingTokenError, setUnderlyingTokenError] = useState<string>();
+  const [minterTokenAddress, setMinterTokenAddress] = useState<string>();
+  const [isMinterTokenLoading, setIsMinterTokenLoading] = useState(false);
+  const [minterTokenError, setMinterTokenError] = useState<string>();
   const [amountBalanceError, setAmountBalanceError] = useState<string>();
   const [switchingChainId, setSwitchingChainId] = useState<bigint>();
   const [switchError, setSwitchError] = useState<string>();
 
   const selectedToken = useMemo<TokenEntry | undefined>(
-    () => liquidityEnabledTokens.find((entry) => entry.label === selectedLabel),
-    [liquidityEnabledTokens, selectedLabel],
+    () => minterEnabledTokens.find((entry) => entry.label === selectedLabel),
+    [minterEnabledTokens, selectedLabel],
   );
   const walletChainId = wallet.chainId !== undefined ? BigInt(wallet.chainId) : undefined;
-  const isWalletOnSupportedLiquidityChain = useMemo(() => {
+  const isWalletOnSupportedMinterChain = useMemo(() => {
     if (walletChainId === undefined) {
       return false;
     }
-    return liquidityEnabledTokens.some((entry) => entry.chainId === walletChainId);
-  }, [liquidityEnabledTokens, walletChainId]);
+    return minterEnabledTokens.some((entry) => entry.chainId === walletChainId);
+  }, [minterEnabledTokens, walletChainId]);
   const shouldSuggestNetworkSwitch =
-    walletChainId !== undefined &&
-    !isWalletOnSupportedLiquidityChain &&
-    liquidityEnabledTokens.length > 0;
+    walletChainId !== undefined && !isWalletOnSupportedMinterChain && minterEnabledTokens.length > 0;
+
+  const isNativeToken = useMemo(
+    () => (minterTokenAddress ? isZeroAddress(minterTokenAddress) : false),
+    [minterTokenAddress],
+  );
 
   const resolveRunner = useCallback(
     (token: TokenEntry) => {
-      if (wallet.chainId !== undefined && BigInt(wallet.chainId) === token.chainId && wallet.publicClient) {
-        return wallet.publicClient;
+      if (wallet.provider && wallet.chainId !== undefined && BigInt(wallet.chainId) === token.chainId) {
+        return wallet.provider;
       }
       return createProviderForToken(token);
     },
-    [wallet.chainId, wallet.publicClient],
+    [wallet.chainId, wallet.provider],
   );
 
   const underlyingDecimalsToUse = useMemo(
@@ -145,52 +151,52 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
   }, [shouldSuggestNetworkSwitch]);
 
   useEffect(() => {
-    if (liquidityEnabledTokens.length === 0) {
+    if (minterEnabledTokens.length === 0) {
       setSelectedLabel('');
       return;
     }
     if (!selectedToken) {
-      setSelectedLabel(liquidityEnabledTokens[0]?.label ?? '');
+      setSelectedLabel(minterEnabledTokens[0]?.label ?? '');
     }
-  }, [liquidityEnabledTokens, selectedToken]);
+  }, [minterEnabledTokens, selectedToken]);
 
   useEffect(() => {
     let cancelled = false;
     const token = selectedToken;
-    if (!token || !token.liquidityManagerAddress) {
-      setUnderlyingTokenAddress(undefined);
-      setUnderlyingTokenError(undefined);
-      setIsUnderlyingTokenLoading(false);
+    if (!token || !token.minterAddress) {
+      setMinterTokenAddress(undefined);
+      setMinterTokenError(undefined);
+      setIsMinterTokenLoading(false);
       return;
     }
 
-    const managerAddress = token.liquidityManagerAddress;
+    const minterAddress = token.minterAddress;
 
-    const loadUnderlyingTokenAddress = async () => {
-      setIsUnderlyingTokenLoading(true);
-      setUnderlyingTokenError(undefined);
-      setUnderlyingTokenAddress(undefined);
+    const loadMinterTokenAddress = async () => {
+      setIsMinterTokenLoading(true);
+      setMinterTokenError(undefined);
+      setMinterTokenAddress(undefined);
       try {
         const runner = resolveRunner(token);
-        const contract = getLiquidityManagerContract(managerAddress, runner);
-        const address = (await contract.read.underlyingToken()) as string;
+        const contract = getMinterContract(minterAddress, runner);
+        const address: string = await contract.tokenAddress();
         if (!cancelled) {
-          setUnderlyingTokenAddress(normalizeHex(address));
+          setMinterTokenAddress(normalizeHex(address));
         }
       } catch (err) {
         if (!cancelled) {
           const message = err instanceof Error ? err.message : String(err);
-          setUnderlyingTokenAddress(undefined);
-          setUnderlyingTokenError(`Failed to load convert token configuration: ${message}`);
+          setMinterTokenAddress(undefined);
+          setMinterTokenError(`Failed to load convert token configuration: ${message}`);
         }
       } finally {
         if (!cancelled) {
-          setIsUnderlyingTokenLoading(false);
+          setIsMinterTokenLoading(false);
         }
       }
     };
 
-    loadUnderlyingTokenAddress().catch(() => undefined);
+    loadMinterTokenAddress().catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -209,7 +215,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       try {
         const runner = resolveRunner(token);
         const contract = getZerc20Contract(token.tokenAddress, runner);
-        const value = (await contract.read.decimals()) as bigint | number;
+        const value = await contract.decimals();
         if (!cancelled) {
           const numeric = Number(value);
           setWrappedDecimals(Number.isFinite(numeric) && numeric >= 0 ? Math.trunc(numeric) : 18);
@@ -231,7 +237,12 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
     let cancelled = false;
     const token = selectedToken;
 
-    if (!token || !underlyingTokenAddress) {
+    if (!token || !minterTokenAddress) {
+      setUnderlyingDecimals(18);
+      return;
+    }
+
+    if (isNativeToken) {
       setUnderlyingDecimals(18);
       return;
     }
@@ -239,8 +250,8 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
     const loadUnderlyingDecimals = async () => {
       try {
         const runner = resolveRunner(token);
-        const contract = getErc20Contract(underlyingTokenAddress, runner);
-        const value = (await contract.read.decimals()) as bigint | number;
+        const contract = getZerc20Contract(minterTokenAddress, runner);
+        const value = await contract.decimals();
         if (!cancelled) {
           const numeric = Number(value);
           setUnderlyingDecimals(Number.isFinite(numeric) && numeric >= 0 ? Math.trunc(numeric) : 18);
@@ -256,14 +267,14 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
     return () => {
       cancelled = true;
     };
-  }, [resolveRunner, selectedToken, underlyingTokenAddress]);
+  }, [isNativeToken, minterTokenAddress, resolveRunner, selectedToken]);
 
   useEffect(() => {
     let cancelled = false;
     const account = wallet.account;
     const token = selectedToken;
 
-    if (!account || !token || !underlyingTokenAddress) {
+    if (!account || !token || !minterTokenAddress) {
       if (!cancelled) {
         setDepositBalance(undefined);
         setDepositBalanceError(undefined);
@@ -276,11 +287,19 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       setIsDepositBalanceLoading(true);
       setDepositBalanceError(undefined);
       try {
-        const runner = resolveRunner(token);
-        const contract = getErc20Contract(underlyingTokenAddress, runner);
-        const rawBalance = (await contract.read.balanceOf([account as `0x${string}`])) as bigint;
-        if (!cancelled) {
-          setDepositBalance(rawBalance);
+        if (isNativeToken) {
+          const provider = resolveRunner(token);
+          const rawBalance = await provider.getBalance(account);
+          if (!cancelled) {
+            setDepositBalance(rawBalance);
+          }
+        } else {
+          const runner = resolveRunner(token);
+          const contract = getZerc20Contract(minterTokenAddress, runner);
+          const rawBalance = await contract.balanceOf(account);
+          if (!cancelled) {
+            setDepositBalance(rawBalance);
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -299,7 +318,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
     return () => {
       cancelled = true;
     };
-  }, [resolveRunner, selectedToken, underlyingTokenAddress, wallet.account]);
+  }, [isNativeToken, minterTokenAddress, resolveRunner, selectedToken, wallet.account]);
 
   useEffect(() => {
     let cancelled = false;
@@ -321,7 +340,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       try {
         const runner = resolveRunner(token);
         const contract = getZerc20Contract(token.tokenAddress, runner);
-        const rawBalance = (await contract.read.balanceOf([account as `0x${string}`])) as bigint;
+        const rawBalance = await contract.balanceOf(account);
         if (!cancelled) {
           setWithdrawBalance(rawBalance);
         }
@@ -383,13 +402,13 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       setResult(undefined);
 
       const token = selectedToken;
-      if (!token || !token.liquidityManagerAddress) {
+      if (!token || !token.minterAddress) {
         setError('Select a token configured with a convert contract.');
         return;
       }
 
-      if (!underlyingTokenAddress) {
-        setError(underlyingTokenError ?? 'Unable to determine the convert token configuration.');
+      if (!minterTokenAddress) {
+        setError(minterTokenError ?? 'Unable to determine the convert token configuration.');
         return;
       }
 
@@ -411,6 +430,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
 
       try {
         setIsSubmitting(true);
+        const signer = await wallet.ensureSigner();
         const expectedChainId = token.chainId;
 
         if (!wallet.chainId || BigInt(wallet.chainId) !== expectedChainId) {
@@ -419,17 +439,21 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
           await wallet.switchChain(expectedChainId, switchOptions);
         }
 
-        const walletClient = await wallet.ensureWalletClient();
+        const activeSigner = await wallet.ensureSigner();
         const params = {
-          walletClient,
-          publicClient: wallet.publicClient,
-          liquidityManagerAddress: token.liquidityManagerAddress,
+          signer: activeSigner,
+          minterAddress: token.minterAddress,
+          tokenAddress: minterTokenAddress,
           amount: parsedAmount,
         };
 
         if (action === 'deposit') {
-          setStatus('Submitting approval (if needed) and wrap transaction…');
-          const outcome = await wrapWithLiquidityManager(params);
+          setStatus(
+            isNativeToken
+              ? 'Submitting native deposit transaction…'
+              : 'Submitting approval (if needed) and deposit transactions…',
+          );
+          const outcome = await depositWithMinter(params);
           setResult({
             action,
             transactionHash: outcome.transactionHash,
@@ -438,18 +462,18 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
           });
           setStatus(
             outcome.approvalTransactionHash
-              ? 'Wrap submitted after approval.'
-              : 'Wrap transaction submitted.',
+              ? 'Deposit submitted after approval.'
+              : 'Deposit transaction submitted.',
           );
         } else {
-          setStatus('Submitting unwrap transaction…');
-          const outcome = await unwrapWithLiquidityManager(params);
+          setStatus(isNativeToken ? 'Submitting native withdrawal…' : 'Submitting token withdrawal…');
+          const outcome = await withdrawWithMinter(params);
           setResult({
             action,
             transactionHash: outcome.transactionHash,
             chainId: token.chainId,
           });
-          setStatus('Unwrap transaction submitted.');
+          setStatus('Withdrawal transaction submitted.');
         }
         setAmount('');
       } catch (err) {
@@ -465,8 +489,9 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
       activeDecimals,
       amount,
       depositBalance,
-      underlyingTokenAddress,
-      underlyingTokenError,
+      isNativeToken,
+      minterTokenAddress,
+      minterTokenError,
       selectedToken,
       wallet,
       withdrawBalance,
@@ -497,7 +522,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
           <h2>Convert</h2>
         </header>
       )}
-      {liquidityEnabledTokens.length === 0 ? (
+      {minterEnabledTokens.length === 0 ? (
         <div className="card-body">
           <p className="error">No convert-enabled tokens were loaded from tokens.json.</p>
         </div>
@@ -510,7 +535,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
                 contract. Switch to one of the supported networks below.
               </p>
               <ul className="summary">
-                {liquidityEnabledTokens.map((token) => (
+                {minterEnabledTokens.map((token) => (
                   <li key={token.label}>
                     <button
                       type="button"
@@ -534,7 +559,7 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
               value={selectedToken?.label ?? ''}
               onChange={(event) => setSelectedLabel(event.target.value)}
             >
-              {liquidityEnabledTokens.map((token) => (
+              {minterEnabledTokens.map((token) => (
                 <option key={token.label} value={token.label}>
                   {token.label} (chain {token.chainId.toString()})
                 </option>
@@ -579,8 +604,8 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
               value={amount}
               onChange={(event) => setAmount(event.target.value)}
             />
-            {isUnderlyingTokenLoading && <p className="hint">Loading convert configuration…</p>}
-            {underlyingTokenError && <p className="error">{underlyingTokenError}</p>}
+            {isMinterTokenLoading && <p className="hint">Loading convert configuration…</p>}
+            {minterTokenError && <p className="error">{minterTokenError}</p>}
             {amountBalanceError && <p className="error">{amountBalanceError}</p>}
             <p className="hint">
               Available:{' '}
@@ -599,17 +624,21 @@ export function ConvertPanel({ tokens, showHeader = true }: ConvertPanelProps): 
               className="primary"
               disabled={
                 isSubmitting ||
-                !selectedToken?.liquidityManagerAddress ||
-                isUnderlyingTokenLoading ||
-                !underlyingTokenAddress ||
+                !selectedToken?.minterAddress ||
+                isMinterTokenLoading ||
+                !minterTokenAddress ||
                 Boolean(amountBalanceError)
               }
             >
               {isSubmitting
                 ? 'Submitting…'
                 : action === 'deposit'
-                ? 'Deposit Tokens'
-                : 'Withdraw Tokens'}
+                ? isNativeToken
+                  ? 'Deposit Native Token'
+                  : 'Deposit ERC-20 Tokens'
+                : isNativeToken
+                ? 'Withdraw Native Token'
+                : 'Withdraw ERC-20 Tokens'}
             </button>
             {status && <span>{status}</span>}
             {error && <span className="error">{error}</span>}

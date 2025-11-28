@@ -8,7 +8,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 SOURCE_DIR="${ROOT_DIR}/contracts/out"
 TARGET_DIR="${ROOT_DIR}/client-common/abi"
 
-declare -a CONTRACTS=("zERC20" "Verifier" "Hub" "LiquidityManager" "Adaptor")
+declare -a CONTRACTS=("zERC20" "Verifier" "Hub" "Minter")
 
 mkdir -p "${TARGET_DIR}"
 

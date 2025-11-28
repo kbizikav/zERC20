@@ -21,4 +21,3 @@ tower = { workspace = true }
 uuid = { workspace = true }
 api-types = { path = "../api-types" }
 url = { workspace = true }
-flate2 = { workspace = true }

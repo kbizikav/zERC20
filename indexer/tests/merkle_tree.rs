@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use common::TestDatabase;
 use sqlx::migrate::Migrator;
 use tree_indexer::trees::{
-    DbIncrementalMerkleTree, DbMerkleTreeConfig, DbMerkleTreeError, HISTORY_WINDOW_RECOMMENDED,
+    DbIncrementalMerkleTree, DbMerkleTreeConfig, HISTORY_WINDOW_RECOMMENDED,
 };
 use zkp::utils::{
     convertion::{address_to_fr, u256_to_fr},
@@ -75,9 +75,7 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
             .await
             .with_context(|| format!("failed to append leaf {i}"))?;
 
-        let ref_index = reference
-            .insert(address, value)
-            .expect("reference tree insert within capacity");
+        let ref_index = reference.insert(address, value);
         leaves.push((address, value));
 
         assert_eq!(append.index, i + 1, "index should increment sequentially");
@@ -178,8 +176,7 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
     let latest_ref = {
         let mut t = IncrementalMerkleTree::new(TREE_HEIGHT as usize);
         for (addr, value) in leaves.iter() {
-            t.insert(*addr, *value)
-                .expect("reference tree insert within capacity");
+            t.insert(*addr, *value);
         }
         t
     };
@@ -219,86 +216,10 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
     Ok(())
 }
 
-#[tokio::test(flavor = "multi_thread")]
-async fn db_merkle_tree_rejects_overflow() -> Result<()> {
-    let database = match TestDatabase::create("merkle_overflow").await {
-        Ok(db) => db,
-        Err(err) => {
-            eprintln!("skipping overflow test: failed to start postgres container ({err:?})");
-            return Ok(());
-        }
-    };
-    let migrator = Migrator::new(Path::new(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/migrations"
-    )))
-    .await
-    .context("failed to load migrations for overflow test")?;
-    migrator
-        .run(database.pool())
-        .await
-        .context("failed to run migrations for overflow test")?;
-
-    let token_address = Address::from_slice(&[0xAA; 20]);
-    let verifier_address = Address::from_slice(&[0xBB; 20]);
-    let chain_id: i64 = 1337;
-
-    let token_id: i64 = sqlx::query_scalar(
-        r#"
-        INSERT INTO tokens (token_address, verifier_address, chain_id)
-        VALUES ($1, $2, $3)
-        RETURNING id
-        "#,
-    )
-    .bind(token_address.as_slice())
-    .bind(verifier_address.as_slice())
-    .bind(chain_id)
-    .fetch_one(database.pool())
-    .await
-    .context("failed to insert overflow test token")?;
-
-    let tree_config = DbMerkleTreeConfig::new(HISTORY_WINDOW_RECOMMENDED)?;
-    let tree = DbIncrementalMerkleTree::new(database.pool().clone(), token_id, 2, tree_config)
-        .await
-        .context("failed to construct small DbIncrementalMerkleTree")?;
-
-    for i in 0..4u64 {
-        let mut addr_bytes = [0u8; 20];
-        addr_bytes[19] = i as u8;
-        let address = Address::from_slice(&addr_bytes);
-        let value = U256::from(i + 1);
-        tree.append_leaf(address, value)
-            .await
-            .with_context(|| format!("failed to append leaf {i} for overflow test"))?;
-    }
-
-    let err = tree
-        .append_leaf(Address::from_slice(&[0xFF; 20]), U256::from(42u64))
-        .await
-        .expect_err("tree should reject overflow append");
-    match err {
-        DbMerkleTreeError::TreeFull {
-            height,
-            capacity,
-            index,
-        } => {
-            assert_eq!(height, 2);
-            assert_eq!(capacity, 4);
-            assert_eq!(index, 4);
-        }
-        other => panic!("expected TreeFull error, got {other:?}"),
-    }
-
-    database.cleanup().await?;
-    Ok(())
-}
-
 fn build_reference_tree(leaves: &[(Address, U256)], upto: usize) -> IncrementalMerkleTree {
     let mut tree = IncrementalMerkleTree::new(TREE_HEIGHT as usize);
     for (i, (addr, value)) in leaves.iter().take(upto).enumerate() {
-        let idx = tree
-            .insert(*addr, *value)
-            .expect("reference tree insert within capacity");
+        let idx = tree.insert(*addr, *value);
         assert_eq!(
             idx, i as u64,
             "reference tree index mismatch while rebuilding snapshot"

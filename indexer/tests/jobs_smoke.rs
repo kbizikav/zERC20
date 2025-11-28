@@ -10,16 +10,13 @@ use std::{
     time::Duration,
 };
 
-use alloy::{
-    primitives::{Address, B256, U256},
-    sol,
-};
+use alloy::primitives::{Address, U256};
 use anyhow::{Context, Result};
 use api_types::prover::CircuitKind;
 use async_trait::async_trait;
 use client_common::{
     contracts::{
-        utils::{NormalProvider, get_address_from_private_key, get_provider},
+        utils::{get_address_from_private_key, get_provider},
         z_erc20::ZErc20Contract,
     },
     prover::{DeciderClient, DeciderResult},
@@ -126,7 +123,6 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
         "TestToken".to_string(),
         "TT".to_string(),
         deployer_address,
-        deploy_mock_endpoint(&provider, deployer_key).await?,
     )
     .await
     .context("failed to deploy zERC20 contract")?;
@@ -151,10 +147,7 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
         label: "anvil-test".to_string(),
         token_address: contract.address(),
         verifier_address: deployer_address,
-        liquidity_manager_address: None,
-        adaptor_address: None,
-        eid: None,
-        layerzero_endpoint: None,
+        minter_address: None,
         chain_id: DEFAULT_ANVIL_CHAIN_ID,
         deployed_block_number: 0,
         rpc_urls: vec![rpc_url.clone()],
@@ -325,21 +318,4 @@ async fn assert_tree_matches_events(pool: &PgPool, token_id: i64) -> Result<i64>
     );
 
     Ok(event_count)
-}
-
-// Minimal endpoint mock; only setDelegate is required by zERC20 tests.
-sol! {
-    #[sol(rpc, bytecode = "0x6080604052348015600e575f5ffd5b50609b80601a5f395ff3fe6080604052348015600e575f5ffd5b50600436106026575f3560e01c8063ca5eb5e114602a575b5f5ffd5b60386035366004603a565b50565b005b5f602082840312156049575f5ffd5b81356001600160a01b0381168114605e575f5ffd5b939250505056fea2646970667358221220203e0af40b06ba1a622ec2fd5c65d8e368b903da54e8b20e0e04e97d4d52d77b64736f6c634300081e0033", deployed_bytecode = "0x6080604052348015600e575f5ffd5b50600436106026575f3560e01c8063ca5eb5e114602a575b5f5ffd5b60386035366004603a565b50565b005b5f602082840312156049575f5ffd5b81356001600160a01b0381168114605e575f5ffd5b939250505056fea2646970667358221220203e0af40b06ba1a622ec2fd5c65d8e368b903da54e8b20e0e04e97d4d52d77b64736f6c634300081e0033")]
-    contract MockEndpoint {
-        function setDelegate(address _delegate) external {}
-    }
-}
-
-async fn deploy_mock_endpoint(provider: &NormalProvider, deployer_key: B256) -> Result<Address> {
-    let signer = client_common::contracts::utils::get_provider_with_signer(provider, deployer_key);
-    let instance = MockEndpoint::deploy(signer)
-        .await
-        .context("failed to deploy mock endpoint contract")?;
-
-    Ok(*instance.address())
 }

@@ -2,7 +2,6 @@
 name = "decider-prover"
 version = "0.1.0"
 edition = "2024"
-default-run = "decider-prover"
 
 [dependencies]
 envy = { workspace = true }
@@ -16,7 +15,6 @@ ark-ff = { workspace = true }
 ark-bn254 = { workspace = true }
 ark-grumpkin = { workspace = true }
 ark-serialize = { workspace = true }
-rand = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -25,8 +23,5 @@ zkp = { path = "../zkp" }
 tokio = { workspace = true, features = ["full"] }
 actix-web = { workspace = true }
 actix-cors = { workspace = true }
+deadpool-redis = { version = "0.15.0", features = ["serde"] }
 api-types = { path = "../api-types" }
-pgmq = "0.31.0"
-sqlx = { workspace = true }
-chrono = "0.4.38"
-reqwest = { workspace = true, features = ["json"] }
