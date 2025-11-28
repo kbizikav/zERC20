@@ -1,6 +1,8 @@
+pub mod adaptor;
+pub mod erc20;
 pub mod error;
 pub mod hub;
-pub mod minter;
+pub mod liquidity_manager;
 pub mod utils;
 pub mod verifier;
 pub mod z_erc20;

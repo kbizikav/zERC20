@@ -1,7 +1,8 @@
-import { getContract, type PublicClient, type WalletClient } from 'viem';
+import { erc20Abi, getContract, type PublicClient, type WalletClient } from 'viem';
 
+import AdaptorArtifact from '../assets/abi/Adaptor.json' assert { type: 'json' };
 import HubArtifact from '../assets/abi/Hub.json' assert { type: 'json' };
-import MinterArtifact from '../assets/abi/Minter.json' assert { type: 'json' };
+import LiquidityManagerArtifact from '../assets/abi/LiquidityManager.json' assert { type: 'json' };
 import VerifierArtifact from '../assets/abi/Verifier.json' assert { type: 'json' };
 import Zerc20Artifact from '../assets/abi/zERC20.json' assert { type: 'json' };
 
@@ -21,10 +22,10 @@ export function getZerc20Contract(address: string, client: ContractClient) {
   });
 }
 
-export function getMinterContract(address: string, client: ContractClient) {
+export function getErc20Contract(address: string, client: ContractClient) {
   return getContract({
     address: toAddress(address),
-    abi: MinterArtifact.abi,
+    abi: erc20Abi,
     client,
   });
 }
@@ -37,6 +38,22 @@ export function getVerifierContract(address: string, client: ContractClient) {
   });
 }
 
+export function getLiquidityManagerContract(address: string, client: ContractClient) {
+  return getContract({
+    address: toAddress(address),
+    abi: LiquidityManagerArtifact.abi,
+    client,
+  });
+}
+
+export function getAdaptorContract(address: string, client: ContractClient) {
+  return getContract({
+    address: toAddress(address),
+    abi: AdaptorArtifact.abi,
+    client,
+  });
+}
+
 export function getHubContract(address: string, client: ContractClient) {
   return getContract({
     address: toAddress(address),
@@ -45,4 +62,4 @@ export function getHubContract(address: string, client: ContractClient) {
   });
 }
 
-export { Zerc20Artifact, VerifierArtifact, HubArtifact, MinterArtifact };
+export { AdaptorArtifact, LiquidityManagerArtifact, Zerc20Artifact, VerifierArtifact, HubArtifact };

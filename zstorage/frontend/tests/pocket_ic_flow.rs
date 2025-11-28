@@ -5,6 +5,7 @@ use key_manager::authorization::authorization_message;
 use pocket_ic::{PocketIcBuilder, PocketIcState};
 use rand::rngs::OsRng;
 use serde::Serialize;
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
@@ -26,7 +27,6 @@ struct StorageInitArgs {
 #[test]
 fn pocket_ic_end_to_end_flow() {
     if ensure_pocket_ic_server().is_none() {
-        eprintln!("Skipping PocketIC interaction test: pocket-ic binary not found.");
         return;
     }
 
@@ -149,13 +149,28 @@ fn pocket_ic_end_to_end_flow() {
 }
 
 fn ensure_pocket_ic_server() -> Option<PathBuf> {
-    if let Some(path) = std::env::var_os("POCKET_IC_BIN") {
-        let path = PathBuf::from(path);
-        if path.exists() {
-            return Some(path);
-        }
+    let Some(path) = std::env::var_os("POCKET_IC_BIN") else {
+        eprintln!("Skipping PocketIC interaction test: pocket-ic binary not found.");
+        return None;
+    };
+
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        eprintln!(
+            "Skipping PocketIC interaction test: pocket-ic binary not found at {}.",
+            path.display()
+        );
+        return None;
     }
-    None
+
+    if TcpListener::bind("127.0.0.1:0").is_err() {
+        eprintln!(
+            "Skipping PocketIC interaction test: cannot bind to loopback (network sockets disabled)."
+        );
+        return None;
+    }
+
+    Some(path)
 }
 
 fn load_canister_wasm(name: &str) -> Vec<u8> {

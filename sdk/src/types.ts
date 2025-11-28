@@ -123,7 +123,8 @@ export interface TokenEntryConfig {
   label: string;
   tokenAddress: string;
   verifierAddress: string;
-  minterAddress?: string;
+  liquidityManagerAddress?: string;
+  adaptorAddress?: string;
   chainId: bigint;
   deployedBlockNumber: bigint;
   rpcUrls: readonly string[];
