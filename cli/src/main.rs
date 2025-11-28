@@ -7,7 +7,7 @@ use std::{
 mod commands;
 mod proof;
 
-use alloy::primitives::{Address, B256, U256};
+use alloy::primitives::{Address, B256, Bytes, U256};
 use anyhow::{Context, Result, bail};
 use clap::{Args, Parser, Subcommand};
 use client_common::{
@@ -16,8 +16,8 @@ use client_common::{
     tokens::{HubEntry, TokenEntry, TokensFile},
 };
 use commands::{
-    balance, invoice, private_transfer, receive_transfer, scan_receive_transfers,
-    shared::{parse_address, parse_b256, parse_u256},
+    balance, invoice, private_transfer, quote_unwrap, receive_transfer, scan_receive_transfers,
+    shared::{parse_address, parse_b256, parse_bytes, parse_u256},
     transfer, wrap,
 };
 use hex;
@@ -103,6 +103,8 @@ enum Command {
     ScanReceiveTransfers(ScanReceiveTransfersArgs),
     /// Wrap underlying tokens into zERC20 via the liquidity manager.
     Wrap(WrapArgs),
+    /// Quote unwrap + bridge fees for all adaptor-enabled chains.
+    QuoteUnwrap(QuoteUnwrapArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -191,6 +193,45 @@ pub struct WrapArgs {
     /// Receiver address for the wrapped zERC20 (defaults to signer).
     #[arg(long, value_parser = parse_address)]
     pub receiver: Option<Address>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct QuoteUnwrapArgs {
+    /// Amount of zERC20 to unwrap and bridge (accepts decimal or 0x-prefixed hex units).
+    #[arg(long, value_parser = parse_u256)]
+    pub amount: U256,
+
+    /// Destination chain identifier; resolved to the LayerZero EID from tokens.json.
+    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
+    pub dst_chain_id: u64,
+
+    /// Gas limit used on the destination lzReceive; encoded into extraOptions.
+    #[arg(long, default_value_t = 200000)]
+    pub lz_receive_gas: u32,
+
+    /// msg.value forwarded to lzReceive on the destination chain.
+    #[arg(long, default_value_t = 0)]
+    pub lz_receive_value: u128,
+
+    /// Recipient of the bridged underlying token (defaults to signer).
+    #[arg(long, value_parser = parse_address)]
+    pub receiver: Option<Address>,
+
+    /// Address receiving any unused native bridge fee refund (defaults to signer).
+    #[arg(long, value_parser = parse_address)]
+    pub refund_address: Option<Address>,
+
+    /// Minimum amount expected on destination (defaults to the input amount).
+    #[arg(long, value_parser = parse_u256)]
+    pub min_amount_out: Option<U256>,
+
+    /// Optional compose message payload passed through Stargate.
+    #[arg(long, value_parser = parse_bytes)]
+    pub compose_msg: Option<Bytes>,
+
+    /// Optional OFT command payload passed through Stargate.
+    #[arg(long, value_parser = parse_bytes)]
+    pub oft_cmd: Option<Bytes>,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -295,6 +336,7 @@ async fn main() -> Result<()> {
             scan_receive_transfers::run(&cli.common, args, &tokens, private_key).await?
         }
         Command::Wrap(args) => wrap::run(args, &tokens, private_key).await?,
+        Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
     }
 
     Ok(())

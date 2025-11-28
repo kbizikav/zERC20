@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use alloy::primitives::{Address, B256, U256};
+use alloy::primitives::{Address, B256, Bytes, U256};
 use anyhow::{Context, Result, anyhow, bail};
 use candid::Principal;
 use client_common::{
@@ -73,6 +73,26 @@ pub fn parse_u256(value: &str) -> Result<U256, String> {
         let bigint = BigUint::from_str(trimmed).map_err(|err| err.to_string())?;
         bigint_to_u256(&bigint)
     }
+}
+
+pub fn parse_bytes(value: &str) -> Result<Bytes, String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return Ok(Bytes::new());
+    }
+
+    let normalized = trimmed.strip_prefix("0x").unwrap_or(trimmed);
+    let padded = if normalized.len() % 2 == 1 {
+        let mut with_leading_zero = String::with_capacity(normalized.len() + 1);
+        with_leading_zero.push('0');
+        with_leading_zero.push_str(normalized);
+        with_leading_zero
+    } else {
+        normalized.to_string()
+    };
+
+    let decoded = hex::decode(padded).map_err(|err| err.to_string())?;
+    Ok(Bytes::from(decoded))
 }
 
 fn parse_hex_to_u256(hex_str: &str) -> Result<U256, String> {
