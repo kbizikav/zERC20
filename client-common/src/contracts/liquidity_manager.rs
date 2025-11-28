@@ -85,7 +85,11 @@ impl LiquidityManagerContract {
     }
 
     pub async fn quote_wrap(&self, amount: U256) -> ContractResult<U256> {
-        let reward = self.contract_with_provider().quoteWrap(amount).call().await?;
+        let reward = self
+            .contract_with_provider()
+            .quoteWrap(amount)
+            .call()
+            .await?;
         Ok(reward)
     }
 

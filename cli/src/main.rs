@@ -16,7 +16,7 @@ use client_common::{
     tokens::{HubEntry, TokenEntry, TokensFile},
 };
 use commands::{
-    invoice, private_transfer, receive_transfer, scan_receive_transfers,
+    balance, invoice, private_transfer, receive_transfer, scan_receive_transfers,
     shared::{parse_address, parse_b256, parse_u256},
     transfer,
 };
@@ -91,6 +91,8 @@ enum Command {
     /// Invoice management helpers backed by the storage canister.
     #[command(subcommand)]
     Invoice(InvoiceCommand),
+    /// Display zERC20 and underlying token balances for the configured account.
+    Balance(BalanceArgs),
     /// Execute a public ERC-20 transfer.
     Transfer(TransferArgs),
     /// Execute a stealthy burn transfer via FullBurnAddress.
@@ -111,6 +113,13 @@ enum InvoiceCommand {
     Receive(InvoiceReceiveArgs),
     /// Display eligible transfer events for an invoice without submitting proofs.
     Status(InvoiceReceiveArgs),
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct BalanceArgs {
+    /// Chain identifier used to select the token entry.
+    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
+    pub chain_id: u64,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -257,6 +266,7 @@ async fn main() -> Result<()> {
         Command::Invoice(InvoiceCommand::Status(args)) => {
             invoice::status(&cli.common, args, &tokens, hub.as_ref(), private_key).await?
         }
+        Command::Balance(args) => balance::run(args, &tokens, private_key).await?,
         Command::Transfer(args) => transfer::run(args, &tokens, private_key).await?,
         Command::PrivateTransfer(args) => {
             private_transfer::run(&cli.common, args, &tokens, private_key).await?

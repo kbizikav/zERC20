@@ -9,7 +9,7 @@ use alloy::{
 use anyhow::{Context, Result};
 use client_common::{
     contracts::{
-        utils::{get_address_from_private_key, get_provider, NormalProvider},
+        utils::{NormalProvider, get_address_from_private_key, get_provider},
         z_erc20::ZErc20Contract,
     },
     tokens::TokenMetadata,

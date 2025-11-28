@@ -1,3 +1,4 @@
+pub mod balance;
 pub mod invoice;
 pub mod private_transfer;
 pub mod receive_transfer;

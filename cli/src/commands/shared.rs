@@ -1,10 +1,13 @@
 use std::str::FromStr;
 
 use alloy::primitives::{Address, B256, U256};
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use candid::Principal;
 use client_common::{
-    contracts::{hub::HubContract, verifier::VerifierContract, z_erc20::ZErc20Contract},
+    contracts::{
+        hub::HubContract, liquidity_manager::LiquidityManagerContract, verifier::VerifierContract,
+        z_erc20::ZErc20Contract,
+    },
     tokens::{HubEntry, TokenEntry},
 };
 use hex;
@@ -119,6 +122,17 @@ pub fn build_verifier(entry: &TokenEntry) -> Result<VerifierContract> {
 pub fn build_hub(entry: &HubEntry) -> Result<HubContract> {
     let provider = entry.provider()?;
     Ok(HubContract::new(provider, entry.hub_address))
+}
+
+pub fn build_liquidity_manager(entry: &TokenEntry) -> Result<LiquidityManagerContract> {
+    let address = entry.liquidity_manager_address.ok_or_else(|| {
+        anyhow!(
+            "token '{}' is missing a liquidity manager address",
+            entry.label
+        )
+    })?;
+    let provider = entry.provider()?;
+    Ok(LiquidityManagerContract::new(provider, address).with_legacy_tx(entry.legacy_tx))
 }
 
 pub async fn build_stealth_client(common: &CommonArgs) -> Result<StealthCanisterClient> {
