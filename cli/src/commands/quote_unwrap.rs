@@ -8,7 +8,10 @@ use client_common::{
     tokens::TokenEntry,
 };
 
-use crate::{QuoteUnwrapArgs, commands::shared::find_token_by_chain};
+use crate::{
+    QuoteUnwrapArgs,
+    commands::shared::{build_liquidity_manager, find_token_by_chain},
+};
 
 const WORKER_ID_EXECUTOR: u8 = 1;
 const OPTION_TYPE_LZ_RECEIVE: u8 = 1;
@@ -57,24 +60,36 @@ pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B25
 
         println!("Token label         : {}", entry.label);
         println!("Chain ID            : {}", entry.chain_id);
-        println!("Adaptor address     : {}", adaptor.address());
         println!(
             "Destination chain   : {} (eid {})",
             dst_entry.label, dst_eid
         );
-        println!("Receiver            : {}", receiver);
-        println!("Refund address      : {}", refund_address);
         println!("Amount              : {}", args.amount);
 
-        let quote = adaptor
-            .quote_fee(args.amount, request)
-            .await
-            .with_context(|| format!("failed to quote unwrap + bridge on '{}'", entry.label))?;
+        if entry.chain_id == args.dst_chain_id {
+            let manager = build_liquidity_manager(entry)?;
+            let fee = manager
+                .quote_unwrap(args.amount)
+                .await
+                .with_context(|| format!("failed to quote unwrap on '{}'", entry.label))?;
+            let expected_out = args.amount.saturating_sub(fee);
+            println!("  Token unwrap fee  : {}", fee);
+            println!("  Expected out      : {}", expected_out);
+            println!(
+                "  Note              : destination matches source; skipping adaptor bridge quote"
+            );
+            println!();
+        } else {
+            let quote = adaptor
+                .quote_fee(args.amount, request)
+                .await
+                .with_context(|| format!("failed to quote unwrap + bridge on '{}'", entry.label))?;
 
-        println!("  Token unwrap fee  : {}", quote.token_unwrap_fee);
-        println!("  Native bridge fee : {}", quote.native_bridge_fee);
-        println!("  Token bridge fee  : {}", quote.token_bridge_fee);
-        println!();
+            println!("  Token unwrap fee  : {}", quote.token_unwrap_fee);
+            println!("  Native bridge fee : {}", quote.native_bridge_fee);
+            println!("  Token bridge fee  : {}", quote.token_bridge_fee);
+            println!();
+        }
     }
 
     if !quoted_any {
