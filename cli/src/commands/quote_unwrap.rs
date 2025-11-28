@@ -99,7 +99,7 @@ pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B25
     Ok(())
 }
 
-fn build_extra_options(lz_receive_gas: u32, lz_receive_value: u128) -> Result<Bytes> {
+pub(crate) fn build_extra_options(lz_receive_gas: u32, lz_receive_value: u128) -> Result<Bytes> {
     let gas = u128::from(lz_receive_gas);
     let gas_bytes = gas.to_be_bytes();
     let mut option = Vec::from(gas_bytes);

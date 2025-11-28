@@ -18,7 +18,7 @@ use client_common::{
 use commands::{
     balance, invoice, private_transfer, quote_unwrap, receive_transfer, scan_receive_transfers,
     shared::{parse_address, parse_b256, parse_bytes, parse_u256},
-    transfer, wrap,
+    transfer, unwrap, wrap,
 };
 use hex;
 use reqwest::Url;
@@ -105,6 +105,8 @@ enum Command {
     Wrap(WrapArgs),
     /// Quote unwrap + bridge fees for all adaptor-enabled chains.
     QuoteUnwrap(QuoteUnwrapArgs),
+    /// Unwrap zERC20 locally or via adaptor compose.
+    Unwrap(UnwrapArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -235,6 +237,21 @@ pub struct QuoteUnwrapArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct UnwrapArgs {
+    /// Chain identifier used to select the source token entry.
+    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
+    pub chain_id: u64,
+
+    /// Destination chain identifier; unwraps locally when matching the source.
+    #[arg(long, value_name = "CHAIN_ID")]
+    pub dst_chain_id: u64,
+
+    /// Amount of zERC20 to unwrap (accepts decimal or 0x-prefixed hex units).
+    #[arg(long, value_parser = parse_u256)]
+    pub amount: U256,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct ReceiveTransferArgs {
     /// Serialized FullBurnAddress payload in hex.
     #[arg(
@@ -337,6 +354,7 @@ async fn main() -> Result<()> {
         }
         Command::Wrap(args) => wrap::run(args, &tokens, private_key).await?,
         Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
+        Command::Unwrap(args) => unwrap::run(args, &tokens, private_key).await?,
     }
 
     Ok(())
