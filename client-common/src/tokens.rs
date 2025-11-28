@@ -7,10 +7,10 @@ use std::{
 #[cfg(not(target_arch = "wasm32"))]
 use std::{fs, path::Path};
 
-use crate::contracts::utils::{get_provider, get_provider_with_fallback, NormalProvider};
+use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
 use alloy::primitives::Address;
-use anyhow::{anyhow, bail, Context, Result};
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use anyhow::{Context, Result, anyhow, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use flate2::read::GzDecoder;
 use serde::Deserialize;
 
@@ -26,11 +26,11 @@ pub struct TokenEntry {
         alias = "minterAddress"
     )]
     pub liquidity_manager_address: Option<Address>,
-    #[serde(default, alias = "adaptorAddress")]
+    #[serde(default, alias = "adaptor_address")]
     pub adaptor_address: Option<Address>,
     #[serde(default)]
     pub eid: Option<u32>,
-    #[serde(default, alias = "layerzeroEndpoint", alias = "layerZeroEndpoint")]
+    #[serde(default, alias = "layerzero_endpoint")]
     pub layerzero_endpoint: Option<Address>,
     pub chain_id: u64,
     pub deployed_block_number: u64,
