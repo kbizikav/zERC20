@@ -18,7 +18,7 @@ use client_common::{
 use commands::{
     balance, invoice, private_transfer, quote_unwrap, receive_transfer, scan_receive_transfers,
     shared::{parse_address, parse_b256, parse_bytes, parse_u256},
-    transfer, unwrap, wrap,
+    transfer, unwrap, unwrap_status, wallet_messages, wrap,
 };
 use hex;
 use reqwest::Url;
@@ -84,6 +84,19 @@ pub struct CommonArgs {
     /// Directory containing Nova prover artifacts (defaults to workspace nova_artifacts/).
     #[arg(long, env = "NOVA_ARTIFACTS_DIR", value_name = "PATH")]
     pub nova_artifacts_dir: Option<PathBuf>,
+
+    /// LayerZero Scan API base URL (defaults to testnet).
+    #[arg(
+        long,
+        env = "LZ_SCAN_API_URL",
+        value_name = "URL",
+        default_value = "https://scan-testnet.layerzero-api.com/v1"
+    )]
+    pub lz_scan_api_url: String,
+
+    /// Optional LayerZero Scan API key for authenticated access.
+    #[arg(long, env = "LZ_SCAN_API_KEY", value_name = "API_KEY")]
+    pub lz_scan_api_key: Option<String>,
 }
 
 #[derive(Subcommand, Debug)]
@@ -107,6 +120,10 @@ enum Command {
     QuoteUnwrap(QuoteUnwrapArgs),
     /// Unwrap zERC20 locally or via adaptor compose.
     Unwrap(UnwrapArgs),
+    /// Display LayerZero status for a cross-chain unwrap transaction hash.
+    UnwrapStatus(UnwrapStatusArgs),
+    /// Display LayerZero messages initiated by the signer wallet.
+    WalletMessages(WalletMessagesArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -260,6 +277,32 @@ pub struct UnwrapArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct UnwrapStatusArgs {
+    /// Source chain transaction hash emitted by the cross-chain unwrap.
+    #[arg(long, value_name = "TX_HASH")]
+    pub tx_hash: String,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct WalletMessagesArgs {
+    /// Maximum number of messages to fetch for the signer wallet.
+    #[arg(long, default_value_t = 20, value_name = "COUNT")]
+    pub limit: usize,
+
+    /// Start date in ISO-8601 format to filter messages.
+    #[arg(long, value_name = "ISO8601")]
+    pub start: Option<String>,
+
+    /// End date in ISO-8601 format to filter messages.
+    #[arg(long, value_name = "ISO8601")]
+    pub end: Option<String>,
+
+    /// Pagination token returned by previous calls.
+    #[arg(long, value_name = "TOKEN")]
+    pub next_token: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct ReceiveTransferArgs {
     /// Serialized FullBurnAddress payload in hex.
     #[arg(
@@ -363,6 +406,10 @@ async fn main() -> Result<()> {
         Command::Wrap(args) => wrap::run(args, &tokens, private_key).await?,
         Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
         Command::Unwrap(args) => unwrap::run(args, &tokens, private_key).await?,
+        Command::UnwrapStatus(args) => unwrap_status::run(&cli.common, args).await?,
+        Command::WalletMessages(args) => {
+            wallet_messages::run(&cli.common, args, private_key).await?
+        }
     }
 
     Ok(())
