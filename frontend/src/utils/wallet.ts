@@ -1,6 +1,6 @@
 import chains from '@config/chains.json';
 import type { SwitchChainOptions } from '@/app/providers/WalletProvider';
-import type { TokenEntry } from '@services/sdk/registry/tokens.js';
+import type { TokenEntry } from '@zerc20/sdk';
 
 type ChainListEntry = {
   chainId?: number;
@@ -38,7 +38,7 @@ if (Array.isArray(rawChains)) {
 
     const explorerUrls = Array.isArray(entry?.explorers)
       ? entry!.explorers
-          ?.map((explorer) => (typeof explorer?.url === 'string' ? explorer.url.trim() : ''))
+          ?.map((explorer: { url?: string }) => (typeof explorer?.url === 'string' ? explorer.url.trim() : ''))
           .filter((url): url is string => Boolean(url && url.length > 0))
       : [];
 
@@ -56,7 +56,7 @@ export function buildSwitchChainOptions(token: TokenEntry): SwitchChainOptions {
   const key = normalizeChainId(token.chainId);
   const metadata = key ? metadataByChainId.get(key) : undefined;
   const rpcUrls = token.rpcUrls
-    .map((url) => (typeof url === 'string' ? url.trim() : ''))
+    .map((url: string) => url.trim())
     .filter((url): url is string => url.length > 0);
 
   return {
