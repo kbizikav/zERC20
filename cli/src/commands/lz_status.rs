@@ -1,6 +1,7 @@
 use alloy::{
     primitives::{Address, B256, U256},
-    sol_types::{SolCall, SolValue},
+    providers::Provider,
+    sol_types::{SolCall, SolEvent, SolValue},
 };
 use anyhow::{Context, Result, anyhow};
 use client_common::{
@@ -13,6 +14,7 @@ use client_common::{
     tokens::{TokenEntry, load_tokens_from_path},
 };
 use reqwest::Url;
+use std::str::FromStr;
 
 use crate::{CommonArgs, LzStatusArgs};
 
@@ -218,7 +220,10 @@ fn print_send_summary(summary: &SendPayloadSummary) {
     if let (Some(amount_in), Some(amount_out)) =
         (summary.amount_sent_ld, summary.amount_received_ld)
     {
-        println!("    Flow     : in={} out={}", amount_in, amount_out);
+        println!(
+            "    Flow     : zERC20 {} -> underlying {}",
+            amount_in, amount_out
+        );
     }
     if let Some(compose) = &summary.compose {
         println!(
@@ -296,7 +301,7 @@ fn apply_decimal_conversion(summary: &mut SendPayloadSummary, rate: U256) {
     }
 
     let adjusted = summary.amount - (summary.amount % rate);
-    summary.amount_sent_ld = Some(adjusted);
+    summary.amount_sent_ld = Some(summary.amount);
     summary.amount_received_ld = Some(adjusted);
 }
 
@@ -309,6 +314,18 @@ async fn fetch_decimal_conversion_rate(
         .call()
         .await
         .ok()
+}
+
+async fn fetch_oft_sent_amounts(provider: &NormalProvider, tx_hash: &str) -> Option<(U256, U256)> {
+    let hash = B256::from_str(tx_hash).ok()?;
+    let receipt = provider.get_transaction_receipt(hash).await.ok()??;
+    for log in receipt.logs() {
+        if let Ok(decoded) = zERC20::OFTSent::decode_log(&log.inner) {
+            let evt = decoded.data;
+            return Some((evt.amountSentLD, evt.amountReceivedLD));
+        }
+    }
+    None
 }
 
 fn decode_send_call(bytes: &[u8]) -> Result<zERC20::sendCall> {
@@ -483,7 +500,20 @@ async fn fetch_compose_followups(
                 .map(|name| name.eq_ignore_ascii_case("delivered"))
                 .unwrap_or(false);
 
+        let token_entry = find_token_for_message(message, tokens);
         let send_summary = summarize_send(message, tokens).await.ok().flatten();
+
+        let mut amount_sent_ld = send_summary.as_ref().and_then(|s| s.amount_sent_ld);
+        let mut amount_received_ld = send_summary.as_ref().and_then(|s| s.amount_received_ld);
+
+        if let Some(entry) = token_entry {
+            if let Ok(provider) = entry.provider() {
+                if let Some((sent, received)) = fetch_oft_sent_amounts(&provider, hash).await {
+                    amount_sent_ld = Some(sent);
+                    amount_received_ld = Some(received);
+                }
+            }
+        }
 
         out.push(ComposeFollowUp {
             src_chain,
@@ -492,8 +522,8 @@ async fn fetch_compose_followups(
             dest_tx,
             success,
             amount: send_summary.as_ref().map(|s| s.amount),
-            amount_sent_ld: send_summary.as_ref().and_then(|s| s.amount_sent_ld),
-            amount_received_ld: send_summary.as_ref().and_then(|s| s.amount_received_ld),
+            amount_sent_ld,
+            amount_received_ld,
         });
     }
     out
