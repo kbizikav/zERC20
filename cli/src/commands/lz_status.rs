@@ -115,24 +115,18 @@ async fn print_message(
                 if !followups.is_empty() {
                     println!("  Compose tx :");
                     for followup in followups {
-                        let amount = match (
-                            followup.amount_sent_ld,
-                            followup.amount_received_ld,
-                            followup.amount,
-                        ) {
-                            (Some(sent), Some(received), _) => format!("{sent}->{received}"),
-                            (None, None, Some(raw)) => raw.to_string(),
-                            _ => "-".to_string(),
-                        };
+                        let output_amount = followup
+                            .amount_received_ld
+                            .map(|value| value.to_string())
+                            .unwrap_or_else(|| "-".to_string());
                         println!(
-                            "    - {} -> {} | src tx {} | dst tx {} | amount {} | success {}",
-                            followup.src_chain,
-                            followup.dst_chain,
-                            followup.source_tx,
-                            followup.dest_tx,
-                            amount,
-                            followup.success
+                            "    Pathway: {} -> {}",
+                            followup.src_chain, followup.dst_chain
                         );
+                        println!("      src tx   : {}", followup.source_tx);
+                        println!("      dst tx   : {}", followup.dest_tx);
+                        println!("      Output amount (underlying): {}", output_amount);
+                        println!("      success  : {}", followup.success);
                     }
                 }
             }
@@ -213,24 +207,9 @@ struct BridgeRequestSummary {
 }
 
 fn print_send_summary(summary: &SendPayloadSummary) {
-    println!(
-        "  Send      : dstEid={} to={} amount={} minAmount={}",
-        summary.dst_eid, summary.to, summary.amount, summary.min_amount
-    );
-    if let (Some(amount_in), Some(amount_out)) =
-        (summary.amount_sent_ld, summary.amount_received_ld)
-    {
-        println!(
-            "    Flow     : zERC20 {} -> underlying {}",
-            amount_in, amount_out
-        );
-    }
-    if let Some(compose) = &summary.compose {
-        println!(
-            "    Compose  : dstEid={} to={} refund={} minOut={}",
-            compose.dst_eid, compose.to, compose.refund_address, compose.min_amount_out
-        );
-    }
+    let input_amount = summary.amount_sent_ld.unwrap_or(summary.amount);
+
+    println!("  Input amount (zERC20)      : {}", input_amount);
 }
 
 async fn print_send_details(message: &ScanMessage, tokens: &[TokenEntry]) -> Result<()> {
@@ -316,13 +295,13 @@ async fn fetch_decimal_conversion_rate(
         .ok()
 }
 
-async fn fetch_oft_sent_amounts(provider: &NormalProvider, tx_hash: &str) -> Option<(U256, U256)> {
+async fn fetch_oft_sent_amounts(provider: &NormalProvider, tx_hash: &str) -> Option<U256> {
     let hash = B256::from_str(tx_hash).ok()?;
     let receipt = provider.get_transaction_receipt(hash).await.ok()??;
     for log in receipt.logs() {
         if let Ok(decoded) = zERC20::OFTSent::decode_log(&log.inner) {
             let evt = decoded.data;
-            return Some((evt.amountSentLD, evt.amountReceivedLD));
+            return Some(evt.amountReceivedLD);
         }
     }
     None
@@ -442,8 +421,6 @@ struct ComposeFollowUp {
     source_tx: String,
     dest_tx: String,
     success: bool,
-    amount: Option<U256>,
-    amount_sent_ld: Option<U256>,
     amount_received_ld: Option<U256>,
 }
 
@@ -503,13 +480,11 @@ async fn fetch_compose_followups(
         let token_entry = find_token_for_message(message, tokens);
         let send_summary = summarize_send(message, tokens).await.ok().flatten();
 
-        let mut amount_sent_ld = send_summary.as_ref().and_then(|s| s.amount_sent_ld);
         let mut amount_received_ld = send_summary.as_ref().and_then(|s| s.amount_received_ld);
 
         if let Some(entry) = token_entry {
             if let Ok(provider) = entry.provider() {
-                if let Some((sent, received)) = fetch_oft_sent_amounts(&provider, hash).await {
-                    amount_sent_ld = Some(sent);
+                if let Some(received) = fetch_oft_sent_amounts(&provider, hash).await {
                     amount_received_ld = Some(received);
                 }
             }
@@ -521,8 +496,6 @@ async fn fetch_compose_followups(
             source_tx,
             dest_tx,
             success,
-            amount: send_summary.as_ref().map(|s| s.amount),
-            amount_sent_ld,
             amount_received_ld,
         });
     }
