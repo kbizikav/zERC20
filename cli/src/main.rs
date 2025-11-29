@@ -405,9 +405,7 @@ async fn main() -> Result<()> {
         Command::Wrap(args) => wrap::run(args, &tokens, private_key).await?,
         Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
         Command::Unwrap(args) => unwrap::run(args, &tokens, private_key).await?,
-        Command::LzStatus(args) => {
-            lz_status::run(&cli.common, args, private_key).await?
-        }
+        Command::LzStatus(args) => lz_status::run(&cli.common, args, private_key).await?,
     }
 
     Ok(())

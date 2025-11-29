@@ -122,8 +122,8 @@ pub async fn fetch_tx_input(
     provider: &NormalProvider,
     tx_hash: &str,
 ) -> ContractResult<Option<String>> {
-    let hash = B256::from_str(tx_hash)
-        .map_err(|err| ContractError::transport("parsing tx hash", err))?;
+    let hash =
+        B256::from_str(tx_hash).map_err(|err| ContractError::transport("parsing tx hash", err))?;
     let tx = provider
         .get_transaction_by_hash(hash)
         .await

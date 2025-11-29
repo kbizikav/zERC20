@@ -4,7 +4,7 @@ use alloy::{
 };
 use anyhow::{Context, Result, anyhow};
 use client_common::{
-    contracts::utils::{fetch_tx_input, get_address_from_private_key},
+    contracts::utils::{NormalProvider, fetch_tx_input, get_address_from_private_key},
     contracts::{adaptor::Adaptor, z_erc20::zERC20},
     layerzero::{
         Destination, Endpoint, HttpLayerZeroClient, LayerZeroClient, LzCompose, ScanMessage, Stage,
@@ -109,16 +109,26 @@ async fn print_message(
             let dest_tx = destination_tx(destination).unwrap_or_else(|| "-".to_string());
             println!("  Dest tx    : {}", dest_tx);
             if let Some(compose) = destination.lz_compose.as_ref() {
-                let followups = fetch_compose_followups(client, compose).await;
+                let followups = fetch_compose_followups(client, compose, tokens).await;
                 if !followups.is_empty() {
                     println!("  Compose tx :");
                     for followup in followups {
+                        let amount = match (
+                            followup.amount_sent_ld,
+                            followup.amount_received_ld,
+                            followup.amount,
+                        ) {
+                            (Some(sent), Some(received), _) => format!("{sent}->{received}"),
+                            (None, None, Some(raw)) => raw.to_string(),
+                            _ => "-".to_string(),
+                        };
                         println!(
-                            "    - {} -> {} | src tx {} | dst tx {} | success {}",
+                            "    - {} -> {} | src tx {} | dst tx {} | amount {} | success {}",
                             followup.src_chain,
                             followup.dst_chain,
                             followup.source_tx,
                             followup.dest_tx,
+                            amount,
                             followup.success
                         );
                     }
@@ -187,6 +197,8 @@ struct SendPayloadSummary {
     to: Address,
     amount: U256,
     min_amount: U256,
+    amount_sent_ld: Option<U256>,
+    amount_received_ld: Option<U256>,
     compose: Option<BridgeRequestSummary>,
 }
 
@@ -203,6 +215,11 @@ fn print_send_summary(summary: &SendPayloadSummary) {
         "  Send      : dstEid={} to={} amount={} minAmount={}",
         summary.dst_eid, summary.to, summary.amount, summary.min_amount
     );
+    if let (Some(amount_in), Some(amount_out)) =
+        (summary.amount_sent_ld, summary.amount_received_ld)
+    {
+        println!("    Flow     : in={} out={}", amount_in, amount_out);
+    }
     if let Some(compose) = &summary.compose {
         println!(
             "    Compose  : dstEid={} to={} refund={} minOut={}",
@@ -212,24 +229,19 @@ fn print_send_summary(summary: &SendPayloadSummary) {
 }
 
 async fn print_send_details(message: &ScanMessage, tokens: &[TokenEntry]) -> Result<()> {
-    if let Some(hash) = source_tx_hash(message) {
-        match fetch_and_decode_send(hash, message, tokens).await {
-            Ok(Some(summary)) => print_send_summary(&summary),
-            Ok(None) => println!("  Send      : (tx input empty or not found)"),
-            Err(err) => println!("  Send      : (decode failed from tx: {})", err),
+    let had_hash = source_tx_hash(message).is_some();
+    let had_payload = source_payload(message).is_some();
+    match summarize_send(message, tokens).await {
+        Ok(Some(summary)) => print_send_summary(&summary),
+        Ok(None) => {
+            if had_hash || had_payload {
+                println!("  Send      : (tx input empty or not found)");
+            } else {
+                println!("  Send      : -");
+            }
         }
-        return Ok(());
+        Err(err) => println!("  Send      : (decode failed from tx: {})", err),
     }
-
-    if let Some(raw) = source_payload(message) {
-        match decode_send_payload(raw) {
-            Ok(summary) => print_send_summary(&summary),
-            Err(err) => println!("  Send      : (decode failed; err: {})", err),
-        }
-        return Ok(());
-    }
-
-    println!("  Send      : -");
     Ok(())
 }
 
@@ -258,6 +270,8 @@ fn decode_send_payload(payload_hex: &str) -> Result<SendPayloadSummary> {
         to: Address::from_word(param.to),
         amount: param.amountLD,
         min_amount: param.minAmountLD,
+        amount_sent_ld: None,
+        amount_received_ld: None,
         compose,
     })
 }
@@ -274,6 +288,27 @@ fn decode_bridge_request(bytes: &[u8]) -> Result<Option<BridgeRequestSummary>> {
         refund_address: request.refundAddress,
         min_amount_out: request.minAmountOut,
     }))
+}
+
+fn apply_decimal_conversion(summary: &mut SendPayloadSummary, rate: U256) {
+    if rate == U256::ZERO {
+        return;
+    }
+
+    let adjusted = summary.amount - (summary.amount % rate);
+    summary.amount_sent_ld = Some(adjusted);
+    summary.amount_received_ld = Some(adjusted);
+}
+
+async fn fetch_decimal_conversion_rate(
+    provider: &NormalProvider,
+    token_address: Address,
+) -> Option<U256> {
+    zERC20::new(token_address, provider.clone())
+        .decimalConversionRate()
+        .call()
+        .await
+        .ok()
 }
 
 fn decode_send_call(bytes: &[u8]) -> Result<zERC20::sendCall> {
@@ -310,11 +345,8 @@ fn decode_bridge_request_inner(bytes: &[u8]) -> Result<Adaptor::BridgeRequest> {
 
 async fn fetch_and_decode_send(
     tx_hash: &str,
-    message: &ScanMessage,
-    tokens: &[TokenEntry],
+    entry: &TokenEntry,
 ) -> Result<Option<SendPayloadSummary>> {
-    let entry = find_token_for_message(message, tokens)
-        .ok_or_else(|| anyhow!("no token entry matched source pathway to fetch tx"))?;
     let provider = entry.provider()?;
     let calldata = fetch_tx_input(&provider, tx_hash)
         .await
@@ -322,8 +354,39 @@ async fn fetch_and_decode_send(
     let Some(input) = calldata else {
         return Ok(None);
     };
-    let summary = decode_send_payload(&input)?;
+    let mut summary = decode_send_payload(&input)?;
+    if let Some(rate) = fetch_decimal_conversion_rate(&provider, entry.token_address).await {
+        apply_decimal_conversion(&mut summary, rate);
+    }
     Ok(Some(summary))
+}
+
+async fn summarize_send(
+    message: &ScanMessage,
+    tokens: &[TokenEntry],
+) -> Result<Option<SendPayloadSummary>> {
+    let token_entry = find_token_for_message(message, tokens);
+    if let Some(hash) = source_tx_hash(message) {
+        let entry = token_entry
+            .ok_or_else(|| anyhow!("no token entry matched source pathway to fetch tx"))?;
+        return fetch_and_decode_send(hash, entry).await;
+    }
+
+    if let Some(raw) = source_payload(message) {
+        let mut summary = decode_send_payload(raw)?;
+        if let Some(entry) = token_entry {
+            if let Ok(provider) = entry.provider() {
+                if let Some(rate) =
+                    fetch_decimal_conversion_rate(&provider, entry.token_address).await
+                {
+                    apply_decimal_conversion(&mut summary, rate);
+                }
+            }
+        }
+        return Ok(Some(summary));
+    }
+
+    Ok(None)
 }
 
 fn find_token_for_message<'a>(
@@ -362,11 +425,15 @@ struct ComposeFollowUp {
     source_tx: String,
     dest_tx: String,
     success: bool,
+    amount: Option<U256>,
+    amount_sent_ld: Option<U256>,
+    amount_received_ld: Option<U256>,
 }
 
 async fn fetch_compose_followups(
     client: &impl LayerZeroClient,
     compose: &LzCompose,
+    tokens: &[TokenEntry],
 ) -> Vec<ComposeFollowUp> {
     let mut out = Vec::new();
     for tx in &compose.txs {
@@ -416,12 +483,17 @@ async fn fetch_compose_followups(
                 .map(|name| name.eq_ignore_ascii_case("delivered"))
                 .unwrap_or(false);
 
+        let send_summary = summarize_send(message, tokens).await.ok().flatten();
+
         out.push(ComposeFollowUp {
             src_chain,
             dst_chain,
             source_tx,
             dest_tx,
             success,
+            amount: send_summary.as_ref().map(|s| s.amount),
+            amount_sent_ld: send_summary.as_ref().and_then(|s| s.amount_sent_ld),
+            amount_received_ld: send_summary.as_ref().and_then(|s| s.amount_received_ld),
         });
     }
     out
