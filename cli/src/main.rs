@@ -16,9 +16,10 @@ use client_common::{
     tokens::{HubEntry, TokenEntry, TokensFile},
 };
 use commands::{
-    balance, invoice, private_transfer, quote_unwrap, receive_transfer, scan_receive_transfers,
+    balance, invoice, lz_status, private_transfer, quote_unwrap, receive_transfer,
+    scan_receive_transfers,
     shared::{parse_address, parse_b256, parse_bytes, parse_u256},
-    transfer, unwrap, wallet_messages, wrap,
+    transfer, unwrap, wrap,
 };
 use hex;
 use reqwest::Url;
@@ -120,8 +121,8 @@ enum Command {
     QuoteUnwrap(QuoteUnwrapArgs),
     /// Unwrap zERC20 locally or via adaptor compose.
     Unwrap(UnwrapArgs),
-    /// Display LayerZero messages initiated by the signer wallet.
-    WalletMessages(WalletMessagesArgs),
+    /// Display LayerZero message status for the signer wallet.
+    LzStatus(LzStatusArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -282,7 +283,7 @@ pub struct UnwrapStatusArgs {
 }
 
 #[derive(Args, Debug, Clone)]
-pub struct WalletMessagesArgs {
+pub struct LzStatusArgs {
     /// Maximum number of messages to fetch for the signer wallet.
     #[arg(long, default_value_t = 20, value_name = "COUNT")]
     pub limit: usize,
@@ -404,8 +405,8 @@ async fn main() -> Result<()> {
         Command::Wrap(args) => wrap::run(args, &tokens, private_key).await?,
         Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
         Command::Unwrap(args) => unwrap::run(args, &tokens, private_key).await?,
-        Command::WalletMessages(args) => {
-            wallet_messages::run(&cli.common, args, private_key).await?
+        Command::LzStatus(args) => {
+            lz_status::run(&cli.common, args, private_key).await?
         }
     }
 

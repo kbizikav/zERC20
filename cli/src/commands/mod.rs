@@ -1,6 +1,6 @@
 pub mod balance;
 pub mod invoice;
-pub mod layerzero_common;
+pub mod lz_status;
 pub mod private_transfer;
 pub mod quote_unwrap;
 pub mod receive_transfer;
@@ -9,5 +9,4 @@ pub mod shared;
 pub mod teleport;
 pub mod transfer;
 pub mod unwrap;
-pub mod wallet_messages;
 pub mod wrap;

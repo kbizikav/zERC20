@@ -2,26 +2,24 @@ use alloy::{
     primitives::{Address, B256, U256},
     sol_types::{SolCall, SolValue},
 };
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result, anyhow};
 use client_common::{
     contracts::utils::{fetch_tx_input, get_address_from_private_key},
     contracts::{adaptor::Adaptor, z_erc20::zERC20},
     layerzero::{
-        Destination, HttpLayerZeroClient, LayerZeroClient, LzCompose, ScanMessage,
+        Destination, Endpoint, HttpLayerZeroClient, LayerZeroClient, LzCompose, ScanMessage, Stage,
         WalletMessagesParams,
     },
     tokens::{TokenEntry, load_tokens_from_path},
 };
-use hex;
 use reqwest::Url;
 
-use crate::commands::layerzero_common::summarize_stage;
-use crate::{CommonArgs, WalletMessagesArgs};
+use crate::{CommonArgs, LzStatusArgs};
 
-pub async fn run(common: &CommonArgs, args: &WalletMessagesArgs, private_key: B256) -> Result<()> {
+pub async fn run(common: &CommonArgs, args: &LzStatusArgs, private_key: B256) -> Result<()> {
     let base = Url::parse(&common.lz_scan_api_url).with_context(|| {
         format!(
-            "invalid LZ_SCAN_API_URL '{}' for wallet messages",
+            "invalid LZ_SCAN_API_URL '{}' for lz-status",
             common.lz_scan_api_url
         )
     })?;
@@ -81,105 +79,106 @@ async fn print_message(
     println!("Message {}:", index + 1);
     println!("  GUID       : {}", message.guid.as_deref().unwrap_or("-"));
 
-    if let Some(pathway) = &message.pathway {
-        println!(
-            "  Pathway    : {} -> {} (nonce {})",
-            pathway
-                .sender
-                .as_ref()
-                .and_then(|p| p.chain.as_deref())
-                .unwrap_or("-"),
-            pathway
-                .receiver
-                .as_ref()
-                .and_then(|p| p.chain.as_deref())
-                .unwrap_or("-"),
-            pathway.nonce.unwrap_or_default()
-        );
-    } else {
-        println!("  Pathway    : -");
+    match message.pathway.as_ref() {
+        Some(pathway) => {
+            let src_chain = endpoint_chain(pathway.sender.as_ref());
+            let dst_chain = endpoint_chain(pathway.receiver.as_ref());
+            let nonce = pathway.nonce.unwrap_or_default();
+            println!(
+                "  Pathway    : {} -> {} (nonce {})",
+                src_chain, dst_chain, nonce
+            );
+        }
+        None => println!("  Pathway    : -"),
     }
 
-    let (_source_status, source_tx, source_block) = summarize_stage(message.source.as_ref());
+    let StageSummary {
+        tx_hash: source_tx,
+        block: source_block,
+        ..
+    } = summarize_stage(message.source.as_ref());
     println!("  Source tx  : {}", source_tx);
     if let Some(block) = source_block {
         println!("  Source blk : {}", block);
     }
 
-    let payload = message
-        .source
-        .as_ref()
-        .and_then(|stage| stage.tx.as_ref())
-        .and_then(|tx| tx.payload.as_deref());
-    let source_tx_hash = message
-        .source
-        .as_ref()
-        .and_then(|stage| stage.tx.as_ref())
-        .and_then(|tx| tx.tx_hash.as_deref());
-    match source_tx_hash {
-        Some(hash) => match fetch_and_decode_send(hash, message, tokens).await {
-            Ok(Some(summary)) => {
-                println!(
-                    "  Send      : dstEid={} to={} amount={} minAmount={}",
-                    summary.dst_eid, summary.to, summary.amount, summary.min_amount
-                );
-                if let Some(compose) = summary.compose {
-                    println!(
-                        "    Compose  : dstEid={} to={} refund={} minOut={}",
-                        compose.dst_eid, compose.to, compose.refund_address, compose.min_amount_out
-                    );
-                }
-            }
-            Ok(None) => println!("  Send      : (tx input empty or not found)"),
-            Err(err) => println!("  Send      : (decode failed from tx: {})", err),
-        },
-        None => match payload {
-            Some(raw) => match decode_send_payload(raw) {
-                Ok(summary) => {
-                    println!(
-                        "  Send      : dstEid={} to={} amount={} minAmount={}",
-                        summary.dst_eid, summary.to, summary.amount, summary.min_amount
-                    );
-                    if let Some(compose) = summary.compose {
+    print_send_details(message, tokens).await?;
+
+    match &message.destination {
+        Some(destination) => {
+            let dest_tx = destination_tx(destination).unwrap_or_else(|| "-".to_string());
+            println!("  Dest tx    : {}", dest_tx);
+            if let Some(compose) = destination.lz_compose.as_ref() {
+                let followups = fetch_compose_followups(client, compose).await;
+                if !followups.is_empty() {
+                    println!("  Compose tx :");
+                    for followup in followups {
                         println!(
-                            "    Compose  : dstEid={} to={} refund={} minOut={}",
-                            compose.dst_eid,
-                            compose.to,
-                            compose.refund_address,
-                            compose.min_amount_out
+                            "    - {} -> {} | src tx {} | dst tx {} | success {}",
+                            followup.src_chain,
+                            followup.dst_chain,
+                            followup.source_tx,
+                            followup.dest_tx,
+                            followup.success
                         );
                     }
                 }
-                Err(err) => println!("  Send      : (decode failed; err: {})", err),
-            },
-            None => println!("  Send      : -"),
-        },
-    }
-
-    if let Some(destination) = &message.destination {
-        let dest_tx = destination_tx(destination).unwrap_or_else(|| "-".to_string());
-        println!("  Dest tx    : {}", dest_tx);
-        if let Some(compose) = destination.lz_compose.as_ref() {
-            let followups = fetch_compose_followups(client, compose).await;
-            if !followups.is_empty() {
-                println!("  Compose tx :");
-                for followup in followups {
-                    println!(
-                        "    - {} -> {} | src tx {} | dst tx {} | success {}",
-                        followup.src_chain,
-                        followup.dst_chain,
-                        followup.source_tx,
-                        followup.dest_tx,
-                        followup.success
-                    );
-                }
             }
         }
-    } else {
-        println!("  Dest tx    : -");
+        None => println!("  Dest tx    : -"),
     }
 
     Ok(())
+}
+
+#[derive(Debug)]
+struct StageSummary {
+    tx_hash: String,
+    block: Option<String>,
+}
+
+fn summarize_stage(stage: Option<&Stage>) -> StageSummary {
+    let Some(stage) = stage else {
+        return StageSummary {
+            tx_hash: "-".into(),
+            block: None,
+        };
+    };
+
+    let tx_hash = stage
+        .tx
+        .as_ref()
+        .and_then(|tx| tx.tx_hash.as_deref())
+        .unwrap_or("-")
+        .to_string();
+    let block = stage.tx.as_ref().and_then(|tx| {
+        tx.block_number.map(|number| match tx.block_timestamp {
+            Some(ts) => format!("{number} (timestamp {ts})"),
+            None => number.to_string(),
+        })
+    });
+
+    StageSummary { tx_hash, block }
+}
+
+fn endpoint_chain(endpoint: Option<&Endpoint>) -> &str {
+    endpoint.and_then(|p| p.chain.as_deref()).unwrap_or("-")
+}
+
+fn source_tx_hash(message: &ScanMessage) -> Option<&str> {
+    message
+        .source
+        .as_ref()
+        .and_then(|stage| stage.tx.as_ref())
+        .and_then(|tx| tx.tx_hash.as_deref())
+}
+
+fn source_payload(message: &ScanMessage) -> Option<&str> {
+    message
+        .source
+        .as_ref()
+        .and_then(|stage| stage.tx.as_ref())
+        .and_then(|tx| tx.payload.as_deref())
 }
 
 #[derive(Debug)]
@@ -197,6 +196,41 @@ struct BridgeRequestSummary {
     to: Address,
     refund_address: Address,
     min_amount_out: U256,
+}
+
+fn print_send_summary(summary: &SendPayloadSummary) {
+    println!(
+        "  Send      : dstEid={} to={} amount={} minAmount={}",
+        summary.dst_eid, summary.to, summary.amount, summary.min_amount
+    );
+    if let Some(compose) = &summary.compose {
+        println!(
+            "    Compose  : dstEid={} to={} refund={} minOut={}",
+            compose.dst_eid, compose.to, compose.refund_address, compose.min_amount_out
+        );
+    }
+}
+
+async fn print_send_details(message: &ScanMessage, tokens: &[TokenEntry]) -> Result<()> {
+    if let Some(hash) = source_tx_hash(message) {
+        match fetch_and_decode_send(hash, message, tokens).await {
+            Ok(Some(summary)) => print_send_summary(&summary),
+            Ok(None) => println!("  Send      : (tx input empty or not found)"),
+            Err(err) => println!("  Send      : (decode failed from tx: {})", err),
+        }
+        return Ok(());
+    }
+
+    if let Some(raw) = source_payload(message) {
+        match decode_send_payload(raw) {
+            Ok(summary) => print_send_summary(&summary),
+            Err(err) => println!("  Send      : (decode failed; err: {})", err),
+        }
+        return Ok(());
+    }
+
+    println!("  Send      : -");
+    Ok(())
 }
 
 fn decode_send_payload(payload_hex: &str) -> Result<SendPayloadSummary> {
@@ -351,18 +385,18 @@ async fn fetch_compose_followups(
             .pathway
             .as_ref()
             .and_then(|p| p.sender.as_ref())
-            .and_then(|p| p.chain.as_deref())
+            .map(|endpoint| endpoint_chain(Some(endpoint)))
             .unwrap_or("-")
             .to_string();
         let dst_chain = message
             .pathway
             .as_ref()
             .and_then(|p| p.receiver.as_ref())
-            .and_then(|p| p.chain.as_deref())
+            .map(|endpoint| endpoint_chain(Some(endpoint)))
             .unwrap_or("-")
             .to_string();
 
-        let (_source_status, source_tx, _) = summarize_stage(message.source.as_ref());
+        let source_tx = summarize_stage(message.source.as_ref()).tx_hash;
         let dest_tx = message
             .destination
             .as_ref()
