@@ -18,7 +18,7 @@ use client_common::{
 use commands::{
     balance, invoice, private_transfer, quote_unwrap, receive_transfer, scan_receive_transfers,
     shared::{parse_address, parse_b256, parse_bytes, parse_u256},
-    transfer, unwrap, unwrap_status, wallet_messages, wrap,
+    transfer, unwrap, wallet_messages, wrap,
 };
 use hex;
 use reqwest::Url;
@@ -120,8 +120,6 @@ enum Command {
     QuoteUnwrap(QuoteUnwrapArgs),
     /// Unwrap zERC20 locally or via adaptor compose.
     Unwrap(UnwrapArgs),
-    /// Display LayerZero status for a cross-chain unwrap transaction hash.
-    UnwrapStatus(UnwrapStatusArgs),
     /// Display LayerZero messages initiated by the signer wallet.
     WalletMessages(WalletMessagesArgs),
 }
@@ -406,7 +404,6 @@ async fn main() -> Result<()> {
         Command::Wrap(args) => wrap::run(args, &tokens, private_key).await?,
         Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
         Command::Unwrap(args) => unwrap::run(args, &tokens, private_key).await?,
-        Command::UnwrapStatus(args) => unwrap_status::run(&cli.common, args).await?,
         Command::WalletMessages(args) => {
             wallet_messages::run(&cli.common, args, private_key).await?
         }

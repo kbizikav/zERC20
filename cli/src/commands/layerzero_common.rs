@@ -1,4 +1,4 @@
-use client_common::layerzero::{Destination, LzCompose, LzComposeFailedTx, Stage};
+use client_common::layerzero::{Destination, Stage};
 
 pub fn summarize_stage(stage: Option<&Stage>) -> (String, String, Option<String>) {
     if let Some(stage) = stage {
@@ -91,53 +91,4 @@ fn block_summary(block_number: Option<u64>, block_timestamp: Option<u64>) -> Opt
         (Some(num), None) => Some(num.to_string()),
         _ => None,
     }
-}
-
-#[derive(Debug, Clone)]
-pub struct ComposeTxSummary {
-    pub hash: String,
-    pub summary: String,
-}
-
-pub fn lz_compose_txs(lz: &LzCompose) -> Vec<ComposeTxSummary> {
-    lz.txs
-        .iter()
-        .enumerate()
-        .map(|(idx, tx)| {
-            let hash = tx.tx_hash.clone().unwrap_or_else(|| "-".to_string());
-            let from = tx.from.as_deref().unwrap_or("-");
-            let to = tx.to.as_deref().unwrap_or("-");
-            let block = tx
-                .block_number
-                .map(|n| n.to_string())
-                .unwrap_or_else(|| "-".to_string());
-            let ts = tx.block_timestamp.map(|n| n.to_string());
-            let block_desc = ts
-                .map(|ts| format!("{block} (timestamp {ts})"))
-                .unwrap_or(block);
-            ComposeTxSummary {
-                hash: hash.clone(),
-                summary: format!(
-                    "#{} hash={} from={} to={} block={}",
-                    idx + 1,
-                    hash,
-                    from,
-                    to,
-                    block_desc
-                ),
-            }
-        })
-        .collect()
-}
-
-pub fn lz_compose_failed_txs(failed: &[LzComposeFailedTx]) -> Vec<String> {
-    failed
-        .iter()
-        .enumerate()
-        .map(|(idx, tx)| {
-            let hash = tx.tx_hash.as_deref().unwrap_or("-");
-            let err = tx.tx_error.as_deref().unwrap_or("-");
-            format!("#{} hash={} error={}", idx + 1, hash, err)
-        })
-        .collect()
 }

@@ -9,6 +9,5 @@ pub mod shared;
 pub mod teleport;
 pub mod transfer;
 pub mod unwrap;
-pub mod unwrap_status;
 pub mod wallet_messages;
 pub mod wrap;
