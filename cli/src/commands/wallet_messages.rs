@@ -2,22 +2,20 @@ use alloy::{
     primitives::{Address, B256, U256},
     sol_types::{SolCall, SolValue},
 };
-use anyhow::{Context, Result, anyhow};
+use anyhow::{anyhow, Context, Result};
 use client_common::{
-    contracts::utils::get_address_from_private_key,
+    contracts::utils::{fetch_tx_input, get_address_from_private_key},
     contracts::{adaptor::Adaptor, z_erc20::zERC20},
     layerzero::{
-        HttpLayerZeroClient, LayerZeroClient, LzCompose, ScanMessage, WalletMessagesParams,
+        Destination, HttpLayerZeroClient, LayerZeroClient, LzCompose, ScanMessage,
+        WalletMessagesParams,
     },
-    tokens::{load_tokens_from_path, TokenEntry},
+    tokens::{TokenEntry, load_tokens_from_path},
 };
 use hex;
-use reqwest::{Client as HttpClient, Url};
-use serde::Deserialize;
+use reqwest::Url;
 
-use crate::commands::layerzero_common::{
-    destination_block, destination_status, destination_tx, summarize_stage,
-};
+use crate::commands::layerzero_common::summarize_stage;
 use crate::{CommonArgs, WalletMessagesArgs};
 
 pub async fn run(common: &CommonArgs, args: &WalletMessagesArgs, private_key: B256) -> Result<()> {
@@ -39,7 +37,6 @@ pub async fn run(common: &CommonArgs, args: &WalletMessagesArgs, private_key: B2
             )
         })?
         .tokens;
-    let http = HttpClient::new();
 
     let params = WalletMessagesParams {
         limit: Some(args.limit),
@@ -69,7 +66,7 @@ pub async fn run(common: &CommonArgs, args: &WalletMessagesArgs, private_key: B2
     }
 
     for (idx, message) in response.data.iter().enumerate() {
-        print_message(idx, message, &tokens, &http, &client).await?;
+        print_message(idx, message, &tokens, &client).await?;
     }
 
     Ok(())
@@ -79,31 +76,14 @@ async fn print_message(
     index: usize,
     message: &ScanMessage,
     tokens: &[TokenEntry],
-    http: &HttpClient,
     client: &impl LayerZeroClient,
 ) -> Result<()> {
     println!("Message {}:", index + 1);
-    println!(
-        "  GUID               : {}",
-        message.guid.as_deref().unwrap_or("-")
-    );
-    println!(
-        "  Status             : {} ({})",
-        message
-            .status
-            .as_ref()
-            .and_then(|s| s.name.as_deref())
-            .unwrap_or("-"),
-        message
-            .status
-            .as_ref()
-            .and_then(|s| s.message.as_deref())
-            .unwrap_or("-")
-    );
+    println!("  GUID       : {}", message.guid.as_deref().unwrap_or("-"));
 
     if let Some(pathway) = &message.pathway {
         println!(
-            "  Pathway            : {} -> {} (nonce {})",
+            "  Pathway    : {} -> {} (nonce {})",
             pathway
                 .sender
                 .as_ref()
@@ -116,37 +96,16 @@ async fn print_message(
                 .unwrap_or("-"),
             pathway.nonce.unwrap_or_default()
         );
-        println!(
-            "  Endpoint IDs       : {} -> {}",
-            pathway.src_eid.unwrap_or_default(),
-            pathway.dst_eid.unwrap_or_default()
-        );
-        println!(
-            "  Sender -> Receiver : {} -> {}",
-            pathway
-                .sender
-                .as_ref()
-                .and_then(|p| p.address.as_deref())
-                .unwrap_or("-"),
-            pathway
-                .receiver
-                .as_ref()
-                .and_then(|p| p.address.as_deref())
-                .unwrap_or("-")
-        );
-        if let Some(pathway_id) = pathway.id.as_deref() {
-            println!("  Pathway ID         : {}", pathway_id);
-        }
     } else {
-        println!("  Pathway            : -");
+        println!("  Pathway    : -");
     }
 
-    let (source_status, source_tx, source_block) = summarize_stage(message.source.as_ref());
-    println!("  Source status      : {}", source_status);
-    println!("  Source tx          : {}", source_tx);
+    let (_source_status, source_tx, source_block) = summarize_stage(message.source.as_ref());
+    println!("  Source tx  : {}", source_tx);
     if let Some(block) = source_block {
-        println!("  Source block       : {}", block);
+        println!("  Source blk : {}", block);
     }
+
     let payload = message
         .source
         .as_ref()
@@ -158,89 +117,55 @@ async fn print_message(
         .and_then(|stage| stage.tx.as_ref())
         .and_then(|tx| tx.tx_hash.as_deref());
     match source_tx_hash {
-        Some(hash) => match fetch_and_decode_send(hash, message, tokens, http).await {
+        Some(hash) => match fetch_and_decode_send(hash, message, tokens).await {
             Ok(Some(summary)) => {
                 println!(
-                    "  Source payload     : zERC20.send dstEid={} to={} amount={} minAmount={} extraOptions={}B composeMsg={}B oftCmd={}B",
-                    summary.dst_eid,
-                    summary.to,
-                    summary.amount,
-                    summary.min_amount,
-                    summary.extra_options_len,
-                    summary.compose_msg_len,
-                    summary.oft_cmd_len
+                    "  Send      : dstEid={} to={} amount={} minAmount={}",
+                    summary.dst_eid, summary.to, summary.amount, summary.min_amount
                 );
                 if let Some(compose) = summary.compose {
                     println!(
-                        "    compose BridgeRequest dstEid={} to={} refund={} minOut={} extraOptions={}B composeMsg={}B oftCmd={}B",
-                        compose.dst_eid,
-                        compose.to,
-                        compose.refund_address,
-                        compose.min_amount_out,
-                        compose.extra_options_len,
-                        compose.compose_msg_len,
-                        compose.oft_cmd_len
+                        "    Compose  : dstEid={} to={} refund={} minOut={}",
+                        compose.dst_eid, compose.to, compose.refund_address, compose.min_amount_out
                     );
                 }
             }
-            Ok(None) => println!("  Source payload     : (tx input empty or not found)"),
-            Err(err) => println!(
-                "  Source payload     : (failed to decode zERC20.send from tx: {})",
-                err
-            ),
+            Ok(None) => println!("  Send      : (tx input empty or not found)"),
+            Err(err) => println!("  Send      : (decode failed from tx: {})", err),
         },
         None => match payload {
             Some(raw) => match decode_send_payload(raw) {
                 Ok(summary) => {
                     println!(
-                        "  Source payload     : zERC20.send dstEid={} to={} amount={} minAmount={} extraOptions={}B composeMsg={}B oftCmd={}B",
-                        summary.dst_eid,
-                        summary.to,
-                        summary.amount,
-                        summary.min_amount,
-                        summary.extra_options_len,
-                        summary.compose_msg_len,
-                        summary.oft_cmd_len
+                        "  Send      : dstEid={} to={} amount={} minAmount={}",
+                        summary.dst_eid, summary.to, summary.amount, summary.min_amount
                     );
                     if let Some(compose) = summary.compose {
                         println!(
-                            "    compose BridgeRequest dstEid={} to={} refund={} minOut={} extraOptions={}B composeMsg={}B oftCmd={}B",
+                            "    Compose  : dstEid={} to={} refund={} minOut={}",
                             compose.dst_eid,
                             compose.to,
                             compose.refund_address,
-                            compose.min_amount_out,
-                            compose.extra_options_len,
-                            compose.compose_msg_len,
-                            compose.oft_cmd_len
+                            compose.min_amount_out
                         );
                     }
                 }
-                Err(err) => println!(
-                    "  Source payload     : (failed to decode zERC20.send; len {}B; err: {})",
-                    hex_len(raw),
-                    err
-                ),
+                Err(err) => println!("  Send      : (decode failed; err: {})", err),
             },
-            None => println!("  Source payload     : -"),
+            None => println!("  Send      : -"),
         },
     }
 
     if let Some(destination) = &message.destination {
-        let dest_status = destination_status(destination).unwrap_or_else(|| "-".to_string());
         let dest_tx = destination_tx(destination).unwrap_or_else(|| "-".to_string());
-        let dest_block = destination_block(destination);
-        println!("  Destination status : {}", dest_status);
-        println!("  Destination tx     : {}", dest_tx);
-        if let Some(block) = dest_block {
-            println!("  Destination block  : {}", block);
-        }
+        println!("  Dest tx    : {}", dest_tx);
         if let Some(compose) = destination.lz_compose.as_ref() {
             let followups = fetch_compose_followups(client, compose).await;
             if !followups.is_empty() {
-                println!("  lzCompose follow-ups:");
+                println!("  Compose tx :");
                 for followup in followups {
                     println!(
-                        "    - {} -> {} | source tx {} | dest tx {} | success {}",
+                        "    - {} -> {} | src tx {} | dst tx {} | success {}",
                         followup.src_chain,
                         followup.dst_chain,
                         followup.source_tx,
@@ -251,27 +176,8 @@ async fn print_message(
             }
         }
     } else {
-        println!("  Destination status : -");
-        println!("  Destination tx     : -");
+        println!("  Dest tx    : -");
     }
-
-    println!(
-        "  DVN status         : {}",
-        message
-            .verification
-            .as_ref()
-            .and_then(|v| v.dvn.as_ref())
-            .and_then(|d| d.status.as_deref())
-            .unwrap_or("-")
-    );
-    println!(
-        "  Sealer status      : {}",
-        message
-            .sealer
-            .as_ref()
-            .and_then(|s| s.status.as_deref())
-            .unwrap_or("-")
-    );
 
     Ok(())
 }
@@ -282,9 +188,6 @@ struct SendPayloadSummary {
     to: Address,
     amount: U256,
     min_amount: U256,
-    extra_options_len: usize,
-    compose_msg_len: usize,
-    oft_cmd_len: usize,
     compose: Option<BridgeRequestSummary>,
 }
 
@@ -294,9 +197,6 @@ struct BridgeRequestSummary {
     to: Address,
     refund_address: Address,
     min_amount_out: U256,
-    extra_options_len: usize,
-    compose_msg_len: usize,
-    oft_cmd_len: usize,
 }
 
 fn decode_send_payload(payload_hex: &str) -> Result<SendPayloadSummary> {
@@ -324,9 +224,6 @@ fn decode_send_payload(payload_hex: &str) -> Result<SendPayloadSummary> {
         to: Address::from_word(param.to),
         amount: param.amountLD,
         min_amount: param.minAmountLD,
-        extra_options_len: param.extraOptions.len(),
-        compose_msg_len: param.composeMsg.len(),
-        oft_cmd_len: param.oftCmd.len(),
         compose,
     })
 }
@@ -342,79 +239,52 @@ fn decode_bridge_request(bytes: &[u8]) -> Result<Option<BridgeRequestSummary>> {
         to: request.to,
         refund_address: request.refundAddress,
         min_amount_out: request.minAmountOut,
-        extra_options_len: request.extraOptions.len(),
-        compose_msg_len: request.composeMsg.len(),
-        oft_cmd_len: request.oftCmd.len(),
     }))
 }
 
-fn hex_len(hex_str: &str) -> usize {
-    hex_str.trim_start_matches("0x").len() / 2
-}
-
 fn decode_send_call(bytes: &[u8]) -> Result<zERC20::sendCall> {
-    let mut last_err = match zERC20::sendCall::abi_decode(bytes) {
-        Ok(call) => return Ok(call),
-        Err(err) => err,
-    };
+    if let Ok(call) = zERC20::sendCall::abi_decode(bytes) {
+        return Ok(call);
+    }
 
     if let Ok(call) = zERC20::sendCall::abi_decode_raw(bytes) {
         return Ok(call);
     }
 
     if bytes.len() > 4 {
-        match zERC20::sendCall::abi_decode(&bytes[4..]) {
-            Ok(call) => return Ok(call),
-            Err(err) => last_err = err,
+        if let Ok(call) = zERC20::sendCall::abi_decode(&bytes[4..]) {
+            return Ok(call);
         }
     }
 
-    Err(anyhow!(last_err))
+    Err(anyhow!("zERC20::sendCall decode failed"))
 }
 
 fn decode_bridge_request_inner(bytes: &[u8]) -> Result<Adaptor::BridgeRequest> {
-    let mut last_err = match Adaptor::BridgeRequest::abi_decode(bytes) {
-        Ok(request) => return Ok(request),
-        Err(err) => err,
-    };
+    if let Ok(request) = Adaptor::BridgeRequest::abi_decode(bytes) {
+        return Ok(request);
+    }
 
     if bytes.len() > 4 {
-        match Adaptor::BridgeRequest::abi_decode(&bytes[4..]) {
-            Ok(request) => return Ok(request),
-            Err(err) => last_err = err,
+        if let Ok(request) = Adaptor::BridgeRequest::abi_decode(&bytes[4..]) {
+            return Ok(request);
         }
     }
 
-    Err(anyhow!(last_err))
-}
-
-#[derive(Debug, Deserialize)]
-struct EthTx {
-    #[serde(default)]
-    input: Option<String>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RpcResponse {
-    result: Option<EthTx>,
-    #[serde(default)]
-    error: Option<RpcError>,
-}
-
-#[derive(Debug, Deserialize)]
-struct RpcError {
-    message: Option<String>,
+    Err(anyhow!("Adaptor::BridgeRequest decode failed"))
 }
 
 async fn fetch_and_decode_send(
     tx_hash: &str,
     message: &ScanMessage,
     tokens: &[TokenEntry],
-    http: &HttpClient,
 ) -> Result<Option<SendPayloadSummary>> {
     let entry = find_token_for_message(message, tokens)
         .ok_or_else(|| anyhow!("no token entry matched source pathway to fetch tx"))?;
-    let calldata = fetch_tx_input(http, entry, tx_hash).await?;
+    let provider = entry.provider()?;
+    let calldata = fetch_tx_input(&provider, tx_hash)
+        .await
+        .map_err(|err| anyhow!(err))?;
     let Some(input) = calldata else {
         return Ok(None);
     };
@@ -449,44 +319,6 @@ fn find_token_for_message<'a>(
         }
         false
     })
-}
-
-async fn fetch_tx_input(
-    http: &HttpClient,
-    entry: &TokenEntry,
-    tx_hash: &str,
-) -> Result<Option<String>> {
-    for url in &entry.rpc_urls {
-        let body = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "eth_getTransactionByHash",
-            "params": [tx_hash],
-        });
-        match http.post(url).json(&body).send().await {
-            Ok(resp) => {
-                if !resp.status().is_success() {
-                    continue;
-                }
-                let parsed: RpcResponse = resp.json().await.unwrap_or(RpcResponse {
-                    result: None,
-                    error: None,
-                });
-                if let Some(err) = parsed.error {
-                    return Err(anyhow!(
-                        "rpc error from {}: {}",
-                        url,
-                        err.message.unwrap_or_else(|| "unknown error".into())
-                    ));
-                }
-                if let Some(result) = parsed.result {
-                    return Ok(result.input);
-                }
-            }
-            Err(_) => continue,
-        }
-    }
-    Ok(None)
 }
 
 #[derive(Debug)]
@@ -559,4 +391,25 @@ async fn fetch_compose_followups(
         });
     }
     out
+}
+
+fn destination_tx(destination: &Destination) -> Option<String> {
+    destination
+        .tx
+        .as_ref()
+        .and_then(|tx| tx.tx_hash.clone())
+        .or_else(|| {
+            destination
+                .lz_compose
+                .as_ref()
+                .and_then(|lz| lz.txs.first())
+                .and_then(|tx| tx.tx_hash.clone())
+        })
+        .or_else(|| {
+            destination
+                .native_drop
+                .as_ref()
+                .and_then(|drop| drop.tx.as_ref())
+                .and_then(|tx| tx.tx_hash.clone())
+        })
 }
