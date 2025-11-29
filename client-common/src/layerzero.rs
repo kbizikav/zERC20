@@ -21,6 +21,12 @@ pub enum LayerZeroError {
     WalletMessagesStatus { status: StatusCode, body: String },
     #[error("failed to decode LayerZero Scan wallet messages response")]
     WalletMessagesDecode(#[source] reqwest::Error),
+    #[error("failed to query LayerZero Scan transaction messages")]
+    TxMessagesRequest(#[source] reqwest::Error),
+    #[error("LayerZero Scan transaction messages returned {status}: {body}")]
+    TxMessagesStatus { status: StatusCode, body: String },
+    #[error("failed to decode LayerZero Scan transaction messages response")]
+    TxMessagesDecode(#[source] reqwest::Error),
 }
 
 pub type LayerZeroResult<T> = Result<T, LayerZeroError>;
@@ -71,6 +77,8 @@ pub trait LayerZeroClient: Send + Sync {
         src_address: Address,
         params: &WalletMessagesParams,
     ) -> LayerZeroResult<WalletMessagesResponse>;
+
+    async fn tx_messages(&self, tx_hash: &str) -> LayerZeroResult<Option<TxMessagesResponse>>;
 }
 
 #[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
@@ -110,6 +118,41 @@ impl LayerZeroClient for HttpLayerZeroClient {
 
         Ok(payload)
     }
+
+    async fn tx_messages(&self, tx_hash: &str) -> LayerZeroResult<Option<TxMessagesResponse>> {
+        let path = format!("messages/tx/{tx_hash}");
+        let url = self.endpoint(&path)?;
+
+        let mut request = self.client.get(url);
+        if let Some(api_key) = &self.api_key {
+            request = request.header("x-api-key", api_key);
+        }
+
+        let response = request
+            .send()
+            .await
+            .map_err(LayerZeroError::TxMessagesRequest)?;
+
+        let status = response.status();
+        if status == StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+
+        if !status.is_success() {
+            let body = response
+                .text()
+                .await
+                .unwrap_or_else(|_| "<failed to read body>".to_string());
+            return Err(LayerZeroError::TxMessagesStatus { status, body });
+        }
+
+        let payload = response
+            .json::<TxMessagesResponse>()
+            .await
+            .map_err(LayerZeroError::TxMessagesDecode)?;
+
+        Ok(Some(payload))
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -135,6 +178,8 @@ pub struct ScanMessagesResponse<T> {
     pub next_token: Option<String>,
 }
 
+pub type TxMessagesResponse = ScanMessagesResponse<ScanMessage>;
+
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ScanMessage {
     #[serde(default)]
@@ -144,7 +189,7 @@ pub struct ScanMessage {
     #[serde(default)]
     pub source: Option<Stage>,
     #[serde(default)]
-    pub destination: Option<Value>,
+    pub destination: Option<Destination>,
     #[serde(default)]
     pub verification: Option<Verification>,
     #[serde(default)]
@@ -186,10 +231,50 @@ pub struct Stage {
 #[serde(rename_all = "camelCase")]
 pub struct TxInfo {
     pub tx_hash: Option<String>,
+    pub block_hash: Option<String>,
     #[serde(deserialize_with = "deserialize_opt_u64", default)]
     pub block_number: Option<u64>,
     #[serde(deserialize_with = "deserialize_opt_u64", default)]
     pub block_timestamp: Option<u64>,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub payload: Option<String>,
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub readiness_timestamp: Option<u64>,
+    #[serde(default)]
+    pub options: Option<TxOptions>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct TxOptions {
+    #[serde(default)]
+    pub lz_receive: Option<LzReceiveOptions>,
+    #[serde(default)]
+    pub compose: Option<Vec<ComposeOption>>,
+    #[serde(default)]
+    pub ordered: Option<bool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LzReceiveOptions {
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub gas: Option<u64>,
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub value: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ComposeOption {
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub index: Option<u64>,
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub gas: Option<u64>,
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub value: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -207,6 +292,79 @@ pub struct Dvn {
 pub struct Sealer {
     pub status: Option<String>,
     pub tx: Option<TxInfo>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct Destination {
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub tx: Option<DestinationTx>,
+    #[serde(default, rename = "lzCompose")]
+    pub lz_compose: Option<LzCompose>,
+    #[serde(default, rename = "nativeDrop")]
+    pub native_drop: Option<NativeDrop>,
+    #[serde(default)]
+    pub payload: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct DestinationTx {
+    pub tx_hash: Option<String>,
+    pub block_hash: Option<String>,
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub block_number: Option<u64>,
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub block_timestamp: Option<u64>,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub to: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LzCompose {
+    #[serde(default)]
+    pub txs: Vec<LzComposeTx>,
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default, rename = "failedTx")]
+    pub failed_tx: Vec<LzComposeFailedTx>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LzComposeTx {
+    pub tx_hash: Option<String>,
+    pub block_hash: Option<String>,
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub block_number: Option<u64>,
+    #[serde(deserialize_with = "deserialize_opt_u64", default)]
+    pub block_timestamp: Option<u64>,
+    #[serde(default)]
+    pub from: Option<String>,
+    #[serde(default)]
+    pub to: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct LzComposeFailedTx {
+    pub tx_hash: Option<String>,
+    #[serde(rename = "txError")]
+    pub tx_error: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NativeDrop {
+    #[serde(default)]
+    pub status: Option<String>,
+    #[serde(default)]
+    pub tx: Option<DestinationTx>,
 }
 
 pub fn deserialize_opt_u64<'de, D>(deserializer: D) -> std::result::Result<Option<u64>, D::Error>

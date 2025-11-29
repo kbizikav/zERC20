@@ -1,7 +1,7 @@
-use anyhow::{Context, Result, anyhow, bail};
-use client_common::layerzero::{ScanMessage, ScanMessagesResponse};
+use anyhow::{Context, Result, anyhow};
+use client_common::layerzero::{HttpLayerZeroClient, LayerZeroClient};
 use hex;
-use reqwest::Client;
+use reqwest::Url;
 
 use crate::commands::{
     layerzero_common::{
@@ -14,43 +14,25 @@ use crate::{CommonArgs, UnwrapStatusArgs};
 
 pub async fn run(common: &CommonArgs, args: &UnwrapStatusArgs) -> Result<()> {
     let tx_hash = normalize_tx_hash(&args.tx_hash)?;
-    let client = Client::builder()
-        .user_agent("curl/8.0 (zerc20-cli layerzero client)")
-        .build()
-        .context("failed to build LayerZero Scan HTTP client")?;
-    let base = common.lz_scan_api_url.trim_end_matches('/');
-    let url = format!("{}/messages/tx/{}", base, tx_hash);
+    let base = Url::parse(&common.lz_scan_api_url).with_context(|| {
+        format!(
+            "invalid LZ_SCAN_API_URL '{}' for transaction lookup",
+            common.lz_scan_api_url
+        )
+    })?;
+    let client = HttpLayerZeroClient::new(base.clone(), common.lz_scan_api_key.clone())
+        .context("failed to construct LayerZero Scan client")?;
+    let base_trimmed = base.as_str().trim_end_matches('/');
+    let url = format!("{}/messages/tx/{}", base_trimmed, tx_hash);
 
-    let mut request = client.get(&url);
-    if let Some(api_key) = &common.lz_scan_api_key {
-        request = request.header("x-api-key", api_key);
-    }
-
-    let response = request
-        .send()
+    let response = client
+        .tx_messages(&tx_hash)
         .await
-        .with_context(|| format!("failed to query LayerZero Scan at {}", url))?;
-
-    let status_code = response.status();
-    let body = response
-        .text()
-        .await
-        .context("failed to read LayerZero Scan response body")?;
-
-    if !status_code.is_success() {
-        bail!(
-            "LayerZero Scan responded with {}: {}",
-            status_code.as_u16(),
-            body
-        );
-    }
-
-    let parsed: ScanMessagesResponse<ScanMessage> = serde_json::from_str(&body)
-        .with_context(|| format!("failed to parse LayerZero Scan response: {}", body))?;
-
-    let message = parsed
-        .data
-        .get(0)
+        .context("failed to fetch LayerZero Scan transaction messages")?;
+    let message = response
+        .as_ref()
+        .and_then(|resp| resp.data.get(0))
+        .cloned()
         .with_context(|| format!("no message found for {}", tx_hash))?;
 
     println!("LayerZero Scan URL  : {}", url);
@@ -128,16 +110,16 @@ pub async fn run(common: &CommonArgs, args: &UnwrapStatusArgs) -> Result<()> {
         if let Some(block) = dest_block {
             println!("Destination block   : {}", block);
         }
-        if let Some(compose) = destination.get("lzCompose") {
+        if let Some(compose) = destination.lz_compose.as_ref() {
             let compose_txs = lz_compose_txs(compose);
             if !compose_txs.is_empty() {
                 println!("Destination lzCompose txs:");
                 for tx in &compose_txs {
                     println!("  - {}", tx.summary);
-                    print_compose_detail(&client, base, &common.lz_scan_api_key, tx).await?;
+                    print_compose_detail(&client, base_trimmed, tx).await?;
                 }
             }
-            let compose_failed = lz_compose_failed_txs(compose);
+            let compose_failed = lz_compose_failed_txs(&compose.failed_tx);
             if !compose_failed.is_empty() {
                 println!("Destination lzCompose failed:");
                 for tx in compose_failed {
@@ -177,71 +159,53 @@ fn normalize_tx_hash(value: &str) -> Result<String> {
 }
 
 async fn print_compose_detail(
-    client: &Client,
+    client: &impl LayerZeroClient,
     base: &str,
-    api_key: &Option<String>,
     tx: &ComposeTxSummary,
 ) -> Result<()> {
     let url = format!("{}/messages/tx/{}", base, tx.hash);
-    let mut request = client.get(&url);
-    if let Some(api_key) = api_key {
-        request = request.header("x-api-key", api_key);
-    }
-
-    let response = request.send().await;
-    let response = match response {
+    let response = match client.tx_messages(&tx.hash).await {
         Ok(resp) => resp,
         Err(err) => {
-            println!("    (fetch failed: {})", err);
+            println!("    (fetch failed for {}: {})", url, err);
             return Ok(());
         }
     };
 
-    let status = response.status();
-    if status == reqwest::StatusCode::NOT_FOUND {
+    let Some(parsed) = response else {
         return Ok(());
-    }
-    if !status.is_success() {
-        println!("    (fetch returned {} for compose tx)", status);
+    };
+
+    let Some(message) = parsed.data.get(0) else {
         return Ok(());
+    };
+
+    let (_source_status, source_tx, source_block) = summarize_stage(message.source.as_ref());
+    println!(
+        "    status: {} ({})",
+        message
+            .status
+            .as_ref()
+            .and_then(|s| s.name.as_deref())
+            .unwrap_or("-"),
+        message
+            .status
+            .as_ref()
+            .and_then(|s| s.message.as_deref())
+            .unwrap_or("-")
+    );
+    println!("    source tx: {}", source_tx);
+    if let Some(block) = source_block {
+        println!("    source block: {}", block);
     }
-
-    let parsed: ScanMessagesResponse<ScanMessage> = response.json().await.unwrap_or_else(|err| {
-        println!("    (failed to parse compose tx response: {})", err);
-        ScanMessagesResponse {
-            data: vec![],
-            next_token: None,
-        }
-    });
-
-    if let Some(message) = parsed.data.get(0) {
-        let (_source_status, source_tx, source_block) = summarize_stage(message.source.as_ref());
-        println!(
-            "    status: {} ({})",
-            message
-                .status
-                .as_ref()
-                .and_then(|s| s.name.as_deref())
-                .unwrap_or("-"),
-            message
-                .status
-                .as_ref()
-                .and_then(|s| s.message.as_deref())
-                .unwrap_or("-")
-        );
-        println!("    source tx: {}", source_tx);
-        if let Some(block) = source_block {
-            println!("    source block: {}", block);
-        }
-        if let Some(destination) = &message.destination {
-            let dest_status = destination_status(destination).unwrap_or_else(|| "-".to_string());
-            let dest_tx = destination_tx(destination).unwrap_or_else(|| "-".to_string());
-            let dest_block = destination_block(destination);
-            println!("    dest status: {}", dest_status);
-            println!("    dest tx: {}", dest_tx);
-            if let Some(block) = dest_block {
-                println!("    dest block: {}", block);
-            }
+    if let Some(destination) = &message.destination {
+        let dest_status = destination_status(destination).unwrap_or_else(|| "-".to_string());
+        let dest_tx = destination_tx(destination).unwrap_or_else(|| "-".to_string());
+        let dest_block = destination_block(destination);
+        println!("    dest status: {}", dest_status);
+        println!("    dest tx: {}", dest_tx);
+        if let Some(block) = dest_block {
+            println!("    dest block: {}", block);
         }
     }
 
