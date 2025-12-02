@@ -6,11 +6,12 @@ use ark_relations::gr1cs::SynthesisError;
 use ark_std::vec::Vec;
 use sha2::{Digest as _, Sha256};
 
-pub fn hash_chain(prev: U256, addr: Address, value: U256) -> U256 {
+pub fn hash_chain(prev: U256, from: Address, to: Address, value: U256) -> U256 {
     let mut digest: [u8; 32] = Sha256::digest(
         [
             prev.to_be_bytes_vec(),
-            addr.0.0.to_vec(),
+            from.0.0.to_vec(),
+            to.0.0.to_vec(),
             value.to_be_bytes_vec(),
         ]
         .concat(),
@@ -23,7 +24,8 @@ pub fn hash_chain(prev: U256, addr: Address, value: U256) -> U256 {
 
 pub fn hash_chain_var<F: PrimeField>(
     prev_hash_chain: &FpVar<F>,
-    address: &FpVar<F>,
+    from_address: &FpVar<F>,
+    to_address: &FpVar<F>,
     value: &FpVar<F>,
 ) -> Result<FpVar<F>, SynthesisError> {
     let (prev_prefix, mut prev_bytes) = fp_var_be_bytes(prev_hash_chain, 32)?;
@@ -32,8 +34,11 @@ pub fn hash_chain_var<F: PrimeField>(
         first.enforce_equal(&UInt8::constant(0))?;
     }
 
-    let (address_prefix, address_bytes) = fp_var_be_bytes(address, 20)?;
-    enforce_zero_bytes(&address_prefix)?;
+    let (from_prefix, from_bytes) = fp_var_be_bytes(from_address, 20)?;
+    enforce_zero_bytes(&from_prefix)?;
+
+    let (to_prefix, to_bytes) = fp_var_be_bytes(to_address, 20)?;
+    enforce_zero_bytes(&to_prefix)?;
 
     let (value_prefix, mut value_bytes) = fp_var_be_bytes(value, 32)?;
     enforce_zero_bytes(&value_prefix)?;
@@ -41,9 +46,10 @@ pub fn hash_chain_var<F: PrimeField>(
         first.enforce_equal(&UInt8::constant(0))?;
     }
 
-    let mut sha_input = Vec::with_capacity(32 + 20 + 32);
+    let mut sha_input = Vec::with_capacity(32 + 20 + 20 + 32);
     sha_input.append(&mut prev_bytes);
-    sha_input.extend_from_slice(&address_bytes);
+    sha_input.extend_from_slice(&from_bytes);
+    sha_input.extend_from_slice(&to_bytes);
     sha_input.append(&mut value_bytes);
 
     let digest = Sha256Gadget::<F>::digest(sha_input.as_slice())?;
@@ -96,7 +102,7 @@ mod tests {
     use sha2::{Digest, Sha256};
 
     const ZERO_VECTOR_EXPECTED_HEX: &str =
-        "0xea5e6a3ec5f5474a26d858bc77b6d7bd3ab864ea02d988683fdc648602b248";
+        "0xf37f8d1931b3bdf767e7510dd69509fbf23af1f7654933d0a4d291cbdd4418";
 
     fn sample_248_bit_field(rng: &mut impl RngCore) -> (Fr, Vec<u8>) {
         let mut bytes = [0u8; 32];
@@ -113,10 +119,11 @@ mod tests {
         (field, bytes.to_vec())
     }
 
-    fn expected_hash(prev: &[u8], addr: &[u8], value: &[u8]) -> Vec<u8> {
+    fn expected_hash(prev: &[u8], from: &[u8], to: &[u8], value: &[u8]) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(prev);
-        hasher.update(addr);
+        hasher.update(from);
+        hasher.update(to);
         hasher.update(value);
         let digest = hasher.finalize();
         digest[1..].to_vec()
@@ -129,17 +136,19 @@ mod tests {
 
         let (prev_field, prev_bytes) = sample_248_bit_field(&mut rng);
         let (value_field, value_bytes) = sample_248_bit_field(&mut rng);
-        let (addr_field, addr_bytes) = sample_address_field(&mut rng);
+        let (from_field, from_bytes) = sample_address_field(&mut rng);
+        let (to_field, to_bytes) = sample_address_field(&mut rng);
 
-        let expected_bytes = expected_hash(&prev_bytes, &addr_bytes, &value_bytes);
+        let expected_bytes = expected_hash(&prev_bytes, &from_bytes, &to_bytes, &value_bytes);
         let expected_field = Fr::from_be_bytes_mod_order(&expected_bytes);
 
         let prev_hash_chain = FpVar::<Fr>::new_witness(ns!(cs, "prev"), || Ok(prev_field))?;
-        let address = FpVar::<Fr>::new_witness(ns!(cs, "addr"), || Ok(addr_field))?;
+        let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_field))?;
+        let to = FpVar::<Fr>::new_witness(ns!(cs, "to"), || Ok(to_field))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_field))?;
         let expected_var = FpVar::<Fr>::new_input(ns!(cs, "expected"), || Ok(expected_field))?;
 
-        let actual = hash_chain_var(&prev_hash_chain, &address, &value)?;
+        let actual = hash_chain_var(&prev_hash_chain, &from, &to, &value)?;
         actual.enforce_equal(&expected_var)?;
 
         assert!(cs.is_satisfied().unwrap());
@@ -151,20 +160,22 @@ mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
         let prev_bytes = vec![0u8; 32];
-        let addr_bytes = vec![0u8; 20];
+        let from_bytes = vec![0u8; 20];
+        let to_bytes = vec![0u8; 20];
         let value_bytes = vec![0u8; 32];
 
-        let expected_bytes = expected_hash(&prev_bytes, &addr_bytes, &value_bytes);
+        let expected_bytes = expected_hash(&prev_bytes, &from_bytes, &to_bytes, &value_bytes);
         let expected_constant = decode(ZERO_VECTOR_EXPECTED_HEX.trim_start_matches("0x"))
             .expect("valid zero-vector hex constant");
         assert_eq!(expected_bytes, expected_constant);
 
         let prev_hash_chain = FpVar::<Fr>::Constant(Fr::from(0u64));
-        let address = FpVar::<Fr>::Constant(Fr::from(0u64));
+        let from = FpVar::<Fr>::Constant(Fr::from(0u64));
+        let to = FpVar::<Fr>::Constant(Fr::from(0u64));
         let value = FpVar::<Fr>::Constant(Fr::from(0u64));
         let expected_var = FpVar::<Fr>::Constant(Fr::from_be_bytes_mod_order(&expected_constant));
 
-        let actual = hash_chain_var(&prev_hash_chain, &address, &value)?;
+        let actual = hash_chain_var(&prev_hash_chain, &from, &to, &value)?;
         actual.enforce_equal(&expected_var)?;
 
         assert!(cs.is_satisfied().unwrap());
@@ -178,19 +189,21 @@ mod tests {
 
         let (prev_field, prev_bytes) = sample_248_bit_field(&mut rng);
         let (value_field, value_bytes) = sample_248_bit_field(&mut rng);
-        let (addr_field, addr_bytes) = sample_address_field(&mut rng);
+        let (from_field, from_bytes) = sample_address_field(&mut rng);
+        let (to_field, to_bytes) = sample_address_field(&mut rng);
 
-        let expected_bytes = expected_hash(&prev_bytes, &addr_bytes, &value_bytes);
+        let expected_bytes = expected_hash(&prev_bytes, &from_bytes, &to_bytes, &value_bytes);
         let mut wrong_bytes = expected_bytes.clone();
         wrong_bytes[30] ^= 0x01;
         let wrong_field = Fr::from_be_bytes_mod_order(&wrong_bytes);
 
         let prev_hash_chain = FpVar::<Fr>::new_witness(ns!(cs, "prev"), || Ok(prev_field))?;
-        let address = FpVar::<Fr>::new_witness(ns!(cs, "addr"), || Ok(addr_field))?;
+        let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_field))?;
+        let to = FpVar::<Fr>::new_witness(ns!(cs, "to"), || Ok(to_field))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_field))?;
         let wrong_var = FpVar::<Fr>::new_input(ns!(cs, "wrong"), || Ok(wrong_field))?;
 
-        let actual = hash_chain_var(&prev_hash_chain, &address, &value)?;
+        let actual = hash_chain_var(&prev_hash_chain, &from, &to, &value)?;
         actual.enforce_equal(&wrong_var)?;
 
         assert!(!cs.is_satisfied().unwrap());
@@ -208,17 +221,19 @@ mod tests {
         let prev_field = Fr::from_be_bytes_mod_order(&prev_bytes);
 
         let (value_field, value_bytes) = sample_248_bit_field(&mut rng);
-        let (addr_field, addr_bytes) = sample_address_field(&mut rng);
+        let (from_field, from_bytes) = sample_address_field(&mut rng);
+        let (to_field, to_bytes) = sample_address_field(&mut rng);
 
-        let expected_bytes = expected_hash(&prev_bytes, &addr_bytes, &value_bytes);
+        let expected_bytes = expected_hash(&prev_bytes, &from_bytes, &to_bytes, &value_bytes);
         let expected_field = Fr::from_be_bytes_mod_order(&expected_bytes);
 
         let prev_hash_chain = FpVar::<Fr>::new_witness(ns!(cs, "prev"), || Ok(prev_field))?;
-        let address = FpVar::<Fr>::new_witness(ns!(cs, "addr"), || Ok(addr_field))?;
+        let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_field))?;
+        let to = FpVar::<Fr>::new_witness(ns!(cs, "to"), || Ok(to_field))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_field))?;
         let expected_var = FpVar::<Fr>::new_input(ns!(cs, "expected"), || Ok(expected_field))?;
 
-        let actual = hash_chain_var(&prev_hash_chain, &address, &value)?;
+        let actual = hash_chain_var(&prev_hash_chain, &from, &to, &value)?;
         actual.enforce_equal(&expected_var)?;
 
         assert!(!cs.is_satisfied().unwrap());

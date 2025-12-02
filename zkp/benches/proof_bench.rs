@@ -37,7 +37,8 @@ fn bench_root_nova_step(c: &mut Criterion) {
     let base_rng = StdRng::seed_from_u64(0xBAD5EED);
     let external_input = RootExternalInputs::<Fr> {
         is_dummy: true,
-        address: Fr::zero(),
+        from_address: Fr::zero(),
+        to_address: Fr::zero(),
         value: Fr::zero(),
         siblings: [Fr::zero(); TRANSFER_TREE_HEIGHT],
     };

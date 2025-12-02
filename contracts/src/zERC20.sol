@@ -9,7 +9,7 @@ import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /// @title zERC20
 /// @notice Upgradeable ERC20 token that feeds the zk circuits by enforcing 248-bit transfer values,
-///         hashing `(to, value)` pairs into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
+///         hashing `(from, to, value)` triples into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
 ///         Also implements the LayerZero V2 OFT interface for omnichain transfers.
 contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     using SlotDerivation for string;
@@ -116,7 +116,7 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
         if (value > type(uint248).max) revert ValueTooLarge();
         ZERC20Storage storage $ = _getZERC20Storage();
         super._afterTokenTransfer(from, to, value);
-        $.hashChain = ShaHashChainLib.compute($.hashChain, to, value);
+        $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);
         emit IndexedTransfer($.index++, from, to, value);
     }
 

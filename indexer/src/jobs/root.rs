@@ -298,7 +298,8 @@ impl RootProverJob {
                     )
                 })?;
 
-            let external_inputs = to_external_inputs(event.address, event.value, &proof)?;
+            let external_inputs =
+                to_external_inputs(event.from_address, event.to_address, event.value, &proof)?;
             nova.prove_step(&mut rng, external_inputs, None)
                 .with_context(|| {
                     format!(
@@ -325,16 +326,21 @@ impl RootProverJob {
                 } else {
                     U256::ZERO
                 };
-                let expected_hash_chain =
-                    hash_chain(previous_hash_chain, event.address, event.value);
+                let expected_hash_chain = hash_chain(
+                    previous_hash_chain,
+                    event.from_address,
+                    event.to_address,
+                    event.value,
+                );
                 let expected_leaf =
-                    compute_leaf_hash(address_to_fr(event.address), u256_to_fr(event.value));
+                    compute_leaf_hash(address_to_fr(event.to_address), u256_to_fr(event.value));
                 let expected_root = proof.proof.get_root(expected_leaf, proof.leaf_index);
                 debug!(
-                    "nova verify failed at index {} for '{}': address=0x{}, value={}, state_index={}, state_hash_chain=0x{}, state_root=0x{}, db_hash_chain={:?}, db_root={:?}, expected_hash_chain=0x{}, expected_root=0x{}",
+                    "nova verify failed at index {} for '{}': from=0x{}, to=0x{}, value={}, state_index={}, state_hash_chain=0x{}, state_root=0x{}, db_hash_chain={:?}, db_root={:?}, expected_hash_chain=0x{}, expected_root=0x{}",
                     current_index,
                     token.label,
-                    hex::encode(event.address.as_slice()),
+                    hex::encode(event.from_address.as_slice()),
+                    hex::encode(event.to_address.as_slice()),
                     event.value,
                     fr_to_u256(state_index),
                     fr_to_u256(state_hash_chain),
@@ -428,7 +434,8 @@ impl RootProverJob {
             let mut rng = ChaCha20Rng::from_entropy();
             let dummy = RootExternalInputs::<Fr> {
                 is_dummy: true,
-                address: Fr::zero(),
+                from_address: Fr::zero(),
+                to_address: Fr::zero(),
                 value: Fr::zero(),
                 siblings: [Fr::zero(); TRANSFER_TREE_HEIGHT],
             };
@@ -665,7 +672,8 @@ struct RootProverState {
 
 struct EventRow {
     event_index: u64,
-    address: Address,
+    from_address: Address,
+    to_address: Address,
     value: U256,
 }
 
@@ -937,7 +945,7 @@ async fn fetch_event_batch(
 
     let rows = sqlx::query(
         r#"
-        SELECT event_index, to_address, value
+        SELECT event_index, from_address, to_address, value
         FROM indexed_transfer_events
         WHERE token_id = $1
           AND event_index >= $2
@@ -955,14 +963,17 @@ async fn fetch_event_batch(
     let mut events = Vec::with_capacity(rows.len());
     for row in rows {
         let index_i64: i64 = row.get("event_index");
-        let address_bytes: Vec<u8> = row.get("to_address");
+        let from_address_bytes: Vec<u8> = row.get("from_address");
+        let to_address_bytes: Vec<u8> = row.get("to_address");
         let value_bytes: Vec<u8> = row.get("value");
         let index_u64 = index_i64 as u64;
-        let address = parse_address(address_bytes.as_slice())?;
+        let from_address = parse_address(from_address_bytes.as_slice())?;
+        let to_address = parse_address(to_address_bytes.as_slice())?;
         let value = parse_u256(value_bytes.as_slice())?;
         events.push(EventRow {
             event_index: index_u64,
-            address,
+            from_address,
+            to_address,
             value,
         });
     }
@@ -1034,7 +1045,8 @@ async fn load_ivc_record(
 }
 
 fn to_external_inputs(
-    address: Address,
+    from_address: Address,
+    to_address: Address,
     value: U256,
     proof: &HistoricalProof,
 ) -> Result<RootExternalInputs<Fr>> {
@@ -1052,7 +1064,8 @@ fn to_external_inputs(
 
     Ok(RootExternalInputs::<Fr> {
         is_dummy: false,
-        address: address_to_fr(address),
+        from_address: address_to_fr(from_address),
+        to_address: address_to_fr(to_address),
         value: u256_to_fr(value),
         siblings: siblings_array,
     })

@@ -41,7 +41,7 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.balanceOf(ALICE), amount, "minted balance");
         assertEq(token.index(), 1, "index after mint");
 
-        uint256 expectedHash = ShaHashChainLib.compute(0, ALICE, amount);
+        uint256 expectedHash = ShaHashChainLib.compute(0, address(0), ALICE, amount);
         assertEq(token.hashChain(), expectedHash, "hash chain after mint");
     }
 
@@ -63,7 +63,7 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.balanceOf(BOB), transferAmount, "bob balance");
         assertEq(token.index(), startIndex + 1, "index incremented");
 
-        uint256 expectedHash = ShaHashChainLib.compute(previousHash, BOB, transferAmount);
+        uint256 expectedHash = ShaHashChainLib.compute(previousHash, ALICE, BOB, transferAmount);
         assertEq(token.hashChain(), expectedHash, "hash chain chained");
     }
 
@@ -83,7 +83,7 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.totalSupply(), value, "supply after teleport");
         assertEq(token.index(), 1, "index after teleport");
 
-        uint256 expectedHash = ShaHashChainLib.compute(0, ALICE, value);
+        uint256 expectedHash = ShaHashChainLib.compute(0, address(0), ALICE, value);
         assertEq(token.hashChain(), expectedHash, "hash chain after teleport");
     }
 
@@ -139,7 +139,7 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.totalSupply(), supplyAfterMint - burnAmount, "supply after burn");
         assertEq(token.index(), indexAfterMint + 1, "index increment after burn");
 
-        uint256 expectedHash = ShaHashChainLib.compute(hashAfterMint, address(0), burnAmount);
+        uint256 expectedHash = ShaHashChainLib.compute(hashAfterMint, ALICE, address(0), burnAmount);
         assertEq(token.hashChain(), expectedHash, "hash chain after burn");
     }
 

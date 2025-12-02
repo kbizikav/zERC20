@@ -71,13 +71,13 @@ fn test_withdraw_nova_wasm_prove() {
     ];
 
     let mut tree = IncrementalMerkleTree::new(TRANSFER_TREE_HEIGHT);
-    tree.insert(Address::ZERO, U256::ZERO)
+    tree.insert(Address::ZERO, Address::ZERO, U256::ZERO)
         .expect("test tree insert should succeed");
 
     let mut indices = vec![];
     for i in 0..4 {
         let index = tree
-            .insert(fr_to_address(addresses[i]), values[i])
+            .insert(Address::ZERO, fr_to_address(addresses[i]), values[i])
             .expect("test tree insert should succeed");
         indices.push(index);
     }

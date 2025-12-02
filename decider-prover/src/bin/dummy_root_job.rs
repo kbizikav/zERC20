@@ -83,7 +83,8 @@ fn build_dummy_root_ivc_proof_base64() -> Result<String> {
     let mut step_rng = StdRng::seed_from_u64(0xBAD5EED);
     let external_input = RootExternalInputs::<Fr> {
         is_dummy: true,
-        address: Fr::zero(),
+        from_address: Fr::zero(),
+        to_address: Fr::zero(),
         value: Fr::zero(),
         siblings: [Fr::zero(); TRANSFER_TREE_HEIGHT],
     };

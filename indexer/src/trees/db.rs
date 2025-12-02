@@ -242,7 +242,12 @@ impl DbIncrementalMerkleTree {
             .expect("zero hashes populated during construction")
     }
 
-    pub async fn append_leaf(&self, address: Address, value: U256) -> Result<AppendResult> {
+    pub async fn append_leaf(
+        &self,
+        from: Address,
+        to: Address,
+        value: U256,
+    ) -> Result<AppendResult> {
         let mut tx = self.pool.begin().await.map_err(|err| {
             DbMerkleTreeError::database("begin transaction for merkle append", err)
         })?;
@@ -268,7 +273,7 @@ impl DbIncrementalMerkleTree {
             .await?
             .unwrap_or(U256::ZERO);
 
-        let leaf_hash = compute_leaf_hash(address_to_fr(address), u256_to_fr(value));
+        let leaf_hash = compute_leaf_hash(address_to_fr(to), u256_to_fr(value));
         let mut node_hash = leaf_hash;
         let next_index_i64 =
             i64::try_from(next_index).map_err(|_| DbMerkleTreeError::U64ToI64 {
@@ -385,7 +390,7 @@ impl DbIncrementalMerkleTree {
                 .map_err(|err| DbMerkleTreeError::database("upsert merkle node hash batch", err))?;
         }
 
-        let new_hash_chain = hash_chain(prev_hash_chain, address, value);
+        let new_hash_chain = hash_chain(prev_hash_chain, from, to, value);
         let root_bytes = fr_to_bytes(node_hash);
         let hash_chain_bytes = new_hash_chain.to_be_bytes::<32>();
         sqlx::query(&format!(

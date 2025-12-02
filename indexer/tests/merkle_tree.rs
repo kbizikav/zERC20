@@ -67,18 +67,21 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
     for i in 0..total_leaves {
         let mut addr_bytes = [0u8; 20];
         addr_bytes[..8].copy_from_slice(&i.to_be_bytes());
-        let address = Address::from_slice(&addr_bytes);
+        let to_address = Address::from_slice(&addr_bytes);
+        let mut from_bytes = [0u8; 20];
+        from_bytes[..8].copy_from_slice(&(i + 1).to_be_bytes());
+        let from_address = Address::from_slice(&from_bytes);
         let value = U256::from(i + 1);
 
         let append = tree
-            .append_leaf(address, value)
+            .append_leaf(from_address, to_address, value)
             .await
             .with_context(|| format!("failed to append leaf {i}"))?;
 
         let ref_index = reference
-            .insert(address, value)
+            .insert(from_address, to_address, value)
             .expect("reference tree insert within capacity");
-        leaves.push((address, value));
+        leaves.push((from_address, to_address, value));
 
         assert_eq!(append.index, i + 1, "index should increment sequentially");
         assert_eq!(append.leaf_index, i, "leaf index should match append order");
@@ -121,7 +124,7 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
         .context("failed to fetch historical proof")?;
     let ref_mid = build_reference_tree(&leaves, mid_target as usize);
     let leaf = leaves[leaf_index as usize];
-    let leaf_hash = compute_leaf_hash(address_to_fr(leaf.0), u256_to_fr(leaf.1));
+    let leaf_hash = compute_leaf_hash(address_to_fr(leaf.1), u256_to_fr(leaf.2));
     let computed_root = mid_proof.proof.get_root(leaf_hash, leaf_index);
     assert_eq!(
         computed_root,
@@ -159,7 +162,7 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
 
         let batch_leaf = leaves[idx as usize];
         let batch_leaf_hash =
-            compute_leaf_hash(address_to_fr(batch_leaf.0), u256_to_fr(batch_leaf.1));
+            compute_leaf_hash(address_to_fr(batch_leaf.1), u256_to_fr(batch_leaf.2));
         let batch_root = proof.proof.get_root(batch_leaf_hash, idx);
         assert_eq!(
             batch_root,
@@ -174,11 +177,11 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
         .context("failed to fetch latest proof")?;
     let latest_leaf = leaves[(total_leaves - 1) as usize];
     let latest_leaf_hash =
-        compute_leaf_hash(address_to_fr(latest_leaf.0), u256_to_fr(latest_leaf.1));
+        compute_leaf_hash(address_to_fr(latest_leaf.1), u256_to_fr(latest_leaf.2));
     let latest_ref = {
         let mut t = IncrementalMerkleTree::new(TREE_HEIGHT as usize);
-        for (addr, value) in leaves.iter() {
-            t.insert(*addr, *value)
+        for (from_addr, to_addr, value) in leaves.iter() {
+            t.insert(*from_addr, *to_addr, *value)
                 .expect("reference tree insert within capacity");
         }
         t
@@ -200,7 +203,7 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
         let boundary_ref = build_reference_tree(&leaves, boundary_index as usize);
         let boundary_leaf = leaves[0];
         let boundary_hash =
-            compute_leaf_hash(address_to_fr(boundary_leaf.0), u256_to_fr(boundary_leaf.1));
+            compute_leaf_hash(address_to_fr(boundary_leaf.1), u256_to_fr(boundary_leaf.2));
         assert_eq!(
             boundary_proof.proof.get_root(boundary_hash, 0),
             boundary_ref.get_root(),
@@ -265,15 +268,22 @@ async fn db_merkle_tree_rejects_overflow() -> Result<()> {
     for i in 0..4u64 {
         let mut addr_bytes = [0u8; 20];
         addr_bytes[19] = i as u8;
-        let address = Address::from_slice(&addr_bytes);
+        let to_address = Address::from_slice(&addr_bytes);
+        let mut from_bytes = [0u8; 20];
+        from_bytes[19] = (i + 10) as u8;
+        let from_address = Address::from_slice(&from_bytes);
         let value = U256::from(i + 1);
-        tree.append_leaf(address, value)
+        tree.append_leaf(from_address, to_address, value)
             .await
             .with_context(|| format!("failed to append leaf {i} for overflow test"))?;
     }
 
     let err = tree
-        .append_leaf(Address::from_slice(&[0xFF; 20]), U256::from(42u64))
+        .append_leaf(
+            Address::from_slice(&[0xEE; 20]),
+            Address::from_slice(&[0xFF; 20]),
+            U256::from(42u64),
+        )
         .await
         .expect_err("tree should reject overflow append");
     match err {
@@ -293,11 +303,11 @@ async fn db_merkle_tree_rejects_overflow() -> Result<()> {
     Ok(())
 }
 
-fn build_reference_tree(leaves: &[(Address, U256)], upto: usize) -> IncrementalMerkleTree {
+fn build_reference_tree(leaves: &[(Address, Address, U256)], upto: usize) -> IncrementalMerkleTree {
     let mut tree = IncrementalMerkleTree::new(TREE_HEIGHT as usize);
-    for (i, (addr, value)) in leaves.iter().take(upto).enumerate() {
+    for (i, (from_addr, to_addr, value)) in leaves.iter().take(upto).enumerate() {
         let idx = tree
-            .insert(*addr, *value)
+            .insert(*from_addr, *to_addr, *value)
             .expect("reference tree insert within capacity");
         assert_eq!(
             idx, i as u64,
