@@ -1,5 +1,6 @@
 pub mod contracts;
 pub mod indexer;
+pub mod layerzero;
 pub mod payment;
 pub mod prover;
 pub mod teleport;
