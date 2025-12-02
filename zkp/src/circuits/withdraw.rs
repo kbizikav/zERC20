@@ -111,7 +111,7 @@ where
 mod tests {
     use super::{single_withdraw, withdraw_step};
     use crate::circuits::burn_address::{
-        compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce,
+        burn_address_domain, compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce,
     };
     use crate::test_utils::{merkle_root_from_path, truncate_to_160_bits};
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
@@ -125,11 +125,11 @@ mod tests {
     use hex::decode;
 
     const DEPTH: usize = 4;
-    const WITHDRAW_LEAF_ADDRESS_HEX: &str = "0xe741a1ca2126ac5f9a8c15c42fbf398b15390847";
+    const WITHDRAW_LEAF_ADDRESS_HEX: &str = "0x61d3e54c7f3b108ce133fc64f9f734f381046eac";
     const WITHDRAW_LEAF_HASH_HEX: &str =
-        "0x100804f3ac64fc6d0b02d84196300e2fa4e00007ae628581b68ba7777a690391";
+        "0x2096502d1444fc57a5a8384e6f25b46187ad77b50dd15fddbb4ff8765febd481";
     const WITHDRAW_MERKLE_ROOT_HEX: &str =
-        "0x0911ce40509a628649e9857657bf47883d8e532cc9968313a3f431e0255bb4b8";
+        "0x033986ce5c0867757945df4e84c35c8f950d639e32e5659b87d00b20a3d20350";
 
     fn find_pow_secret(recipient: Fr, seed: Fr) -> (Fr, Fr) {
         let nonce = find_pow_nonce(recipient, seed);
@@ -159,9 +159,11 @@ mod tests {
             .map(Fr::from)
             .collect::<Vec<_>>();
 
+        let domain = burn_address_domain::<Fr>();
+        let secret_hash = circom_poseidon_hash(&poseidon_config, &[domain, secret_value]);
         let host_address = truncate_to_160_bits(circom_poseidon_hash(
             &poseidon_config,
-            &[recipient_value, secret_value],
+            &[recipient_value, secret_hash],
         ));
         assert_eq!(address_value, host_address);
         let leaf_value = circom_poseidon_hash(&poseidon_config, &[address_value, value_value]);
@@ -226,9 +228,11 @@ mod tests {
                 .expect("valid withdraw leaf address hex"),
         );
         assert_eq!(address_value, expected_address);
+        let domain = burn_address_domain::<Fr>();
+        let secret_hash = circom_poseidon_hash(&poseidon_config, &[domain, secret_value]);
         let host_address = truncate_to_160_bits(circom_poseidon_hash(
             &poseidon_config,
-            &[recipient_value, secret_value],
+            &[recipient_value, secret_hash],
         ));
         assert_eq!(address_value, host_address);
 
@@ -324,9 +328,11 @@ mod tests {
         let leaf_index_with_offset_value = Fr::from(leaf_index_u64 + 1);
         let is_dummy_value = false;
 
+        let domain = burn_address_domain::<Fr>();
+        let secret_hash = circom_poseidon_hash(&poseidon_config, &[domain, secret_value]);
         let host_address = truncate_to_160_bits(circom_poseidon_hash(
             &poseidon_config,
-            &[recipient_value, secret_value],
+            &[recipient_value, secret_hash],
         ));
         assert_eq!(address_value, host_address);
 

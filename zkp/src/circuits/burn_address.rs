@@ -19,6 +19,8 @@ use ark_std::vec::Vec;
 use num_bigint::BigUint;
 use thiserror::Error;
 
+const BURN_ADDRESS_DOMAIN: [u8; 4] = *b"burn";
+
 #[derive(Debug, Error)]
 pub enum BurnAddressError {
     #[error(
@@ -27,8 +29,20 @@ pub enum BurnAddressError {
     PowDifficultyUnsatisfied { difficulty: usize },
 }
 
+pub(crate) fn burn_address_domain<F: PrimeField>() -> F {
+    let mut domain_bytes = [0u8; 32];
+    domain_bytes[..BURN_ADDRESS_DOMAIN.len()].copy_from_slice(&BURN_ADDRESS_DOMAIN);
+    F::from_le_bytes_mod_order(&domain_bytes)
+}
+
+fn poseidon_burn_address_hash(recipient: Fr, secret: Fr) -> Fr {
+    let domain = burn_address_domain::<Fr>();
+    let secret_hash = poseidon2(domain, secret);
+    poseidon2(recipient, secret_hash)
+}
+
 pub fn compute_burn_address_from_secret(recipient: Fr, secret: Fr) -> Result<Fr, BurnAddressError> {
-    let hash_bigint = poseidon2(recipient, secret).into_bigint();
+    let hash_bigint = poseidon_burn_address_hash(recipient, secret).into_bigint();
     let hash_bits = hash_bigint.to_bits_le();
 
     if hash_bits
@@ -77,8 +91,11 @@ pub fn burn_address_var<F: PrimeField + Absorb>(
     secret: &FpVar<F>,
     is_constrained: &Boolean<F>,
 ) -> Result<FpVar<F>, SynthesisError> {
+    let domain = FpVar::<F>::constant(burn_address_domain::<F>());
+    let secret_hash =
+        CircomCRHGadget::<F>::evaluate(poseidon_params, &[domain, secret.clone()])?;
     let poseidon =
-        CircomCRHGadget::<F>::evaluate(poseidon_params, &[recipient.clone(), secret.clone()])?;
+        CircomCRHGadget::<F>::evaluate(poseidon_params, &[recipient.clone(), secret_hash])?;
     let poseidon_bits = poseidon.to_bits_le()?;
 
     let is_constrained_fp: FpVar<F> = is_constrained.clone().into();
@@ -99,7 +116,8 @@ pub fn burn_address_var<F: PrimeField + Absorb>(
 #[cfg(test)]
 mod tests {
     use super::{
-        burn_address_var, compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce,
+        burn_address_domain, burn_address_var, compute_burn_address_from_secret, find_pow_nonce,
+        secret_from_nonce,
     };
     use crate::test_utils::truncate_to_160_bits;
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
@@ -112,7 +130,7 @@ mod tests {
     use ark_std::{rand::RngCore, test_rng};
     use hex::decode;
 
-    const ADDRESS_HASH_EXPECTED_HEX: &str = "0x14c7a9ca62574b09437a1eaf1cc92a5aa869d2f8";
+    const ADDRESS_HASH_EXPECTED_HEX: &str = "0x15e138dd47d04a794aeb83c036eab6fe602a4089";
 
     fn sample_address_field(rng: &mut impl RngCore) -> Fr {
         let mut bytes = [0u8; 20];
@@ -150,10 +168,10 @@ mod tests {
         actual.enforce_equal(&expected_var)?;
 
         assert!(cs.is_satisfied().unwrap());
-        let host_expected = truncate_to_160_bits(circom_poseidon_hash(
-            &config,
-            &[recipient_value, secret_value],
-        ));
+        let domain = burn_address_domain::<Fr>();
+        let secret_hash = circom_poseidon_hash(&config, &[domain, secret_value]);
+        let host_expected =
+            truncate_to_160_bits(circom_poseidon_hash(&config, &[recipient_value, secret_hash]));
         assert_eq!(host_expected, expected_address);
         Ok(())
     }
@@ -177,10 +195,10 @@ mod tests {
         let expected_field = Fr::from_be_bytes_mod_order(&expected_bytes);
         assert_eq!(pow_expected_field, expected_field);
 
-        let host_expected = truncate_to_160_bits(circom_poseidon_hash(
-            &config,
-            &[recipient_value, secret_value],
-        ));
+        let domain = burn_address_domain::<Fr>();
+        let secret_hash = circom_poseidon_hash(&config, &[domain, secret_value]);
+        let host_expected =
+            truncate_to_160_bits(circom_poseidon_hash(&config, &[recipient_value, secret_hash]));
         assert_eq!(host_expected, expected_field);
 
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
