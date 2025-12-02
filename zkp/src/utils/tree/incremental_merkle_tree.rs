@@ -119,6 +119,8 @@ fn max_leaf_capacity(height: usize) -> Result<u128> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{nova::constants::TRANSFER_TREE_HEIGHT, utils::convertion::fr_to_u256};
+    use core::str::FromStr;
 
     #[test]
     fn insert_rejects_capacity_overflow() {
@@ -136,5 +138,21 @@ mod tests {
         ));
         assert_eq!(tree.index, 4);
         assert_eq!(tree.address_to_indices[&Address::ZERO].len(), 4);
+    }
+
+    #[test]
+    fn initial_transfer_root_matches_expected() {
+        let tree = IncrementalMerkleTree::new(TRANSFER_TREE_HEIGHT);
+        let root = tree.get_root();
+        let root_u256 = fr_to_u256(root);
+        let expected = U256::from_str(
+            "8687547638004116013653730449839507042090717944911454416140763808366589487233",
+        )
+        .expect("decimal fits in U256");
+        assert_eq!(
+            root_u256, expected,
+            "computed initial transfer root {} does not match expected",
+            root_u256
+        );
     }
 }

@@ -64,6 +64,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     error NothingToWithdraw(uint256 currentTotal, uint256 totalValue);
     error InsufficientMsgValue(uint256 required, uint256 provided);
 
+    // Root of an empty IncrementalMerkleTree at TRANSFER_TREE_HEIGHT (see zkp test).
     uint256 constant INITIAL_TRANSFER_ROOT =
         8687547638004116013653730449839507042090717944911454416140763808366589487233;
 
