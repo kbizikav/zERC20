@@ -140,8 +140,7 @@ contract DeployLocal is DeterministicDeployer {
     {
         address owner = cfg.tokenOwner == address(0) ? deployer : cfg.tokenOwner;
         zERC20 impl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}(address(endpoint), cfg.tokenDecimals);
-        bytes memory initData =
-            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, cfg.tokenDecimals));
+        bytes memory initData = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
         ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(impl), initData);
         token = zERC20(address(proxy));
         console2.log("zERC20 implementation deployed at", address(impl));

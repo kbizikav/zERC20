@@ -28,7 +28,7 @@ contract ZERC20Test is TestHelperOz5 {
 
     function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (zERC20) {
         zERC20 impl = new zERC20(address(endpointMock), decimals_);
-        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner, decimals_));
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return zERC20(address(proxy));
     }
