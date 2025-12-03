@@ -11,6 +11,8 @@ remappings = [
     "@layerzerolabs/oapp-evm/=lib/devtools/packages/oapp-evm/",
     "@layerzerolabs/oft-evm-upgradeable/=lib/devtools/packages/oft-evm-upgradeable/",
     "@layerzerolabs/oft-evm/=lib/devtools/packages/oft-evm/",
+    "@layerzerolabs/test-devtools-evm-foundry/=lib/devtools/packages/test-devtools-evm-foundry/",
+    "@layerzerolabs/lz-evm-v1-0.7/=lib/lz-evm-v1-0.7/",
     "solidity-bytes-utils/=lib/solidity-bytes-utils/",
     "poseidon-solidity/=lib/poseidon-solidity/",
 ]

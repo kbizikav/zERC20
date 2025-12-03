@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TestHelperOz5, EndpointV2Mock} from "./utils/TestHelperOz5.sol";
+import {TestHelperOz5, EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {ShaHashChainLib} from "../src/utils/ShaHashChainLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -9,7 +9,7 @@ import {IOFT} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 
 contract ZERC20Test is TestHelperOz5 {
     zERC20 internal token;
-    EndpointV2Mock internal endpoint;
+    EndpointV2 internal endpoint;
 
     address internal constant ALICE = address(0xA11CE);
     address internal constant BOB = address(0xB0B);
@@ -18,13 +18,15 @@ contract ZERC20Test is TestHelperOz5 {
     event Teleport(address indexed to, uint256 value);
     event VerifierUpdated(address indexed newVerifier);
 
-    function setUp() public {
-        endpoint = _deployEndpoint(101);
+    function setUp() public override {
+        super.setUp();
+        setUpEndpoints(1, LibraryType.SimpleMessageLib);
+        endpoint = endpointSetup.endpointList[0];
         token = _deployToken(address(this), endpoint, 18);
         token.setMinter(address(this));
     }
 
-    function _deployToken(address owner, EndpointV2Mock endpointMock, uint8 decimals_) private returns (zERC20) {
+    function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (zERC20) {
         zERC20 impl = new zERC20(address(endpointMock), decimals_);
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner, decimals_));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);

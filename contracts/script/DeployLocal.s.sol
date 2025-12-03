@@ -10,9 +10,15 @@ import {WithdrawGlobalNovaDecider} from "../src/verifiers/WithdrawGlobalNovaDeci
 import {WithdrawLocalNovaDecider} from "../src/verifiers/WithdrawLocalNovaDecider.sol";
 import {WithdrawGlobalGroth16Verifier} from "../src/verifiers/WithdrawGlobalGroth16Verifier.sol";
 import {WithdrawLocalGroth16Verifier} from "../src/verifiers/WithdrawLocalGroth16Verifier.sol";
-import {EndpointV2Mock, MockSendLib} from "../test/utils/TestHelperOz5.sol";
+import {EndpointV2Mock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
+import {SimpleMessageLibMock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/SimpleMessageLibMock.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
+
+/// @dev Minimal helper used by SimpleMessageLibMock to satisfy schedulePacket hook.
+contract NoopVerifyHelper {
+    function schedulePacket(bytes calldata, bytes calldata) external {}
+}
 
 /// @notice Local-only deployment script that bootstraps mock LayerZero endpoints, Hub, Verifier, and zERC20.
 /// @dev Intended for Anvil or other local chains where real LayerZero endpoints are unavailable.
@@ -60,13 +66,19 @@ contract DeployLocal is DeterministicDeployer {
 
         vm.startBroadcast(deployerKey);
 
-        EndpointV2Mock hubEndpoint = new EndpointV2Mock(cfg.hubEid);
-        EndpointV2Mock verifierEndpoint = cfg.shareEndpoint ? hubEndpoint : new EndpointV2Mock(cfg.verifierEid);
+        NoopVerifyHelper verifyHelper = new NoopVerifyHelper();
+        EndpointV2Mock hubEndpoint = new EndpointV2Mock(cfg.hubEid, deployer);
+        EndpointV2Mock verifierEndpoint =
+            cfg.shareEndpoint ? hubEndpoint : new EndpointV2Mock(cfg.verifierEid, deployer);
 
-        MockSendLib sendLib = new MockSendLib();
-        address sendLibAddr = address(sendLib);
-        _configureEndpoint(hubEndpoint, cfg.verifierEid, sendLibAddr);
-        _configureEndpoint(verifierEndpoint, cfg.hubEid, sendLibAddr);
+        SimpleMessageLibMock hubSendLib =
+            new SimpleMessageLibMock(payable(address(verifyHelper)), address(hubEndpoint));
+        SimpleMessageLibMock verifierSendLib = cfg.shareEndpoint
+            ? hubSendLib
+            : new SimpleMessageLibMock(payable(address(verifyHelper)), address(verifierEndpoint));
+
+        _configureEndpoint(hubEndpoint, cfg.verifierEid, hubSendLib);
+        _configureEndpoint(verifierEndpoint, cfg.hubEid, verifierSendLib);
 
         Hub hub = _deployHub(cfg, deployer, hubEndpoint, baseSalt);
         zERC20 token = _deployToken(cfg, deployer, verifierEndpoint, baseSalt);
@@ -98,10 +110,11 @@ contract DeployLocal is DeterministicDeployer {
         cfg.wirePeers = vm.envOr("WIRE_PEERS", uint256(1)) != 0;
     }
 
-    function _configureEndpoint(EndpointV2Mock endpoint, uint32 dstEid, address lib) private {
-        endpoint.setDefaultSendLibrary(dstEid, lib);
-        endpoint.setDefaultReceiveLibrary(dstEid, lib, 0);
-        endpoint.setMessagingFee(dstEid, 0, 0);
+    function _configureEndpoint(EndpointV2Mock endpoint, uint32 dstEid, SimpleMessageLibMock lib) private {
+        endpoint.registerLibrary(address(lib));
+        endpoint.setDefaultSendLibrary(dstEid, address(lib));
+        endpoint.setDefaultReceiveLibrary(dstEid, address(lib), 0);
+        lib.setMessagingFee(0, 0);
     }
 
     function _toBytes32(address addr) private pure returns (bytes32) {

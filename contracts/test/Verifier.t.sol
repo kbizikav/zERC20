@@ -9,12 +9,12 @@ import {
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {TestHelperOz5, EndpointV2Mock, MockSendLib} from "./utils/TestHelperOz5.sol";
+import {TestHelperOz5, EndpointV2, SimpleMessageLibMock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 
 contract VerifierTest is TestHelperOz5 {
     Verifier internal verifier;
-    EndpointV2Mock internal endpoint;
-    MockSendLib internal sendLib;
+    EndpointV2 internal endpoint;
+    SimpleMessageLibMock internal sendLib;
 
     address internal constant TOKEN = address(0xdead);
     address internal constant ROOT_DECIDER = address(0x100);
@@ -29,16 +29,12 @@ contract VerifierTest is TestHelperOz5 {
 
     bytes32 internal constant PACKET_SENT_SIG = keccak256("PacketSent(bytes,bytes,address)");
 
-    receive() external payable {}
-
-    function setUp() public {
-        endpoint = _deployEndpoint(LOCAL_EID);
-        sendLib = _deployMessageLib();
-
-        endpoint.registerLibrary(address(sendLib));
-        endpoint.setDefaultSendLibrary(HUB_EID, address(sendLib));
-        endpoint.setDefaultReceiveLibrary(HUB_EID, address(sendLib), 0);
-        endpoint.setMessagingFee(HUB_EID, FEE_PER_MESSAGE, 0);
+    function setUp() public override {
+        super.setUp();
+        setUpEndpoints(2, LibraryType.SimpleMessageLib);
+        endpoint = endpointSetup.endpointList[0];
+        sendLib = SimpleMessageLibMock(payable(endpointSetup.sendLibs[0]));
+        sendLib.setMessagingFee(FEE_PER_MESSAGE, 0);
 
         verifier = _deployVerifier(address(this));
         verifier.setPeer(HUB_EID, _toBytes32(address(this)));
