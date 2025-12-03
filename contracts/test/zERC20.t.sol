@@ -14,6 +14,9 @@ contract ZERC20Test is TestHelperOz5 {
     address internal constant ALICE = address(0xA11CE);
     address internal constant BOB = address(0xB0B);
 
+    bytes32 internal constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+
     event IndexedTransfer(uint256 indexed index, address from, address to, uint256 value);
     event Teleport(address indexed to, uint256 value);
     event VerifierUpdated(address indexed newVerifier);
@@ -87,6 +90,51 @@ contract ZERC20Test is TestHelperOz5 {
 
         uint256 expectedHash = ShaHashChainLib.compute(0, address(0), ALICE, value);
         assertEq(token.hashChain(), expectedHash, "hash chain after teleport");
+    }
+
+    function testPermitSetsAllowanceAndRespectsTypedData() public {
+        uint256 ownerKey = 0xA11CE;
+        address owner = vm.addr(ownerKey);
+        uint256 value = 2 ether;
+        uint256 deadline = block.timestamp + 1 days;
+
+        token.mint(owner, value);
+        uint256 hashAfterMint = token.hashChain();
+        uint256 indexAfterMint = token.index();
+
+        bytes32 structHash =
+            keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+
+        token.permit(owner, BOB, value, deadline, v, r, s);
+
+        assertEq(token.allowance(owner, BOB), value, "permit allowance");
+        assertEq(token.nonces(owner), 1, "nonce consumed");
+
+        vm.prank(BOB);
+        token.transferFrom(owner, BOB, value);
+
+        assertEq(token.balanceOf(BOB), value, "transferred via permit");
+        assertEq(token.index(), indexAfterMint + 1, "index incremented");
+        uint256 expectedHash = ShaHashChainLib.compute(hashAfterMint, owner, BOB, value);
+        assertEq(token.hashChain(), expectedHash, "hash chain after permit transfer");
+    }
+
+    function testPermitRejectsExpiredSignature() public {
+        uint256 ownerKey = 0xBEEF;
+        address owner = vm.addr(ownerKey);
+        uint256 value = 1 ether;
+        uint256 deadline = block.timestamp;
+
+        bytes32 structHash =
+            keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+
+        vm.warp(deadline + 1);
+        vm.expectRevert("ERC20Permit: expired deadline");
+        token.permit(owner, BOB, value, deadline, v, r, s);
     }
 
     function testInitializeSupportsCustomDecimals() public {

@@ -5,6 +5,7 @@ import {IzERC20} from "./interfaces/IzERC20.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {ERC20PermitUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
@@ -12,7 +13,7 @@ import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 /// @notice Upgradeable ERC20 token that feeds the zk circuits by enforcing 248-bit transfer values,
 ///         hashing `(from, to, value)` triples into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
 ///         Also implements the LayerZero V2 OFT interface for omnichain transfers.
-contract zERC20 is OFTCoreUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IzERC20 {
+contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, IzERC20 {
     using SlotDerivation for string;
 
     uint8 private immutable tokenDecimals;
@@ -60,6 +61,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IzERC2
     function initialize(string memory name_, string memory symbol_, address initialOwner) external initializer {
         if (initialOwner == address(0)) revert ZeroAddress();
         __ERC20_init(name_, symbol_);
+        __ERC20Permit_init(name_);
         __Ownable_init();
         __OFTCore_init(initialOwner);
         __UUPSUpgradeable_init();
