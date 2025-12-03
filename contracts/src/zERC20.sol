@@ -4,15 +4,18 @@ pragma solidity 0.8.30;
 import {IzERC20} from "./interfaces/IzERC20.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {OFTUpgradeable} from "./utils/layerzero/oft/OFTUpgradeable.sol";
+import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /// @title zERC20
 /// @notice Upgradeable ERC20 token that feeds the zk circuits by enforcing 248-bit transfer values,
 ///         hashing `(from, to, value)` triples into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
 ///         Also implements the LayerZero V2 OFT interface for omnichain transfers.
-contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
+contract zERC20 is OFTCoreUpgradeable, ERC20Upgradeable, UUPSUpgradeable, IzERC20 {
     using SlotDerivation for string;
+
+    uint8 private immutable localDecimals;
 
     /// @custom:storage-location erc7201:zerc20.storage.zerc20
     struct ZERC20Storage {
@@ -45,9 +48,13 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     error ValueTooLarge();
     /// @notice Reverts when the requested decimals are incompatible with shared decimals.
     error InvalidDecimals();
+    /// @notice Reverts when initializer decimals differ from the implementation's immutable decimals.
+    error DecimalsMismatch(uint8 expected, uint8 provided);
 
     /// @notice Locks implementation contracts on deployment.
-    constructor() {
+    constructor(address endpoint, uint8 decimals_) OFTCoreUpgradeable(decimals_, endpoint) {
+        if (endpoint == address(0)) revert InvalidEndpointCall();
+        localDecimals = decimals_;
         _disableInitializers();
     }
 
@@ -55,21 +62,21 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     /// @param name_ ERC20 name.
     /// @param symbol_ ERC20 symbol.
     /// @param initialOwner Account receiving ownership, LayerZero delegate permissions, and upgrade authority.
-    /// @param endpoint LayerZero endpoint used for OFT messaging.
     /// @param decimals_ Token decimals; must be >= shared decimals.
-    function initialize(
-        string memory name_,
-        string memory symbol_,
-        address initialOwner,
-        address endpoint,
-        uint8 decimals_
-    ) external initializer {
-        if (initialOwner == address(0) || endpoint == address(0)) revert ZeroAddress();
+    function initialize(string memory name_, string memory symbol_, address initialOwner, uint8 decimals_)
+        external
+        initializer
+    {
+        if (initialOwner == address(0)) revert ZeroAddress();
         if (decimals_ < sharedDecimals()) revert InvalidDecimals();
+        if (decimals_ != localDecimals) revert DecimalsMismatch(localDecimals, decimals_);
 
         _getZERC20Storage().decimals = decimals_;
-        __OFT_init(name_, symbol_, endpoint, initialOwner);
+        __ERC20_init(name_, symbol_);
+        __Ownable_init();
+        __OFTCore_init(initialOwner);
         __UUPSUpgradeable_init();
+        _transferOwnership(initialOwner);
     }
 
     /// @dev Restricts upgrade authorization to the owner.
@@ -93,6 +100,35 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     /// @notice Returns the token decimals.
     function decimals() public view override returns (uint8) {
         return _getZERC20Storage().decimals;
+    }
+
+    function token() public view override returns (address) {
+        return address(this);
+    }
+
+    function approvalRequired() external pure override returns (bool) {
+        return false;
+    }
+
+    function _debit(address _from, uint256 _amountLD, uint256 _minAmountLD, uint32 _dstEid)
+        internal
+        override
+        returns (uint256 amountSentLD, uint256 amountReceivedLD)
+    {
+        (amountSentLD, amountReceivedLD) = _debitView(_amountLD, _minAmountLD, _dstEid);
+        _burn(_from, amountSentLD);
+    }
+
+    function _credit(address _to, uint256 _amountLD, uint32 /*_srcEid*/ )
+        internal
+        override
+        returns (uint256 amountReceivedLD)
+    {
+        if (_to == address(0)) {
+            _to = address(0xdead);
+        }
+        _mint(_to, _amountLD);
+        return _amountLD;
     }
 
     /// @notice Address allowed to mint and burn under the minter role.

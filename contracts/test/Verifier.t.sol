@@ -2,8 +2,11 @@
 pragma solidity ^0.8.20;
 
 import {Vm} from "forge-std/Vm.sol";
-import {MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
-import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {
+    MessagingFee,
+    MessagingReceipt
+} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {TestHelperOz5, EndpointV2Mock, MockSendLib} from "./utils/TestHelperOz5.sol";
@@ -201,13 +204,12 @@ contract VerifierTest is TestHelperOz5 {
     }
 
     function testVerifierUpgradePreservesState() public {
-        Verifier implementation = new Verifier();
+        Verifier implementation = new Verifier(address(endpoint));
         bytes memory initData = abi.encodeCall(
             Verifier.initialize,
             (
                 TOKEN,
                 HUB_EID,
-                address(endpoint),
                 address(this),
                 ROOT_DECIDER,
                 WITHDRAW_GLOBAL_DECIDER,
@@ -233,7 +235,7 @@ contract VerifierTest is TestHelperOz5 {
             updatedSingleWithdrawLocal
         );
 
-        VerifierUpgradeMock newImplementation = new VerifierUpgradeMock();
+        VerifierUpgradeMock newImplementation = new VerifierUpgradeMock(address(endpoint));
         proxiedVerifier.upgradeTo(address(newImplementation));
 
         VerifierUpgradeMock upgraded = VerifierUpgradeMock(address(proxiedVerifier));
@@ -258,13 +260,12 @@ contract VerifierTest is TestHelperOz5 {
     }
 
     function _deployVerifier(address delegate) internal returns (Verifier) {
-        Verifier implementation = new Verifier();
+        Verifier implementation = new Verifier(address(endpoint));
         bytes memory initData = abi.encodeCall(
             Verifier.initialize,
             (
                 TOKEN,
                 HUB_EID,
-                address(endpoint),
                 delegate,
                 ROOT_DECIDER,
                 WITHDRAW_GLOBAL_DECIDER,
@@ -276,10 +277,11 @@ contract VerifierTest is TestHelperOz5 {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         return Verifier(address(proxy));
     }
-
 }
 
 contract VerifierUpgradeMock is Verifier {
+    constructor(address endpoint) Verifier(endpoint) {}
+
     function version() external pure returns (string memory) {
         return "verifier-v2";
     }

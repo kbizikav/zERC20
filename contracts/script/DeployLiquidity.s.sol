@@ -107,9 +107,7 @@ contract DeployLiquidity is DeterministicDeployer {
         cfg.owner = vm.envOr("LIQUIDITY_OWNER", address(0));
         cfg.stargate = vm.envOr("ADAPTOR_STARGATE", chainCfg.stargate);
         cfg.setMinter = vm.envOr("SET_LIQUIDITY_AS_MINTER", uint256(1)) != 0;
-        cfg.reward = FeeLib.RewardParams({
-            liquiditySlopeBps: vm.envOr("LIQUIDITY_REWARD_SLOPE_BPS", uint256(100))
-        });
+        cfg.reward = FeeLib.RewardParams({liquiditySlopeBps: vm.envOr("LIQUIDITY_REWARD_SLOPE_BPS", uint256(100))});
         cfg.fee = FeeLib.FeeParams({
             lambda1Bps: vm.envOr("LIQUIDITY_FEE_LAMBDA1_BPS", uint256(40)),
             lambda2Bps: vm.envOr("LIQUIDITY_FEE_LAMBDA2_BPS", uint256(9_954)),

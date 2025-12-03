@@ -3,8 +3,8 @@ pragma solidity ^0.8.20;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Hub} from "../src/Hub.sol";
-import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
-import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
+import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 import {TestHelperOz5, EndpointV2Mock, MockSendLib} from "./utils/TestHelperOz5.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -241,8 +241,7 @@ contract HubTest is TestHelperOz5 {
 
     function testLzReceiveUpdatesRoot() public {
         Hub localHub = _deployInitializedHub();
-        Hub.TokenInfo memory info =
-            Hub.TokenInfo({chainId: 909, eid: 77, verifier: address(0x7), token: address(0x8)});
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 909, eid: 77, verifier: address(0x7), token: address(0x8)});
         localHub.registerToken(info);
 
         Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
@@ -289,8 +288,8 @@ contract HubTest is TestHelperOz5 {
     }
 
     function testHubUpgradePreservesState() public {
-        Hub implementation = new Hub();
-        bytes memory initData = abi.encodeCall(Hub.initialize, (address(endpoint), address(this)));
+        Hub implementation = new Hub(address(endpoint));
+        bytes memory initData = abi.encodeCall(Hub.initialize, (address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         Hub proxiedHub = Hub(address(proxy));
 
@@ -302,7 +301,7 @@ contract HubTest is TestHelperOz5 {
         assertEq(storedVerifier, info.verifier, "verifier not stored initially");
         assertEq(storedToken, info.token, "token not stored initially");
 
-        HubUpgradeMock newImplementation = new HubUpgradeMock();
+        HubUpgradeMock newImplementation = new HubUpgradeMock(address(endpoint));
         proxiedHub.upgradeTo(address(newImplementation));
 
         HubUpgradeMock upgraded = HubUpgradeMock(address(proxiedHub));
@@ -321,8 +320,8 @@ contract HubTest is TestHelperOz5 {
     }
 
     function _deployInitializedHub() internal returns (Hub deployedHub) {
-        Hub implementation = new Hub();
-        bytes memory initData = abi.encodeCall(Hub.initialize, (address(endpoint), address(this)));
+        Hub implementation = new Hub(address(endpoint));
+        bytes memory initData = abi.encodeCall(Hub.initialize, (address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         deployedHub = Hub(address(proxy));
     }
@@ -338,6 +337,8 @@ contract HubTest is TestHelperOz5 {
 }
 
 contract HubUpgradeMock is Hub {
+    constructor(address endpoint) Hub(endpoint) {}
+
     function version() external pure returns (string memory) {
         return "hub-v2";
     }

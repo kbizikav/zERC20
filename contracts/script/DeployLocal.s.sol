@@ -36,7 +36,6 @@ contract DeployLocal is DeterministicDeployer {
     struct VerifierArgs {
         address token;
         uint32 hubEid;
-        address endpoint;
         address delegate;
         address rootDecider;
         address withdrawGlobal;
@@ -114,8 +113,8 @@ contract DeployLocal is DeterministicDeployer {
         returns (Hub hub)
     {
         address delegate = cfg.hubDelegate == address(0) ? deployer : cfg.hubDelegate;
-        Hub impl = new Hub{salt: _deriveSalt(baseSalt, "HUB_IMPL")}();
-        bytes memory initData = abi.encodeCall(Hub.initialize, (address(endpoint), delegate));
+        Hub impl = new Hub{salt: _deriveSalt(baseSalt, "HUB_IMPL")}(address(endpoint));
+        bytes memory initData = abi.encodeCall(Hub.initialize, (delegate));
         ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "HUB_PROXY")}(address(impl), initData);
         hub = Hub(address(proxy));
         console2.log("Hub implementation deployed at", address(impl));
@@ -127,12 +126,10 @@ contract DeployLocal is DeterministicDeployer {
         returns (zERC20 token)
     {
         address owner = cfg.tokenOwner == address(0) ? deployer : cfg.tokenOwner;
-        zERC20 impl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}();
-        bytes memory initData = abi.encodeCall(
-            zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, address(endpoint), cfg.tokenDecimals)
-        );
-        ERC1967Proxy proxy =
-            new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(impl), initData);
+        zERC20 impl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}(address(endpoint), cfg.tokenDecimals);
+        bytes memory initData =
+            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, cfg.tokenDecimals));
+        ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(impl), initData);
         token = zERC20(address(proxy));
         console2.log("zERC20 implementation deployed at", address(impl));
         console2.log("zERC20 proxy deployed at", address(token));
@@ -154,14 +151,7 @@ contract DeployLocal is DeterministicDeployer {
         deps.withdrawLocalGroth16 = _deployWithdrawLocalGroth16(baseSalt);
 
         address delegate = cfg.verifierDelegate == address(0) ? deployer : cfg.verifierDelegate;
-        verifier = _deployVerifier(
-            baseSalt,
-            token,
-            cfg.hubEid,
-            address(endpoint),
-            delegate,
-            deps
-        );
+        verifier = _deployVerifier(baseSalt, token, cfg.hubEid, address(endpoint), delegate, deps);
 
         token.setVerifier(address(verifier));
         console2.log("Token verifier wired");
@@ -173,40 +163,28 @@ contract DeployLocal is DeterministicDeployer {
         console2.log("RootDecider deployed at", rootDecider);
     }
 
-    function _deployWithdrawGlobalDecider(bytes32 baseSalt)
-        private
-        returns (address withdrawGlobal)
-    {
+    function _deployWithdrawGlobalDecider(bytes32 baseSalt) private returns (address withdrawGlobal) {
         WithdrawGlobalNovaDecider instance =
             new WithdrawGlobalNovaDecider{salt: _deriveSalt(baseSalt, "WITHDRAW_GLOBAL_DECIDER")}();
         withdrawGlobal = address(instance);
         console2.log("WithdrawGlobalDecider deployed at", withdrawGlobal);
     }
 
-    function _deployWithdrawLocalDecider(bytes32 baseSalt)
-        private
-        returns (address withdrawLocal)
-    {
+    function _deployWithdrawLocalDecider(bytes32 baseSalt) private returns (address withdrawLocal) {
         WithdrawLocalNovaDecider instance =
             new WithdrawLocalNovaDecider{salt: _deriveSalt(baseSalt, "WITHDRAW_LOCAL_DECIDER")}();
         withdrawLocal = address(instance);
         console2.log("WithdrawLocalDecider deployed at", withdrawLocal);
     }
 
-    function _deployWithdrawGlobalGroth16(bytes32 baseSalt)
-        private
-        returns (address withdrawGlobalGroth16)
-    {
+    function _deployWithdrawGlobalGroth16(bytes32 baseSalt) private returns (address withdrawGlobalGroth16) {
         WithdrawGlobalGroth16Verifier instance =
             new WithdrawGlobalGroth16Verifier{salt: _deriveSalt(baseSalt, "WITHDRAW_GLOBAL_GROTH16")}();
         withdrawGlobalGroth16 = address(instance);
         console2.log("WithdrawGlobalGroth16Verifier deployed at", withdrawGlobalGroth16);
     }
 
-    function _deployWithdrawLocalGroth16(bytes32 baseSalt)
-        private
-        returns (address withdrawLocalGroth16)
-    {
+    function _deployWithdrawLocalGroth16(bytes32 baseSalt) private returns (address withdrawLocalGroth16) {
         WithdrawLocalGroth16Verifier instance =
             new WithdrawLocalGroth16Verifier{salt: _deriveSalt(baseSalt, "WITHDRAW_LOCAL_GROTH16")}();
         withdrawLocalGroth16 = address(instance);
@@ -221,11 +199,10 @@ contract DeployLocal is DeterministicDeployer {
         address delegate,
         VerifierDeps memory deps
     ) private returns (Verifier verifier) {
-        Verifier impl = new Verifier{salt: _deriveSalt(baseSalt, "VERIFIER_IMPL")}();
+        Verifier impl = new Verifier{salt: _deriveSalt(baseSalt, "VERIFIER_IMPL")}(endpoint);
         VerifierArgs memory args = VerifierArgs({
             token: address(token),
             hubEid: hubEid,
-            endpoint: endpoint,
             delegate: delegate,
             rootDecider: deps.rootDecider,
             withdrawGlobal: deps.withdrawGlobal,
@@ -234,8 +211,7 @@ contract DeployLocal is DeterministicDeployer {
             withdrawLocalGroth16: deps.withdrawLocalGroth16
         });
         bytes memory initData = _encodeVerifierInit(args);
-        ERC1967Proxy proxy =
-            new ERC1967Proxy{salt: _deriveSalt(baseSalt, "VERIFIER_PROXY")}(address(impl), initData);
+        ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "VERIFIER_PROXY")}(address(impl), initData);
         verifier = Verifier(address(proxy));
         console2.log("Verifier implementation deployed at", address(impl));
         console2.log("Verifier proxy deployed at", address(verifier));
@@ -248,7 +224,6 @@ contract DeployLocal is DeterministicDeployer {
             (
                 args.token,
                 args.hubEid,
-                args.endpoint,
                 args.delegate,
                 args.rootDecider,
                 args.withdrawGlobal,

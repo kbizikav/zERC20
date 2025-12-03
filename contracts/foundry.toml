@@ -5,11 +5,12 @@ libs = ["lib"]
 remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
     "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/",
-    "@layerzerolabs/lz-evm-oapp-v2/=lib/LayerZero-v2/packages/layerzero-v2/evm/oapp/",
     "@layerzerolabs/lz-evm-protocol-v2/=lib/LayerZero-v2/packages/layerzero-v2/evm/protocol/",
     "@layerzerolabs/lz-evm-messagelib-v2/=lib/LayerZero-v2/packages/layerzero-v2/evm/messagelib/",
-    "@layerzerolabs/oapp-evm-upgradeable=lib/devtools/packages/oapp-evm-upgradeable/contracts/",
-    "@layerzerolabs/oft-evm-upgradeable=lib/devtools/packages/oft-evm-upgradeable/contracts/",
+    "@layerzerolabs/oapp-evm-upgradeable/=lib/devtools/packages/oapp-evm-upgradeable/",
+    "@layerzerolabs/oapp-evm/=lib/devtools/packages/oapp-evm/",
+    "@layerzerolabs/oft-evm-upgradeable/=lib/devtools/packages/oft-evm-upgradeable/",
+    "@layerzerolabs/oft-evm/=lib/devtools/packages/oft-evm/",
     "solidity-bytes-utils/=lib/solidity-bytes-utils/",
     "poseidon-solidity/=lib/poseidon-solidity/",
 ]
@@ -19,7 +20,7 @@ via_ir = false
 fs_permissions = [{ access = "read", path = "./config" }]
 
 [lint]
-ignore = ["src/verifiers/*", "src/utils/layerzero/*"]
+ignore = ["src/verifiers/*"]
 
 [rpc_endpoints]
 al-arb-sep = "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"

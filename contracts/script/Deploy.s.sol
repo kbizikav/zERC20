@@ -33,8 +33,8 @@ contract DeployHub is DeterministicDeployer {
             delegate = deployer;
         }
 
-        Hub hubImpl = new Hub{salt: _deriveSalt(baseSalt, "HUB_IMPL")}();
-        bytes memory hubInit = abi.encodeCall(Hub.initialize, (endpoint, delegate));
+        Hub hubImpl = new Hub{salt: _deriveSalt(baseSalt, "HUB_IMPL")}(endpoint);
+        bytes memory hubInit = abi.encodeCall(Hub.initialize, (delegate));
         ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "HUB_PROXY")}(address(hubImpl), hubInit);
         Hub hub = Hub(address(proxy));
 
@@ -63,7 +63,6 @@ contract DeployVerifierAndToken is DeterministicDeployer {
     struct VerifierArgs {
         address token;
         uint32 hubEid;
-        address endpoint;
         address delegate;
         address rootDecider;
         address withdrawGlobal;
@@ -120,9 +119,9 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         address endpoint = cfg.endpoint;
         bytes32 baseSalt = _loadBaseSalt();
 
-        zERC20 tokenImpl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}();
+        zERC20 tokenImpl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}(endpoint, cfg.tokenDecimals);
         bytes memory tokenInit =
-            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, endpoint, cfg.tokenDecimals));
+            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, cfg.tokenDecimals));
         ERC1967Proxy tokenProxy =
             new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(tokenImpl), tokenInit);
         zERC20 token = zERC20(address(tokenProxy));
@@ -187,11 +186,10 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         address delegate,
         VerifierDeps memory deps
     ) private returns (Verifier verifier) {
-        Verifier verifierImpl = new Verifier{salt: _deriveSalt(baseSalt, "VERIFIER_IMPL")}();
+        Verifier verifierImpl = new Verifier{salt: _deriveSalt(baseSalt, "VERIFIER_IMPL")}(endpoint);
         VerifierArgs memory args = VerifierArgs({
             token: address(token),
             hubEid: hubEid,
-            endpoint: endpoint,
             delegate: delegate,
             rootDecider: deps.rootDecider,
             withdrawGlobal: deps.withdrawGlobal,
@@ -215,7 +213,6 @@ contract DeployVerifierAndToken is DeterministicDeployer {
             (
                 args.token,
                 args.hubEid,
-                args.endpoint,
                 args.delegate,
                 args.rootDecider,
                 args.withdrawGlobal,
