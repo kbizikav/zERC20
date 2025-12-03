@@ -8,6 +8,8 @@ remappings = [
     "@layerzerolabs/lz-evm-oapp-v2/=lib/LayerZero-v2/packages/layerzero-v2/evm/oapp/",
     "@layerzerolabs/lz-evm-protocol-v2/=lib/LayerZero-v2/packages/layerzero-v2/evm/protocol/",
     "@layerzerolabs/lz-evm-messagelib-v2/=lib/LayerZero-v2/packages/layerzero-v2/evm/messagelib/",
+    "@layerzerolabs/oapp-evm-upgradeable=lib/devtools/packages/oapp-evm-upgradeable/contracts/",
+    "@layerzerolabs/oft-evm-upgradeable=lib/devtools/packages/oft-evm-upgradeable/contracts/",
     "solidity-bytes-utils/=lib/solidity-bytes-utils/",
     "poseidon-solidity/=lib/poseidon-solidity/",
 ]
