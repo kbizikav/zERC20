@@ -92,8 +92,7 @@ pub fn burn_address_var<F: PrimeField + Absorb>(
     is_constrained: &Boolean<F>,
 ) -> Result<FpVar<F>, SynthesisError> {
     let domain = FpVar::<F>::constant(burn_address_domain::<F>());
-    let secret_hash =
-        CircomCRHGadget::<F>::evaluate(poseidon_params, &[domain, secret.clone()])?;
+    let secret_hash = CircomCRHGadget::<F>::evaluate(poseidon_params, &[domain, secret.clone()])?;
     let poseidon =
         CircomCRHGadget::<F>::evaluate(poseidon_params, &[recipient.clone(), secret_hash])?;
     let poseidon_bits = poseidon.to_bits_le()?;
@@ -127,34 +126,30 @@ mod tests {
     use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
     use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
     use ark_relations::ns;
-    use ark_std::{rand::RngCore, test_rng};
     use hex::decode;
 
-    const ADDRESS_HASH_EXPECTED_HEX: &str = "0x15e138dd47d04a794aeb83c036eab6fe602a4089";
+    // Precomputed inputs that satisfy the PoW window so tests can avoid the expensive search.
+    const ADDRESS_HASH_EXPECTED_HEX: &str = "0x5444cf203fbc1e791d587168786de0cd3aa39d3d";
+    const FIXED_RECIPIENT: u64 = 123_456_789;
+    const FIXED_SECRET_SEED: u64 = 1_000;
+    const FIXED_NONCE: u64 = 154_509;
+    const POW_SATISFYING_SECRET: u64 = FIXED_SECRET_SEED + FIXED_NONCE;
 
-    fn sample_address_field(rng: &mut impl RngCore) -> Fr {
-        let mut bytes = [0u8; 20];
-        rng.fill_bytes(&mut bytes);
-        Fr::from_be_bytes_mod_order(&bytes)
-    }
-
-    fn sample_secret_seed(rng: &mut impl RngCore) -> Fr {
-        let mut bytes = [0u8; 32];
-        rng.fill_bytes(&mut bytes);
-        Fr::from_be_bytes_mod_order(&bytes)
+    fn pow_fixture() -> (Fr, Fr, Fr) {
+        let recipient_value = Fr::from(FIXED_RECIPIENT);
+        let secret_seed = Fr::from(FIXED_SECRET_SEED);
+        let secret_value = secret_from_nonce(secret_seed, FIXED_NONCE);
+        debug_assert_eq!(secret_value, Fr::from(POW_SATISFYING_SECRET));
+        let expected_address = compute_burn_address_from_secret(recipient_value, secret_value)
+            .expect("precomputed PoW should satisfy difficulty");
+        (recipient_value, secret_value, expected_address)
     }
 
     #[test]
     fn burn_address_matches_reference() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
-        let mut rng = test_rng();
-
-        let recipient_value = sample_address_field(&mut rng);
-        let secret_seed = sample_secret_seed(&mut rng);
-        let nonce = find_pow_nonce(recipient_value, secret_seed);
-        let secret_value = secret_from_nonce(secret_seed, nonce);
-        let expected_address = compute_burn_address_from_secret(recipient_value, secret_value)
-            .expect("nonce should satisfy PoW");
+        let (recipient_value, secret_value, expected_address) = pow_fixture();
+        assert_eq!(find_pow_nonce(recipient_value, secret_value), 0);
 
         let config = circom_poseidon_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
@@ -170,8 +165,10 @@ mod tests {
         assert!(cs.is_satisfied().unwrap());
         let domain = burn_address_domain::<Fr>();
         let secret_hash = circom_poseidon_hash(&config, &[domain, secret_value]);
-        let host_expected =
-            truncate_to_160_bits(circom_poseidon_hash(&config, &[recipient_value, secret_hash]));
+        let host_expected = truncate_to_160_bits(circom_poseidon_hash(
+            &config,
+            &[recipient_value, secret_hash],
+        ));
         assert_eq!(host_expected, expected_address);
         Ok(())
     }
@@ -180,12 +177,7 @@ mod tests {
     fn burn_address_matches_fixed_vector() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let recipient_value = Fr::from(123_456_789u64);
-        let secret_seed = Fr::from(1_000u64);
-        let nonce = find_pow_nonce(recipient_value, secret_seed);
-        let secret_value = secret_from_nonce(secret_seed, nonce);
-        let pow_expected_field = compute_burn_address_from_secret(recipient_value, secret_value)
-            .expect("nonce should satisfy PoW");
+        let (recipient_value, secret_value, pow_expected_field) = pow_fixture();
 
         let config = circom_poseidon_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
@@ -197,8 +189,10 @@ mod tests {
 
         let domain = burn_address_domain::<Fr>();
         let secret_hash = circom_poseidon_hash(&config, &[domain, secret_value]);
-        let host_expected =
-            truncate_to_160_bits(circom_poseidon_hash(&config, &[recipient_value, secret_hash]));
+        let host_expected = truncate_to_160_bits(circom_poseidon_hash(
+            &config,
+            &[recipient_value, secret_hash],
+        ));
         assert_eq!(host_expected, expected_field);
 
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;

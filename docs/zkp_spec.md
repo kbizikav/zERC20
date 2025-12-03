@@ -22,7 +22,7 @@ burn_address_var(
 * Computes an intermediate hash `secret_hash = Poseidon(domain_separator, secret)` where the domain separator is the field encoding of the bytes `b"burn"`, then hashes `poseidon_hash = Poseidon(recipient, secret_hash)` using the Circom-compatible Poseidon gadget.
 * When `is_constrained` is true, multiplies each bit in the range `[160, 160 + POW_DIFFICULTY)` by `is_constrained` and forces the product to zero, enforcing `POW_DIFFICULTY` leading zeros immediately above the address window.
 * Truncates the hash to the lower 160 bits and returns the result as the burn address.
-* The parameter `POW_DIFFICULTY` is currently 12, so the proof-of-work condition raises the collision cost from the ~`2^(160/2)` birthday-attack baseline to roughly `2^(160/2 + 12)`.
+* The parameter `POW_DIFFICULTY` is currently 16, so the proof-of-work condition raises the collision cost from the ~`2^(160/2)` birthday-attack baseline to roughly `2^(160/2 + 16)`.
 * Host helpers (`compute_burn_address_from_secret`, `find_pow_nonce`, `secret_from_nonce`) mirror the in-circuit behavior for witness generation, including the domain-separated Poseidon chaining.
 
 ## `single_withdraw`
@@ -70,7 +70,7 @@ withdraw_step(
 * Range-checks `leaf_index`, `prev_leaf_index_with_offset`, and `value`, then sets `leaf_index_with_offset = leaf_index + 1`.
 * Enforces `prev_leaf_index_with_offset < leaf_index_with_offset` so the ordering constraint is compatible with the initial accumulator value of zero; the `+1` offset guarantees that an actual leaf at index `0` can still be processed without colliding with the starting state.
 * Recomputes the burn address but skips the PoW constraint when `is_dummy` is true, allowing padded steps to bypass witness generation.
-* When `is_dummy` is false the burn address must satisfy the same PoW window as in `single_withdraw`, so crafting a colliding withdrawal falls back to the ~`2^(160/2 + 12)` effort bound.
+* When `is_dummy` is false the burn address must satisfy the same PoW window as in `single_withdraw`, so crafting a colliding withdrawal falls back to the ~`2^(160/2 + 16)` effort bound.
 * Updates the Merkle root only when `is_dummy` is false, ensuring dummy padding never touches the authenticated tree.
 * When `is_dummy` is true the circuit subtracts the provided `value` from the running total, letting the prover smooth out distinctive fractional remainders so that privacy is not degraded by uniquely sized withdrawals. Real leaves add their `value`, and every update is range-checked to 31 bytes.
 * Returns the unchanged `merkle_root`, the passthrough `recipient`, the updated `leaf_index_with_offset`, and the new running total.

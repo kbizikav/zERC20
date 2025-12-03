@@ -111,7 +111,7 @@ where
 mod tests {
     use super::{single_withdraw, withdraw_step};
     use crate::circuits::burn_address::{
-        burn_address_domain, compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce,
+        burn_address_domain, compute_burn_address_from_secret, secret_from_nonce,
     };
     use crate::test_utils::{merkle_root_from_path, truncate_to_160_bits};
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
@@ -125,18 +125,56 @@ mod tests {
     use hex::decode;
 
     const DEPTH: usize = 4;
-    const WITHDRAW_LEAF_ADDRESS_HEX: &str = "0x61d3e54c7f3b108ce133fc64f9f734f381046eac";
+    const WITHDRAW_LEAF_ADDRESS_HEX: &str =
+        "0x0000000000000000000000009e913ba3d783c72bbc99c00d8b44481e390fa11f";
     const WITHDRAW_LEAF_HASH_HEX: &str =
-        "0x2096502d1444fc57a5a8384e6f25b46187ad77b50dd15fddbb4ff8765febd481";
+        "0x21be2c3278d863c3abc0a6624c69496af5524ed3e62b70b0543f53b75a94e9a1";
     const WITHDRAW_MERKLE_ROOT_HEX: &str =
-        "0x033986ce5c0867757945df4e84c35c8f950d639e32e5659b87d00b20a3d20350";
+        "0x242235a67fca522ecec6b37abb23066e18365f52b66bfc549c92dfc774551754";
 
-    fn find_pow_secret(recipient: Fr, seed: Fr) -> (Fr, Fr) {
-        let nonce = find_pow_nonce(recipient, seed);
-        let secret = secret_from_nonce(seed, nonce);
-        let address =
-            compute_burn_address_from_secret(recipient, secret).expect("nonce should satisfy PoW");
-        (secret, address)
+    struct PowFixture {
+        recipient: u64,
+        secret_seed: u64,
+        nonce: u64,
+        address_hex: &'static str,
+    }
+
+    const REAL_LEAF_POW: PowFixture = PowFixture {
+        recipient: 123,
+        secret_seed: 456,
+        nonce: 57_369,
+        address_hex: WITHDRAW_LEAF_ADDRESS_HEX,
+    };
+    const SINGLE_WITHDRAW_POW: PowFixture = PowFixture {
+        recipient: 321,
+        secret_seed: 654,
+        nonce: 37_563,
+        address_hex: "0x0000000000000000000000001ecfef8fc467a10976cff86968dca6b63d548fde",
+    };
+    const MAX_INDEX_POW: PowFixture = PowFixture {
+        recipient: 42,
+        secret_seed: 84,
+        nonce: 21_048,
+        address_hex: "0x000000000000000000000000a8f6451ee4299b428bd210d84533db5f34d9fa9e",
+    };
+    const NON_INCREASING_POW: PowFixture = PowFixture {
+        recipient: 1,
+        secret_seed: 2,
+        nonce: 51_519,
+        address_hex: "0x000000000000000000000000ec79038c8b67074127f7be5def1d0203d89a7300",
+    };
+
+    fn load_pow_fixture(fixture: &PowFixture) -> (Fr, Fr, Fr) {
+        let recipient_value = Fr::from(fixture.recipient);
+        let secret_seed = Fr::from(fixture.secret_seed);
+        let secret_value = secret_from_nonce(secret_seed, fixture.nonce);
+        let expected_address = Fr::from_be_bytes_mod_order(
+            &decode(fixture.address_hex.trim_start_matches("0x")).expect("valid burn address hex"),
+        );
+        let address_value =
+            compute_burn_address_from_secret(recipient_value, secret_value).expect("valid PoW");
+        assert_eq!(address_value, expected_address);
+        (recipient_value, secret_value, address_value)
     }
 
     #[test]
@@ -146,9 +184,7 @@ mod tests {
         let poseidon_config = circom_poseidon_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
 
-        let recipient_value = Fr::from(321u64);
-        let secret_seed = Fr::from(654u64);
-        let (secret_value, address_value) = find_pow_secret(recipient_value, secret_seed);
+        let (recipient_value, secret_value, address_value) = load_pow_fixture(&SINGLE_WITHDRAW_POW);
         let value_value = Fr::from(100u64);
         let delta_value = Fr::from(25u64);
         let withdraw_value_value = value_value - delta_value;
@@ -212,9 +248,7 @@ mod tests {
         let poseidon_config = circom_poseidon_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
 
-        let recipient_value = Fr::from(123u64);
-        let secret_seed = Fr::from(456u64);
-        let (secret_value, address_value) = find_pow_secret(recipient_value, secret_seed);
+        let (recipient_value, secret_value, address_value) = load_pow_fixture(&REAL_LEAF_POW);
         let value_value = Fr::from(7u64);
         let prev_leaf_index_with_offset_value = Fr::from(3u64);
         let leaf_index_u64 = 5u64;
@@ -317,9 +351,7 @@ mod tests {
         let poseidon_config = circom_poseidon_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
 
-        let recipient_value = Fr::from(42u64);
-        let secret_seed = Fr::from(84u64);
-        let (secret_value, address_value) = find_pow_secret(recipient_value, secret_seed);
+        let (recipient_value, secret_value, address_value) = load_pow_fixture(&MAX_INDEX_POW);
         let value_value = Fr::from(9u64);
         let prev_total_value_value = Fr::from(30u64);
         let leaf_index_u64 = (1u64 << DEPTH) - 1;
@@ -481,9 +513,7 @@ mod tests {
         let poseidon_config = circom_poseidon_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
 
-        let recipient_value = Fr::from(1u64);
-        let secret_seed = Fr::from(2u64);
-        let (secret_value, _) = find_pow_secret(recipient_value, secret_seed);
+        let (recipient_value, secret_value, _) = load_pow_fixture(&NON_INCREASING_POW);
         let value_value = Fr::from(1u64);
         let prev_leaf_index_with_offset_value = Fr::from(6u64);
         let leaf_index_value = Fr::from(5u64);
