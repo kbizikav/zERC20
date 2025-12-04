@@ -24,7 +24,7 @@ use tokio::time::sleep;
 
 use crate::{
     config::RootJobConfig,
-    jobs::try_acquire_lock,
+    jobs::{parse_address, parse_u256, try_acquire_lock, u64_to_i64},
     trees::{DbIncrementalMerkleTree, DbMerkleTreeConfig, HistoricalProof},
 };
 use client_common::{
@@ -1058,20 +1058,6 @@ fn to_external_inputs(
     })
 }
 
-fn parse_address(bytes: &[u8]) -> Result<Address> {
-    if bytes.len() != 20 {
-        bail!("address bytes must be 20, got {}", bytes.len());
-    }
-    Ok(Address::from_slice(bytes))
-}
-
-fn parse_u256(bytes: &[u8]) -> Result<U256> {
-    if bytes.len() != 32 {
-        bail!("value bytes must be 32, got {}", bytes.len());
-    }
-    Ok(U256::from_be_slice(bytes))
-}
-
 async fn initialise_nova(
     nova_params: &Arc<NovaParams<RootCircuit<Fr>>>,
     token_id: i64,
@@ -1161,16 +1147,6 @@ fn load_nova_from_ivc(
     nova_params
         .nova_from_ivc_proof(ivc)
         .context("failed to load nova instance from ivc proof")
-}
-
-fn u64_to_i64(label: &str, value: u64) -> Result<i64> {
-    i64::try_from(value).map_err(|_| {
-        anyhow!(
-            "{label} exceeds i64 range: {value}",
-            label = label,
-            value = value
-        )
-    })
 }
 
 fn fr_to_bytes(value: Fr) -> [u8; 32] {
