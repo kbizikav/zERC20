@@ -30,6 +30,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     event TransferRootRelayed(uint64 indexed index, uint256 root, bytes lzMsgId);
     event GlobalRootSaved(uint64 indexed aggSeq, uint256 root);
     event EmergencyTriggered(uint64 indexed index, uint256 root1, uint256 root2);
+    event ActivateEmergency();
     event DeactivateEmergency();
     event Teleport(
         address indexed to,
@@ -455,6 +456,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// @notice Allows the owner to proactively pause the contract outside of proof conflicts.
     function activateEmergency() external onlyOwner {
         _pause();
+        emit ActivateEmergency();
     }
 
     /// @notice Clears the emergency pause that is triggered when conflicting transfer roots are observed.
