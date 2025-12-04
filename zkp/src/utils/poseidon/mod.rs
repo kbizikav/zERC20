@@ -7,7 +7,9 @@ pub use utils::{circom_poseidon_hash, light_poseidon_to_ark_config};
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::poseidon::utils::circom_poseidon_config;
+    use crate::utils::poseidon::utils::{
+        circom_poseidon_config, circom_poseidon_config_with_rate, poseidon3,
+    };
 
     use super::{CircomCRH, CircomTwoToOneCRH, circom_poseidon_hash};
     use ark_bn254::Fr;
@@ -61,6 +63,22 @@ mod tests {
 
         let actual = CircomTwoToOneCRH::<Fr>::evaluate(&config, left, right).unwrap();
         assert_eq!(expected, actual);
+    }
+
+    #[test]
+    fn poseidon3_matches_light_poseidon() {
+        let config = circom_poseidon_config_with_rate(3);
+
+        let inputs = [Fr::from(3u64), Fr::from(4u64), Fr::from(5u64)];
+
+        let mut light = Poseidon::<Fr>::new_circom(3).unwrap();
+        let expected = light.hash(&inputs).unwrap();
+
+        let actual = circom_poseidon_hash(&config, &inputs);
+        assert_eq!(expected, actual);
+
+        let helper_hash = poseidon3(inputs[0], inputs[1], inputs[2]);
+        assert_eq!(expected, helper_hash);
     }
 
     #[test]

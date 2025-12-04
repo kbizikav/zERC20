@@ -1,11 +1,11 @@
 use ark_bn254::Fr;
-use ark_crypto_primitives::{crh::CRHSchemeGadget, sponge::Absorb};
+use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::SynthesisError;
 
 use crate::utils::poseidon::{
-    gadgets::{CircomCRHGadget, CircomCRHParametersVar},
+    gadgets::{CircomCRHParametersVar, poseidon2_var},
     utils::poseidon2,
 };
 
@@ -18,7 +18,7 @@ pub fn leaf_hash_var<F: PrimeField + Absorb>(
     addr: &FpVar<F>,
     amount: &FpVar<F>,
 ) -> Result<FpVar<F>, SynthesisError> {
-    CircomCRHGadget::<F>::evaluate(poseidon_params, &[addr.clone(), amount.clone()])
+    poseidon2_var(poseidon_params, addr, amount)
 }
 
 #[cfg(test)]

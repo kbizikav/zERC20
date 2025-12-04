@@ -139,7 +139,9 @@ mod tests {
         let to = Address::from([0x22u8; 20]);
         let value = U256::from(0x333u64);
 
-        let expected = U256::from_be_slice(&decode(CONTRACT_VECTOR_EXPECTED_HEX.trim_start_matches("0x")).unwrap());
+        let expected = U256::from_be_slice(
+            &decode(CONTRACT_VECTOR_EXPECTED_HEX.trim_start_matches("0x")).unwrap(),
+        );
         let actual = hash_chain(prev, from, to, value);
         assert_eq!(actual, expected);
     }
