@@ -31,7 +31,6 @@ contract DeployLocal is DeterministicDeployer {
         uint64 verifierChainId;
         address hubDelegate;
         address verifierDelegate;
-        address liquidityManager;
         address tokenOwner;
         uint8 tokenDecimals;
         bool shareEndpoint;
@@ -99,7 +98,6 @@ contract DeployLocal is DeterministicDeployer {
         cfg.verifierChainId = uint64(vm.envOr("VERIFIER_CHAIN_ID", uint256(block.chainid)));
         cfg.hubDelegate = vm.envOr("HUB_DELEGATE", address(0));
         cfg.verifierDelegate = vm.envOr("VERIFIER_DELEGATE", address(0));
-        cfg.liquidityManager = vm.envOr("LIQUIDITY_MANAGER", address(0));
         cfg.tokenOwner = vm.envOr("TOKEN_OWNER", address(0));
         uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
         require(decimals <= type(uint8).max, "tokenDecimals too large");
@@ -130,7 +128,7 @@ contract DeployLocal is DeterministicDeployer {
         bytes memory initData = abi.encodeCall(Hub.initialize, (delegate));
         ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "HUB_PROXY")}(address(impl), initData);
         hub = Hub(address(proxy));
-        console2.log("Hub implementation deployed at", address(impl));
+        console2.log("\tHub implementation deployed at", address(impl));
         console2.log("Hub proxy deployed at", address(hub));
     }
 
@@ -143,9 +141,9 @@ contract DeployLocal is DeterministicDeployer {
         bytes memory initData = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
         ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(impl), initData);
         token = zERC20(address(proxy));
-        console2.log("zERC20 implementation deployed at", address(impl));
+        console2.log("\tzERC20 implementation deployed at", address(impl));
         console2.log("zERC20 proxy deployed at", address(token));
-        console2.log("Token owner set to", owner);
+        console2.log("\tToken owner set to", owner);
     }
 
     function _deployVerifierSuite(
@@ -166,41 +164,41 @@ contract DeployLocal is DeterministicDeployer {
         verifier = _deployVerifier(baseSalt, token, cfg.hubEid, address(endpoint), delegate, deps);
 
         token.setVerifier(address(verifier));
-        console2.log("Token verifier wired");
+        console2.log("\tToken verifier wired");
     }
 
     function _deployRootDecider(bytes32 baseSalt) private returns (address rootDecider) {
         RootNovaDecider instance = new RootNovaDecider{salt: _deriveSalt(baseSalt, "ROOT_DECIDER")}();
         rootDecider = address(instance);
-        console2.log("RootDecider deployed at", rootDecider);
+        console2.log("\tRootDecider deployed at", rootDecider);
     }
 
     function _deployWithdrawGlobalDecider(bytes32 baseSalt) private returns (address withdrawGlobal) {
         WithdrawGlobalNovaDecider instance =
             new WithdrawGlobalNovaDecider{salt: _deriveSalt(baseSalt, "WITHDRAW_GLOBAL_DECIDER")}();
         withdrawGlobal = address(instance);
-        console2.log("WithdrawGlobalDecider deployed at", withdrawGlobal);
+        console2.log("\tWithdrawGlobalDecider deployed at", withdrawGlobal);
     }
 
     function _deployWithdrawLocalDecider(bytes32 baseSalt) private returns (address withdrawLocal) {
         WithdrawLocalNovaDecider instance =
             new WithdrawLocalNovaDecider{salt: _deriveSalt(baseSalt, "WITHDRAW_LOCAL_DECIDER")}();
         withdrawLocal = address(instance);
-        console2.log("WithdrawLocalDecider deployed at", withdrawLocal);
+        console2.log("\tWithdrawLocalDecider deployed at", withdrawLocal);
     }
 
     function _deployWithdrawGlobalGroth16(bytes32 baseSalt) private returns (address withdrawGlobalGroth16) {
         WithdrawGlobalGroth16Verifier instance =
             new WithdrawGlobalGroth16Verifier{salt: _deriveSalt(baseSalt, "WITHDRAW_GLOBAL_GROTH16")}();
         withdrawGlobalGroth16 = address(instance);
-        console2.log("WithdrawGlobalGroth16Verifier deployed at", withdrawGlobalGroth16);
+        console2.log("\tWithdrawGlobalGroth16Verifier deployed at", withdrawGlobalGroth16);
     }
 
     function _deployWithdrawLocalGroth16(bytes32 baseSalt) private returns (address withdrawLocalGroth16) {
         WithdrawLocalGroth16Verifier instance =
             new WithdrawLocalGroth16Verifier{salt: _deriveSalt(baseSalt, "WITHDRAW_LOCAL_GROTH16")}();
         withdrawLocalGroth16 = address(instance);
-        console2.log("WithdrawLocalGroth16Verifier deployed at", withdrawLocalGroth16);
+        console2.log("\tWithdrawLocalGroth16Verifier deployed at", withdrawLocalGroth16);
     }
 
     function _deployVerifier(
@@ -225,9 +223,9 @@ contract DeployLocal is DeterministicDeployer {
         bytes memory initData = _encodeVerifierInit(args);
         ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "VERIFIER_PROXY")}(address(impl), initData);
         verifier = Verifier(address(proxy));
-        console2.log("Verifier implementation deployed at", address(impl));
+        console2.log("\tVerifier implementation deployed at", address(impl));
         console2.log("Verifier proxy deployed at", address(verifier));
-        console2.log("Verifier owner set to", delegate);
+        console2.log("\tVerifier owner set to", delegate);
     }
 
     function _encodeVerifierInit(VerifierArgs memory args) private pure returns (bytes memory) {
@@ -249,12 +247,8 @@ contract DeployLocal is DeterministicDeployer {
     function _finalizeDeployment(Config memory cfg, address deployer, Hub hub, zERC20 token, Verifier verifier)
         private
     {
-        if (cfg.liquidityManager != address(0)) {
-            token.setMinter(cfg.liquidityManager);
-            console2.log("Token minter set to liquidity manager", cfg.liquidityManager);
-        } else {
-            console2.log("Token minter left unset (provide LIQUIDITY_MANAGER to wire)");
-        }
+        token.setMinter(deployer);
+        console2.log("\tToken minter set to deployer", deployer);
 
         if (cfg.wirePeers) {
             _wirePeers(cfg, hub, verifier);
@@ -272,7 +266,7 @@ contract DeployLocal is DeterministicDeployer {
         bytes32 hubPeer = _toBytes32(address(hub));
         verifier.setPeer(cfg.hubEid, hubPeer);
 
-        console2.log("Peers configured for Hub and Verifier");
+        console2.log("\tPeers configured for Hub and Verifier");
     }
 
     function _registerOnHub(Config memory cfg, Hub hub, Verifier verifier, zERC20 token) private {
@@ -284,7 +278,7 @@ contract DeployLocal is DeterministicDeployer {
                 token: address(token)
             })
         );
-        console2.log("Token registered on Hub");
+        console2.log("\tToken registered on Hub");
     }
 
     function _logSummary(
@@ -294,10 +288,10 @@ contract DeployLocal is DeterministicDeployer {
         zERC20 token,
         Verifier verifier
     ) private pure {
-        console2.log("Hub endpoint mock", address(hubEndpoint));
-        console2.log("Verifier endpoint mock", address(verifierEndpoint));
-        console2.log("Hub address", address(hub));
-        console2.log("Token address", address(token));
-        console2.log("Verifier address", address(verifier));
+        console2.log("\tHub endpoint mock", address(hubEndpoint));
+        console2.log("\tVerifier endpoint mock", address(verifierEndpoint));
+        console2.log("\tHub address", address(hub));
+        console2.log("\tToken address", address(token));
+        console2.log("\tVerifier address", address(verifier));
     }
 }
