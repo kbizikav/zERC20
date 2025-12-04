@@ -328,8 +328,8 @@ async fn main() -> Result<()> {
     for token in &tokens {
         let provider = build_provider(&token.rpc_urls)
             .with_context(|| format!("failed to construct provider for token '{}'", token.label))?;
-        let contract = VerifierContract::new(provider, token.verifier_address)
-            .with_legacy_tx(token.legacy_tx);
+        let contract =
+            VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
         relay_jobs.push(RelayJob {
             label: token.label.clone(),
             chain_id: token.chain_id,
