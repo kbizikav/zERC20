@@ -10,6 +10,7 @@ use ark_relations::ns;
 #[derive(Clone)]
 pub struct SingleWithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
     pub poseidon_params: PoseidonConfig<F>,
+    pub poseidon_burn_params: PoseidonConfig<F>,
 
     // ---- public inputs ----
     pub merkle_root: Option<F>,
@@ -25,9 +26,13 @@ pub struct SingleWithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
 }
 
 impl<F: PrimeField + Absorb, const DEPTH: usize> SingleWithdrawCircuit<F, DEPTH> {
-    pub fn new(poseidon_params: PoseidonConfig<F>) -> Self {
+    pub fn new(
+        poseidon_params: PoseidonConfig<F>,
+        poseidon_burn_params: PoseidonConfig<F>,
+    ) -> Self {
         Self {
             poseidon_params,
+            poseidon_burn_params,
             merkle_root: None,
             recipient: None,
             withdraw_value: None,
@@ -55,6 +60,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
     fn generate_constraints(self, cs: ConstraintSystemRef<F>) -> Result<(), SynthesisError> {
         let Self {
             poseidon_params,
+            poseidon_burn_params,
             merkle_root,
             recipient,
             withdraw_value,
@@ -67,6 +73,10 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
 
         let poseidon_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon_params"), &poseidon_params)?;
+        let poseidon_burn_params = CircomCRHParametersVar::new_constant(
+            ns!(cs, "poseidon_burn_params"),
+            &poseidon_burn_params,
+        )?;
 
         // ---- public inputs ----
         let merkle_root = FpVar::<F>::new_input(ns!(cs, "merkle_root"), || {
@@ -105,6 +115,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
 
         let computed_withdraw_value = single_withdraw::<F, DEPTH>(
             &poseidon_params,
+            &poseidon_burn_params,
             &merkle_root,
             &recipient,
             &value,
@@ -128,7 +139,7 @@ mod tests {
     };
     use crate::groth16::params::Groth16Params;
     use crate::test_utils::merkle_root_from_path;
-    use crate::utils::poseidon::utils::circom_poseidon_config;
+    use crate::utils::poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate};
     use crate::utils::tree::gadgets::leaf_hash::compute_leaf_hash;
     use alloy::primitives::keccak256;
     use ark_bn254::Fr;
@@ -140,6 +151,7 @@ mod tests {
     #[test]
     fn test_single_withdraw_circuit() {
         let poseidon_config = circom_poseidon_config();
+        let poseidon_burn_config = circom_poseidon_config_with_rate(3);
 
         let recipient_value = Fr::from(321u64);
         let secret_seed = Fr::from(654u64);
@@ -168,6 +180,7 @@ mod tests {
 
         let circuit = SingleWithdrawCircuit::<Fr, DEPTH> {
             poseidon_params: poseidon_config.clone(),
+            poseidon_burn_params: poseidon_burn_config.clone(),
             merkle_root: Some(merkle_root_value),
             recipient: Some(recipient_value),
             withdraw_value: Some(withdraw_value_value),

@@ -17,7 +17,8 @@ use ark_relations::gr1cs::SynthesisError;
 use core::ops::Not;
 
 pub fn single_withdraw<F, const DEPTH: usize>(
-    poseidon_params: &CircomCRHParametersVar<F>,
+    poseidon2_params: &CircomCRHParametersVar<F>,
+    poseidon3_params: &CircomCRHParametersVar<F>,
     merkle_root: &FpVar<F>,
     recipient: &FpVar<F>,
     value: &FpVar<F>,
@@ -38,9 +39,9 @@ where
     let index_bits = to_bits_le_limited(leaf_index, DEPTH)?;
 
     let enforce_pow = Boolean::constant(true);
-    let leaf_address = burn_address_var(poseidon_params, recipient, secret, &enforce_pow)?;
-    let leaf_hash = leaf_hash_var(poseidon_params, &leaf_address, value)?;
-    let computed_root = merkle_root_from_leaf(poseidon_params, &leaf_hash, &index_bits, siblings)?;
+    let leaf_address = burn_address_var(poseidon3_params, recipient, secret, &enforce_pow)?;
+    let leaf_hash = leaf_hash_var(poseidon2_params, &leaf_address, value)?;
+    let computed_root = merkle_root_from_leaf(poseidon2_params, &leaf_hash, &index_bits, siblings)?;
 
     merkle_root.enforce_equal(&computed_root)?;
 
@@ -51,7 +52,8 @@ where
 }
 
 pub fn withdraw_step<F, const DEPTH: usize>(
-    poseidon_params: &CircomCRHParametersVar<F>,
+    poseidon2_params: &CircomCRHParametersVar<F>,
+    poseidon3_params: &CircomCRHParametersVar<F>,
     merkle_root: &FpVar<F>,
     recipient: &FpVar<F>,
     prev_leaf_index_with_offset: &FpVar<F>,
@@ -84,9 +86,9 @@ where
     let index_bits = to_bits_le_limited(leaf_index, DEPTH)?;
 
     let should_constrain = is_dummy.clone().not();
-    let leaf_address = burn_address_var(poseidon_params, recipient, secret, &should_constrain)?;
-    let leaf_hash = leaf_hash_var(poseidon_params, &leaf_address, value)?;
-    let computed_root = merkle_root_from_leaf(poseidon_params, &leaf_hash, &index_bits, siblings)?;
+    let leaf_address = burn_address_var(poseidon3_params, recipient, secret, &should_constrain)?;
+    let leaf_hash = leaf_hash_var(poseidon2_params, &leaf_address, value)?;
+    let computed_root = merkle_root_from_leaf(poseidon2_params, &leaf_hash, &index_bits, siblings)?;
 
     let is_dummy_fp: FpVar<F> = is_dummy.clone().into();
     let is_real_fp = one.clone() - is_dummy_fp.clone();
@@ -115,7 +117,9 @@ mod tests {
     };
     use crate::test_utils::{merkle_root_from_path, truncate_to_160_bits};
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::{circom_poseidon_config, circom_poseidon_hash};
+    use crate::utils::poseidon::utils::{
+        circom_poseidon_config, circom_poseidon_config_with_rate, circom_poseidon_hash,
+    };
     use ark_bn254::Fr;
     use ark_ff::{PrimeField, Zero};
     use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
@@ -126,11 +130,11 @@ mod tests {
 
     const DEPTH: usize = 4;
     const WITHDRAW_LEAF_ADDRESS_HEX: &str =
-        "0x0000000000000000000000009e913ba3d783c72bbc99c00d8b44481e390fa11f";
+        "0x00000000000000000000000026540d01ef93f4587b3d8a528ec57b30f9850c8f";
     const WITHDRAW_LEAF_HASH_HEX: &str =
-        "0x21be2c3278d863c3abc0a6624c69496af5524ed3e62b70b0543f53b75a94e9a1";
+        "0x10af3fe316bbf7785e684a80cc70ad99ae17711c7d352692aaece8cef4b891dc";
     const WITHDRAW_MERKLE_ROOT_HEX: &str =
-        "0x242235a67fca522ecec6b37abb23066e18365f52b66bfc549c92dfc774551754";
+        "0x03cccb9b30a0f6e651a53fcf0651ff5a77e9669e0c647af31d8d1884338b6624";
 
     struct PowFixture {
         recipient: u64,
@@ -142,26 +146,26 @@ mod tests {
     const REAL_LEAF_POW: PowFixture = PowFixture {
         recipient: 123,
         secret_seed: 456,
-        nonce: 57_369,
+        nonce: 72_950,
         address_hex: WITHDRAW_LEAF_ADDRESS_HEX,
     };
     const SINGLE_WITHDRAW_POW: PowFixture = PowFixture {
         recipient: 321,
         secret_seed: 654,
-        nonce: 37_563,
-        address_hex: "0x0000000000000000000000001ecfef8fc467a10976cff86968dca6b63d548fde",
+        nonce: 58_635,
+        address_hex: "0x000000000000000000000000edf728cc772812667eae4cdf4a764347857eb824",
     };
     const MAX_INDEX_POW: PowFixture = PowFixture {
         recipient: 42,
         secret_seed: 84,
-        nonce: 21_048,
-        address_hex: "0x000000000000000000000000a8f6451ee4299b428bd210d84533db5f34d9fa9e",
+        nonce: 91_789,
+        address_hex: "0x00000000000000000000000089ff51a1dfa83573051fea53b9eb9cfa47e3bbb8",
     };
     const NON_INCREASING_POW: PowFixture = PowFixture {
         recipient: 1,
         secret_seed: 2,
-        nonce: 51_519,
-        address_hex: "0x000000000000000000000000ec79038c8b67074127f7be5def1d0203d89a7300",
+        nonce: 4_105,
+        address_hex: "0x00000000000000000000000067589a9c2f969a6adfe4a9c2f51d797753a4d3f0",
     };
 
     fn load_pow_fixture(fixture: &PowFixture) -> (Fr, Fr, Fr) {
@@ -181,8 +185,12 @@ mod tests {
     fn single_withdraw_accepts_valid_leaf() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon_config = circom_poseidon_config();
-        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
+        let poseidon2_config = circom_poseidon_config();
+        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
         let (recipient_value, secret_value, address_value) = load_pow_fixture(&SINGLE_WITHDRAW_POW);
         let value_value = Fr::from(100u64);
@@ -196,15 +204,14 @@ mod tests {
             .collect::<Vec<_>>();
 
         let domain = burn_address_domain::<Fr>();
-        let secret_hash = circom_poseidon_hash(&poseidon_config, &[domain, secret_value]);
         let host_address = truncate_to_160_bits(circom_poseidon_hash(
-            &poseidon_config,
-            &[recipient_value, secret_hash],
+            &poseidon3_config,
+            &[domain, recipient_value, secret_value],
         ));
         assert_eq!(address_value, host_address);
-        let leaf_value = circom_poseidon_hash(&poseidon_config, &[address_value, value_value]);
+        let leaf_value = circom_poseidon_hash(&poseidon2_config, &[address_value, value_value]);
         let merkle_root_value = merkle_root_from_path(
-            &poseidon_config,
+            &poseidon2_config,
             leaf_index_u64,
             leaf_value,
             &siblings_values,
@@ -223,7 +230,8 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()?;
 
         let new_value = single_withdraw::<Fr, DEPTH>(
-            &params,
+            &poseidon2_params,
+            &poseidon3_params,
             &merkle_root,
             &recipient,
             &value,
@@ -245,8 +253,12 @@ mod tests {
     fn withdraw_real_leaf_updates_total() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon_config = circom_poseidon_config();
-        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
+        let poseidon2_config = circom_poseidon_config();
+        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
         let (recipient_value, secret_value, address_value) = load_pow_fixture(&REAL_LEAF_POW);
         let value_value = Fr::from(7u64);
@@ -263,14 +275,13 @@ mod tests {
         );
         assert_eq!(address_value, expected_address);
         let domain = burn_address_domain::<Fr>();
-        let secret_hash = circom_poseidon_hash(&poseidon_config, &[domain, secret_value]);
         let host_address = truncate_to_160_bits(circom_poseidon_hash(
-            &poseidon_config,
-            &[recipient_value, secret_hash],
+            &poseidon3_config,
+            &[domain, recipient_value, secret_value],
         ));
         assert_eq!(address_value, host_address);
 
-        let leaf_value = circom_poseidon_hash(&poseidon_config, &[address_value, value_value]);
+        let leaf_value = circom_poseidon_hash(&poseidon2_config, &[address_value, value_value]);
         let expected_leaf = Fr::from_be_bytes_mod_order(
             &decode(WITHDRAW_LEAF_HASH_HEX.trim_start_matches("0x"))
                 .expect("valid withdraw leaf hash hex"),
@@ -281,7 +292,7 @@ mod tests {
             .map(Fr::from)
             .collect::<Vec<_>>();
         let merkle_root_value = merkle_root_from_path(
-            &poseidon_config,
+            &poseidon2_config,
             leaf_index_u64,
             leaf_value,
             &siblings_values,
@@ -313,7 +324,8 @@ mod tests {
 
         let (out_root, out_recipient, out_leaf_index_with_offset, out_total) =
             withdraw_step::<Fr, DEPTH>(
-                &params,
+                &poseidon2_params,
+                &poseidon3_params,
                 &merkle_root,
                 &recipient,
                 &prev_leaf_index_with_offset,
@@ -348,8 +360,12 @@ mod tests {
     fn withdraw_accepts_max_leaf_index() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon_config = circom_poseidon_config();
-        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
+        let poseidon2_config = circom_poseidon_config();
+        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
         let (recipient_value, secret_value, address_value) = load_pow_fixture(&MAX_INDEX_POW);
         let value_value = Fr::from(9u64);
@@ -361,10 +377,9 @@ mod tests {
         let is_dummy_value = false;
 
         let domain = burn_address_domain::<Fr>();
-        let secret_hash = circom_poseidon_hash(&poseidon_config, &[domain, secret_value]);
         let host_address = truncate_to_160_bits(circom_poseidon_hash(
-            &poseidon_config,
-            &[recipient_value, secret_hash],
+            &poseidon3_config,
+            &[domain, recipient_value, secret_value],
         ));
         assert_eq!(address_value, host_address);
 
@@ -372,9 +387,9 @@ mod tests {
             .into_iter()
             .map(Fr::from)
             .collect::<Vec<_>>();
-        let leaf_value = circom_poseidon_hash(&poseidon_config, &[address_value, value_value]);
+        let leaf_value = circom_poseidon_hash(&poseidon2_config, &[address_value, value_value]);
         let merkle_root_value = merkle_root_from_path(
-            &poseidon_config,
+            &poseidon2_config,
             leaf_index_u64,
             leaf_value,
             &siblings_values,
@@ -401,7 +416,8 @@ mod tests {
 
         let (out_root, out_recipient, out_leaf_index_with_offset, out_total) =
             withdraw_step::<Fr, DEPTH>(
-                &params,
+                &poseidon2_params,
+                &poseidon3_params,
                 &merkle_root,
                 &recipient,
                 &prev_leaf_index_with_offset,
@@ -436,8 +452,12 @@ mod tests {
     fn withdraw_dummy_skips_root_check() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon_config = circom_poseidon_config();
-        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
+        let poseidon2_config = circom_poseidon_config();
+        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
         let recipient_value = Fr::from(10u64);
         let secret_value = Fr::from(20u64);
@@ -475,7 +495,8 @@ mod tests {
 
         let (out_root, out_recipient, out_leaf_index_with_offset, out_total) =
             withdraw_step::<Fr, DEPTH>(
-                &params,
+                &poseidon2_params,
+                &poseidon3_params,
                 &merkle_root,
                 &recipient,
                 &prev_leaf_index_with_offset,
@@ -510,8 +531,12 @@ mod tests {
     fn withdraw_rejects_non_increasing_index() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon_config = circom_poseidon_config();
-        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
+        let poseidon2_config = circom_poseidon_config();
+        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
         let (recipient_value, secret_value, _) = load_pow_fixture(&NON_INCREASING_POW);
         let value_value = Fr::from(1u64);
@@ -544,7 +569,8 @@ mod tests {
 
         let (out_root, out_recipient, out_leaf_index_with_offset, out_total) =
             withdraw_step::<Fr, DEPTH>(
-                &params,
+                &poseidon2_params,
+                &poseidon3_params,
                 &merkle_root,
                 &recipient,
                 &prev_leaf_index_with_offset,

@@ -17,7 +17,8 @@ use zkp::{
         withdraw_nova::{WithdrawCircuit, WithdrawExternalInputs, dummy_withdraw_ext_input},
     },
     utils::{
-        convertion::u256_to_fr, poseidon::utils::circom_poseidon_config,
+        convertion::u256_to_fr,
+        poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
         tree::merkle_tree::MerkleProof,
     },
 };
@@ -135,11 +136,12 @@ pub fn load_withdraw_params<const DEPTH: usize>(
         }
     };
     let poseidon_params = circom_poseidon_config::<Fr>();
+    let poseidon_burn_params = circom_poseidon_config_with_rate(3);
     let pp = fs::read(artifacts_dir.join(format!("{}_nova_pp.bin", prefix)))
         .with_context(|| format!("failed to read {}_nova_pp.bin", prefix))?;
     let vp = fs::read(artifacts_dir.join(format!("{}_nova_vp.bin", prefix)))
         .with_context(|| format!("failed to read {}_nova_vp.bin", prefix))?;
-    NovaParams::from_bytes(poseidon_params, pp, vp)
+    NovaParams::from_bytes((poseidon_params, poseidon_burn_params), pp, vp)
         .map_err(|err| anyhow!("failed to deserialize withdraw nova params: {}", err))
 }
 

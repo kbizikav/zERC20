@@ -21,7 +21,7 @@ use zkp::nova::{
     },
 };
 use zkp::utils::{
-    poseidon::utils::circom_poseidon_config,
+    poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
     tree::{gadgets::leaf_hash::compute_leaf_hash, merkle_tree::MerkleProof},
 };
 
@@ -56,10 +56,11 @@ fn bench_root_nova_step(c: &mut Criterion) {
 }
 
 fn bench_withdraw_nova_step(c: &mut Criterion) {
-    let poseidon_params = circom_poseidon_config::<Fr>();
+    let poseidon2_params = circom_poseidon_config::<Fr>();
+    let poseidon3_params = circom_poseidon_config_with_rate(3);
     let mut setup_rng = StdRng::seed_from_u64(0xA11CE5ED);
     let nova_params = NovaParams::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>::rand(
-        poseidon_params.clone(),
+        (poseidon2_params.clone(), poseidon3_params.clone()),
         &mut setup_rng,
     )
     .expect("withdraw nova params");
@@ -85,9 +86,11 @@ fn bench_withdraw_nova_step(c: &mut Criterion) {
 
 fn bench_single_withdraw_groth16(c: &mut Criterion) {
     const DEPTH: usize = TRANSFER_TREE_HEIGHT;
-    let poseidon_config = circom_poseidon_config::<Fr>();
+    let poseidon2_config = circom_poseidon_config::<Fr>();
+    let poseidon3_config = circom_poseidon_config_with_rate(3);
     let mut setup_rng = StdRng::seed_from_u64(0xC01DBEEF);
-    let circuit_template = build_single_withdraw_circuit::<DEPTH>(&poseidon_config);
+    let circuit_template =
+        build_single_withdraw_circuit::<DEPTH>(&poseidon2_config, &poseidon3_config);
     let groth16_params =
         Groth16Params::rand(&mut setup_rng, circuit_template.clone()).expect("groth16 params");
 
@@ -95,7 +98,7 @@ fn bench_single_withdraw_groth16(c: &mut Criterion) {
         b.iter_batched(
             || {
                 (
-                    build_single_withdraw_circuit::<DEPTH>(&poseidon_config),
+                    build_single_withdraw_circuit::<DEPTH>(&poseidon2_config, &poseidon3_config),
                     StdRng::seed_from_u64(0xABCD1234),
                 )
             },
@@ -111,7 +114,8 @@ fn bench_single_withdraw_groth16(c: &mut Criterion) {
 }
 
 fn build_single_withdraw_circuit<const DEPTH: usize>(
-    poseidon_config: &PoseidonConfig<Fr>,
+    poseidon2_config: &PoseidonConfig<Fr>,
+    poseidon3_config: &PoseidonConfig<Fr>,
 ) -> SingleWithdrawCircuit<Fr, DEPTH> {
     let recipient = Fr::from(321u64);
     let secret_seed = Fr::from(654u64);
@@ -134,7 +138,8 @@ fn build_single_withdraw_circuit<const DEPTH: usize>(
     let merkle_root = proof.get_root(leaf, leaf_index);
 
     SingleWithdrawCircuit {
-        poseidon_params: poseidon_config.clone(),
+        poseidon_params: poseidon2_config.clone(),
+        poseidon_burn_params: poseidon3_config.clone(),
         merkle_root: Some(merkle_root),
         recipient: Some(recipient),
         withdraw_value: Some(withdraw_value),

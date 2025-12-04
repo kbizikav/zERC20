@@ -20,10 +20,11 @@ burn_address_var(
 ```
 
 * Computes an intermediate hash `secret_hash = Poseidon(domain_separator, secret)` where the domain separator is the field encoding of the bytes `b"burn"`, then hashes `poseidon_hash = Poseidon(recipient, secret_hash)` using the Circom-compatible Poseidon gadget.
+* Updated: now uses a single Poseidon permutation over three limbs `Poseidon(domain_separator, recipient, secret)`, eliminating the intermediate chaining while retaining the same domain separation.
 * When `is_constrained` is true, multiplies each bit in the range `[160, 160 + POW_DIFFICULTY)` by `is_constrained` and forces the product to zero, enforcing `POW_DIFFICULTY` leading zeros immediately above the address window.
 * Truncates the hash to the lower 160 bits and returns the result as the burn address.
 * The parameter `POW_DIFFICULTY` is currently 16, so the proof-of-work condition raises the collision cost from the ~`2^(160/2)` birthday-attack baseline to roughly `2^(160/2 + 16)`.
-* Host helpers (`compute_burn_address_from_secret`, `find_pow_nonce`, `secret_from_nonce`) mirror the in-circuit behavior for witness generation, including the domain-separated Poseidon chaining.
+* Host helpers (`compute_burn_address_from_secret`, `find_pow_nonce`, `secret_from_nonce`) mirror the in-circuit behavior for witness generation, including the domain-separated 3-input Poseidon hash.
 
 ## `single_withdraw`
 
@@ -31,7 +32,8 @@ This circuit underpins the direct withdrawal path exposed to the contract. It pr
 
 ```
 single_withdraw(
-    poseidon_params,
+    poseidon2_params,
+    poseidon3_params,
     merkle_root,
     recipient,
     value,
@@ -43,7 +45,7 @@ single_withdraw(
 ```
 
 * Range-checks `leaf_index`, `value`, and `delta`; all must fit within the DEPTH-bit index window and the 31-byte amount bound.
-* Recomputes the leaf address via `burn_address_var` with the PoW constraint enabled (`Boolean::constant(true)`), then hashes it with the `value` to obtain the leaf commitment.
+* Recomputes the leaf address via `burn_address_var` (Poseidon-3 arity) with the PoW constraint enabled (`Boolean::constant(true)`), then hashes it with the `value` using the Poseidon-2 arity parameters to obtain the leaf commitment.
 * Rebuilds the Merkle root from the supplied siblings and enforces equality with the public `merkle_root` input, proving inclusion of the burn leaf.
 * Outputs `withdraw_value = value - delta` and range-checks the result against the 31-byte limit.
 * The `delta` offset allows the prover to shave off a configurable privacy buffer without altering the committed leaf value.
@@ -54,7 +56,8 @@ single_withdraw(
 
 ```
 withdraw_step(
-    poseidon_params,
+    poseidon2_params,
+    poseidon3_params,
     merkle_root,
     recipient,
     prev_leaf_index_with_offset,
@@ -69,7 +72,7 @@ withdraw_step(
 
 * Range-checks `leaf_index`, `prev_leaf_index_with_offset`, and `value`, then sets `leaf_index_with_offset = leaf_index + 1`.
 * Enforces `prev_leaf_index_with_offset < leaf_index_with_offset` so the ordering constraint is compatible with the initial accumulator value of zero; the `+1` offset guarantees that an actual leaf at index `0` can still be processed without colliding with the starting state.
-* Recomputes the burn address but skips the PoW constraint when `is_dummy` is true, allowing padded steps to bypass witness generation.
+* Recomputes the burn address with the 3-input Poseidon config but skips the PoW constraint when `is_dummy` is true, allowing padded steps to bypass witness generation.
 * When `is_dummy` is false the burn address must satisfy the same PoW window as in `single_withdraw`, so crafting a colliding withdrawal falls back to the ~`2^(160/2 + 16)` effort bound.
 * Updates the Merkle root only when `is_dummy` is false, ensuring dummy padding never touches the authenticated tree.
 * When `is_dummy` is true the circuit subtracts the provided `value` from the running total, letting the prover smooth out distinctive fractional remainders so that privacy is not degraded by uniquely sized withdrawals. Real leaves add their `value`, and every update is range-checked to 31 bytes.

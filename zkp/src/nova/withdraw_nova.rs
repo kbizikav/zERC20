@@ -21,7 +21,8 @@ pub const WITHDRAW_STATE_LEN: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct WithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
-    pub poseidon_params: PoseidonConfig<F>,
+    pub poseidon2_params: PoseidonConfig<F>,
+    pub poseidon3_params: PoseidonConfig<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -99,13 +100,15 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<WithdrawExternalInputs<F, DEPTH
 }
 
 impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for WithdrawCircuit<F, DEPTH> {
-    type Params = PoseidonConfig<F>;
+    type Params = (PoseidonConfig<F>, PoseidonConfig<F>);
     type ExternalInputs = WithdrawExternalInputs<F, DEPTH>;
     type ExternalInputsVar = WithdrawExternalInputsVar<F, DEPTH>;
 
     fn new(params: Self::Params) -> Result<Self, Error> {
+        let (poseidon2_params, poseidon3_params) = params;
         Ok(Self {
-            poseidon_params: params,
+            poseidon2_params,
+            poseidon3_params,
         })
     }
 
@@ -138,13 +141,17 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for WithdrawCircuit
         } = external_inputs;
         let siblings: Vec<FpVar<F>> = siblings.into_iter().collect();
 
-        let poseidon_params = CircomCRHParametersVar {
-            parameters: self.poseidon_params.clone(),
+        let poseidon2_params = CircomCRHParametersVar {
+            parameters: self.poseidon2_params.clone(),
+        };
+        let poseidon3_params = CircomCRHParametersVar {
+            parameters: self.poseidon3_params.clone(),
         };
 
         let (out_root, out_recipient, out_leaf_index_with_offset, out_total) =
             withdraw_step::<F, DEPTH>(
-                &poseidon_params,
+                &poseidon2_params,
+                &poseidon3_params,
                 &merkle_root,
                 &recipient,
                 &prev_leaf_index_with_offset,
@@ -187,8 +194,9 @@ mod tests {
         },
         nova::params::NovaParams,
         utils::{
-            convertion::fr_to_address, general_recipient::GeneralRecipient,
-            poseidon::utils::circom_poseidon_config,
+            convertion::fr_to_address,
+            general_recipient::GeneralRecipient,
+            poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
             tree::incremental_merkle_tree::IncrementalMerkleTree,
         },
     };
@@ -269,9 +277,13 @@ mod tests {
             external_inputs.push(ext_input);
         }
 
-        let f_params = circom_poseidon_config::<Fr>();
-        let nova_params =
-            NovaParams::<WithdrawCircuit<Fr, DEPTH>>::rand(f_params, &mut rng).unwrap();
+        let poseidon2_params = circom_poseidon_config::<Fr>();
+        let poseidon3_params = circom_poseidon_config_with_rate(3);
+        let nova_params = NovaParams::<WithdrawCircuit<Fr, DEPTH>>::rand(
+            (poseidon2_params, poseidon3_params),
+            &mut rng,
+        )
+        .unwrap();
 
         let mut nova = nova_params.initial_nova(z_0.clone()).unwrap();
         for external_input in external_inputs.iter() {

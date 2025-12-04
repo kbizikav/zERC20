@@ -14,7 +14,7 @@ use zkp::{
         root_nova::RootCircuit,
         withdraw_nova::WithdrawCircuit,
     },
-    utils::poseidon::utils::circom_poseidon_config,
+    utils::poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
 };
 
 fn main() -> Result<()> {
@@ -28,11 +28,13 @@ fn main() -> Result<()> {
         .with_context(|| format!("failed to create {}", artifacts_dir.display()))?;
 
     let poseidon_config = circom_poseidon_config::<Fr>();
+    let poseidon_burn_config = circom_poseidon_config_with_rate(3);
 
     generate_groth16_artifacts::<TRANSFER_TREE_HEIGHT>(
         "withdraw_local",
         &artifacts_dir,
         &poseidon_config,
+        &poseidon_burn_config,
     )?;
     println!("Generated local withdraw groth16 artifacts");
 
@@ -40,6 +42,7 @@ fn main() -> Result<()> {
         "withdraw_global",
         &artifacts_dir,
         &poseidon_config,
+        &poseidon_burn_config,
     )?;
     println!("Generated global withdraw nova artifacts");
 
@@ -49,14 +52,14 @@ fn main() -> Result<()> {
     generate_nova_artifacts::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(
         "withdraw_local",
         &artifacts_dir,
-        poseidon_config.clone(),
+        (poseidon_config.clone(), poseidon_burn_config.clone()),
     )?;
     println!("Generated local withdraw nova artifacts");
 
     generate_nova_artifacts::<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
         "withdraw_global",
         &artifacts_dir,
-        poseidon_config.clone(),
+        (poseidon_config.clone(), poseidon_burn_config.clone()),
     )?;
 
     println!("Generated global withdraw groth16 artifacts");
@@ -117,9 +120,13 @@ fn generate_groth16_artifacts<const DEPTH: usize>(
     prefix: &str,
     output_dir: &std::path::Path,
     poseidon_config: &PoseidonConfig<Fr>,
+    poseidon_burn_config: &PoseidonConfig<Fr>,
 ) -> Result<()> {
     let mut rng = StdRng::seed_from_u64(42);
-    let circuit = SingleWithdrawCircuit::<Fr, DEPTH>::new(poseidon_config.clone());
+    let circuit = SingleWithdrawCircuit::<Fr, DEPTH>::new(
+        poseidon_config.clone(),
+        poseidon_burn_config.clone(),
+    );
     let params = Groth16Params::rand(&mut rng, circuit.clone())
         .with_context(|| format!("failed groth16 setup for {prefix}"))?;
 

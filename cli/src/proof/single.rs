@@ -9,7 +9,8 @@ use zkp::{
     groth16::{params::Groth16Params, withdraw::SingleWithdrawCircuit},
     nova::constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
     utils::{
-        convertion::u256_to_fr, poseidon::utils::circom_poseidon_config,
+        convertion::u256_to_fr,
+        poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
         tree::merkle_tree::MerkleProof,
     },
 };
@@ -26,6 +27,7 @@ pub fn single_teleport_proof<const DEPTH: usize>(
     let withdraw_params = load_single_withdraw_params(artifacts_dir, DEPTH)
         .context("failed to load single withdraw Groth16 params")?;
     let poseidon_params = circom_poseidon_config();
+    let poseidon_burn_params = circom_poseidon_config_with_rate(3);
     let merkle_root = u256_to_fr(merkle_root);
     let value = u256_to_fr(event.value);
     let siblings: [Option<Fr>; DEPTH] = merkle_proof
@@ -37,6 +39,7 @@ pub fn single_teleport_proof<const DEPTH: usize>(
         .map_err(|_| anyhow::anyhow!("invalid number of siblings in global Merkle proof"))?;
     let circuit = SingleWithdrawCircuit::<Fr, DEPTH> {
         poseidon_params,
+        poseidon_burn_params,
         merkle_root: Some(merkle_root),
         recipient: Some(recipient),
         withdraw_value: Some(value),

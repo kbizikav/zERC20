@@ -18,7 +18,7 @@ use zkp::{
     },
     utils::{
         convertion::{address_to_fr, fr_to_address, u256_to_fr},
-        poseidon::utils::circom_poseidon_config,
+        poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
         tree::incremental_merkle_tree::IncrementalMerkleTree,
     },
 };
@@ -119,7 +119,10 @@ fn test_withdraw_nova_wasm_prove() {
         wasm_steps.push(js_step);
     }
 
-    let f_params = circom_poseidon_config::<Fr>();
+    let f_params = (
+        circom_poseidon_config::<Fr>(),
+        circom_poseidon_config_with_rate(3),
+    );
 
     let local_nova_pp_bytes = include_bytes!("../../nova_artifacts/withdraw_local_nova_pp.bin");
     let local_nova_vp_bytes = include_bytes!("../../nova_artifacts/withdraw_local_nova_vp.bin");
