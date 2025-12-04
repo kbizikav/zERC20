@@ -95,6 +95,7 @@ fn test_withdraw_nova_wasm_prove() {
         let sibling_hexes: Vec<String> = siblings_vec.iter().map(fr_to_hex).collect();
         let js_step = JsExternalInput {
             is_dummy: false,
+            from: fr_to_hex(&address_to_fr(Address::ZERO)),
             value: fr_to_hex(&u256_to_fr(*value)),
             secret: fr_to_hex(&secrets[i]),
             leaf_index: leaf_index.to_string(),
@@ -111,6 +112,7 @@ fn test_withdraw_nova_wasm_prove() {
         let sibling_hexes = vec![zero_sibling.clone(); TRANSFER_TREE_HEIGHT];
         let js_step = JsExternalInput {
             is_dummy: true,
+            from: fr_to_hex(&ext_input.from_address),
             value: fr_to_hex(&ext_input.value),
             secret: fr_to_hex(&ext_input.secret),
             leaf_index: leaf_index.to_string(),

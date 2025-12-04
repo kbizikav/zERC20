@@ -46,7 +46,11 @@ fn main() -> Result<()> {
     )?;
     println!("Generated global withdraw nova artifacts");
 
-    generate_nova_artifacts::<RootCircuit<Fr>>("root", &artifacts_dir, poseidon_config.clone())?;
+    generate_nova_artifacts::<RootCircuit<Fr>>(
+        "root",
+        &artifacts_dir,
+        (poseidon_config.clone(), poseidon_burn_config.clone()),
+    )?;
     println!("Generated root nova artifacts");
 
     generate_nova_artifacts::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(

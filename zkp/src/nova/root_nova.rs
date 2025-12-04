@@ -18,7 +18,8 @@ const ROOT_STATE_LEN: usize = 3;
 
 #[derive(Clone, Debug)]
 pub struct RootCircuit<F: PrimeField + Absorb> {
-    pub poseidon_params: PoseidonConfig<F>,
+    pub poseidon2_params: PoseidonConfig<F>,
+    pub poseidon3_params: PoseidonConfig<F>,
 }
 
 #[derive(Clone, Debug)]
@@ -84,14 +85,16 @@ impl<F: PrimeField> AllocVar<RootExternalInputs<F>, F> for RootExternalInputsVar
 }
 
 impl<F: PrimeField + Absorb> FCircuit<F> for RootCircuit<F> {
-    type Params = PoseidonConfig<F>;
+    type Params = (PoseidonConfig<F>, PoseidonConfig<F>);
     // External inputs layout: [from_address, to_address, value, sibling_0, ..., sibling_{DEPTH-1}]
     type ExternalInputs = RootExternalInputs<F>;
     type ExternalInputsVar = RootExternalInputsVar<F>;
 
     fn new(params: Self::Params) -> Result<Self, Error> {
+        let (poseidon2_params, poseidon3_params) = params;
         Ok(Self {
-            poseidon_params: params,
+            poseidon2_params,
+            poseidon3_params,
         })
     }
 
@@ -118,11 +121,15 @@ impl<F: PrimeField + Absorb> FCircuit<F> for RootCircuit<F> {
         } = external_inputs;
         let siblings: Vec<FpVar<F>> = siblings.into_iter().collect();
 
-        let poseidon_params = CircomCRHParametersVar {
-            parameters: self.poseidon_params.clone(),
+        let poseidon2_params = CircomCRHParametersVar {
+            parameters: self.poseidon2_params.clone(),
+        };
+        let poseidon3_params = CircomCRHParametersVar {
+            parameters: self.poseidon3_params.clone(),
         };
         let (new_index, new_hash_chain, new_root) = root_transition_step::<F, TRANSFER_TREE_HEIGHT>(
-            &poseidon_params,
+            &poseidon2_params,
+            &poseidon3_params,
             &index,
             &prev_hash_chain,
             &prev_root,
@@ -143,7 +150,7 @@ mod tests {
         nova::params::NovaParams,
         utils::{
             convertion::{address_to_fr, u256_to_fr},
-            poseidon::utils::circom_poseidon_config,
+            poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
             tree::incremental_merkle_tree::{IncrementalMerkleTree, Leaf},
         },
     };
@@ -205,8 +212,11 @@ mod tests {
         let expected_hash_chain = tree.hash_chain;
         let expected_root = tree.get_root();
 
-        let f_params = circom_poseidon_config::<Fr>();
-        let nova_params = NovaParams::<RootCircuit<Fr>>::rand(f_params, &mut rng).unwrap();
+        let poseidon2_config = circom_poseidon_config::<Fr>();
+        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let nova_params =
+            NovaParams::<RootCircuit<Fr>>::rand((poseidon2_config, poseidon3_config), &mut rng)
+                .unwrap();
 
         let mut nova = nova_params.initial_nova(z_0.clone()).unwrap();
 

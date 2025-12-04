@@ -44,7 +44,7 @@ use zkp::{
     },
     utils::{
         convertion::{address_to_fr, fr_to_u256, u256_to_fr},
-        poseidon::utils::circom_poseidon_config,
+        poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
         tree::gadgets::{hash_chain::hash_chain, leaf_hash::compute_leaf_hash},
     },
 };
@@ -332,8 +332,11 @@ impl RootProverJob {
                     event.to_address,
                     event.value,
                 );
-                let expected_leaf =
-                    compute_leaf_hash(address_to_fr(event.to_address), u256_to_fr(event.value));
+                let expected_leaf = compute_leaf_hash(
+                    address_to_fr(event.from_address),
+                    address_to_fr(event.to_address),
+                    u256_to_fr(event.value),
+                );
                 let expected_root = proof.proof.get_root(expected_leaf, proof.leaf_index);
                 debug!(
                     "nova verify failed at index {} for '{}': from=0x{}, to=0x{}, value={}, state_index={}, state_hash_chain=0x{}, state_root=0x{}, db_hash_chain={:?}, db_root={:?}, expected_hash_chain=0x{}, expected_root=0x{}",
@@ -1148,9 +1151,14 @@ fn load_root_nova_params(artifacts_dir: &std::path::Path) -> Result<NovaParams<R
         std::fs::read(&pp_path).with_context(|| format!("failed to read {}", pp_path.display()))?;
     let vp_bytes =
         std::fs::read(&vp_path).with_context(|| format!("failed to read {}", vp_path.display()))?;
-    let f_params = circom_poseidon_config::<Fr>();
-    NovaParams::<RootCircuit<Fr>>::from_bytes(f_params, pp_bytes, vp_bytes)
-        .context("failed to load root nova parameters")
+    let poseidon2_params = circom_poseidon_config::<Fr>();
+    let poseidon3_params = circom_poseidon_config_with_rate(3);
+    NovaParams::<RootCircuit<Fr>>::from_bytes(
+        (poseidon2_params, poseidon3_params),
+        pp_bytes,
+        vp_bytes,
+    )
+    .context("failed to load root nova parameters")
 }
 
 fn serialize_ivc_proof(proof: &RootIvcProof) -> Result<Vec<u8>> {

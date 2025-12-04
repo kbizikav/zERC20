@@ -29,7 +29,7 @@ impl ProverEngine {
             Some(CircuitContext::load(
                 "root",
                 artifacts_dir,
-                poseidon2.clone(),
+                (poseidon2.clone(), poseidon3.clone()),
             )?)
         } else {
             None

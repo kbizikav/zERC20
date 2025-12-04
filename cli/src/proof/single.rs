@@ -9,7 +9,7 @@ use zkp::{
     groth16::{params::Groth16Params, withdraw::SingleWithdrawCircuit},
     nova::constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
     utils::{
-        convertion::u256_to_fr,
+        convertion::{address_to_fr, u256_to_fr},
         poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
         tree::merkle_tree::MerkleProof,
     },
@@ -29,6 +29,7 @@ pub fn single_teleport_proof<const DEPTH: usize>(
     let poseidon_params = circom_poseidon_config();
     let poseidon_burn_params = circom_poseidon_config_with_rate(3);
     let merkle_root = u256_to_fr(merkle_root);
+    let from = address_to_fr(event.from);
     let value = u256_to_fr(event.value);
     let siblings: [Option<Fr>; DEPTH] = merkle_proof
         .siblings
@@ -43,6 +44,7 @@ pub fn single_teleport_proof<const DEPTH: usize>(
         merkle_root: Some(merkle_root),
         recipient: Some(recipient),
         withdraw_value: Some(value),
+        from: Some(from),
         value: Some(value),
         delta: Some(Fr::ZERO),
         secret: Some(secret),

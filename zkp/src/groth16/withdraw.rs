@@ -18,6 +18,7 @@ pub struct SingleWithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
     pub withdraw_value: Option<F>,
 
     // ---- witness ----
+    pub from: Option<F>,
     pub value: Option<F>,
     pub delta: Option<F>,
     pub secret: Option<F>,
@@ -36,6 +37,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> SingleWithdrawCircuit<F, DEPTH>
             merkle_root: None,
             recipient: None,
             withdraw_value: None,
+            from: None,
             value: None,
             delta: None,
             secret: None,
@@ -64,6 +66,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
             merkle_root,
             recipient,
             withdraw_value,
+            from,
             value,
             delta,
             secret,
@@ -93,6 +96,9 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
         let value = FpVar::<F>::new_witness(ns!(cs, "value"), || {
             value.ok_or(SynthesisError::AssignmentMissing)
         })?;
+        let from = FpVar::<F>::new_witness(ns!(cs, "from"), || {
+            from.ok_or(SynthesisError::AssignmentMissing)
+        })?;
         let delta = FpVar::<F>::new_witness(ns!(cs, "delta"), || {
             delta.ok_or(SynthesisError::AssignmentMissing)
         })?;
@@ -118,6 +124,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
             &poseidon_burn_params,
             &merkle_root,
             &recipient,
+            &from,
             &value,
             &delta,
             &secret,
@@ -159,6 +166,7 @@ mod tests {
         let secret_value = secret_from_nonce(secret_seed, nonce);
         let address_value = compute_burn_address_from_secret(recipient_value, secret_value)
             .expect("nonce should satisfy PoW");
+        let from_value = Fr::from(42u64);
         let value_value = Fr::from(100u64);
         let delta_value = Fr::from(25u64);
         let withdraw_value_value = value_value - delta_value;
@@ -170,7 +178,7 @@ mod tests {
             Fr::from(8u64),
         ];
 
-        let leaf_value = compute_leaf_hash(address_value, value_value);
+        let leaf_value = compute_leaf_hash(from_value, address_value, value_value);
         let merkle_root_value = merkle_root_from_path(
             &poseidon_config,
             leaf_index_value,
@@ -184,6 +192,7 @@ mod tests {
             merkle_root: Some(merkle_root_value),
             recipient: Some(recipient_value),
             withdraw_value: Some(withdraw_value_value),
+            from: Some(from_value),
             value: Some(value_value),
             delta: Some(delta_value),
             secret: Some(secret_value),

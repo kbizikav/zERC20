@@ -28,6 +28,7 @@ pub struct WithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
 #[derive(Clone, Debug)]
 pub struct WithdrawExternalInputs<F: PrimeField, const DEPTH: usize> {
     pub is_dummy: F,
+    pub from_address: F,
     pub value: F,
     pub secret: F,
     pub leaf_index: F,
@@ -38,6 +39,7 @@ impl<F: PrimeField, const DEPTH: usize> Default for WithdrawExternalInputs<F, DE
     fn default() -> Self {
         Self {
             is_dummy: F::zero(),
+            from_address: F::zero(),
             value: F::zero(),
             secret: F::zero(),
             leaf_index: F::zero(),
@@ -49,6 +51,7 @@ impl<F: PrimeField, const DEPTH: usize> Default for WithdrawExternalInputs<F, DE
 #[derive(Clone, Debug)]
 pub struct WithdrawExternalInputsVar<F: PrimeField, const DEPTH: usize> {
     pub is_dummy: Boolean<F>,
+    pub from_address: FpVar<F>,
     pub value: FpVar<F>,
     pub secret: FpVar<F>,
     pub leaf_index: FpVar<F>,
@@ -80,6 +83,8 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<WithdrawExternalInputs<F, DEPTH
                 },
                 mode,
             )?;
+            let from_address =
+                FpVar::<F>::new_variable(cs.clone(), || Ok(value.from_address), mode)?;
             let val = FpVar::<F>::new_variable(cs.clone(), || Ok(value.value), mode)?;
             let secret = FpVar::<F>::new_variable(cs.clone(), || Ok(value.secret), mode)?;
             let leaf_index = FpVar::<F>::new_variable(cs.clone(), || Ok(value.leaf_index), mode)?;
@@ -90,6 +95,7 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<WithdrawExternalInputs<F, DEPTH
             )?;
             Ok(Self {
                 is_dummy,
+                from_address,
                 value: val,
                 secret,
                 leaf_index,
@@ -134,6 +140,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for WithdrawCircuit
 
         let WithdrawExternalInputsVar {
             is_dummy,
+            from_address,
             value,
             secret,
             leaf_index,
@@ -154,6 +161,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for WithdrawCircuit
                 &poseidon3_params,
                 &merkle_root,
                 &recipient,
+                &from_address,
                 &prev_leaf_index_with_offset,
                 &prev_total_value,
                 &is_dummy,
@@ -178,6 +186,7 @@ pub fn dummy_withdraw_ext_input<const DEPTH: usize>(
 ) -> WithdrawExternalInputs<Fr, DEPTH> {
     WithdrawExternalInputs {
         is_dummy: Fr::ONE,
+        from_address: Fr::ZERO,
         value: u256_to_fr(value),
         secret: Fr::ZERO,
         leaf_index: Fr::from(index),
@@ -264,6 +273,7 @@ mod tests {
             let proof = tree.prove(leaf_index);
             let ext_input = WithdrawExternalInputs::<Fr, DEPTH> {
                 is_dummy: Fr::ZERO,
+                from_address: Fr::ZERO,
                 value: u256_to_fr(*value),
                 secret: secrets[i],
                 leaf_index: Fr::from(leaf_index),

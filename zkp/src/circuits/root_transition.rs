@@ -17,7 +17,8 @@ use ark_relations::gr1cs::SynthesisError;
 use core::ops::Not;
 
 pub fn root_transition_step<F, const DEPTH: usize>(
-    poseidon_params: &CircomCRHParametersVar<F>,
+    poseidon2_params: &CircomCRHParametersVar<F>,
+    poseidon3_params: &CircomCRHParametersVar<F>,
     index: &FpVar<F>,
     prev_hash_chain: &FpVar<F>,
     prev_root: &FpVar<F>,
@@ -41,12 +42,12 @@ where
     let index_bits = to_bits_le_limited(index, DEPTH)?;
 
     let zero_leaf = FpVar::<F>::constant(F::zero());
-    let prev_merkle = merkle_root_from_leaf(poseidon_params, &zero_leaf, &index_bits, siblings)?;
+    let prev_merkle = merkle_root_from_leaf(poseidon2_params, &zero_leaf, &index_bits, siblings)?;
     let should_enforce = is_dummy.clone().not();
     prev_root.conditional_enforce_equal(&prev_merkle, &should_enforce)?;
 
-    let leaf_hash = leaf_hash_var(poseidon_params, to_address, value)?;
-    let new_root = merkle_root_from_leaf(poseidon_params, &leaf_hash, &index_bits, siblings)?;
+    let leaf_hash = leaf_hash_var(poseidon3_params, from_address, to_address, value)?;
+    let new_root = merkle_root_from_leaf(poseidon2_params, &leaf_hash, &index_bits, siblings)?;
 
     let new_hash_chain = hash_chain_var(prev_hash_chain, from_address, to_address, value)?;
     let new_index_candidate = index.clone() + FpVar::<F>::constant(F::one());
@@ -64,7 +65,9 @@ mod tests {
     use super::root_transition_step;
     use crate::test_utils::merkle_root_from_path;
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::{circom_poseidon_config, circom_poseidon_hash};
+    use crate::utils::poseidon::utils::{
+        circom_poseidon_config, circom_poseidon_config_with_rate, circom_poseidon_hash,
+    };
     use ark_bn254::Fr;
     use ark_ff::{PrimeField, Zero};
     use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
@@ -77,18 +80,22 @@ mod tests {
     const ROOT_TRANSITION_NEW_HASH_CHAIN_HEX: &str =
         "0x39c251c81aa541379e76fcca6bbf46eb80dea73bf19abd8a5f641a44bb3ec5";
     const ROOT_TRANSITION_LEAF_HASH_HEX: &str =
-        "0x0f84d7bd85ce2c2ce883ff9db998edb4d033663faee4082a46700144d631d1a3";
+        "0x18a272706737629a52dbbfd3e7980c66a22ca41ba7ea30b030d65449bb0e163d";
     const ROOT_TRANSITION_OLD_ROOT_HEX: &str =
         "0x161b3b682780534f65ad950d76def4b011da86a2e1c71297d8dbd62a394cc8fb";
     const ROOT_TRANSITION_NEW_ROOT_HEX: &str =
-        "0x2aa763593530d46e14f5af0f8a265103ee5890eaef5c09910dc3318b1224650e";
+        "0x0eeeaa2c671cd13dd4f6b676a977348e626a3e7f87a867862a3fb8a0c557f03c";
 
     #[test]
     fn root_transition_matches_reference() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon_config = circom_poseidon_config();
-        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
+        let poseidon2_config = circom_poseidon_config();
+        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2"), &poseidon2_config)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3"), &poseidon3_config)?;
 
         let index_u64: u64 = 3;
         let index_value = Fr::from(index_u64);
@@ -104,17 +111,19 @@ mod tests {
             .collect::<Vec<_>>();
 
         let prev_root_value =
-            merkle_root_from_path(&poseidon_config, index_u64, Fr::zero(), &siblings_values);
+            merkle_root_from_path(&poseidon2_config, index_u64, Fr::zero(), &siblings_values);
         let expected_prev_root = fr_from_hex(ROOT_TRANSITION_OLD_ROOT_HEX);
         assert_eq!(prev_root_value, expected_prev_root);
 
-        let leaf_hash_value =
-            circom_poseidon_hash(&poseidon_config, &[to_address_value, value_value]);
+        let leaf_hash_value = circom_poseidon_hash(
+            &poseidon3_config,
+            &[from_address_value, to_address_value, value_value],
+        );
         let expected_leaf_hash = fr_from_hex(ROOT_TRANSITION_LEAF_HASH_HEX);
         assert_eq!(leaf_hash_value, expected_leaf_hash);
 
         let expected_new_root = merkle_root_from_path(
-            &poseidon_config,
+            &poseidon2_config,
             index_u64,
             leaf_hash_value,
             &siblings_values,
@@ -145,7 +154,8 @@ mod tests {
 
         let is_dummy = Boolean::constant(false);
         let (new_index, new_hash_chain, new_root) = root_transition_step::<Fr, DEPTH>(
-            &params,
+            &poseidon2_params,
+            &poseidon3_params,
             &index,
             &prev_hash_chain,
             &prev_root,
@@ -177,7 +187,11 @@ mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
         let poseidon_config = circom_poseidon_config();
-        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &poseidon_config)?;
+        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2"), &poseidon_config)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3"), &poseidon3_config)?;
 
         let index = FpVar::<Fr>::new_witness(ns!(cs, "index"), || Ok(Fr::from(5u64)))?;
         let prev_hash_chain = FpVar::<Fr>::new_witness(ns!(cs, "prev_hash_chain"), || {
@@ -200,7 +214,8 @@ mod tests {
 
         let is_dummy = Boolean::constant(true);
         let (new_index, new_hash_chain, new_root) = root_transition_step::<Fr, DEPTH>(
-            &params,
+            &poseidon2_params,
+            &poseidon3_params,
             &index,
             &prev_hash_chain,
             &prev_root,

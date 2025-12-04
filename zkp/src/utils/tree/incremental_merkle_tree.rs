@@ -34,9 +34,10 @@ pub struct Leaf {
 
 impl Leaf {
     pub fn hash(&self) -> Fr {
+        let from_fr = address_to_fr(self.from);
         let address_fr = address_to_fr(self.to);
         let value_fr = u256_to_fr(self.value);
-        compute_leaf_hash(address_fr, value_fr)
+        compute_leaf_hash(from_fr, address_fr, value_fr)
     }
 }
 

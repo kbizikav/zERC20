@@ -273,7 +273,8 @@ impl DbIncrementalMerkleTree {
             .await?
             .unwrap_or(U256::ZERO);
 
-        let leaf_hash = compute_leaf_hash(address_to_fr(to), u256_to_fr(value));
+        let leaf_hash =
+            compute_leaf_hash(address_to_fr(from), address_to_fr(to), u256_to_fr(value));
         let mut node_hash = leaf_hash;
         let next_index_i64 =
             i64::try_from(next_index).map_err(|_| DbMerkleTreeError::U64ToI64 {

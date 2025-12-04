@@ -124,7 +124,11 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
         .context("failed to fetch historical proof")?;
     let ref_mid = build_reference_tree(&leaves, mid_target as usize);
     let leaf = leaves[leaf_index as usize];
-    let leaf_hash = compute_leaf_hash(address_to_fr(leaf.1), u256_to_fr(leaf.2));
+    let leaf_hash = compute_leaf_hash(
+        address_to_fr(leaf.0),
+        address_to_fr(leaf.1),
+        u256_to_fr(leaf.2),
+    );
     let computed_root = mid_proof.proof.get_root(leaf_hash, leaf_index);
     assert_eq!(
         computed_root,
@@ -161,8 +165,11 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
         );
 
         let batch_leaf = leaves[idx as usize];
-        let batch_leaf_hash =
-            compute_leaf_hash(address_to_fr(batch_leaf.1), u256_to_fr(batch_leaf.2));
+        let batch_leaf_hash = compute_leaf_hash(
+            address_to_fr(batch_leaf.0),
+            address_to_fr(batch_leaf.1),
+            u256_to_fr(batch_leaf.2),
+        );
         let batch_root = proof.proof.get_root(batch_leaf_hash, idx);
         assert_eq!(
             batch_root,
@@ -176,8 +183,11 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
         .await
         .context("failed to fetch latest proof")?;
     let latest_leaf = leaves[(total_leaves - 1) as usize];
-    let latest_leaf_hash =
-        compute_leaf_hash(address_to_fr(latest_leaf.1), u256_to_fr(latest_leaf.2));
+    let latest_leaf_hash = compute_leaf_hash(
+        address_to_fr(latest_leaf.0),
+        address_to_fr(latest_leaf.1),
+        u256_to_fr(latest_leaf.2),
+    );
     let latest_ref = {
         let mut t = IncrementalMerkleTree::new(TREE_HEIGHT as usize);
         for (from_addr, to_addr, value) in leaves.iter() {
@@ -202,8 +212,11 @@ async fn db_merkle_tree_tracks_history() -> Result<()> {
             .context("failed to fetch boundary proof")?;
         let boundary_ref = build_reference_tree(&leaves, boundary_index as usize);
         let boundary_leaf = leaves[0];
-        let boundary_hash =
-            compute_leaf_hash(address_to_fr(boundary_leaf.1), u256_to_fr(boundary_leaf.2));
+        let boundary_hash = compute_leaf_hash(
+            address_to_fr(boundary_leaf.0),
+            address_to_fr(boundary_leaf.1),
+            u256_to_fr(boundary_leaf.2),
+        );
         assert_eq!(
             boundary_proof.proof.get_root(boundary_hash, 0),
             boundary_ref.get_root(),

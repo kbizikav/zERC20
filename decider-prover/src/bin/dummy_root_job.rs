@@ -17,7 +17,7 @@ use zkp::{
         params::NovaParams,
         root_nova::{RootCircuit, RootExternalInputs},
     },
-    utils::poseidon::utils::circom_poseidon_config,
+    utils::poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
 };
 
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
@@ -117,9 +117,14 @@ fn load_root_nova_params(dir: &Path) -> Result<NovaParams<RootCircuit<Fr>>> {
         std::fs::read(&pp_path).with_context(|| format!("failed to read {}", pp_path.display()))?;
     let vp_bytes =
         std::fs::read(&vp_path).with_context(|| format!("failed to read {}", vp_path.display()))?;
-    let poseidon_params = circom_poseidon_config::<Fr>();
-    NovaParams::<RootCircuit<Fr>>::from_bytes(poseidon_params, pp_bytes, vp_bytes)
-        .context("failed to deserialize nova params from artifacts")
+    let poseidon2_params = circom_poseidon_config::<Fr>();
+    let poseidon3_params = circom_poseidon_config_with_rate(3);
+    NovaParams::<RootCircuit<Fr>>::from_bytes(
+        (poseidon2_params, poseidon3_params),
+        pp_bytes,
+        vp_bytes,
+    )
+    .context("failed to deserialize nova params from artifacts")
 }
 
 async fn submit_job(

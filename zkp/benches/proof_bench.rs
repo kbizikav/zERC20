@@ -26,10 +26,14 @@ use zkp::utils::{
 };
 
 fn bench_root_nova_step(c: &mut Criterion) {
-    let poseidon_params = circom_poseidon_config::<Fr>();
+    let poseidon2_params = circom_poseidon_config::<Fr>();
+    let poseidon3_params = circom_poseidon_config_with_rate(3);
     let mut setup_rng = StdRng::seed_from_u64(0xDEADBEEF);
-    let nova_params = NovaParams::<RootCircuit<Fr>>::rand(poseidon_params.clone(), &mut setup_rng)
-        .expect("root nova params");
+    let nova_params = NovaParams::<RootCircuit<Fr>>::rand(
+        (poseidon2_params.clone(), poseidon3_params.clone()),
+        &mut setup_rng,
+    )
+    .expect("root nova params");
     let state_len = nova_params.state_len().expect("root state length");
     let base_nova = nova_params
         .initial_nova(vec![Fr::zero(); state_len])
@@ -123,12 +127,13 @@ fn build_single_withdraw_circuit<const DEPTH: usize>(
     let secret = secret_from_nonce(secret_seed, nonce);
     let address =
         compute_burn_address_from_secret(recipient, secret).expect("nonce should satisfy PoW");
+    let from = Fr::from(777u64);
     let value = Fr::from(1_000u64);
     let delta = Fr::from(123u64);
     let leaf_index: u64 = 5;
     let withdraw_value = value - delta;
 
-    let leaf = compute_leaf_hash(address, value);
+    let leaf = compute_leaf_hash(from, address, value);
     let proof = MerkleProof::dummy(DEPTH);
     let siblings: [Fr; DEPTH] = proof
         .siblings
@@ -143,6 +148,7 @@ fn build_single_withdraw_circuit<const DEPTH: usize>(
         merkle_root: Some(merkle_root),
         recipient: Some(recipient),
         withdraw_value: Some(withdraw_value),
+        from: Some(from),
         value: Some(value),
         delta: Some(delta),
         secret: Some(secret),

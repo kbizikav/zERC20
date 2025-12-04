@@ -17,7 +17,7 @@ use zkp::{
         withdraw_nova::{WithdrawCircuit, WithdrawExternalInputs, dummy_withdraw_ext_input},
     },
     utils::{
-        convertion::u256_to_fr,
+        convertion::{address_to_fr, u256_to_fr},
         poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
         tree::merkle_tree::MerkleProof,
     },
@@ -64,6 +64,7 @@ pub async fn batch_teleport_proof<const DEPTH: usize>(
             })?;
         external_inputs.push(WithdrawExternalInputs::<Fr, DEPTH> {
             is_dummy: Fr::ZERO,
+            from_address: address_to_fr(event.from),
             value: u256_to_fr(event.value),
             secret,
             leaf_index: Fr::from(leaf_index),

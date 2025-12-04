@@ -36,6 +36,7 @@ single_withdraw(
     poseidon3_params,
     merkle_root,
     recipient,
+    from_address,
     value,
     delta,
     secret,
@@ -45,8 +46,8 @@ single_withdraw(
 ```
 
 * Range-checks `leaf_index`, `value`, and `delta`; all must fit within the DEPTH-bit index window and the 31-byte amount bound.
-* Recomputes the leaf address via `burn_address_var` (Poseidon-3 arity) with the PoW constraint enabled (`Boolean::constant(true)`), then hashes it with the `value` using the Poseidon-2 arity parameters to obtain the leaf commitment.
-* Rebuilds the Merkle root from the supplied siblings and enforces equality with the public `merkle_root` input, proving inclusion of the burn leaf.
+* Recomputes the leaf address via `burn_address_var` (Poseidon-3 arity) with the PoW constraint enabled (`Boolean::constant(true)`), then hashes `(from_address, burn_address, value)` using the Poseidon-3 arity parameters to obtain the leaf commitment.
+* Rebuilds the Merkle root from the supplied siblings (Poseidon-2 for the two-to-one compression) and enforces equality with the public `merkle_root` input, proving inclusion of the burn leaf.
 * Outputs `withdraw_value = value - delta` and range-checks the result against the 31-byte limit.
 * The `delta` offset allows the prover to shave off a configurable privacy buffer without altering the committed leaf value.
 
@@ -60,6 +61,7 @@ withdraw_step(
     poseidon3_params,
     merkle_root,
     recipient,
+    from_address,
     prev_leaf_index_with_offset,
     prev_total_value,
     is_dummy,
@@ -74,7 +76,7 @@ withdraw_step(
 * Enforces `prev_leaf_index_with_offset < leaf_index_with_offset` so the ordering constraint is compatible with the initial accumulator value of zero; the `+1` offset guarantees that an actual leaf at index `0` can still be processed without colliding with the starting state.
 * Recomputes the burn address with the 3-input Poseidon config but skips the PoW constraint when `is_dummy` is true, allowing padded steps to bypass witness generation.
 * When `is_dummy` is false the burn address must satisfy the same PoW window as in `single_withdraw`, so crafting a colliding withdrawal falls back to the ~`2^(160/2 + 16)` effort bound.
-* Updates the Merkle root only when `is_dummy` is false, ensuring dummy padding never touches the authenticated tree.
+* Hashes `(from_address, burn_address, value)` with the Poseidon-3 parameters to recreate the leaf, and updates the Merkle root with Poseidon-2 only when `is_dummy` is false, ensuring dummy padding never touches the authenticated tree.
 * When `is_dummy` is true the circuit subtracts the provided `value` from the running total, letting the prover smooth out distinctive fractional remainders so that privacy is not degraded by uniquely sized withdrawals. Real leaves add their `value`, and every update is range-checked to 31 bytes.
 * Returns the unchanged `merkle_root`, the passthrough `recipient`, the updated `leaf_index_with_offset`, and the new running total.
 * Dummy steps maintain hiding of the actual batch length and allow balancing fractional adjustments without touching the Merkle root.
@@ -85,21 +87,23 @@ This Nova step circuit links the on-chain `IndexedTransfer` events with the off-
 
 ```
 root_transition_step(
-    poseidon_params,
+    poseidon2_params,
+    poseidon3_params,
     index,
     prev_hash_chain,
     prev_root,
-    address,
+    from_address,
+    to_address,
     value,
     siblings[DEPTH],
     is_dummy,
 ) -> (next_index, next_hash_chain, next_root)
 ```
 
-* Range-checks the recipient `address` (160 bits) and transfer `value` (31 bytes). `index` is also limited to `DEPTH` bits via `to_bits_le_limited`.
+* Range-checks both addresses (160 bits) and transfer `value` (31 bytes). `index` is also limited to `DEPTH` bits via `to_bits_le_limited`.
 * For real steps (`is_dummy == false`), verifies that the previous root corresponds to a zero leaf at `index` using the provided siblings. Dummy steps skip this check.
-* Hashes the `(address, value)` pair into a leaf and recomputes the new Merkle root with the same path.
-* Updates the SHA-256 hash chain by concatenating `prev_hash_chain || address || value`, taking the lower 248 bits of the digest, and conditionally applies the update when not dummy.
+* Hashes the `(from_address, to_address, value)` triple into a leaf with Poseidon-3, then recomputes the new Merkle root using Poseidon-2 for the internal nodes.
+* Updates the SHA-256 hash chain by concatenating `prev_hash_chain || from_address || to_address || value`, taking the lower 248 bits of the digest, and conditionally applies the update when not dummy.
 * Increments the transfer index for real steps (`index + 1`) and keeps it unchanged for dummy steps, mirroring the conditional updates applied to the hash chain and root.
 * The zero-leaf precondition ensures each on-chain event corresponds to inserting a previously empty slot, keeping the tree consistent with contract semantics.
 * Nova proofs that approach the tree capacity can always be started from an earlier, already-proven index so the recursion still runs for at least two steps without requiring the final `index = 2^DEPTH - 1` transition to carry over into a dummy step.

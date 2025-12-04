@@ -20,10 +20,14 @@ fn main() {
 }
 
 fn bench_root_decider() -> f64 {
-    let poseidon_params = circom_poseidon_config::<Fr>();
+    let poseidon2_params = circom_poseidon_config::<Fr>();
+    let poseidon3_params = circom_poseidon_config_with_rate(3);
     let mut setup_rng = StdRng::seed_from_u64(0xDEC1_DEAD);
-    let nova_params = NovaParams::<RootCircuit<Fr>>::rand(poseidon_params.clone(), &mut setup_rng)
-        .expect("root nova params");
+    let nova_params = NovaParams::<RootCircuit<Fr>>::rand(
+        (poseidon2_params.clone(), poseidon3_params.clone()),
+        &mut setup_rng,
+    )
+    .expect("root nova params");
     let state_len = nova_params.state_len().expect("root state length");
 
     let mut nova = nova_params
