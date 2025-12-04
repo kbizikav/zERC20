@@ -91,7 +91,8 @@ fn enforce_zero_bytes<F: PrimeField>(bytes: &[UInt8<F>]) -> Result<(), Synthesis
 
 #[cfg(test)]
 mod tests {
-    use super::hash_chain_var;
+    use super::{hash_chain, hash_chain_var};
+    use alloy::primitives::{Address, U256};
     use ark_bn254::Fr;
     use ark_ff::PrimeField;
     use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
@@ -101,6 +102,8 @@ mod tests {
     use hex::decode;
     use sha2::{Digest, Sha256};
 
+    const CONTRACT_VECTOR_EXPECTED_HEX: &str =
+        "0x00b499aa085c64d5668ec9512d24a54cb7cf7174543dd1dd5a806f77d0bb3e93";
     const ZERO_VECTOR_EXPECTED_HEX: &str =
         "0xf37f8d1931b3bdf767e7510dd69509fbf23af1f7654933d0a4d291cbdd4418";
 
@@ -127,6 +130,18 @@ mod tests {
         hasher.update(value);
         let digest = hasher.finalize();
         digest[1..].to_vec()
+    }
+
+    #[test]
+    fn hash_chain_matches_contract_vector() {
+        let prev = U256::ZERO;
+        let from = Address::from([0x11u8; 20]);
+        let to = Address::from([0x22u8; 20]);
+        let value = U256::from(0x333u64);
+
+        let expected = U256::from_be_slice(&decode(CONTRACT_VECTOR_EXPECTED_HEX.trim_start_matches("0x")).unwrap());
+        let actual = hash_chain(prev, from, to, value);
+        assert_eq!(actual, expected);
     }
 
     #[test]

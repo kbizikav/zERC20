@@ -36,6 +36,16 @@ contract ZERC20Test is TestHelperOz5 {
         return zERC20(address(proxy));
     }
 
+    function testHashChainMatchesZkpVector() public {
+        address from = address(0x1111111111111111111111111111111111111111);
+        address to = address(0x2222222222222222222222222222222222222222);
+        uint256 value = 0x333;
+        uint256 expected = 0x00b499aa085c64d5668ec9512d24a54cb7cf7174543dd1dd5a806f77d0bb3e93;
+
+        uint256 actual = ShaHashChainLib.compute(0, from, to, value);
+        assertEq(actual, expected, "hash chain should align with zk circuit vector");
+    }
+
     function testMintInitializesHashChainAndIndex() public {
         uint256 amount = 5 ether;
 
