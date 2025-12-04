@@ -19,11 +19,10 @@
       "@app/*": ["./src/app/*"],
       "@components/*": ["./src/components/*"],
       "@features/*": ["./src/features/*"],
-      "@services/*": ["./src/services/*"],
       "@config/*": ["./src/config/*"],
       "@utils/*": ["./src/utils/*"]
     },
-    "tsBuildInfoFile": "./node_modules/.cache/tsconfig.app.tsbuildinfo"
+    "tsBuildInfoFile": "./.tsbuildinfo/app.tsbuildinfo"
   },
   "include": ["src"]
 }

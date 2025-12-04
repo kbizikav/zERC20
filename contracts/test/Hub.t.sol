@@ -67,6 +67,22 @@ contract HubTest is TestHelperOz5 {
         hub.broadcast{value: total - 1}(targetEids, options);
     }
 
+    function testBroadcastRevertsWhenNoTargetsProvided() public {
+        uint32[] memory targetEids = new uint32[](0);
+        bytes memory options = _options();
+
+        vm.expectRevert(Hub.EmptyTargetEids.selector);
+        hub.broadcast(targetEids, options);
+    }
+
+    function testQuoteBroadcastRevertsWhenNoTargetsProvided() public {
+        uint32[] memory targetEids = new uint32[](0);
+        bytes memory options = _options();
+
+        vm.expectRevert(Hub.EmptyTargetEids.selector);
+        hub.quoteBroadcast(targetEids, options);
+    }
+
     function testBroadcastPaysFeesAndRefundsExcess() public {
         uint32[] memory targetEids = _targetEids();
         bytes memory options = _options();
@@ -99,6 +115,19 @@ contract HubTest is TestHelperOz5 {
         assertEq(hub.aggSeq(), 1, "agg sequence incremented");
     }
 
+    function testAggSeqIncrementsWithEachBroadcast() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+
+        vm.deal(address(this), total * 2);
+        hub.broadcast{value: total}(targetEids, options);
+        assertEq(hub.aggSeq(), 1, "first broadcast increments aggSeq");
+
+        hub.broadcast{value: total}(targetEids, options);
+        assertEq(hub.aggSeq(), 2, "second broadcast increments aggSeq");
+    }
+
     function testLogLzReceiveOptionZeroValue() public {
         bytes memory options = OptionsBuilder.newOptions();
         options = options.addExecutorLzReceiveOption(200_000, 0);
@@ -124,7 +153,6 @@ contract HubTest is TestHelperOz5 {
         assertEq(localHub.eidToPosition(info.eid), 1, "eid to position mapping");
         assertEq(localHub.transferRoots(0), 0, "initial transfer root zero");
         assertEq(localHub.transferTreeIndices(0), 0, "initial transfer tree index zero");
-        assertFalse(localHub.isUpToDate(), "hub marked stale after registration");
     }
 
     function testRegisterTokenValidationReverts() public {
@@ -211,16 +239,11 @@ contract HubTest is TestHelperOz5 {
         hub.lzReceive(origin, bytes32(0), payload, address(0), bytes(""));
     }
 
-    function testLzReceiveUpdatesRootAndFlags() public {
+    function testLzReceiveUpdatesRoot() public {
         Hub localHub = _deployInitializedHub();
         Hub.TokenInfo memory info =
             Hub.TokenInfo({chainId: 909, eid: 77, verifier: address(0x7), token: address(0x8)});
         localHub.registerToken(info);
-
-        uint32[] memory empty = new uint32[](0);
-        bytes memory emptyOptions = bytes("");
-        localHub.broadcast(empty, emptyOptions);
-        assertTrue(localHub.isUpToDate(), "precondition up to date");
 
         Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
         uint256 newRoot = 777;
@@ -237,7 +260,6 @@ contract HubTest is TestHelperOz5 {
 
         assertEq(localHub.transferRoots(0), newRoot, "root stored");
         assertEq(localHub.transferTreeIndices(0), treeIndex, "tree index stored");
-        assertFalse(localHub.isUpToDate(), "hub marked stale");
     }
 
     function testLzReceiveIgnoresStaleTransferTreeIndex() public {

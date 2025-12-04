@@ -17,9 +17,12 @@ alloy = { workspace = true }
 client-common = { path = "../client-common" }
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
+wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1.7"
 web-time = "0.2"
 web-sys = { version = "0.3", features = ["console"] }
+api-types = { path = "../api-types" }
+reqwest = { workspace = true }
 
 [dev-dependencies]
 wasm-bindgen-test = "0.3"
