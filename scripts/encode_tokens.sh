@@ -3,13 +3,13 @@ set -euo pipefail
 
 show_usage() {
   cat <<'USAGE'
-Usage: scripts/encode-tokens.sh [path/to/tokens.json]
+Usage: scripts/encode_tokens.sh [path/to/tokens.json]
 
 Reads the tokens.json file (defaults to config/tokens.json), compresses it with gzip,
 encodes it with base64, and prints the value suitable for the VITE_TOKENS_COMPRESSED env var.
 
 Example:
-  VITE_TOKENS_COMPRESSED="$(scripts/encode-tokens.sh)"
+  VITE_TOKENS_COMPRESSED="$(scripts/encode_tokens.sh)"
 USAGE
 }
 
