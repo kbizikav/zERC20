@@ -71,8 +71,8 @@ impl ZErc20Contract {
         let implementation_address = *implementation.address();
 
         let init_data = zERC20::initializeCall {
-            name_: name_,
-            symbol_: symbol_,
+            name_,
+            symbol_,
             initialOwner: owner,
         }
         .abi_encode();

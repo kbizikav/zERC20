@@ -249,6 +249,8 @@ async fn ingest_events(
             break;
         }
 
+        let mut leaves = Vec::with_capacity(events.len());
+        let mut expected_index = processed;
         for event in events {
             let event_index_u64 = u64::try_from(event.event_index).with_context(|| {
                 format!(
@@ -257,7 +259,7 @@ async fn ingest_events(
                 )
             })?;
 
-            if event_index_u64 < processed {
+            if event_index_u64 < expected_index {
                 debug!(
                     "skipping already processed event {} for '{}'",
                     event_index_u64, label
@@ -265,10 +267,10 @@ async fn ingest_events(
                 continue;
             }
 
-            if event_index_u64 != processed {
+            if event_index_u64 != expected_index {
                 warn!(
                     "non contiguous event sequence for '{}': expected {}, saw {}",
-                    label, processed, event_index_u64
+                    label, expected_index, event_index_u64
                 );
                 return Ok(());
             }
@@ -277,19 +279,37 @@ async fn ingest_events(
                 parse_address(&event.to_address).context("invalid to_address bytes")?;
             let value = parse_u256(&event.value).context("invalid value bytes")?;
 
-            let append = tree
-                .append_leaf(to_address, value)
-                .await
-                .with_context(|| format!("failed to append leaf for token '{label}'"))?;
+            leaves.push((to_address, value));
+            expected_index += 1;
+        }
 
-            let expected_index = processed + 1;
-            if append.index != expected_index {
+        if leaves.is_empty() {
+            continue;
+        }
+
+        let appended = tree
+            .append_leaves(&leaves)
+            .await
+            .with_context(|| format!("failed to append leaf batch for token '{label}'"))?;
+
+        if appended.len() != leaves.len() {
+            warn!(
+                "append result length mismatch for '{}': expected {}, got {}",
+                label,
+                leaves.len(),
+                appended.len()
+            );
+        }
+
+        if let Some(last) = appended.last() {
+            let expected_last = processed + leaves.len() as u64;
+            if last.index != expected_last {
                 warn!(
-                    "tree index mismatch for '{}': expected {}, got {}",
-                    label, expected_index, append.index
+                    "tree index mismatch for '{}': expected last {}, got {}",
+                    label, expected_last, last.index
                 );
             }
-            processed = append.index;
+            processed = last.index;
         }
     }
 

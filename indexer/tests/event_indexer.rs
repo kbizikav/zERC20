@@ -124,7 +124,7 @@ async fn event_indexer_syncs_against_anvil() -> Result<()> {
         contract.clone(),
         database.pool().clone(),
         0,
-        metadata.clone(),
+        metadata,
         indexer_config,
     )
     .await?;
