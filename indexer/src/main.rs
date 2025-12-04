@@ -1,12 +1,13 @@
 use std::{env, path::PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use clap::Parser;
 use log::{info, warn};
 use sqlx::{Executor, postgres::PgPoolOptions};
 use tokio::task::JoinError;
 use tree_indexer::{
     config::IndexerConfig,
+    error::Result,
     jobs::{EventSyncJobBuilder, RootProverJobBuilder, TreeIngestionJobBuilder},
     server,
 };

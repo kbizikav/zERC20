@@ -9,7 +9,7 @@ use alloy::{
     primitives::{Address, B256, U256},
     providers::PendingTransactionBuilder,
 };
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{Context, anyhow, bail};
 use api_types::prover::CircuitKind;
 use ark_bn254::{Fr, G1Projective as G1};
 use ark_ff::{BigInteger, PrimeField, Zero};
@@ -24,6 +24,7 @@ use tokio::time::sleep;
 
 use crate::{
     config::RootJobConfig,
+    error::Result,
     jobs::try_acquire_lock,
     trees::{DbIncrementalMerkleTree, DbMerkleTreeConfig, HistoricalProof},
 };
