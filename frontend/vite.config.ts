@@ -13,7 +13,11 @@ export default defineConfig({
       '@features': path.resolve(__dirname, 'src/features'),
       '@services': path.resolve(__dirname, 'src/services'),
       '@config': path.resolve(__dirname, 'src/config'),
-      '@utils': path.resolve(__dirname, 'src/utils')
+      '@utils': path.resolve(__dirname, 'src/utils'),
+      'vite-plugin-node-polyfills/shims/global': path.resolve(
+        __dirname,
+        'node_modules/vite-plugin-node-polyfills/shims/global',
+      )
     }
   },
   assetsInclude: ['**/*.wasm']

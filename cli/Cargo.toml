@@ -8,7 +8,7 @@ client-common = { path = "../client-common" }
 zkp = { path = "../zkp" }
 api-types = { path = "../api-types" }
 stealth_client = { path = "../zstorage/frontend" }
-ic-agent = { version = "0.37", features = ["reqwest"] }
+ic-agent = { workspace = true }
 candid = "0.10"
 k256 = { version = "0.13", features = ["ecdsa"] }
 key_manager = { path = "../zstorage/backend/key_manager" }

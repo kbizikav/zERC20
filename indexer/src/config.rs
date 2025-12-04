@@ -1,13 +1,13 @@
 use std::{
     convert::TryInto,
-    fs,
+    env,
     path::{Path, PathBuf},
     time::Duration,
 };
 
 use alloy::primitives::B256;
 use anyhow::{Context, Result, anyhow};
-use client_common::tokens::{TokenEntry, TokensFile};
+use client_common::tokens::{TokenEntry, load_tokens_from_compressed, load_tokens_from_path};
 use reqwest::Url;
 use serde::Deserialize;
 
@@ -38,12 +38,9 @@ pub struct IndexerConfig {
 impl IndexerConfig {
     pub fn load(tokens_path: impl AsRef<Path>) -> Result<Self> {
         let env = EnvSettings::from_env()?;
-        let mut tokens = load_tokens(tokens_path)?;
+        let tokens = load_tokens(tokens_path)?;
         if tokens.is_empty() {
             return Err(anyhow!("at least one token entry must be configured"));
-        }
-        for token in &mut tokens {
-            token.normalize()?;
         }
 
         let event_indexer = EventJobConfig {
@@ -333,15 +330,28 @@ fn default_decider_prover_poll_interval_ms() -> u64 {
 }
 
 fn load_tokens(path: impl AsRef<Path>) -> Result<Vec<TokenEntry>> {
-    let path_ref = path.as_ref();
-    let contents = fs::read_to_string(path_ref)
-        .with_context(|| format!("failed to read token config at {}", path_ref.display()))?;
-    let mut tokens_file: TokensFile = serde_json::from_str(&contents)
-        .with_context(|| format!("failed to parse token config at {}", path_ref.display()))?;
-    tokens_file
-        .normalize()
-        .with_context(|| format!("invalid tokens config at {}", path_ref.display()))?;
+    if let Some(tokens) = load_tokens_from_env()? {
+        return Ok(tokens);
+    }
+    let tokens_file = load_tokens_from_path(path)?;
     Ok(tokens_file.tokens)
+}
+
+fn load_tokens_from_env() -> Result<Option<Vec<TokenEntry>>> {
+    match env::var("TOKENS_COMPRESSED") {
+        Ok(value) => {
+            if value.trim().is_empty() {
+                return Err(anyhow!("TOKENS_COMPRESSED is set but empty"));
+            }
+            let tokens_file = load_tokens_from_compressed(&value)
+                .context("failed to parse TOKENS_COMPRESSED payload")?;
+            Ok(Some(tokens_file.tokens))
+        }
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => {
+            Err(anyhow!("TOKENS_COMPRESSED contains invalid unicode"))
+        }
+    }
 }
 
 fn parse_hex_b256(value: &str) -> Result<B256> {

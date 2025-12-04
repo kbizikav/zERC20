@@ -10,12 +10,14 @@ use crate::contracts::{
     verifier::VerifierContract,
 };
 
+#[derive(Clone)]
 pub struct AggregationTreeState {
     pub latest_agg_seq: u64,
     pub aggregation_root: U256,
     pub aggregation_tree: MerkleTree,
     pub tree_root_indices: Vec<u64>,
     pub chain_ids: Vec<u64>,
+    pub snapshot: Vec<U256>,
 }
 
 impl AggregationTreeState {
@@ -76,6 +78,7 @@ pub async fn fetch_aggregation_tree_state(
         aggregation_tree,
         tree_root_indices: aggregation_event.transfer_tree_indices,
         chain_ids,
+        snapshot: aggregation_event.snapshot,
     })
 }
 

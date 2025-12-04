@@ -8,32 +8,32 @@ import {
   scanReceivings,
   decodeFullBurnAddress,
   findTokenByChain,
-  createProviderForHub,
   createProviderForToken,
-  getHubContract,
   getVerifierContract,
   collectRedeemContext,
   generateSingleTeleportProof,
   generateBatchTeleportProof,
   normalizeHex,
-} from '@services/sdk';
+  getStealthClientFromConfig,
+  getDeciderClient,
+  useStorageStore,
+  type StoredAnnouncement,
+} from '@zerc20/sdk';
 import { formatUnits, getBytes, hexlify, zeroPadValue } from 'ethers';
 import type { AppConfig } from '@config/appConfig';
-import type { NormalizedTokens, TeleportArtifacts } from '@/types/app';
+import type { NormalizedTokens } from '@zerc20/sdk';
 import { useWallet } from '@app/providers/WalletProvider';
-import { getStealthClient, createDeciderClient, createIndexerClient } from '@services/clients';
 import { VetKey } from '@dfinity/vetkeys';
-import { StealthError } from '@services/sdk/storage/errors.js';
+import { StealthError } from '@zerc20/sdk';
 import { RedeemDetailSection } from '@features/redeem/RedeemDetailSection';
 import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
 import { yieldToUi } from '@features/redeem/yieldToUi';
+import { toAccountKey } from '@utils/accountKey';
 
 interface ScanReceivingsPanelProps {
   config: AppConfig;
   tokens: NormalizedTokens;
-  artifacts: TeleportArtifacts;
-  storageRevision: number;
 }
 
 interface AnnouncementDetail {
@@ -63,198 +63,86 @@ function formatAnnouncementTimestamp(ns: bigint): string {
   }
 }
 
-const VET_KEY_STORAGE_PREFIX = 'zerc20:vetkey:';
+function deserializeAnnouncements(entries: StoredAnnouncement[]): ScannedAnnouncement[] {
+  const restored = entries
+    .map((entry) => {
+      try {
+        return {
+          id: BigInt(entry.id),
+          burnAddress: entry.burnAddress,
+          fullBurnAddress: entry.fullBurnAddress,
+          createdAtNs: BigInt(entry.createdAtNs),
+          recipientChainId: BigInt(entry.recipientChainId),
+        } as ScannedAnnouncement;
+      } catch {
+        return null;
+      }
+    })
+    .filter((value): value is ScannedAnnouncement => value !== null);
 
-function vetKeyStorageKey(address: string): string {
-  return `${VET_KEY_STORAGE_PREFIX}${address}`;
-}
-
-function loadStoredVetKey(address: string): VetKey | undefined {
-  if (typeof window === 'undefined') {
-    return undefined;
+  const unique = new Map<string, ScannedAnnouncement>();
+  for (const announcement of restored) {
+    unique.set(announcement.id.toString(), announcement);
   }
-  try {
-    const stored = window.localStorage.getItem(vetKeyStorageKey(address));
-    if (!stored) {
-      return undefined;
+  return Array.from(unique.values()).sort((a, b) => {
+    if (a.createdAtNs === b.createdAtNs) {
+      if (a.id === b.id) {
+        return 0;
+      }
+      return a.id > b.id ? -1 : 1;
     }
-    const bytes = getBytes(stored);
-    return VetKey.deserialize(bytes);
-  } catch {
-    window.localStorage.removeItem(vetKeyStorageKey(address));
-    return undefined;
-  }
+    return a.createdAtNs > b.createdAtNs ? -1 : 1;
+  });
 }
 
-function persistVetKey(address: string, vetKey: VetKey): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    const serialized = vetKey.serialize();
-    const hex = hexlify(serialized);
-    window.localStorage.setItem(vetKeyStorageKey(address), hex);
-  } catch {
-    // ignore storage write failures
-  }
-}
-
-function removeStoredVetKey(address: string): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    window.localStorage.removeItem(vetKeyStorageKey(address));
-  } catch {
-    // ignore storage failures
-  }
-}
-
-const ANNOUNCEMENT_STORAGE_PREFIX = 'zerc20:announcements:';
-
-interface StoredAnnouncement {
-  id: string;
-  burnAddress: string;
-  fullBurnAddress: string;
-  createdAtNs: string;
-  recipientChainId: string;
-}
-
-function announcementStorageKey(address: string): string {
-  return `${ANNOUNCEMENT_STORAGE_PREFIX}${normalizeHex(address)}`;
-}
-
-function toStoredAnnouncement(announcement: ScannedAnnouncement): StoredAnnouncement {
-  return {
+function serializeAnnouncements(announcements: ScannedAnnouncement[]): StoredAnnouncement[] {
+  return announcements.map((announcement) => ({
     id: announcement.id.toString(),
     burnAddress: announcement.burnAddress,
     fullBurnAddress: announcement.fullBurnAddress,
     createdAtNs: announcement.createdAtNs.toString(),
     recipientChainId: announcement.recipientChainId.toString(),
-  };
+  }));
 }
 
-function loadStoredAnnouncements(address: string): ScannedAnnouncement[] {
-  if (typeof window === 'undefined') {
-    return [];
-  }
-  const key = announcementStorageKey(address);
-  try {
-    const stored = window.localStorage.getItem(key);
-    if (!stored) {
-      return [];
-    }
-    const parsed: unknown = JSON.parse(stored);
-    if (!Array.isArray(parsed)) {
-      window.localStorage.removeItem(key);
-      return [];
-    }
-    const entries = new Map<string, ScannedAnnouncement>();
-    for (const item of parsed) {
-      if (!item || typeof item !== 'object') {
-        continue;
-      }
-      const candidate = item as Partial<StoredAnnouncement>;
-      if (
-        typeof candidate.id !== 'string' ||
-        typeof candidate.burnAddress !== 'string' ||
-        typeof candidate.fullBurnAddress !== 'string' ||
-        typeof candidate.createdAtNs !== 'string' ||
-        typeof candidate.recipientChainId !== 'string'
-      ) {
-        continue;
-      }
-      try {
-        const announcement: ScannedAnnouncement = {
-          id: BigInt(candidate.id),
-          burnAddress: candidate.burnAddress,
-          fullBurnAddress: candidate.fullBurnAddress,
-          createdAtNs: BigInt(candidate.createdAtNs),
-          recipientChainId: BigInt(candidate.recipientChainId),
-        };
-        entries.set(announcement.id.toString(), announcement);
-      } catch {
-        continue;
-      }
-    }
-    const restored = Array.from(entries.values()).sort((a, b) => {
-      if (a.createdAtNs === b.createdAtNs) {
-        if (a.id === b.id) {
-          return 0;
-        }
-        return a.id > b.id ? -1 : 1;
-      }
-      return a.createdAtNs > b.createdAtNs ? -1 : 1;
-    });
-    return restored;
-  } catch {
-    window.localStorage.removeItem(key);
-    return [];
-  }
-}
-
-function persistAnnouncements(address: string, announcements: ScannedAnnouncement[]): void {
-  if (typeof window === 'undefined') {
-    return;
-  }
-  try {
-    const serialized = announcements.map(toStoredAnnouncement);
-    window.localStorage.setItem(announcementStorageKey(address), JSON.stringify(serialized));
-  } catch {
-    // ignore storage write failures
-  }
-}
-
-export function ScanReceivingsPanel({
-  config,
-  tokens,
-  artifacts,
-  storageRevision,
-}: ScanReceivingsPanelProps): JSX.Element {
+export function ScanReceivingsPanel({ config, tokens }: ScanReceivingsPanelProps): JSX.Element {
   const wallet = useWallet();
-  const [announcements, setAnnouncements] = useState<ScannedAnnouncement[]>([]);
   const [status, setStatus] = useState<string>();
   const [error, setError] = useState<string>();
   const [isScanning, setIsScanning] = useState(false);
   const [isDetailLoading, setIsDetailLoading] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [redeemMessage, setRedeemMessage] = useState<string>();
-  const [cachedVetKey, setCachedVetKey] = useState<VetKey>();
   const [selectedAnnouncementId, setSelectedAnnouncementId] = useState<string>();
   const [detail, setDetail] = useState<AnnouncementDetail | null>(null);
   const [redeemSteps, setRedeemSteps] = useState<RedeemStep[]>([]);
   const [isRedeemModalOpen, setRedeemModalOpen] = useState(false);
+  const accountKey = useMemo(() => toAccountKey(wallet.account), [wallet.account]);
+  const storedVetKeyHex = useStorageStore((state) => (accountKey ? state.vetKeys[accountKey] : undefined));
+  const setStoredVetKey = useStorageStore((state) => state.setVetKey);
+  const removeStoredVetKey = useStorageStore((state) => state.removeVetKey);
+  const storedAnnouncementRecords = useStorageStore((state) => (accountKey ? state.announcements[accountKey] ?? [] : []));
+  const setStoredAnnouncements = useStorageStore((state) => state.setAnnouncements);
 
-  useEffect(() => {
-    if (!wallet.account) {
-      setCachedVetKey(undefined);
-      return;
-    }
-    const stored = loadStoredVetKey(wallet.account);
-    setCachedVetKey(stored);
-  }, [wallet.account, storageRevision]);
-
-  useEffect(() => {
-    if (!wallet.account) {
-      setAnnouncements([]);
-      setSelectedAnnouncementId(undefined);
-      setDetail(null);
-      setStatus(undefined);
-      setError(undefined);
-      setRedeemMessage(undefined);
-      setRedeemSteps([]);
-      setRedeemModalOpen(false);
-      setIsScanning(false);
-      setIsDetailLoading(false);
-      setIsLoading(false);
-      return;
+  const cachedVetKey = useMemo(() => {
+    if (!storedVetKeyHex || !accountKey) {
+      return undefined;
     }
     try {
-      const stored = loadStoredAnnouncements(wallet.account);
-      setAnnouncements(stored);
+      const bytes = getBytes(storedVetKeyHex);
+      return VetKey.deserialize(bytes);
     } catch {
-      setAnnouncements([]);
+      removeStoredVetKey(accountKey);
+      return undefined;
     }
+  }, [accountKey, removeStoredVetKey, storedVetKeyHex]);
+
+  const announcements = useMemo(
+    () => deserializeAnnouncements(storedAnnouncementRecords),
+    [storedAnnouncementRecords],
+  );
+
+  useEffect(() => {
     setSelectedAnnouncementId(undefined);
     setDetail(null);
     setStatus(undefined);
@@ -265,40 +153,37 @@ export function ScanReceivingsPanel({
     setIsScanning(false);
     setIsDetailLoading(false);
     setIsLoading(false);
-  }, [wallet.account, storageRevision]);
+  }, [accountKey]);
 
   const availableTokens = useMemo(() => tokens.tokens ?? [], [tokens.tokens]);
 
   const mergeAnnouncements = useCallback(
     (accountAddress: string, scanned: ScannedAnnouncement[]): { added: number; total: number } => {
       const normalizedAddress = normalizeHex(accountAddress);
+      const existingRecords = useStorageStore.getState().announcements[normalizedAddress] ?? [];
+      const current = deserializeAnnouncements(existingRecords);
+      const entries = new Map(current.map((item) => [item.id.toString(), item]));
       let added = 0;
-      let total = 0;
-      setAnnouncements((prev) => {
-        const entries = new Map(prev.map((item) => [item.id.toString(), item]));
-        for (const item of scanned) {
-          const key = item.id.toString();
-          if (!entries.has(key)) {
-            entries.set(key, item);
-            added += 1;
-          }
+      for (const item of scanned) {
+        const key = item.id.toString();
+        if (!entries.has(key)) {
+          entries.set(key, item);
+          added += 1;
         }
-        const next = Array.from(entries.values()).sort((a, b) => {
-          if (a.createdAtNs === b.createdAtNs) {
-            if (a.id === b.id) {
-              return 0;
-            }
-            return a.id > b.id ? -1 : 1;
+      }
+      const next = Array.from(entries.values()).sort((a, b) => {
+        if (a.createdAtNs === b.createdAtNs) {
+          if (a.id === b.id) {
+            return 0;
           }
-          return a.createdAtNs > b.createdAtNs ? -1 : 1;
-        });
-        total = next.length;
-        persistAnnouncements(normalizedAddress, next);
-        return next;
+          return a.id > b.id ? -1 : 1;
+        }
+        return a.createdAtNs > b.createdAtNs ? -1 : 1;
       });
-      return { added, total };
+      setStoredAnnouncements(normalizedAddress, serializeAnnouncements(next));
+      return { added, total: next.length };
     },
-    [],
+    [setStoredAnnouncements],
   );
 
   const filteredAnnouncements = useMemo(() => {
@@ -359,12 +244,15 @@ export function ScanReceivingsPanel({
       }
 
       const performScan = async (forceRenew: boolean): Promise<ScannedAnnouncement[]> => {
-        const client = await getStealthClient(config);
+        const client = await getStealthClientFromConfig({
+          icReplicaUrl: config.icReplicaUrl,
+          storageCanisterId: config.storageCanisterId,
+          keyManagerCanisterId: config.keyManagerCanisterId,
+        });
         let vetKeyToUse = forceRenew ? undefined : cachedVetKey;
 
         if (forceRenew) {
-          removeStoredVetKey(accountAddress);
-          setCachedVetKey(undefined);
+          removeStoredVetKey(normalizedAccount);
         }
 
         if (!vetKeyToUse) {
@@ -376,8 +264,8 @@ export function ScanReceivingsPanel({
 
           setStatus(forceRenew ? 'Requesting new view key…' : 'Requesting view key…');
           const requestedVetKey = await requestVetKey(client, accountAddress, payload, signatureBytes);
-          persistVetKey(accountAddress, requestedVetKey);
-          setCachedVetKey(requestedVetKey);
+          const storedHex = hexlify(requestedVetKey.serialize());
+          setStoredVetKey(normalizedAccount, storedHex);
           vetKeyToUse = requestedVetKey;
         } else {
           setStatus('Using saved view key…');
@@ -439,7 +327,7 @@ export function ScanReceivingsPanel({
         setIsScanning(false);
       }
     },
-    [wallet, tokens, config, cachedVetKey, mergeAnnouncements],
+    [wallet, tokens, config, cachedVetKey, mergeAnnouncements, removeStoredVetKey, setStoredVetKey],
   );
 
   const handleAnnouncementDetail = useCallback(
@@ -476,19 +364,18 @@ export function ScanReceivingsPanel({
         const burn = await decodeFullBurnAddress(announcement.fullBurnAddress);
         const token = findTokenByChain(availableTokens, burn.generalRecipient.chainId);
 
-        const hubProvider = createProviderForHub(tokens.hub);
-        const hubContract = getHubContract(tokens.hub.hubAddress, hubProvider);
         const tokenProvider = createProviderForToken(token);
-        const verifierContract = getVerifierContract(token.verifierAddress, tokenProvider);
-        const indexer = createIndexerClient(config);
+        const verifierContract = getVerifierContract(
+          token.verifierAddress,
+          tokenProvider,
+        ) as unknown as Parameters<typeof collectRedeemContext>[0]['verifierContract'];
 
         const context = await collectRedeemContext({
           burn,
           tokens: availableTokens,
-          indexer,
+          hub: tokens.hub,
           verifierContract,
-          hubContract,
-          provider: hubProvider,
+          indexerUrl: config.indexerUrl,
           indexerFetchLimit: config.indexerFetchLimit,
           eventBlockSpan: BigInt(config.eventBlockSpan),
         });
@@ -518,7 +405,7 @@ export function ScanReceivingsPanel({
         setRedeemMessage('Load an announcement detail before redeeming.');
         return;
       }
-      if (!wallet.signer) {
+      if (!wallet.account) {
         setRedeemMessage('Connect your wallet before redeeming transfers.');
         return;
       }
@@ -555,20 +442,19 @@ export function ScanReceivingsPanel({
         activateStage('indexer', 'Fetching events from indexer…');
         await yieldToUi();
 
-        const hubProvider = createProviderForHub(tokens.hub);
-        const hubContract = getHubContract(tokens.hub.hubAddress, hubProvider);
-        const indexer = createIndexerClient(config);
         const tokenEntry = detail.context.token;
         const tokenProvider = createProviderForToken(tokenEntry);
-        const verifierRead = getVerifierContract(tokenEntry.verifierAddress, tokenProvider);
+        const verifierRead = getVerifierContract(
+          tokenEntry.verifierAddress,
+          tokenProvider,
+        ) as unknown as Parameters<typeof collectRedeemContext>[0]['verifierContract'];
 
         const refreshedContext = await collectRedeemContext({
           burn: detail.burn,
           tokens: availableTokens,
-          indexer,
+          hub: tokens.hub,
           verifierContract: verifierRead,
-          hubContract,
-          provider: hubProvider,
+          indexerUrl: config.indexerUrl,
           indexerFetchLimit: config.indexerFetchLimit,
           eventBlockSpan: BigInt(config.eventBlockSpan),
         });
@@ -610,7 +496,8 @@ export function ScanReceivingsPanel({
         });
         await yieldToUi();
 
-        const verifierWithSigner = getVerifierContract(refreshedContext.token.verifierAddress, wallet.signer);
+        const walletClient = await wallet.ensureWalletClient();
+        const verifierWithSigner = getVerifierContract(refreshedContext.token.verifierAddress, walletClient);
         const gr = {
           chainId: detail.burn.generalRecipient.chainId,
           recipient: padRecipient(detail.burn.generalRecipient.address),
@@ -621,17 +508,7 @@ export function ScanReceivingsPanel({
         await yieldToUi();
 
         if (eligible.length === 1) {
-          const fields = artifacts.single;
-          if (!fields.localPk || !fields.localVk || !fields.globalPk || !fields.globalVk) {
-            throw new Error('Upload all single teleport Groth16 artifacts before redeeming.');
-          }
           const singleProof = await generateSingleTeleportProof({
-            wasmArtifacts: {
-              localPk: fields.localPk,
-              localVk: fields.localVk,
-              globalPk: fields.globalPk,
-              globalVk: fields.globalVk,
-            },
             aggregationState: refreshedContext.aggregationState,
             recipientFr: detail.burn.generalRecipient.fr,
             secretHex: detail.burn.secret,
@@ -644,34 +521,33 @@ export function ScanReceivingsPanel({
           activateStage('wallet', 'Submitting wallet transaction…');
           await yieldToUi();
 
-          const tx = await verifierWithSigner.singleTeleport(
+          const singleTeleport = verifierWithSigner.write.singleTeleport as (
+            args: readonly [boolean, bigint, typeof gr, `0x${string}`],
+          ) => Promise<`0x${string}`>;
+          const proofCalldata = singleProof.proofCalldata as `0x${string}`;
+          const txHash = await singleTeleport([
             true,
             refreshedContext.aggregationState.latestAggSeq,
             gr,
-            getBytes(singleProof.proofCalldata),
-          );
-          await tx.wait();
+            proofCalldata,
+          ]);
+          const receiptClient = wallet.publicClient ?? createProviderForToken(refreshedContext.token);
+          await receiptClient.waitForTransactionReceipt({ hash: txHash });
           completeStage('wallet');
           await yieldToUi();
-          setRedeemMessage(`Teleport submitted: ${tx.hash}`);
+          setRedeemMessage(`Teleport submitted: ${txHash}`);
         } else {
-          const fields = artifacts.batch;
-          if (!fields.localPp || !fields.localVp || !fields.globalPp || !fields.globalVp) {
-            throw new Error('Upload all batch teleport Nova artifacts before redeeming.');
+          const decider = getDeciderClient({ baseUrl: config.deciderUrl });
+          const batchProofInputs = refreshedContext.globalProofs;
+          if (batchProofInputs.length !== eligible.length) {
+            throw new Error('Indexer returned mismatched event/proof counts for batch teleport.');
           }
-          const decider = createDeciderClient(config);
           const batchProof = await generateBatchTeleportProof({
-            wasmArtifacts: {
-              localPp: fields.localPp,
-              localVp: fields.localVp,
-              globalPp: fields.globalPp,
-              globalVp: fields.globalVp,
-            },
             aggregationState: refreshedContext.aggregationState,
             recipientFr: detail.burn.generalRecipient.fr,
             secretHex: detail.burn.secret,
-            events: eligible,
-            proofs: refreshedContext.globalProofs,
+            events: batchProofInputs.map((entry) => entry.event),
+            proofs: batchProofInputs,
             decider,
             onDeciderRequestStart: async () => {
               completeStage('proof');
@@ -686,16 +562,21 @@ export function ScanReceivingsPanel({
           activateStage('wallet', 'Submitting wallet transaction…');
           await yieldToUi();
 
-          const tx = await verifierWithSigner.teleport(
+          const teleport = verifierWithSigner.write.teleport as (
+            args: readonly [boolean, bigint, typeof gr, `0x${string}`],
+          ) => Promise<`0x${string}`>;
+          const deciderProofHex = hexlify(batchProof.deciderProof) as `0x${string}`;
+          const txHash = await teleport([
             true,
             refreshedContext.aggregationState.latestAggSeq,
             gr,
-            batchProof.deciderProof,
-          );
-          await tx.wait();
+            deciderProofHex,
+          ]);
+          const receiptClient = wallet.publicClient ?? createProviderForToken(refreshedContext.token);
+          await receiptClient.waitForTransactionReceipt({ hash: txHash });
           completeStage('wallet');
           await yieldToUi();
-          setRedeemMessage(`Batch teleport submitted: ${tx.hash}`);
+          setRedeemMessage(`Batch teleport submitted: ${txHash}`);
         }
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
@@ -707,7 +588,7 @@ export function ScanReceivingsPanel({
         setIsLoading(false);
       }
     },
-    [detail, wallet.signer, tokens, availableTokens, artifacts, config],
+    [availableTokens, config, detail, tokens, wallet],
   );
 
   return (
