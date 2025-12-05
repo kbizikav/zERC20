@@ -427,16 +427,37 @@ impl DbIncrementalMerkleTree {
                     DbMerkleTreeError::database("write merkle update rows batch", err)
                 })?;
 
+            // Deduplicate node paths so a single upsert statement never updates the same row twice.
+            let mut latest_nodes: HashMap<[u8; 12], (Vec<u8>, i64)> = HashMap::new();
+            for update in &planned_updates {
+                latest_nodes
+                    .entry(update.path_bytes)
+                    .and_modify(|entry| {
+                        if update.tree_index > entry.1 {
+                            *entry = (update.new_bytes.clone(), update.tree_index);
+                        }
+                    })
+                    .or_insert_with(|| (update.new_bytes.clone(), update.tree_index));
+            }
+
+            let deduped_nodes: Vec<([u8; 12], Vec<u8>, i64)> = latest_nodes
+                .into_iter()
+                .map(|(path_bytes, (new_bytes, tree_index))| (path_bytes, new_bytes, tree_index))
+                .collect();
+
             let mut nodes_builder = QueryBuilder::<Postgres>::new(format!(
                 "INSERT INTO {table} (token_id, node_path, hash, updated_at_index)",
                 table = MERKLE_NODES_TABLE,
             ));
-            nodes_builder.push_values(&planned_updates, |mut b, update| {
-                b.push_bind(self.partitions.token_id());
-                b.push_bind(update.path_bytes.as_slice());
-                b.push_bind(update.new_bytes.as_slice());
-                b.push_bind(update.tree_index);
-            });
+            nodes_builder.push_values(
+                &deduped_nodes,
+                |mut b, (path_bytes, new_bytes, tree_index)| {
+                    b.push_bind(self.partitions.token_id());
+                    b.push_bind(path_bytes.as_slice());
+                    b.push_bind(new_bytes.as_slice());
+                    b.push_bind(tree_index);
+                },
+            );
             nodes_builder.push(
                 " ON CONFLICT (token_id, node_path)
                   DO UPDATE SET hash = EXCLUDED.hash,
