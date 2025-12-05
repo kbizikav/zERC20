@@ -668,7 +668,6 @@ async fn insert_events(pool: &PgPool, token_id: i64, events: &[IndexedEvent]) ->
         "INSERT INTO {events_table} (token_id, event_index, from_address, to_address, value, eth_block_number) ",
         events_table = EVENTS_TABLE,
     ));
-    builder.push("VALUES ");
     builder.push_values(&prepared, |mut b, event| {
         b.push_bind(token_id);
         b.push_bind(event.index_i64);
