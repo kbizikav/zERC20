@@ -25,7 +25,6 @@ thiserror = { workspace = true }
 futures = { workspace = true }
 rand_chacha = { workspace = true }
 reqwest = { workspace = true }
-futures = "0.3"
 toml = "0.8.19"
 async-trait = { workspace = true }
 sqlx = { workspace = true }
