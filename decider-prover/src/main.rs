@@ -82,7 +82,10 @@ async fn health() -> impl Responder {
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
+    // Load env variables from the workspace root first, then also load the crate-local
+    // .env so running from the workspace still picks up decider-prover/.env.
     dotenvy::dotenv().ok();
+    let _ = dotenvy::from_path(concat!(env!("CARGO_MANIFEST_DIR"), "/.env"));
 
     env_logger::init();
 

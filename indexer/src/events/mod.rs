@@ -3,7 +3,7 @@ use std::num::NonZeroU64;
 
 use alloy::primitives::U256;
 use api_types::indexer::IndexedEvent;
-use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use thiserror::Error;
 
 use client_common::contracts::{ContractError, z_erc20::ZErc20Contract};
@@ -285,6 +285,14 @@ struct IndexerStateRow {
 struct EventSummaryRow {
     event_index: i64,
     eth_block_number: i64,
+}
+
+struct PreparedEvent {
+    index_i64: i64,
+    block_i64: i64,
+    from: Vec<u8>,
+    to: Vec<u8>,
+    value_bytes: [u8; VALUE_BYTES],
 }
 
 #[derive(Clone, Debug)]
@@ -623,52 +631,50 @@ async fn insert_events(pool: &PgPool, token_id: i64, events: &[IndexedEvent]) ->
         return Ok(());
     }
 
+    let mut prepared = Vec::with_capacity(events.len());
+    for event in events {
+        let index_i64 = to_i64(event.event_index, "event index")?;
+        let block_i64 = to_i64(event.eth_block_number, "event block number")?;
+        prepared.push(PreparedEvent {
+            index_i64,
+            block_i64,
+            from: event.from.as_slice().to_vec(),
+            to: event.to.as_slice().to_vec(),
+            value_bytes: u256_to_bytes(&event.value),
+        });
+    }
+
     let mut tx = pool
         .begin()
         .await
         .map_err(|err| EventIndexerError::database("begin events insert transaction", err))?;
 
-    let insert_sql = format!(
-        r#"
-        INSERT INTO {events_table} (
-            token_id,
-            event_index,
-            from_address,
-            to_address,
-            value,
-            eth_block_number
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (token_id, event_index) DO UPDATE
-        SET from_address = EXCLUDED.from_address,
-            to_address = EXCLUDED.to_address,
-            value = EXCLUDED.value,
-            eth_block_number = EXCLUDED.eth_block_number
-        "#,
+    let mut builder = QueryBuilder::<Postgres>::new(format!(
+        "INSERT INTO {events_table} (token_id, event_index, from_address, to_address, value, eth_block_number) ",
         events_table = EVENTS_TABLE,
+    ));
+    builder.push("VALUES ");
+    builder.push_values(&prepared, |mut b, event| {
+        b.push_bind(token_id);
+        b.push_bind(event.index_i64);
+        b.push_bind(event.from.as_slice());
+        b.push_bind(event.to.as_slice());
+        b.push_bind(event.value_bytes.as_slice());
+        b.push_bind(event.block_i64);
+    });
+    builder.push(
+        " ON CONFLICT (token_id, event_index) DO UPDATE \
+         SET from_address = EXCLUDED.from_address, \
+             to_address = EXCLUDED.to_address, \
+             value = EXCLUDED.value, \
+             eth_block_number = EXCLUDED.eth_block_number",
     );
 
-    for event in events {
-        let index = to_i64(event.event_index, "event index")?;
-        let block = to_i64(event.eth_block_number, "event block number")?;
-        let from = event.from.as_slice();
-        let to = event.to.as_slice();
-        let value_bytes = u256_to_bytes(&event.value);
-
-        sqlx::query(&insert_sql)
-            .bind(token_id)
-            .bind(index)
-            .bind(from)
-            .bind(to)
-            .bind(value_bytes.as_slice())
-            .bind(block)
-            .execute(&mut *tx)
-            .await
-            .map_err(|err| EventIndexerError::InsertEvent {
-                index: event.event_index,
-                source: err,
-            })?;
-    }
+    builder
+        .build()
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| EventIndexerError::database("insert events batch", err))?;
 
     tx.commit()
         .await
