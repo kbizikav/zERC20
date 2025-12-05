@@ -50,6 +50,7 @@ use zkp::{
 };
 
 const ROOT_LOCK_SALT: u64 = 0x524f4f54; // "ROOT"
+const COMPILE_CHUNK_SIZE: u64 = 500;
 
 type RootNovaInstance = N<RootCircuit<Fr>>;
 type RootIvcProof = IVCProof<G1, G2>;
@@ -247,142 +248,156 @@ impl RootProverJob {
             return Ok(state);
         }
 
-        let events = fetch_event_batch(
-            &self.pool,
-            token_id,
-            state.last_compiled_index,
-            target_index,
-        )
-        .await
-        .with_context(|| format!("failed to fetch events for '{}'", token.label))?;
-
-        if events.is_empty() {
-            debug!(
-                "no event records found while attempting to compile '{}' (compiled={}, target={})",
-                token.label, state.last_compiled_index, target_index
-            );
-            return Ok(state);
-        }
-
-        let mut nova = initialise_nova(
-            &self.nova_params,
-            token_id,
-            &self.pool,
-            tree,
-            state.base_index,
-            state.last_compiled_index,
-        )
-        .await
-        .with_context(|| format!("failed to initialise nova for '{}'", token.label))?;
-
-        let mut rng = ChaCha20Rng::from_entropy();
+        let initial_compiled = state.last_compiled_index;
         let mut current_index = state.last_compiled_index;
+        let mut nova: Option<RootNovaInstance> = None;
+        let mut rng = ChaCha20Rng::from_entropy();
 
-        for event in events {
-            let expected_index = current_index;
-            if event.event_index != expected_index {
-                warn!(
-                    "encountered non-contiguous event for '{}': expected {}, got {}",
-                    token.label, expected_index, event.event_index
+        while current_index < target_index {
+            let chunk_end = (current_index + COMPILE_CHUNK_SIZE).min(target_index);
+            let events = fetch_event_batch(&self.pool, token_id, current_index, chunk_end)
+                .await
+                .with_context(|| format!("failed to fetch events for '{}'", token.label))?;
+
+            if events.is_empty() {
+                debug!(
+                    "no event records found while attempting to compile '{}' (compiled={}, target={})",
+                    token.label, current_index, target_index
                 );
                 break;
             }
 
-            let proof = tree
-                .prove(event.event_index + 1, event.event_index)
+            if nova.is_none() {
+                nova = Some(
+                    initialise_nova(
+                        &self.nova_params,
+                        token_id,
+                        &self.pool,
+                        tree,
+                        state.base_index,
+                        state.last_compiled_index,
+                    )
+                    .await
+                    .with_context(|| format!("failed to initialise nova for '{}'", token.label))?,
+                );
+            }
+            let nova = nova.as_mut().expect("nova initialised above");
+
+            let mut aborted_chunk = false;
+            for event in events {
+                let expected_index = current_index;
+                if event.event_index != expected_index {
+                    warn!(
+                        "encountered non-contiguous event for '{}': expected {}, got {}",
+                        token.label, expected_index, event.event_index
+                    );
+                    aborted_chunk = true;
+                    break;
+                }
+
+                let proof = tree
+                    .prove(event.event_index + 1, event.event_index)
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "failed to build merkle proof for '{}' at {}",
+                            token.label, event.event_index
+                        )
+                    })?;
+
+                let external_inputs = to_external_inputs(event.address, event.value, &proof)?;
+                nova.prove_step(&mut rng, external_inputs, None)
+                    .with_context(|| {
+                        format!(
+                            "failed to extend nova proof for '{}' at step {}",
+                            token.label, event.event_index
+                        )
+                    })?;
+
+                current_index += 1;
+                let state_snapshot = nova.state();
+                let ivc_proof = nova.ivc_proof();
+                if let Err(err) = self.nova_params.verify(ivc_proof.clone()) {
+                    let state_index = state_snapshot.get(0).copied().unwrap_or_else(Fr::zero);
+                    let state_hash_chain = state_snapshot.get(1).copied().unwrap_or_else(Fr::zero);
+                    let state_root = state_snapshot.get(2).copied().unwrap_or_else(Fr::zero);
+                    let db_hash_chain = tree.hash_chain_at(current_index).await.ok().flatten();
+                    let db_root = tree.root_at(current_index).await.ok().flatten();
+                    let previous_hash_chain = if current_index > 1 {
+                        tree.hash_chain_at(current_index - 1)
+                            .await
+                            .ok()
+                            .flatten()
+                            .unwrap_or_default()
+                    } else {
+                        U256::ZERO
+                    };
+                    let expected_hash_chain =
+                        hash_chain(previous_hash_chain, event.address, event.value);
+                    let expected_leaf =
+                        compute_leaf_hash(address_to_fr(event.address), u256_to_fr(event.value));
+                    let expected_root = proof.proof.get_root(expected_leaf, proof.leaf_index);
+                    debug!(
+                        "nova verify failed at index {} for '{}': address=0x{}, value={}, state_index={}, state_hash_chain=0x{}, state_root=0x{}, db_hash_chain={:?}, db_root={:?}, expected_hash_chain=0x{}, expected_root=0x{}",
+                        current_index,
+                        token.label,
+                        hex::encode(event.address.as_slice()),
+                        event.value,
+                        fr_to_u256(state_index),
+                        fr_to_u256(state_hash_chain),
+                        fr_to_u256(state_root),
+                        db_hash_chain.map(|v| format!("0x{}", hex::encode(v.to_be_bytes::<32>()))),
+                        db_root.map(|v| format!("0x{}", hex::encode(fr_to_bytes(v)))),
+                        hex::encode(expected_hash_chain.to_be_bytes::<32>()),
+                        hex::encode(fr_to_bytes(expected_root))
+                    );
+                    return Err(err).context(format!(
+                        "failed to verify IVC proof for '{}' at index {}",
+                        token.label, current_index
+                    ));
+                }
+                let proof_bytes = serialize_ivc_proof(&ivc_proof)?;
+                let state_hash_chain = state_snapshot
+                    .get(1)
+                    .copied()
+                    .ok_or_else(|| anyhow!("nova state missing hash chain component"))?;
+                let state_root = state_snapshot
+                    .get(2)
+                    .copied()
+                    .ok_or_else(|| anyhow!("nova state missing root component"))?;
+
+                upsert_ivc_proof(
+                    &self.pool,
+                    token_id,
+                    state.base_index,
+                    current_index,
+                    &proof_bytes,
+                    state_hash_chain,
+                    state_root,
+                )
                 .await
                 .with_context(|| {
                     format!(
-                        "failed to build merkle proof for '{}' at {}",
-                        token.label, event.event_index
+                        "failed to persist IVC proof for '{}' at index {}",
+                        token.label, current_index
                     )
                 })?;
-
-            let external_inputs = to_external_inputs(event.address, event.value, &proof)?;
-            nova.prove_step(&mut rng, external_inputs, None)
-                .with_context(|| {
-                    format!(
-                        "failed to extend nova proof for '{}' at step {}",
-                        token.label, event.event_index
-                    )
-                })?;
-
-            current_index += 1;
-            let state_snapshot = nova.state();
-            let ivc_proof = nova.ivc_proof();
-            if let Err(err) = self.nova_params.verify(ivc_proof.clone()) {
-                let state_index = state_snapshot.get(0).copied().unwrap_or_else(Fr::zero);
-                let state_hash_chain = state_snapshot.get(1).copied().unwrap_or_else(Fr::zero);
-                let state_root = state_snapshot.get(2).copied().unwrap_or_else(Fr::zero);
-                let db_hash_chain = tree.hash_chain_at(current_index).await.ok().flatten();
-                let db_root = tree.root_at(current_index).await.ok().flatten();
-                let previous_hash_chain = if current_index > 1 {
-                    tree.hash_chain_at(current_index - 1)
-                        .await
-                        .ok()
-                        .flatten()
-                        .unwrap_or_default()
-                } else {
-                    U256::ZERO
-                };
-                let expected_hash_chain =
-                    hash_chain(previous_hash_chain, event.address, event.value);
-                let expected_leaf =
-                    compute_leaf_hash(address_to_fr(event.address), u256_to_fr(event.value));
-                let expected_root = proof.proof.get_root(expected_leaf, proof.leaf_index);
-                debug!(
-                    "nova verify failed at index {} for '{}': address=0x{}, value={}, state_index={}, state_hash_chain=0x{}, state_root=0x{}, db_hash_chain={:?}, db_root={:?}, expected_hash_chain=0x{}, expected_root=0x{}",
-                    current_index,
-                    token.label,
-                    hex::encode(event.address.as_slice()),
-                    event.value,
-                    fr_to_u256(state_index),
-                    fr_to_u256(state_hash_chain),
-                    fr_to_u256(state_root),
-                    db_hash_chain.map(|v| format!("0x{}", hex::encode(v.to_be_bytes::<32>()))),
-                    db_root.map(|v| format!("0x{}", hex::encode(fr_to_bytes(v)))),
-                    hex::encode(expected_hash_chain.to_be_bytes::<32>()),
-                    hex::encode(fr_to_bytes(expected_root))
-                );
-                return Err(err).context(format!(
-                    "failed to verify IVC proof for '{}' at index {}",
-                    token.label, current_index
-                ));
             }
-            let proof_bytes = serialize_ivc_proof(&ivc_proof)?;
-            let state_hash_chain = state_snapshot
-                .get(1)
-                .copied()
-                .ok_or_else(|| anyhow!("nova state missing hash chain component"))?;
-            let state_root = state_snapshot
-                .get(2)
-                .copied()
-                .ok_or_else(|| anyhow!("nova state missing root component"))?;
 
-            upsert_ivc_proof(
-                &self.pool,
-                token_id,
-                state.base_index,
-                current_index,
-                &proof_bytes,
-                state_hash_chain,
-                state_root,
-            )
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to persist IVC proof for '{}' at index {}",
-                    token.label, current_index
-                )
-            })?;
+            if current_index > state.last_compiled_index {
+                update_last_compiled_index(&self.pool, token_id, current_index).await?;
+                state.last_compiled_index = current_index;
+            }
+
+            if aborted_chunk {
+                break;
+            }
         }
 
-        if current_index > state.last_compiled_index {
-            update_last_compiled_index(&self.pool, token_id, current_index).await?;
-            state.last_compiled_index = current_index;
+        if state.last_compiled_index > initial_compiled {
             info!(
                 "compiled root IVC proofs for '{}' up to index {}",
-                token.label, current_index
+                token.label, state.last_compiled_index
             );
         }
 
