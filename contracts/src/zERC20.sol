@@ -5,7 +5,8 @@ import {IzERC20} from "./interfaces/IzERC20.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {ERC20PermitUpgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import {ERC20PermitUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
@@ -22,6 +23,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     struct ZERC20Storage {
         uint256 hashChain;
         uint256 index;
+        uint256 totalTeleported;
         address verifier;
         address minter;
     }
@@ -91,6 +93,11 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         return _getZERC20Storage().minter;
     }
 
+    /// @notice Sum of all values minted through verifier-authorized teleports.
+    function totalTeleported() public view returns (uint256) {
+        return _getZERC20Storage().totalTeleported;
+    }
+
     /// @notice Returns the token decimals.
     function decimals() public view override returns (uint8) {
         return tokenDecimals;
@@ -131,16 +138,15 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @param value Mint amount corresponding to the delta proven in Verifier.teleport.
     function teleport(address to, uint256 value) external {
         if (msg.sender != verifier()) revert OnlyVerifier();
+        ZERC20Storage storage $ = _getZERC20Storage();
         _mint(to, value);
+        $.totalTeleported += value;
         emit Teleport(to, value);
     }
 
     /// @dev Commits every transfer (including mint/burn) to the 248-bit SHA-256 hash chain described in the spec.
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
-    function _afterTokenTransfer(address from, address to, uint256 value)
-        internal
-        override(ERC20Upgradeable)
-    {
+    function _afterTokenTransfer(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         if (value > type(uint248).max) revert ValueTooLarge();
         ZERC20Storage storage $ = _getZERC20Storage();
         super._afterTokenTransfer(from, to, value);

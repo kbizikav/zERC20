@@ -102,6 +102,21 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.hashChain(), expectedHash, "hash chain after teleport");
     }
 
+    function testTeleportAccumulatesTotalTeleported() public {
+        uint256 first = 1 ether;
+        uint256 second = 4 ether;
+
+        token.setVerifier(address(this));
+
+        assertEq(token.totalTeleported(), 0, "initial total");
+
+        token.teleport(ALICE, first);
+        assertEq(token.totalTeleported(), first, "after first teleport");
+
+        token.teleport(BOB, second);
+        assertEq(token.totalTeleported(), first + second, "after second teleport");
+    }
+
     function testPermitSetsAllowanceAndRespectsTypedData() public {
         uint256 ownerKey = 0xA11CE;
         address owner = vm.addr(ownerKey);

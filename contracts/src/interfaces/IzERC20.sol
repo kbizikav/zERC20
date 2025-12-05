@@ -22,6 +22,10 @@ interface IzERC20 is IOFT, IERC20Upgradeable, IERC20PermitUpgradeable {
     /// @return nextIndex Transfer index counter.
     function index() external view returns (uint256 nextIndex);
 
+    /// @notice Cumulative amount minted via `teleport`.
+    /// @return total Sum of all teleported values.
+    function totalTeleported() external view returns (uint256 total);
+
     /// @notice Mints tokens according to a proof validated by the verifier.
     /// @param to Recipient address that receives the minted tokens.
     /// @param value Amount of tokens to mint.
