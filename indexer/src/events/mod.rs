@@ -510,28 +510,43 @@ async fn advance_contiguous_index(pool: &PgPool, token_id: i64) -> Result<Indexe
     let mut advanced = false;
     loop {
         let next_index = contiguous_index + 1;
+        let limit = ADVANCE_BATCH_SIZE.max(1);
         let events_sql = format!(
             r#"
             SELECT event_index, eth_block_number
             FROM {events_table}
-            WHERE token_id = $1 AND event_index = $2
+            WHERE token_id = $1 AND event_index >= $2
+            ORDER BY event_index ASC
+            LIMIT $3
             "#,
             events_table = EVENTS_TABLE,
         );
-        let next_row = sqlx::query_as::<_, EventSummaryRow>(&events_sql)
+        let rows = sqlx::query_as::<_, EventSummaryRow>(&events_sql)
             .bind(token_id)
             .bind(next_index)
-            .fetch_optional(&mut *tx)
+            .bind(limit)
+            .fetch_all(&mut *tx)
             .await
-            .map_err(|err| EventIndexerError::database("probe next contiguous event", err))?;
+            .map_err(|err| EventIndexerError::database("probe next contiguous events batch", err))?;
 
-        match next_row {
-            Some(event_row) => {
-                contiguous_index = event_row.event_index;
-                contiguous_block = Some(event_row.eth_block_number);
-                advanced = true;
+        if rows.is_empty() {
+            break;
+        }
+
+        for event_row in rows {
+            let expected = contiguous_index + 1;
+            if event_row.event_index != expected {
+                // gap encountered; stop advancing
+                break;
             }
-            None => break,
+            contiguous_index = event_row.event_index;
+            contiguous_block = Some(event_row.eth_block_number);
+            advanced = true;
+        }
+
+        // if we didn't fill the batch, no need to loop further
+        if contiguous_index + 1 < next_index + limit {
+            break;
         }
     }
 
@@ -713,3 +728,4 @@ fn opt_i64_to_u64(value: Option<i64>, label: &'static str) -> Result<Option<u64>
         None => Ok(None),
     }
 }
+const ADVANCE_BATCH_SIZE: i64 = 512;
