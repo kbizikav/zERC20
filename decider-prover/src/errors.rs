@@ -8,12 +8,10 @@ pub enum ProverError {
     Config(String),
     #[error("I/O error: {0}")]
     Io(#[from] std::io::Error),
-    #[error("redis error: {0}")]
-    Redis(#[from] deadpool_redis::redis::RedisError),
-    #[error("redis pool error: {0}")]
-    RedisPool(#[from] deadpool_redis::PoolError),
-    #[error("redis pool creation error: {0}")]
-    RedisPoolCreation(#[from] deadpool_redis::CreatePoolError),
+    #[error("queue error: {0}")]
+    Queue(#[from] pgmq::PgmqError),
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
     #[error("serialization error: {0}")]
     Serialization(#[from] serde_json::Error),
     #[error("nova error: {0}")]

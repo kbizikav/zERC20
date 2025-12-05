@@ -56,8 +56,8 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         uint32 hubEid;
         address endpoint;
         address delegate; // optional
-        address minter; // optional
         address owner; // optional
+        uint8 tokenDecimals;
     }
 
     struct VerifierArgs {
@@ -93,8 +93,11 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         cfg.hubEid = uint32(vm.envUint("HUB_EID"));
         cfg.endpoint = vm.envAddress("VERIFIER_ENDPOINT");
         cfg.delegate = vm.envOr("VERIFIER_DELEGATE", address(0));
-        cfg.minter = vm.envOr("ZERC20_MINTER", address(0));
         cfg.owner = vm.envOr("TOKEN_OWNER", address(0));
+        uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
+        require(decimals <= type(uint8).max, "tokenDecimals too large");
+        require(decimals >= 6, "tokenDecimals below sharedDecimals");
+        cfg.tokenDecimals = uint8(decimals);
 
         require(bytes(cfg.tokenName).length != 0, "tokenName missing");
         require(bytes(cfg.tokenSymbol).length != 0, "tokenSymbol missing");
@@ -110,19 +113,16 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         if (cfg.delegate == address(0)) {
             cfg.delegate = deployer;
         }
-        if (cfg.minter == address(0)) {
-            cfg.minter = deployer;
-        }
 
         address owner = cfg.owner == address(0) ? deployer : cfg.owner;
         address delegate = cfg.delegate;
-        address minter = cfg.minter;
         uint32 hubEid = cfg.hubEid;
         address endpoint = cfg.endpoint;
         bytes32 baseSalt = _loadBaseSalt();
 
         zERC20 tokenImpl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}();
-        bytes memory tokenInit = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
+        bytes memory tokenInit =
+            abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, endpoint, cfg.tokenDecimals));
         ERC1967Proxy tokenProxy =
             new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(tokenImpl), tokenInit);
         zERC20 token = zERC20(address(tokenProxy));
@@ -141,9 +141,6 @@ contract DeployVerifierAndToken is DeterministicDeployer {
 
         token.setVerifier(address(verifier));
         console2.log("  verifier set to", address(verifier));
-
-        token.setMinter(minter);
-        console2.log("  minter set to", minter);
 
         vm.stopBroadcast();
     }

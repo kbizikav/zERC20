@@ -10,6 +10,7 @@ import {IWithdrawVerifier} from "./interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "./utils/GeneralRecipientLib.sol";
 import {OAppUpgradeable} from "./utils/layerzero/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /**
  * @title Verifier
@@ -19,6 +20,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
  */
 contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     using GeneralRecipientLib for GeneralRecipientLib.GeneralRecipient;
+    using SlotDerivation for string;
 
     event HashChainReserved(uint64 indexed index, uint256 hashChain);
     event TransferRootProved(uint64 indexed index, uint256 root);
@@ -26,7 +28,14 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     event GlobalRootSaved(uint64 indexed aggSeq, uint256 root);
     event EmergencyTriggered(uint64 indexed index, uint256 root1, uint256 root2);
     event DeactivateEmergency();
-    event Teleport(address indexed to, uint256 value);
+    event Teleport(
+        address indexed to,
+        uint256 value,
+        bool isGlobal,
+        uint64 rootHint,
+        uint256 transferRoot,
+        GeneralRecipientLib.GeneralRecipient gr
+    );
     event VerifiersSet(
         address rootDecider,
         address withdrawGlobalDecider,
@@ -58,31 +67,90 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     uint256 constant INITIAL_TRANSFER_ROOT =
         8687547638004116013653730449839507042090717944911454416140763808366589487233;
 
-    address private _token;
-    uint32 private _hubEid;
+    /// @custom:storage-location erc7201:zerc20.storage.verifier
+    struct VerifierStorage {
+        address token;
+        uint32 hubEid;
+        address rootDecider;
+        address withdrawGlobalDecider;
+        address withdrawLocalDecider;
+        address singleWithdrawGlobalVerifier;
+        address singleWithdrawLocalVerifier;
+        uint64 latestReservedIndex;
+        uint64 latestProvedIndex;
+        uint64 latestAggSeq;
+        uint64 latestRelayedIndex;
+        mapping(uint64 => uint256) reservedHashChains;
+        mapping(uint64 => uint256) provedTransferRoots;
+        mapping(uint64 => uint256) globalTransferRoots;
+        mapping(uint256 => uint256) totalTeleported;
+    }
 
-    address public rootDecider;
-    address public withdrawGlobalDecider;
-    address public withdrawLocalDecider;
-    address public singleWithdrawGlobalVerifier;
-    address public singleWithdrawLocalVerifier;
-
-    uint64 public latestReservedIndex;
-    uint64 public latestProvedIndex;
-    uint64 public latestAggSeq;
-    uint64 public latestRelayedIndex;
-
-    mapping(uint64 => uint256) public reservedHashChains;
-    mapping(uint64 => uint256) public provedTransferRoots;
-    mapping(uint64 => uint256) public globalTransferRoots;
-    mapping(uint256 => uint256) public totalTeleported;
+    function _getVerifierStorage() private pure returns (VerifierStorage storage $) {
+        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.verifier");
+        assembly {
+            $.slot := slot
+        }
+    }
 
     function token() public view returns (address) {
-        return _token;
+        return _getVerifierStorage().token;
     }
 
     function hubEid() public view returns (uint32) {
-        return _hubEid;
+        return _getVerifierStorage().hubEid;
+    }
+
+    function rootDecider() public view returns (address) {
+        return _getVerifierStorage().rootDecider;
+    }
+
+    function withdrawGlobalDecider() public view returns (address) {
+        return _getVerifierStorage().withdrawGlobalDecider;
+    }
+
+    function withdrawLocalDecider() public view returns (address) {
+        return _getVerifierStorage().withdrawLocalDecider;
+    }
+
+    function singleWithdrawGlobalVerifier() public view returns (address) {
+        return _getVerifierStorage().singleWithdrawGlobalVerifier;
+    }
+
+    function singleWithdrawLocalVerifier() public view returns (address) {
+        return _getVerifierStorage().singleWithdrawLocalVerifier;
+    }
+
+    function latestReservedIndex() public view returns (uint64) {
+        return _getVerifierStorage().latestReservedIndex;
+    }
+
+    function latestProvedIndex() public view returns (uint64) {
+        return _getVerifierStorage().latestProvedIndex;
+    }
+
+    function latestAggSeq() public view returns (uint64) {
+        return _getVerifierStorage().latestAggSeq;
+    }
+
+    function latestRelayedIndex() public view returns (uint64) {
+        return _getVerifierStorage().latestRelayedIndex;
+    }
+
+    function reservedHashChains(uint64 index) public view returns (uint256) {
+        return _getVerifierStorage().reservedHashChains[index];
+    }
+
+    function provedTransferRoots(uint64 index) public view returns (uint256) {
+        return _getVerifierStorage().provedTransferRoots[index];
+    }
+
+    function globalTransferRoots(uint64 index) public view returns (uint256) {
+        return _getVerifierStorage().globalTransferRoots[index];
+    }
+
+    function totalTeleported(uint256 recipient) public view returns (uint256) {
+        return _getVerifierStorage().totalTeleported[recipient];
     }
 
     constructor() {
@@ -93,7 +161,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// @param token_ zERC20 token whose hash chain is reserved/minted against.
     /// @param hubEid_ LayerZero endpoint ID of the Hub contract.
     /// @param endpoint LayerZero endpoint address (forwarded to OApp init).
-    /// @param delegate Relayer address allowed to execute LayerZero callbacks.
+    /// @param delegate Address that MUST be the contract owner; it is set as both Ownable owner and LayerZero delegate.
     /// @param rootDecider_ Nova verifier for transfer-root transitions.
     /// @param withdrawGlobalDecider_ Nova verifier for global teleport proofs.
     /// @param withdrawLocalDecider_ Nova verifier for local teleport proofs.
@@ -143,13 +211,14 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         address singleWithdrawLocalVerifier_
     ) internal onlyInitializing {
         __Pausable_init();
-        _token = token_;
-        _hubEid = hubEid_;
-        rootDecider = rootDecider_;
-        withdrawGlobalDecider = withdrawGlobalDecider_;
-        withdrawLocalDecider = withdrawLocalDecider_;
-        singleWithdrawGlobalVerifier = singleWithdrawGlobalVerifier_;
-        singleWithdrawLocalVerifier = singleWithdrawLocalVerifier_;
+        VerifierStorage storage $ = _getVerifierStorage();
+        $.token = token_;
+        $.hubEid = hubEid_;
+        $.rootDecider = rootDecider_;
+        $.withdrawGlobalDecider = withdrawGlobalDecider_;
+        $.withdrawLocalDecider = withdrawLocalDecider_;
+        $.singleWithdrawGlobalVerifier = singleWithdrawGlobalVerifier_;
+        $.singleWithdrawLocalVerifier = singleWithdrawLocalVerifier_;
 
         emit VerifiersSet(
             rootDecider_,
@@ -159,8 +228,8 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
             singleWithdrawLocalVerifier_
         );
 
-        provedTransferRoots[0] = INITIAL_TRANSFER_ROOT;
-        latestRelayedIndex = 0;
+        $.provedTransferRoots[0] = INITIAL_TRANSFER_ROOT;
+        $.latestRelayedIndex = 0;
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
@@ -174,11 +243,12 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// @return index Reserved transfer index copied from zERC20.
     /// @return hashChain SHA-256 hash chain committed up to `index - 1`.
     function reserveHashChain() external returns (uint64 index, uint256 hashChain) {
-        IzERC20 tokenContract = IzERC20(_token);
+        VerifierStorage storage $ = _getVerifierStorage();
+        IzERC20 tokenContract = IzERC20($.token);
         uint64 index_ = uint64(tokenContract.index());
         uint256 hashChain_ = tokenContract.hashChain();
-        reservedHashChains[index_] = hashChain_;
-        latestReservedIndex = index_;
+        $.reservedHashChains[index_] = hashChain_;
+        $.latestReservedIndex = index_;
         emit HashChainReserved(index_, hashChain_);
         return (index_, hashChain_);
     }
@@ -194,24 +264,25 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         uint64 newIndex = uint64(proof_[4]);
         uint256 newHashChain = proof_[5];
         uint256 newRoot = proof_[6];
-        require(IRootDecider(rootDecider).verifyOpaqueNovaProof(proof_), InvalidProof());
+        VerifierStorage storage $ = _getVerifierStorage();
+        require(IRootDecider($.rootDecider).verifyOpaqueNovaProof(proof_), InvalidProof());
         require(oldRoot != 0, OldRootZero(oldIndex));
-        uint256 expectedOldRoot = provedTransferRoots[uint64(oldIndex)];
+        uint256 expectedOldRoot = $.provedTransferRoots[uint64(oldIndex)];
         require(expectedOldRoot == oldRoot, OldRootMismatch(oldIndex, expectedOldRoot, oldRoot));
 
-        uint256 expectedHashChain = reservedHashChains[newIndex];
+        uint256 expectedHashChain = $.reservedHashChains[newIndex];
         require(expectedHashChain != 0, ReserveHashChainNotFound(newIndex));
         require(expectedHashChain == newHashChain, NewHashChainMismatch(newIndex, expectedHashChain, newHashChain));
-        uint256 existingRoot = provedTransferRoots[newIndex];
+        uint256 existingRoot = $.provedTransferRoots[newIndex];
         if (existingRoot != 0 && existingRoot != newRoot) {
             // non-determistic proof results - trigger emergency
             _pause();
             emit EmergencyTriggered(newIndex, existingRoot, newRoot);
             return;
         }
-        provedTransferRoots[newIndex] = newRoot;
-        if (newIndex > latestProvedIndex) {
-            latestProvedIndex = newIndex;
+        $.provedTransferRoots[newIndex] = newRoot;
+        if (newIndex > $.latestProvedIndex) {
+            $.latestProvedIndex = newIndex;
         }
         emit TransferRootProved(newIndex, newRoot);
     }
@@ -242,7 +313,8 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         require(proof_[6] == recipient, FinalRecipientMismatch(proof_[6], recipient));
         proof_[7]; // lastLeafIndex is unused
         uint256 totalValue = proof_[8];
-        address withdrawDecider = isGlobal ? withdrawGlobalDecider : withdrawLocalDecider;
+        VerifierStorage storage $ = _getVerifierStorage();
+        address withdrawDecider = isGlobal ? $.withdrawGlobalDecider : $.withdrawLocalDecider;
         require(IWithdrawDecider(withdrawDecider).verifyOpaqueNovaProof(proof_), InvalidProof());
 
         _teleport(isGlobal, rootHint, transferRoot, recipient, gr, totalValue);
@@ -263,13 +335,11 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         // decode and verify proof
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC, uint256[3] memory pubSignals) =
             abi.decode(proof, (uint256[2], uint256[2][2], uint256[2], uint256[3]));
-        uint256 transferRoot = pubSignals[0];
-        uint256 recipient = pubSignals[1];
-        uint256 value = pubSignals[2];
-        address singleWithdrawVerifier = isGlobal ? singleWithdrawGlobalVerifier : singleWithdrawLocalVerifier;
+        VerifierStorage storage $ = _getVerifierStorage();
+        address singleWithdrawVerifier = isGlobal ? $.singleWithdrawGlobalVerifier : $.singleWithdrawLocalVerifier;
         require(IWithdrawVerifier(singleWithdrawVerifier).verifyProof(pA, pB, pC, pubSignals), InvalidProof());
 
-        _teleport(isGlobal, rootHint, transferRoot, recipient, gr, value);
+        _teleport(isGlobal, rootHint, pubSignals[0], pubSignals[1], gr, pubSignals[2]);
     }
 
     /// @dev Shared logic for Nova and Groth16 teleports:
@@ -284,8 +354,9 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         GeneralRecipientLib.GeneralRecipient memory gr,
         uint256 value
     ) internal {
+        VerifierStorage storage $ = _getVerifierStorage();
         // verify root
-        uint256 expectedRoot = isGlobal ? globalTransferRoots[rootHint] : provedTransferRoots[rootHint];
+        uint256 expectedRoot = isGlobal ? $.globalTransferRoots[rootHint] : $.provedTransferRoots[rootHint];
         require(expectedRoot != 0, ExpectedRootZero(rootHint));
         require(expectedRoot == transferRoot, TransferRootMismatch(expectedRoot, transferRoot));
 
@@ -295,13 +366,13 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         uint64 localChainId = uint64(block.chainid);
         require(gr.chainId == localChainId, InvalidRecipientChainId(gr.chainId, localChainId));
 
-        uint256 currentTotal = totalTeleported[recipient];
+        uint256 currentTotal = $.totalTeleported[recipient];
         require(value > currentTotal, NothingToWithdraw(currentTotal, value));
         uint256 diff = value - currentTotal;
-        totalTeleported[recipient] += diff;
+        $.totalTeleported[recipient] += diff;
         address recipientAddr = address(uint160(uint256(gr.recipient)));
-        IzERC20(_token).teleport(recipientAddr, diff);
-        emit Teleport(recipientAddr, diff);
+        IzERC20($.token).teleport(recipientAddr, diff);
+        emit Teleport(recipientAddr, diff, isGlobal, rootHint, transferRoot, gr);
     }
 
     /// -----------------------------------------------------------------------
@@ -317,33 +388,36 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         whenNotPaused
         returns (MessagingReceipt memory receipt)
     {
-        uint64 index = latestProvedIndex;
-        uint256 root = provedTransferRoots[index];
+        VerifierStorage storage $ = _getVerifierStorage();
+        uint64 index = $.latestProvedIndex;
+        uint256 root = $.provedTransferRoots[index];
         if (root == 0) revert NoProvedRoot();
 
         bytes memory payload = abi.encode(root, index);
-        MessagingFee memory quotedFee = _quote(_hubEid, payload, options, false);
+        MessagingFee memory quotedFee = _quote($.hubEid, payload, options, false);
         if (msg.value < quotedFee.nativeFee) {
             revert InsufficientMsgValue(quotedFee.nativeFee, msg.value);
         }
 
         MessagingFee memory fee = MessagingFee({nativeFee: msg.value, lzTokenFee: quotedFee.lzTokenFee});
-        receipt = _lzSend(_hubEid, payload, options, fee, msg.sender);
+        receipt = _lzSend($.hubEid, payload, options, fee, msg.sender);
         emit TransferRootRelayed(index, root, abi.encodePacked(receipt.guid));
 
-        latestRelayedIndex = index;
+        $.latestRelayedIndex = index;
     }
 
     /// @notice Quotes the native fee required to relay a TransferRoot payload to the Hub.
     /// @param options LayerZero execution parameters mirrored from `relayTransferRoot`.
     function quoteRelay(bytes calldata options) external view returns (MessagingFee memory fee) {
         bytes memory payload = abi.encode(uint256(0), uint64(0));
-        return _quote(_hubEid, payload, options, false);
+        VerifierStorage storage $ = _getVerifierStorage();
+        return _quote($.hubEid, payload, options, false);
     }
 
     /// @notice Returns `true` when every proved root has been relayed to the Hub (`latestProvedIndex == latestRelayedIndex`).
     function isUpToDate() public view returns (bool) {
-        return latestProvedIndex == latestRelayedIndex;
+        VerifierStorage storage $ = _getVerifierStorage();
+        return $.latestProvedIndex == $.latestRelayedIndex;
     }
 
     /// -----------------------------------------------------------------------
@@ -355,16 +429,17 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         internal
         override
     {
-        require(origin.srcEid == _hubEid, InvalidHubSource(origin.srcEid));
+        VerifierStorage storage $ = _getVerifierStorage();
+        require(origin.srcEid == $.hubEid, InvalidHubSource(origin.srcEid));
 
         (uint256 globalRoot, uint64 aggSeq_) = abi.decode(payload, (uint256, uint64));
-        if (globalTransferRoots[aggSeq_] == 0) {
-            globalTransferRoots[aggSeq_] = globalRoot;
+        if ($.globalTransferRoots[aggSeq_] == 0) {
+            $.globalTransferRoots[aggSeq_] = globalRoot;
             emit GlobalRootSaved(aggSeq_, globalRoot);
         }
 
-        if (aggSeq_ > latestAggSeq) {
-            latestAggSeq = aggSeq_;
+        if (aggSeq_ > $.latestAggSeq) {
+            $.latestAggSeq = aggSeq_;
         }
     }
 
@@ -403,17 +478,18 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         ) {
             revert ZeroAddress();
         }
-        rootDecider = newRootDecider;
-        withdrawGlobalDecider = newWithdrawGlobalDecider;
-        withdrawLocalDecider = newWithdrawLocalDecider;
-        singleWithdrawGlobalVerifier = newSingleWithdrawGlobalVerifier;
-        singleWithdrawLocalVerifier = newSingleWithdrawLocalVerifier;
+        VerifierStorage storage $ = _getVerifierStorage();
+        $.rootDecider = newRootDecider;
+        $.withdrawGlobalDecider = newWithdrawGlobalDecider;
+        $.withdrawLocalDecider = newWithdrawLocalDecider;
+        $.singleWithdrawGlobalVerifier = newSingleWithdrawGlobalVerifier;
+        $.singleWithdrawLocalVerifier = newSingleWithdrawLocalVerifier;
         emit VerifiersSet(
-            rootDecider,
-            withdrawGlobalDecider,
-            withdrawLocalDecider,
-            singleWithdrawGlobalVerifier,
-            singleWithdrawLocalVerifier
+            $.rootDecider,
+            $.withdrawGlobalDecider,
+            $.withdrawLocalDecider,
+            $.singleWithdrawGlobalVerifier,
+            $.singleWithdrawLocalVerifier
         );
     }
 }

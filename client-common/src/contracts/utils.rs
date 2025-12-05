@@ -1,4 +1,5 @@
 use alloy::{
+    consensus::Transaction as _,
     contract::{CallBuilder, CallDecoder},
     network::{Ethereum, EthereumWallet},
     primitives::{Address, B256, U256},
@@ -17,7 +18,9 @@ use alloy::{
     },
 };
 use anyhow::Context;
+use hex;
 use reqwest::Url;
+use std::str::FromStr;
 use tower::ServiceBuilder;
 
 use crate::contracts::{ContractError, ContractResult};
@@ -105,15 +108,25 @@ where
     D: CallDecoder,
 {
     let call = if use_legacy {
-        let gas_price = provider
-            .get_gas_price()
-            .await
-            .map_err(|err| {
-                ContractError::transport("fetching gas price for legacy transfer", err)
-            })?;
+        let gas_price = provider.get_gas_price().await.map_err(|err| {
+            ContractError::transport("fetching gas price for legacy transfer", err)
+        })?;
         call.gas_price(gas_price)
     } else {
         call
     };
     call.send().await.map_err(ContractError::from)
+}
+
+pub async fn fetch_tx_input(
+    provider: &NormalProvider,
+    tx_hash: &str,
+) -> ContractResult<Option<String>> {
+    let hash =
+        B256::from_str(tx_hash).map_err(|err| ContractError::transport("parsing tx hash", err))?;
+    let tx = provider
+        .get_transaction_by_hash(hash)
+        .await
+        .map_err(|err| ContractError::transport("fetching transaction by hash", err))?;
+    Ok(tx.map(|t| format!("0x{}", hex::encode(t.input().as_ref()))))
 }

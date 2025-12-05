@@ -3,11 +3,12 @@ use std::num::NonZeroU64;
 
 use alloy::primitives::U256;
 use api_types::indexer::IndexedEvent;
-use sqlx::{FromRow, PgPool, Postgres, Transaction};
+use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use thiserror::Error;
 
 use client_common::contracts::{ContractError, z_erc20::ZErc20Contract};
 use client_common::tokens::TokenMetadata;
+use log::warn;
 
 pub const BLOCK_SPAN_RECOMMENDED: u64 = 5_000;
 pub const FORWARD_SCAN_OVERLAP_RECOMMENDED: u64 = 10;
@@ -166,16 +167,35 @@ impl EventIndexer {
             return Ok(());
         }
 
-        let block_span = self.config.block_span().get();
+        let max_block_span = self.config.block_span().get();
         let forward_overlap = self.config.forward_scan_overlap();
         let mut from = from_block;
+        let mut current_span = max_block_span;
+
         while from <= to_block {
-            let to = to_block.min(from.saturating_add(block_span - 1));
-            let fetched = self
-                .contract
-                .get_indexed_transfer_events(from, to)
-                .await
-                .map_err(|err| EventIndexerError::contract("get_indexed_transfer_events", err))?;
+            let to = to_block.min(from.saturating_add(current_span - 1));
+            let fetched = match self.contract.get_indexed_transfer_events(from, to).await {
+                Ok(events) => events,
+                Err(err) => {
+                    if is_invalid_block_range_error(&err) && current_span > 1 {
+                        let previous_span = current_span;
+                        current_span = (current_span / 2).max(1);
+                        warn!(
+                            "provider rejected block range [{from}, {to}] for token_id {} (contract {}); reducing span from {} to {}",
+                            self.partitions.token_id(),
+                            self.contract.address(),
+                            previous_span,
+                            current_span,
+                        );
+                        continue;
+                    }
+
+                    return Err(EventIndexerError::contract(
+                        "get_indexed_transfer_events",
+                        err,
+                    ));
+                }
+            };
 
             if !fetched.is_empty() {
                 insert_events(&self.pool, self.partitions.token_id(), &fetched).await?;
@@ -183,6 +203,10 @@ impl EventIndexer {
 
             if to == to_block {
                 break;
+            }
+
+            if current_span < max_block_span {
+                current_span = current_span.saturating_mul(2).min(max_block_span);
             }
 
             let next_from = to.saturating_add(1);
@@ -263,6 +287,14 @@ struct EventSummaryRow {
     eth_block_number: i64,
 }
 
+struct PreparedEvent {
+    index_i64: i64,
+    block_i64: i64,
+    from: Vec<u8>,
+    to: Vec<u8>,
+    value_bytes: [u8; VALUE_BYTES],
+}
+
 #[derive(Clone, Debug)]
 struct EventIndexerPartitions {
     token_id: i64,
@@ -314,6 +346,13 @@ impl EventIndexerPartitions {
 
         Ok(())
     }
+}
+
+fn is_invalid_block_range_error(err: &ContractError) -> bool {
+    let message = err.to_string().to_ascii_lowercase();
+    message.contains("invalid block range")
+        || message.contains("block range params")
+        || message.contains("block range is too large")
 }
 
 async fn ensure_token_record(pool: &PgPool, metadata: &TokenMetadata) -> Result<i64> {
@@ -471,28 +510,43 @@ async fn advance_contiguous_index(pool: &PgPool, token_id: i64) -> Result<Indexe
     let mut advanced = false;
     loop {
         let next_index = contiguous_index + 1;
+        let limit = ADVANCE_BATCH_SIZE.max(1);
         let events_sql = format!(
             r#"
             SELECT event_index, eth_block_number
             FROM {events_table}
-            WHERE token_id = $1 AND event_index = $2
+            WHERE token_id = $1 AND event_index >= $2
+            ORDER BY event_index ASC
+            LIMIT $3
             "#,
             events_table = EVENTS_TABLE,
         );
-        let next_row = sqlx::query_as::<_, EventSummaryRow>(&events_sql)
+        let rows = sqlx::query_as::<_, EventSummaryRow>(&events_sql)
             .bind(token_id)
             .bind(next_index)
-            .fetch_optional(&mut *tx)
+            .bind(limit)
+            .fetch_all(&mut *tx)
             .await
-            .map_err(|err| EventIndexerError::database("probe next contiguous event", err))?;
+            .map_err(|err| EventIndexerError::database("probe next contiguous events batch", err))?;
 
-        match next_row {
-            Some(event_row) => {
-                contiguous_index = event_row.event_index;
-                contiguous_block = Some(event_row.eth_block_number);
-                advanced = true;
+        if rows.is_empty() {
+            break;
+        }
+
+        for event_row in rows {
+            let expected = contiguous_index + 1;
+            if event_row.event_index != expected {
+                // gap encountered; stop advancing
+                break;
             }
-            None => break,
+            contiguous_index = event_row.event_index;
+            contiguous_block = Some(event_row.eth_block_number);
+            advanced = true;
+        }
+
+        // if we didn't fill the batch, no need to loop further
+        if contiguous_index + 1 < next_index + limit {
+            break;
         }
     }
 
@@ -592,52 +646,50 @@ async fn insert_events(pool: &PgPool, token_id: i64, events: &[IndexedEvent]) ->
         return Ok(());
     }
 
+    let mut prepared = Vec::with_capacity(events.len());
+    for event in events {
+        let index_i64 = to_i64(event.event_index, "event index")?;
+        let block_i64 = to_i64(event.eth_block_number, "event block number")?;
+        prepared.push(PreparedEvent {
+            index_i64,
+            block_i64,
+            from: event.from.as_slice().to_vec(),
+            to: event.to.as_slice().to_vec(),
+            value_bytes: u256_to_bytes(&event.value),
+        });
+    }
+
     let mut tx = pool
         .begin()
         .await
         .map_err(|err| EventIndexerError::database("begin events insert transaction", err))?;
 
-    let insert_sql = format!(
-        r#"
-        INSERT INTO {events_table} (
-            token_id,
-            event_index,
-            from_address,
-            to_address,
-            value,
-            eth_block_number
-        )
-        VALUES ($1, $2, $3, $4, $5, $6)
-        ON CONFLICT (token_id, event_index) DO UPDATE
-        SET from_address = EXCLUDED.from_address,
-            to_address = EXCLUDED.to_address,
-            value = EXCLUDED.value,
-            eth_block_number = EXCLUDED.eth_block_number
-        "#,
+    let mut builder = QueryBuilder::<Postgres>::new(format!(
+        "INSERT INTO {events_table} (token_id, event_index, from_address, to_address, value, eth_block_number) ",
         events_table = EVENTS_TABLE,
+    ));
+    builder.push("VALUES ");
+    builder.push_values(&prepared, |mut b, event| {
+        b.push_bind(token_id);
+        b.push_bind(event.index_i64);
+        b.push_bind(event.from.as_slice());
+        b.push_bind(event.to.as_slice());
+        b.push_bind(event.value_bytes.as_slice());
+        b.push_bind(event.block_i64);
+    });
+    builder.push(
+        " ON CONFLICT (token_id, event_index) DO UPDATE \
+         SET from_address = EXCLUDED.from_address, \
+             to_address = EXCLUDED.to_address, \
+             value = EXCLUDED.value, \
+             eth_block_number = EXCLUDED.eth_block_number",
     );
 
-    for event in events {
-        let index = to_i64(event.event_index, "event index")?;
-        let block = to_i64(event.eth_block_number, "event block number")?;
-        let from = event.from.as_slice();
-        let to = event.to.as_slice();
-        let value_bytes = u256_to_bytes(&event.value);
-
-        sqlx::query(&insert_sql)
-            .bind(token_id)
-            .bind(index)
-            .bind(from)
-            .bind(to)
-            .bind(value_bytes.as_slice())
-            .bind(block)
-            .execute(&mut *tx)
-            .await
-            .map_err(|err| EventIndexerError::InsertEvent {
-                index: event.event_index,
-                source: err,
-            })?;
-    }
+    builder
+        .build()
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| EventIndexerError::database("insert events batch", err))?;
 
     tx.commit()
         .await
@@ -676,3 +728,4 @@ fn opt_i64_to_u64(value: Option<i64>, label: &'static str) -> Result<Option<u64>
         None => Ok(None),
     }
 }
+const ADVANCE_BATCH_SIZE: i64 = 512;

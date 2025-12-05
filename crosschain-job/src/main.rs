@@ -1,4 +1,4 @@
-use std::{fs, path::Path, str::FromStr, time::Duration};
+use std::{collections::HashMap, env, path::Path, str::FromStr, time::Duration};
 
 use alloy::{
     network::Ethereum,
@@ -13,7 +13,7 @@ use client_common::{
         utils::{get_provider, get_provider_with_fallback},
         verifier::VerifierContract,
     },
-    tokens::{HubEntry, TokenEntry, TokensFile},
+    tokens::{HubEntry, TokenEntry, load_tokens_from_compressed, load_tokens_from_path},
 };
 use log::{error, info, warn};
 use tokio::time::{self, MissedTickBehavior};
@@ -208,10 +208,11 @@ struct BroadcastJob {
     interval: Duration,
     target_eids: Vec<u32>,
     fee_buffer_bps: u64,
+    last_broadcast_root: Option<U256>,
 }
 
 impl BroadcastJob {
-    async fn run(self) {
+    async fn run(mut self) {
         if let Err(err) = self.execute_once().await {
             error!("initial Hub.broadcast failed: {err:?}");
         }
@@ -225,20 +226,24 @@ impl BroadcastJob {
         }
     }
 
-    async fn execute_once(&self) -> Result<()> {
+    async fn execute_once(&mut self) -> Result<()> {
         if self.target_eids.is_empty() {
             warn!("skipping Hub.broadcast because no target EIDs were discovered");
             return Ok(());
         }
 
-        let up_to_date = self
+        let current_root = self
             .contract
-            .is_up_to_date()
+            .current_aggregation_root()
             .await
-            .context("failed to query hub freshness")?;
-        if up_to_date {
-            info!("skipping Hub.broadcast because the aggregation snapshot is already up to date");
-            return Ok(());
+            .context("failed to compute current aggregation root")?;
+        if let Some(last_root) = self.last_broadcast_root {
+            if last_root == current_root {
+                info!(
+                    "skipping Hub.broadcast because aggregation root {current_root:#x} was already relayed"
+                );
+                return Ok(());
+            }
         }
 
         let options = Bytes::copy_from_slice(&self.lz_options);
@@ -272,11 +277,13 @@ impl BroadcastJob {
 
         if let Some(event) = parse_broadcast_receipt(&self.contract, &receipt) {
             info!(
-                "Hub.broadcast confirmed (agg_seq={}, snapshot_len={})",
-                event.agg_seq, event.snapshot_len
+                "Hub.broadcast confirmed (agg_seq={}, snapshot_len={}, root={:#x})",
+                event.agg_seq, event.snapshot_len, event.root
             );
+            self.last_broadcast_root = Some(event.root);
         } else {
             warn!("Hub.broadcast receipt did not contain AggregationRootUpdated event");
+            self.last_broadcast_root = Some(current_root);
         }
 
         Ok(())
@@ -286,6 +293,7 @@ impl BroadcastJob {
 struct BroadcastReceiptInfo {
     agg_seq: u64,
     snapshot_len: usize,
+    root: U256,
 }
 
 fn parse_broadcast_receipt(
@@ -296,6 +304,7 @@ fn parse_broadcast_receipt(
         Ok(event) => Some(BroadcastReceiptInfo {
             agg_seq: event.agg_seq,
             snapshot_len: event.snapshot.len(),
+            root: event.root,
         }),
         Err(_) => None,
     }
@@ -317,7 +326,10 @@ async fn main() -> Result<()> {
 
     let (tokens, hub_entry) = load_tokens_config(&cli.tokens_file_path)?;
     if tokens.is_empty() {
-        bail!("no tokens configured in {}", cli.tokens_file_path.display());
+        bail!(
+            "no tokens configured; set TOKENS_COMPRESSED or populate {}",
+            cli.tokens_file_path.display()
+        );
     }
 
     let relay_options = cli.relay_options.into_vec();
@@ -328,8 +340,8 @@ async fn main() -> Result<()> {
     for token in &tokens {
         let provider = build_provider(&token.rpc_urls)
             .with_context(|| format!("failed to construct provider for token '{}'", token.label))?;
-        let contract = VerifierContract::new(provider, token.verifier_address)
-            .with_legacy_tx(token.legacy_tx);
+        let contract =
+            VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
         relay_jobs.push(RelayJob {
             label: token.label.clone(),
             chain_id: token.chain_id,
@@ -358,6 +370,7 @@ async fn main() -> Result<()> {
                 interval: Duration::from_secs(cli.broadcast_interval_secs.max(1)),
                 target_eids,
                 fee_buffer_bps: cli.broadcast_fee_buffer_bps,
+                last_broadcast_root: None,
             })
         }
         None => {
@@ -377,6 +390,7 @@ async fn main() -> Result<()> {
         }
 
         if let Some(job) = broadcast_job.take() {
+            let mut job = job;
             job.execute_once()
                 .await
                 .with_context(|| "Hub.broadcast execution failed in --once mode".to_string())?;
@@ -411,15 +425,38 @@ async fn main() -> Result<()> {
 }
 
 async fn resolve_target_eids(hub: &HubContract, tokens: &[TokenEntry]) -> Result<Vec<u32>> {
-    let mut eids = Vec::with_capacity(tokens.len());
-    for (index, token) in tokens.iter().enumerate() {
-        let info = hub
-            .token_info(index as u64)
-            .await
-            .with_context(|| format!("failed to query hub token info at index {index}"))?;
-        log_token_info_mismatch(token, &info);
-        eids.push(info.eid);
+    let hub_infos = hub
+        .token_infos()
+        .await
+        .context("failed to query hub token infos")?;
+
+    let mut infos_by_chain = HashMap::with_capacity(hub_infos.len());
+    for info in hub_infos {
+        let chain_id = info.chain_id;
+        if infos_by_chain.insert(chain_id, info).is_some() {
+            warn!(
+                "hub reports duplicate token info entries for chain_id {}",
+                chain_id
+            );
+        }
     }
+
+    let mut eids = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        match infos_by_chain.get(&token.chain_id) {
+            Some(info) => {
+                log_token_info_mismatch(token, info);
+                eids.push(info.eid);
+            }
+            None => {
+                warn!(
+                    "token '{}' (chain {}) missing from hub token infos; skipping broadcast target",
+                    token.label, token.chain_id
+                );
+            }
+        }
+    }
+
     Ok(eids)
 }
 
@@ -454,19 +491,28 @@ fn build_provider(rpc_urls: &[String]) -> Result<client_common::contracts::utils
 }
 
 fn load_tokens_config(path: &Path) -> Result<(Vec<TokenEntry>, Option<HubEntry>)> {
-    let contents = fs::read_to_string(path)
-        .with_context(|| format!("failed to read tokens config {}", path.display()))?;
-    let mut tokens_file: TokensFile =
-        serde_json::from_str(&contents).context("failed to parse tokens config JSON")?;
-    tokens_file
-        .normalize()
-        .with_context(|| format!("invalid tokens config {}", path.display()))?;
-    for token in tokens_file.tokens.iter_mut() {
-        token
-            .normalize()
-            .with_context(|| format!("invalid token entry '{}'", token.label))?;
+    if let Some(tokens) = load_tokens_config_from_env()? {
+        return Ok(tokens);
     }
+    let tokens_file = load_tokens_from_path(path)?;
     Ok((tokens_file.tokens, tokens_file.hub))
+}
+
+fn load_tokens_config_from_env() -> Result<Option<(Vec<TokenEntry>, Option<HubEntry>)>> {
+    match env::var("TOKENS_COMPRESSED") {
+        Ok(value) => {
+            if value.trim().is_empty() {
+                bail!("TOKENS_COMPRESSED is set but empty");
+            }
+            let tokens_file = load_tokens_from_compressed(&value)
+                .context("failed to parse TOKENS_COMPRESSED payload")?;
+            Ok(Some((tokens_file.tokens, tokens_file.hub)))
+        }
+        Err(env::VarError::NotPresent) => Ok(None),
+        Err(env::VarError::NotUnicode(_)) => {
+            bail!("TOKENS_COMPRESSED contains invalid unicode")
+        }
+    }
 }
 
 fn parse_private_key(input: &str) -> Result<B256> {

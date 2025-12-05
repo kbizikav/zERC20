@@ -25,8 +25,9 @@ contract DeployLocal is DeterministicDeployer {
         uint64 verifierChainId;
         address hubDelegate;
         address verifierDelegate;
-        address minter;
+        address liquidityManager;
         address tokenOwner;
+        uint8 tokenDecimals;
         bool shareEndpoint;
         bool registerOnHub;
         bool wirePeers;
@@ -69,7 +70,7 @@ contract DeployLocal is DeterministicDeployer {
         _configureEndpoint(verifierEndpoint, cfg.hubEid, sendLibAddr);
 
         Hub hub = _deployHub(cfg, deployer, hubEndpoint, baseSalt);
-        zERC20 token = _deployToken(cfg, deployer, baseSalt);
+        zERC20 token = _deployToken(cfg, deployer, verifierEndpoint, baseSalt);
         Verifier verifier = _deployVerifierSuite(cfg, deployer, verifierEndpoint, token, baseSalt);
 
         _finalizeDeployment(cfg, deployer, hub, token, verifier);
@@ -87,8 +88,12 @@ contract DeployLocal is DeterministicDeployer {
         cfg.verifierChainId = uint64(vm.envOr("VERIFIER_CHAIN_ID", uint256(block.chainid)));
         cfg.hubDelegate = vm.envOr("HUB_DELEGATE", address(0));
         cfg.verifierDelegate = vm.envOr("VERIFIER_DELEGATE", address(0));
-        cfg.minter = vm.envOr("ZERC20_MINTER", address(0));
+        cfg.liquidityManager = vm.envOr("LIQUIDITY_MANAGER", address(0));
         cfg.tokenOwner = vm.envOr("TOKEN_OWNER", address(0));
+        uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
+        require(decimals <= type(uint8).max, "tokenDecimals too large");
+        require(decimals >= 6, "tokenDecimals below sharedDecimals");
+        cfg.tokenDecimals = uint8(decimals);
         cfg.shareEndpoint = vm.envOr("SHARE_ENDPOINTS", uint256(0)) != 0;
         cfg.registerOnHub = vm.envOr("REGISTER_ON_HUB", uint256(1)) != 0;
         cfg.wirePeers = vm.envOr("WIRE_PEERS", uint256(1)) != 0;
@@ -117,10 +122,15 @@ contract DeployLocal is DeterministicDeployer {
         console2.log("Hub proxy deployed at", address(hub));
     }
 
-    function _deployToken(Config memory cfg, address deployer, bytes32 baseSalt) private returns (zERC20 token) {
+    function _deployToken(Config memory cfg, address deployer, EndpointV2Mock endpoint, bytes32 baseSalt)
+        private
+        returns (zERC20 token)
+    {
         address owner = cfg.tokenOwner == address(0) ? deployer : cfg.tokenOwner;
         zERC20 impl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}();
-        bytes memory initData = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
+        bytes memory initData = abi.encodeCall(
+            zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner, address(endpoint), cfg.tokenDecimals)
+        );
         ERC1967Proxy proxy =
             new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(impl), initData);
         token = zERC20(address(proxy));
@@ -252,9 +262,12 @@ contract DeployLocal is DeterministicDeployer {
     function _finalizeDeployment(Config memory cfg, address deployer, Hub hub, zERC20 token, Verifier verifier)
         private
     {
-        address minter = cfg.minter == address(0) ? deployer : cfg.minter;
-        token.setMinter(minter);
-        console2.log("Token minter set to", minter);
+        if (cfg.liquidityManager != address(0)) {
+            token.setMinter(cfg.liquidityManager);
+            console2.log("Token minter set to liquidity manager", cfg.liquidityManager);
+        } else {
+            console2.log("Token minter left unset (provide LIQUIDITY_MANAGER to wire)");
+        }
 
         if (cfg.wirePeers) {
             _wirePeers(cfg, hub, verifier);

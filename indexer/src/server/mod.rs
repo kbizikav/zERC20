@@ -156,52 +156,53 @@ async fn health() -> impl Responder {
 
 async fn tokens_status(state: Data<AppState>) -> actix_web::Result<Json<Vec<TokenStatusResponse>>> {
     let contexts = state.token_contexts();
-    let mut statuses = Vec::with_capacity(contexts.len());
-
-    for token in contexts {
+    let futures = contexts.into_iter().map(|token| {
+        let state = state.clone();
+        async move {
         let (reserved_index, proved_index) = fetch_onchain_indices(&token).await;
 
-        let events_synced_index = fetch_events_synced_index(&state.pool, token.id)
-            .await
-            .map_err(|err| {
-                error!(
-                    "failed to load event index for token '{}': {err:?}",
-                    token.label
-                );
-                ErrorInternalServerError("failed to load event index")
-            })?;
+        let events_synced_index = fetch_events_synced_index(&state.pool, token.id).await;
+        let tree_synced_index = fetch_tree_synced_index(&state.pool, token.id).await;
+        let ivc_generated_index = fetch_ivc_generated_index(&state.pool, token.id).await;
 
-        let tree_synced_index = fetch_tree_synced_index(&state.pool, token.id)
-            .await
-            .map_err(|err| {
-                error!(
-                    "failed to load tree index for token '{}': {err:?}",
-                    token.label
-                );
-                ErrorInternalServerError("failed to load tree index")
-            })?;
+        match (events_synced_index, tree_synced_index, ivc_generated_index) {
+            (Ok(events_synced_index), Ok(tree_synced_index), Ok(ivc_generated_index)) => {
+                Ok(TokenStatusResponse {
+                    label: token.label.clone(),
+                    chain_id: token.chain_id,
+                    token_address: token.token_address,
+                    verifier_address: token.verifier_address,
+                    onchain_reserved_index: reserved_index,
+                    onchain_proved_index: proved_index,
+                    events_synced_index,
+                    tree_synced_index,
+                    ivc_generated_index,
+                })
+            }
+            (events_res, tree_res, ivc_res) => {
+                let err = events_res.err().or_else(|| tree_res.err()).or_else(|| ivc_res.err());
+                Err((token.label.clone(), err.unwrap_or_else(|| {
+                    sqlx::Error::Protocol("unknown status error".into())
+                })))
+            }
+        }
+        }
+    });
 
-        let ivc_generated_index = fetch_ivc_generated_index(&state.pool, token.id)
-            .await
-            .map_err(|err| {
-                error!(
-                    "failed to load ivc index for token '{}': {err:?}",
-                    token.label
-                );
-                ErrorInternalServerError("failed to load ivc index")
-            })?;
+    let results = futures::future::join_all(futures).await;
 
-        statuses.push(TokenStatusResponse {
-            label: token.label.clone(),
-            chain_id: token.chain_id,
-            token_address: token.token_address,
-            verifier_address: token.verifier_address,
-            onchain_reserved_index: reserved_index,
-            onchain_proved_index: proved_index,
-            events_synced_index,
-            tree_synced_index,
-            ivc_generated_index,
-        });
+    let mut statuses = Vec::with_capacity(results.len());
+    for res in results {
+        match res {
+            Ok(status) => statuses.push(status),
+            Err((label, err)) => {
+                error!(
+                    "failed to load status indices for token '{}': {err:?}",
+                    label
+                );
+                return Err(ErrorInternalServerError("failed to load token status"));
+            }
+        }
     }
 
     Ok(Json(statuses))
@@ -463,8 +464,8 @@ async fn fetch_onchain_indices(token: &TokenContext) -> (Option<u64>, Option<u64
         }
     };
 
-    let contract = VerifierContract::new(provider, token.verifier_address)
-        .with_legacy_tx(token.legacy_tx);
+    let contract =
+        VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
 
     let reserved_index = match contract.latest_reserved_index().await {
         Ok(value) => Some(value),
@@ -556,6 +557,7 @@ fn map_merkle_error(err: DbMerkleTreeError) -> actix_web::Error {
         DbMerkleTreeError::InvalidTokenId { .. }
         | DbMerkleTreeError::InvalidHeight { .. }
         | DbMerkleTreeError::LeafIndexOverflow
+        | DbMerkleTreeError::TreeFull { .. }
         | DbMerkleTreeError::InvalidProofTargetZero
         | DbMerkleTreeError::TargetIndexTooHigh { .. }
         | DbMerkleTreeError::RetentionWindowExceeded { .. }

@@ -7,6 +7,7 @@ import {PoseidonAggregationLib} from "./utils/PoseidonAggregationLib.sol";
 import {POSEIDON_ZERO_HASH_COUNT, POSEIDON_MAX_LEAVES} from "./utils/PoseidonAggregationConfig.sol";
 import {OAppUpgradeable} from "./utils/layerzero/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /**
  * @title Hub
@@ -15,6 +16,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
  * @dev Implements the PoseidonT3 tree (height 6 / 64 leaves) and fee semantics consumed by the verifier network.
  */
 contract Hub is OAppUpgradeable, UUPSUpgradeable {
+    using SlotDerivation for string;
+
     /// -----------------------------------------------------------------------
     /// Structs / Events
     /// -----------------------------------------------------------------------
@@ -58,6 +61,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     error NativeFeeMismatch(uint256 provided, uint256 required);
     error LayerZeroTokenFeeUnsupported(uint32 eid, uint256 lzTokenFee);
     error FeeRefundFailed(uint256 amount);
+    error EmptyTargetEids();
 
     /// -----------------------------------------------------------------------
     /// Constants & Storage
@@ -67,14 +71,22 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     uint256 internal constant ZERO_HASH_COUNT = POSEIDON_ZERO_HASH_COUNT;
     uint256 internal constant TRANSFER_PAYLOAD_LENGTH = 64;
 
-    uint256[] public transferRoots;
-    uint64[] public transferTreeIndices;
-    TokenInfo[] public tokenInfos;
+    /// @custom:storage-location erc7201:zerc20.storage.hub
+    struct HubStorage {
+        uint256[] transferRoots;
+        uint64[] transferTreeIndices;
+        TokenInfo[] tokenInfos;
+        mapping(uint32 => uint256) eidToPosition; // 1-based index, 0 means unregistered
+        uint256[ZERO_HASH_COUNT] zeroHash;
+        uint64 aggSeq;
+    }
 
-    mapping(uint32 => uint256) public eidToPosition; // 1-based index, 0 means unregistered
-    uint256[ZERO_HASH_COUNT] public zeroHash;
-    uint64 public aggSeq;
-    bool public isUpToDate;
+    function _getHubStorage() private pure returns (HubStorage storage $) {
+        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.hub");
+        assembly {
+            $.slot := slot
+        }
+    }
 
     /// -----------------------------------------------------------------------
     /// Constructor
@@ -84,6 +96,9 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         _disableInitializers();
     }
 
+    /// @notice Initializes the Hub's LayerZero endpoint/delegate pairing alongside upgrade hooks.
+    /// @param endpoint LayerZero endpoint used for cross-chain messaging.
+    /// @param delegate Address that MUST become both the contract owner and LayerZero delegate so admin controls and callbacks share the same authority.
     function initialize(address endpoint, address delegate) external initializer {
         __OApp_init(endpoint, delegate);
         __UUPSUpgradeable_init();
@@ -92,13 +107,42 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
+    function transferRoots(uint256 index_) public view returns (uint256) {
+        return _getHubStorage().transferRoots[index_];
+    }
+
+    function transferTreeIndices(uint256 index_) public view returns (uint64) {
+        return _getHubStorage().transferTreeIndices[index_];
+    }
+
+    function tokenInfos(uint256 index_)
+        public
+        view
+        returns (uint64 chainId, uint32 eid, address verifier, address token)
+    {
+        TokenInfo storage info = _getHubStorage().tokenInfos[index_];
+        return (info.chainId, info.eid, info.verifier, info.token);
+    }
+
+    function eidToPosition(uint32 eid) public view returns (uint256) {
+        return _getHubStorage().eidToPosition[eid];
+    }
+
+    function zeroHash(uint256 index_) public view returns (uint256) {
+        return _getHubStorage().zeroHash[index_];
+    }
+
+    function aggSeq() public view returns (uint64) {
+        return _getHubStorage().aggSeq;
+    }
+
     /// forge-lint: disable-next-line(mixed-case-function)
     function __Hub_init() internal onlyInitializing {
+        HubStorage storage $ = _getHubStorage();
         uint256[ZERO_HASH_COUNT] memory zeroHashInit = PoseidonAggregationLib.generateZeroHashes();
         for (uint256 i = 0; i < zeroHashInit.length; ++i) {
-            zeroHash[i] = zeroHashInit[i];
+            $.zeroHash[i] = zeroHashInit[i];
         }
-        isUpToDate = true;
     }
 
     /// -----------------------------------------------------------------------
@@ -112,15 +156,15 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         if (info.verifier == address(0)) revert ZeroVerifier();
         if (info.token == address(0)) revert ZeroToken();
         if (info.chainId == 0) revert InvalidChainId();
-        if (eidToPosition[info.eid] != 0) revert TokenAlreadyRegistered(info.eid);
-        if (transferRoots.length >= MAX_LEAVES) revert HubCapacityReached();
+        HubStorage storage $ = _getHubStorage();
+        if ($.eidToPosition[info.eid] != 0) revert TokenAlreadyRegistered(info.eid);
+        if ($.transferRoots.length >= MAX_LEAVES) revert HubCapacityReached();
 
-        uint256 index = transferRoots.length;
-        transferRoots.push(0);
-        transferTreeIndices.push(0);
-        tokenInfos.push(info);
-        eidToPosition[info.eid] = index + 1;
-        isUpToDate = false;
+        uint256 index = $.transferRoots.length;
+        $.transferRoots.push(0);
+        $.transferTreeIndices.push(0);
+        $.tokenInfos.push(info);
+        $.eidToPosition[info.eid] = index + 1;
 
         emit TokenRegistered(info.eid, index, info.chainId, info.token, info.verifier);
     }
@@ -132,11 +176,12 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         if (info.token == address(0)) revert ZeroToken();
         if (info.chainId == 0) revert InvalidChainId();
 
-        uint256 pos = eidToPosition[info.eid];
+        HubStorage storage $ = _getHubStorage();
+        uint256 pos = $.eidToPosition[info.eid];
         if (pos == 0) revert TokenNotRegistered(info.eid);
 
         uint256 index = pos - 1;
-        tokenInfos[index] = info;
+        $.tokenInfos[index] = info;
 
         emit TokenUpdated(info.eid, index, info.chainId, info.token, info.verifier);
     }
@@ -146,6 +191,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// @param targetEids LayerZero endpoint IDs that must receive the global root.
     /// @param lzOptions LayerZero execution parameters (gas, native drop, etc.).
     function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
+        if (targetEids.length == 0) revert EmptyTargetEids();
         BroadcastContext memory ctx = _computeBroadcastContext();
         bytes memory options = lzOptions;
         MessagingFee[] memory fees = new MessagingFee[](targetEids.length);
@@ -154,7 +200,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         if (msg.value < totalNativeFee) revert NativeFeeMismatch(msg.value, totalNativeFee);
         uint256 refund = msg.value - totalNativeFee;
 
-        aggSeq = ctx.nextAggSeq;
+        _getHubStorage().aggSeq = ctx.nextAggSeq;
 
         for (uint256 i = 0; i < targetEids.length; ++i) {
             _lzSend(targetEids[i], ctx.payload, options, fees[i], msg.sender);
@@ -165,7 +211,6 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
             if (!success) revert FeeRefundFailed(refund);
         }
 
-        isUpToDate = true;
         emit AggregationRootUpdated(ctx.aggregationRoot, ctx.nextAggSeq, ctx.snapshot, ctx.transferTreeIndicesSnapshot);
     }
 
@@ -178,6 +223,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         view
         returns (uint256 totalNativeFee)
     {
+        if (targetEids.length == 0) revert EmptyTargetEids();
         bytes memory options = lzOptions;
         bytes memory dummyPayload = abi.encode(uint256(0), 1);
         totalNativeFee = _quoteBroadcast(targetEids, dummyPayload, options, new MessagingFee[](targetEids.length));
@@ -185,40 +231,58 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
 
     /// @notice Returns a memory copy of the registered token metadata for off-chain auditors.
     function getTokenInfos() external view returns (TokenInfo[] memory infos) {
-        uint256 len = tokenInfos.length;
+        HubStorage storage $ = _getHubStorage();
+        uint256 len = $.tokenInfos.length;
         infos = new TokenInfo[](len);
         for (uint256 i = 0; i < len; ++i) {
-            infos[i] = tokenInfos[i];
+            infos[i] = $.tokenInfos[i];
         }
     }
 
     /// @notice Exposes the latest per-token transfer roots along with their monotonically increasing tree indices.
     function getTransferRootsAndIndices() external view returns (uint256[] memory roots, uint64[] memory treeIndices) {
-        uint256 len = transferRoots.length;
+        HubStorage storage $ = _getHubStorage();
+        uint256 len = $.transferRoots.length;
         roots = new uint256[](len);
         treeIndices = new uint64[](len);
         for (uint256 i = 0; i < len; ++i) {
-            roots[i] = transferRoots[i];
-            treeIndices[i] = transferTreeIndices[i];
+            roots[i] = $.transferRoots[i];
+            treeIndices[i] = $.transferTreeIndices[i];
         }
+    }
+
+    /// @notice Computes the aggregation root for the current transfer roots without mutating state.
+    /// @dev Mirrors the tree calculation performed inside `_computeBroadcastContext` so off-chain agents can poll freshness.
+    /// @return aggregationRoot The Poseidon aggregation root derived from the latest transfer roots snapshot.
+    function currentAggregationRoot() external view returns (uint256 aggregationRoot) {
+        HubStorage storage $ = _getHubStorage();
+        uint256 len = $.transferRoots.length;
+        uint256[] memory leaves = new uint256[](len);
+        for (uint256 i = 0; i < len; ++i) {
+            leaves[i] = $.transferRoots[i];
+        }
+
+        uint256[ZERO_HASH_COUNT] memory zeroHashCache = $.zeroHash;
+        aggregationRoot = PoseidonAggregationLib.computeAggregationRoot(leaves, zeroHashCache);
     }
 
     /// @dev Copies current leaves, computes the Poseidon aggregation root, and prepares the outbound payload/seq.
     function _computeBroadcastContext() internal view returns (BroadcastContext memory ctx) {
-        uint256 len = transferRoots.length;
+        HubStorage storage $ = _getHubStorage();
+        uint256 len = $.transferRoots.length;
         ctx.snapshot = new uint256[](len);
         ctx.transferTreeIndicesSnapshot = new uint64[](len);
         uint256[] memory leaves = new uint256[](len);
         for (uint256 i = 0; i < len; ++i) {
-            uint256 root = transferRoots[i];
+            uint256 root = $.transferRoots[i];
             ctx.snapshot[i] = root;
             leaves[i] = root;
-            ctx.transferTreeIndicesSnapshot[i] = transferTreeIndices[i];
+            ctx.transferTreeIndicesSnapshot[i] = $.transferTreeIndices[i];
         }
 
-        uint256[ZERO_HASH_COUNT] memory zeroHashCache = zeroHash;
+        uint256[ZERO_HASH_COUNT] memory zeroHashCache = $.zeroHash;
         ctx.aggregationRoot = PoseidonAggregationLib.computeAggregationRoot(leaves, zeroHashCache);
-        ctx.nextAggSeq = aggSeq + 1;
+        ctx.nextAggSeq = $.aggSeq + 1;
         ctx.payload = abi.encode(ctx.aggregationRoot, ctx.nextAggSeq);
     }
 
@@ -229,10 +293,11 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         bytes memory options,
         MessagingFee[] memory fees
     ) internal view returns (uint256 totalNativeFee) {
+        HubStorage storage $ = _getHubStorage();
         uint256 len = targetEids.length;
         for (uint256 i = 0; i < len; ++i) {
             uint32 eid = targetEids[i];
-            if (eidToPosition[eid] == 0) revert TokenNotRegistered(eid);
+            if ($.eidToPosition[eid] == 0) revert TokenNotRegistered(eid);
             MessagingFee memory fee = _quote(eid, payload, options, false);
             if (fee.lzTokenFee != 0) revert LayerZeroTokenFeeUnsupported(eid, fee.lzTokenFee);
             fees[i] = fee;
@@ -244,25 +309,25 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// LayerZero Receiver
     /// -----------------------------------------------------------------------
 
-    /// @dev Accepts `(transferRoot, transferTreeIndex)` payloads from registered verifiers and marks the tree dirty.
+    /// @dev Accepts `(transferRoot, transferTreeIndex)` payloads from registered verifiers when indices advance.
     function _lzReceive(Origin calldata origin, bytes32, bytes calldata payload, address, bytes calldata)
         internal
         override
     {
-        uint256 pos = eidToPosition[origin.srcEid];
+        HubStorage storage $ = _getHubStorage();
+        uint256 pos = $.eidToPosition[origin.srcEid];
         if (pos == 0) revert TokenNotRegistered(origin.srcEid);
 
         if (payload.length != TRANSFER_PAYLOAD_LENGTH) revert InvalidPayloadLength(payload.length);
 
         (uint256 transferRoot, uint64 transferTreeIndex) = abi.decode(payload, (uint256, uint64));
         uint256 index = pos - 1;
-        uint64 currentTreeIndex = transferTreeIndices[index];
+        uint64 currentTreeIndex = $.transferTreeIndices[index];
         if (transferTreeIndex <= currentTreeIndex) {
             return;
         }
-        transferRoots[index] = transferRoot;
-        transferTreeIndices[index] = transferTreeIndex;
-        isUpToDate = false;
+        $.transferRoots[index] = transferRoot;
+        $.transferTreeIndices[index] = transferTreeIndex;
         emit TransferRootUpdated(origin.srcEid, index, transferRoot);
     }
 
