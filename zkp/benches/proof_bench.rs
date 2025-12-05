@@ -21,13 +21,13 @@ use zkp::nova::{
     },
 };
 use zkp::utils::{
-    poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
+    poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
     tree::{gadgets::leaf_hash::compute_leaf_hash, merkle_tree::MerkleProof},
 };
 
 fn bench_root_nova_step(c: &mut Criterion) {
-    let poseidon2_params = circom_poseidon_config::<Fr>();
-    let poseidon3_params = circom_poseidon_config_with_rate(3);
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     let mut setup_rng = StdRng::seed_from_u64(0xDEADBEEF);
     let nova_params = NovaParams::<RootCircuit<Fr>>::rand(
         (poseidon2_params.clone(), poseidon3_params.clone()),
@@ -60,8 +60,8 @@ fn bench_root_nova_step(c: &mut Criterion) {
 }
 
 fn bench_withdraw_nova_step(c: &mut Criterion) {
-    let poseidon2_params = circom_poseidon_config::<Fr>();
-    let poseidon3_params = circom_poseidon_config_with_rate(3);
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     let mut setup_rng = StdRng::seed_from_u64(0xA11CE5ED);
     let nova_params = NovaParams::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>::rand(
         (poseidon2_params.clone(), poseidon3_params.clone()),
@@ -90,8 +90,8 @@ fn bench_withdraw_nova_step(c: &mut Criterion) {
 
 fn bench_single_withdraw_groth16(c: &mut Criterion) {
     const DEPTH: usize = TRANSFER_TREE_HEIGHT;
-    let poseidon2_config = circom_poseidon_config::<Fr>();
-    let poseidon3_config = circom_poseidon_config_with_rate(3);
+    let poseidon2_config = circom_poseidon2_config::<Fr>();
+    let poseidon3_config = circom_poseidon3_config();
     let mut setup_rng = StdRng::seed_from_u64(0xC01DBEEF);
     let circuit_template =
         build_single_withdraw_circuit::<DEPTH>(&poseidon2_config, &poseidon3_config);
@@ -143,8 +143,8 @@ fn build_single_withdraw_circuit<const DEPTH: usize>(
     let merkle_root = proof.get_root(leaf, leaf_index);
 
     SingleWithdrawCircuit {
-        poseidon_params: poseidon2_config.clone(),
-        poseidon_burn_params: poseidon3_config.clone(),
+        poseidon2_params: poseidon2_config.clone(),
+        poseidon3_params: poseidon3_config.clone(),
         merkle_root: Some(merkle_root),
         recipient: Some(recipient),
         withdraw_value: Some(withdraw_value),

@@ -18,7 +18,7 @@ use zkp::{
     },
     utils::{
         convertion::{address_to_fr, u256_to_fr},
-        poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
+        poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
         tree::merkle_tree::MerkleProof,
     },
 };
@@ -136,13 +136,13 @@ pub fn load_withdraw_params<const DEPTH: usize>(
             anyhow::bail!("Unsupported transfer tree depth: {}", DEPTH)
         }
     };
-    let poseidon_params = circom_poseidon_config::<Fr>();
-    let poseidon_burn_params = circom_poseidon_config_with_rate(3);
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     let pp = fs::read(artifacts_dir.join(format!("{}_nova_pp.bin", prefix)))
         .with_context(|| format!("failed to read {}_nova_pp.bin", prefix))?;
     let vp = fs::read(artifacts_dir.join(format!("{}_nova_vp.bin", prefix)))
         .with_context(|| format!("failed to read {}_nova_vp.bin", prefix))?;
-    NovaParams::from_bytes((poseidon_params, poseidon_burn_params), pp, vp)
+    NovaParams::from_bytes((poseidon2_params, poseidon3_params), pp, vp)
         .map_err(|err| anyhow!("failed to deserialize withdraw nova params: {}", err))
 }
 

@@ -123,7 +123,9 @@ impl<F: PrimeField + Absorb> AllocVar<PoseidonConfig<F>, F> for CircomCRHParamet
 #[cfg(test)]
 mod tests {
     use super::{CircomCRHParametersVar, poseidon2_var, poseidon3_var};
-    use crate::utils::poseidon::utils::{circom_poseidon_config_with_rate, poseidon2, poseidon3};
+    use crate::utils::poseidon::utils::{
+        circom_poseidon2_config, circom_poseidon3_config, poseidon2, poseidon3,
+    };
 
     use ark_bn254::Fr;
     use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
@@ -137,7 +139,7 @@ mod tests {
         let left_val = Fr::from(7u64);
         let right_val = Fr::from(8u64);
 
-        let config = circom_poseidon_config_with_rate(2);
+        let config = circom_poseidon2_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let left = FpVar::<Fr>::new_witness(ns!(cs, "left"), || Ok(left_val))?;
@@ -160,7 +162,7 @@ mod tests {
         let middle_val = Fr::from(4u64);
         let right_val = Fr::from(5u64);
 
-        let config = circom_poseidon_config_with_rate(3);
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let left = FpVar::<Fr>::new_witness(ns!(cs, "left"), || Ok(left_val))?;

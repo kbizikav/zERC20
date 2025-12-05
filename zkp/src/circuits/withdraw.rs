@@ -120,7 +120,7 @@ mod tests {
     use crate::test_utils::{merkle_root_from_path, truncate_to_160_bits};
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
     use crate::utils::poseidon::utils::{
-        circom_poseidon_config, circom_poseidon_config_with_rate, circom_poseidon_hash,
+        circom_poseidon_hash, circom_poseidon2_config, circom_poseidon3_config,
     };
     use ark_bn254::Fr;
     use ark_ff::{PrimeField, Zero};
@@ -197,8 +197,8 @@ mod tests {
     fn single_withdraw_accepts_valid_leaf() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon2_config = circom_poseidon_config();
-        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_config = circom_poseidon2_config();
+        let poseidon3_config = circom_poseidon3_config();
         let poseidon2_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
         let poseidon3_params =
@@ -269,8 +269,8 @@ mod tests {
     fn withdraw_real_leaf_updates_total() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon2_config = circom_poseidon_config();
-        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_config = circom_poseidon2_config();
+        let poseidon3_config = circom_poseidon3_config();
         let poseidon2_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
         let poseidon3_params =
@@ -380,8 +380,8 @@ mod tests {
     fn withdraw_accepts_max_leaf_index() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon2_config = circom_poseidon_config();
-        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_config = circom_poseidon2_config();
+        let poseidon3_config = circom_poseidon3_config();
         let poseidon2_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
         let poseidon3_params =
@@ -476,8 +476,8 @@ mod tests {
     fn withdraw_dummy_skips_root_check() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon2_config = circom_poseidon_config();
-        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_config = circom_poseidon2_config();
+        let poseidon3_config = circom_poseidon3_config();
         let poseidon2_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
         let poseidon3_params =
@@ -558,8 +558,8 @@ mod tests {
     fn withdraw_rejects_non_increasing_index() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let poseidon2_config = circom_poseidon_config();
-        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_config = circom_poseidon2_config();
+        let poseidon3_config = circom_poseidon3_config();
         let poseidon2_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_config)?;
         let poseidon3_params =

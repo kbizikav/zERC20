@@ -11,7 +11,7 @@ use zkp::nova::{
     root_nova::{RootCircuit, RootExternalInputs},
     withdraw_nova::{WITHDRAW_STATE_LEN, WithdrawCircuit, dummy_withdraw_ext_input},
 };
-use zkp::utils::poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate};
+use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
 fn main() {
     println!("== Nova decider proof benchmarks (single run) ==");
@@ -20,8 +20,8 @@ fn main() {
 }
 
 fn bench_root_decider() -> f64 {
-    let poseidon2_params = circom_poseidon_config::<Fr>();
-    let poseidon3_params = circom_poseidon_config_with_rate(3);
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     let mut setup_rng = StdRng::seed_from_u64(0xDEC1_DEAD);
     let nova_params = NovaParams::<RootCircuit<Fr>>::rand(
         (poseidon2_params.clone(), poseidon3_params.clone()),
@@ -58,8 +58,8 @@ fn bench_root_decider() -> f64 {
 }
 
 fn bench_withdraw_decider() -> f64 {
-    let poseidon2_params = circom_poseidon_config::<Fr>();
-    let poseidon3_params = circom_poseidon_config_with_rate(3);
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     let mut setup_rng = StdRng::seed_from_u64(0xA11C_EDA5);
     let nova_params = NovaParams::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>::rand(
         (poseidon2_params.clone(), poseidon3_params.clone()),

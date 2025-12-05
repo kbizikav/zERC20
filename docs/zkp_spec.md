@@ -12,7 +12,7 @@ This gadget generates the deterministic burn address that the withdrawal logic r
 
 ```
 burn_address_var(
-    poseidon_params,
+    poseidon3_params,
     recipient,
     secret,
     is_constrained,

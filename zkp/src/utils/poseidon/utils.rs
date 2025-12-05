@@ -30,10 +30,6 @@ pub fn light_poseidon_to_ark_config<F: PrimeField>(
     )
 }
 
-pub fn circom_poseidon_config<F: PrimeField + From<ark_ff::BigInt<4>>>() -> PoseidonConfig<F> {
-    circom_poseidon_config_with_rate(2)
-}
-
 pub fn circom_poseidon_config_with_rate<F: PrimeField + From<ark_ff::BigInt<4>>>(
     rate: usize,
 ) -> PoseidonConfig<F> {
@@ -45,6 +41,14 @@ pub fn circom_poseidon_config_with_rate<F: PrimeField + From<ark_ff::BigInt<4>>>
     let params = light_poseidon::parameters::bn254_x5::get_poseidon_parameters::<F>(width)
         .expect("poseidon parameters");
     light_poseidon_to_ark_config(&params)
+}
+
+pub fn circom_poseidon2_config<F: PrimeField + From<ark_ff::BigInt<4>>>() -> PoseidonConfig<F> {
+    circom_poseidon_config_with_rate(2)
+}
+
+pub fn circom_poseidon3_config<F: PrimeField + From<ark_ff::BigInt<4>>>() -> PoseidonConfig<F> {
+    circom_poseidon_config_with_rate(3)
 }
 
 /// Compute a Poseidon hash using arkworks' Poseidon sponge configured with `config`.
@@ -65,7 +69,7 @@ pub fn circom_poseidon_hash<F: PrimeField + Absorb>(config: &PoseidonConfig<F>, 
 }
 
 pub fn poseidon2<F: PrimeField + Absorb + From<ark_ff::BigInt<4>>>(left: F, right: F) -> F {
-    let config = circom_poseidon_config();
+    let config = circom_poseidon2_config();
     circom_poseidon_hash(&config, &[left, right])
 }
 
@@ -74,6 +78,6 @@ pub fn poseidon3<F: PrimeField + Absorb + From<ark_ff::BigInt<4>>>(
     middle: F,
     right: F,
 ) -> F {
-    let config = circom_poseidon_config_with_rate(3);
+    let config = circom_poseidon3_config();
     circom_poseidon_hash(&config, &[left, middle, right])
 }

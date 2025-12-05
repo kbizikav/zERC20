@@ -26,7 +26,7 @@ pub fn leaf_hash_var<F: PrimeField + Absorb>(
 mod tests {
     use crate::utils::poseidon::circom_poseidon_hash;
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::circom_poseidon_config_with_rate;
+    use crate::utils::poseidon::utils::circom_poseidon3_config;
 
     use super::leaf_hash_var;
     use ark_bn254::Fr;
@@ -57,7 +57,7 @@ mod tests {
         let to_val = sample_field(&mut rng);
         let amount_val = sample_field(&mut rng);
 
-        let config = circom_poseidon_config_with_rate(3);
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_val))?;
@@ -82,7 +82,7 @@ mod tests {
         let to_val = sample_field(&mut rng);
         let amount_val = sample_field(&mut rng);
 
-        let config = circom_poseidon_config_with_rate(3);
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_val))?;
@@ -107,7 +107,7 @@ mod tests {
         let to_val = Fr::from(2u64);
         let amount_val = Fr::from(3u64);
 
-        let config = circom_poseidon_config_with_rate(3);
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let expected_bytes =
@@ -137,7 +137,7 @@ mod tests {
         let to_val = Fr::from(987_654_321u64);
         let amount_val = Fr::from(1_000u64);
 
-        let config = circom_poseidon_config_with_rate(3);
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let expected_bytes =

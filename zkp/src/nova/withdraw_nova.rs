@@ -205,7 +205,7 @@ mod tests {
         utils::{
             convertion::fr_to_address,
             general_recipient::GeneralRecipient,
-            poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
+            poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
             tree::incremental_merkle_tree::IncrementalMerkleTree,
         },
     };
@@ -287,8 +287,8 @@ mod tests {
             external_inputs.push(ext_input);
         }
 
-        let poseidon2_params = circom_poseidon_config::<Fr>();
-        let poseidon3_params = circom_poseidon_config_with_rate(3);
+        let poseidon2_params = circom_poseidon2_config::<Fr>();
+        let poseidon3_params = circom_poseidon3_config();
         let nova_params = NovaParams::<WithdrawCircuit<Fr, DEPTH>>::rand(
             (poseidon2_params, poseidon3_params),
             &mut rng,

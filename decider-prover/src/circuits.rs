@@ -11,7 +11,7 @@ use zkp::nova::{
     root_nova::RootCircuit,
     withdraw_nova::WithdrawCircuit,
 };
-use zkp::utils::poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate};
+use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
 use crate::{config::CircuitEnablement, errors::ProverError};
 
@@ -23,8 +23,8 @@ pub struct ProverEngine {
 
 impl ProverEngine {
     pub fn load(artifacts_dir: &Path, circuits: &CircuitEnablement) -> Result<Self, ProverError> {
-        let poseidon2 = circom_poseidon_config::<Fr>();
-        let poseidon3 = circom_poseidon_config_with_rate(3);
+        let poseidon2 = circom_poseidon2_config::<Fr>();
+        let poseidon3 = circom_poseidon3_config();
         let root = if circuits.root() {
             Some(CircuitContext::load(
                 "root",

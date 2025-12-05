@@ -13,7 +13,7 @@ use zkp::{
         params::NovaParams,
         withdraw_nova::{WITHDRAW_STATE_LEN, WithdrawCircuit, WithdrawExternalInputs},
     },
-    utils::poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
+    utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
 };
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -73,10 +73,7 @@ impl WithdrawNovaWasm {
         global_vp_bytes: Vec<u8>,
     ) -> Result<WithdrawNovaWasm, JsValue> {
         console_error_panic_hook::set_once();
-        let f_params = (
-            circom_poseidon_config(),
-            circom_poseidon_config_with_rate(3),
-        );
+        let f_params = (circom_poseidon2_config(), circom_poseidon3_config());
         let local = NovaParams::from_bytes(f_params.clone(), local_pp_bytes, local_vp_bytes)
             .map_err(|err| JsValue::from_str(&err.to_string()))?;
         let global = NovaParams::from_bytes(f_params, global_pp_bytes, global_vp_bytes)
@@ -283,8 +280,8 @@ fn prove_single_with_depth<const DEPTH: usize>(
         )));
     }
 
-    let poseidon_params = circom_poseidon_config();
-    let poseidon_burn_params = circom_poseidon_config_with_rate(3);
+    let poseidon2_params = circom_poseidon2_config();
+    let poseidon3_params = circom_poseidon3_config();
 
     let merkle_root_fr = hex_to_fr(&merkle_root).map_err(anyhow_to_js_error)?;
     let recipient_fr = hex_to_fr(&recipient).map_err(anyhow_to_js_error)?;
@@ -305,8 +302,8 @@ fn prove_single_with_depth<const DEPTH: usize>(
         .map_err(|_| JsValue::from_str("failed to convert siblings into fixed-size array"))?;
 
     let circuit = SingleWithdrawCircuit::<Fr, DEPTH> {
-        poseidon_params,
-        poseidon_burn_params,
+        poseidon2_params,
+        poseidon3_params,
         merkle_root: Some(merkle_root_fr),
         recipient: Some(recipient_fr),
         withdraw_value: Some(withdraw_value_fr),

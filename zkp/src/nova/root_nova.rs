@@ -150,7 +150,7 @@ mod tests {
         nova::params::NovaParams,
         utils::{
             convertion::{address_to_fr, u256_to_fr},
-            poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
+            poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
             tree::incremental_merkle_tree::{IncrementalMerkleTree, Leaf},
         },
     };
@@ -212,8 +212,8 @@ mod tests {
         let expected_hash_chain = tree.hash_chain;
         let expected_root = tree.get_root();
 
-        let poseidon2_config = circom_poseidon_config::<Fr>();
-        let poseidon3_config = circom_poseidon_config_with_rate(3);
+        let poseidon2_config = circom_poseidon2_config::<Fr>();
+        let poseidon3_config = circom_poseidon3_config();
         let nova_params =
             NovaParams::<RootCircuit<Fr>>::rand((poseidon2_config, poseidon3_config), &mut rng)
                 .unwrap();

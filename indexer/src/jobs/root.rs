@@ -45,7 +45,7 @@ use zkp::{
     },
     utils::{
         convertion::{address_to_fr, fr_to_u256, u256_to_fr},
-        poseidon::utils::{circom_poseidon_config, circom_poseidon_config_with_rate},
+        poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
         tree::gadgets::{hash_chain::hash_chain, leaf_hash::compute_leaf_hash},
     },
 };
@@ -1154,8 +1154,8 @@ fn load_root_nova_params(artifacts_dir: &std::path::Path) -> Result<NovaParams<R
         std::fs::read(&pp_path).with_context(|| format!("failed to read {}", pp_path.display()))?;
     let vp_bytes =
         std::fs::read(&vp_path).with_context(|| format!("failed to read {}", vp_path.display()))?;
-    let poseidon2_params = circom_poseidon_config::<Fr>();
-    let poseidon3_params = circom_poseidon_config_with_rate(3);
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     NovaParams::<RootCircuit<Fr>>::from_bytes(
         (poseidon2_params, poseidon3_params),
         pp_bytes,

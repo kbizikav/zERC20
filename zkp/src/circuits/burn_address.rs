@@ -117,7 +117,7 @@ mod tests {
     };
     use crate::test_utils::truncate_to_160_bits;
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::{circom_poseidon_config_with_rate, circom_poseidon_hash};
+    use crate::utils::poseidon::utils::{circom_poseidon_hash, circom_poseidon3_config};
     use ark_bn254::Fr;
     use ark_ff::PrimeField;
     use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
@@ -149,7 +149,7 @@ mod tests {
         let (recipient_value, secret_value, expected_address) = pow_fixture();
         assert_eq!(find_pow_nonce(recipient_value, secret_value), 0);
 
-        let config = circom_poseidon_config_with_rate(3);
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
@@ -176,7 +176,7 @@ mod tests {
 
         let (recipient_value, secret_value, pow_expected_field) = pow_fixture();
 
-        let config = circom_poseidon_config_with_rate(3);
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let expected_bytes =
