@@ -1,4 +1,4 @@
-import { z } from 'zod';
+import { z } from "zod";
 
 export interface AppConfig {
   indexerUrl: string;
@@ -39,14 +39,20 @@ const optionalNumber = (fallback: number) =>
     .catch(() => fallback);
 
 const envSchema = z.object({
-  VITE_INDEXER_URL: z.string().trim().min(1, 'VITE_INDEXER_URL is required'),
-  VITE_DECIDER_URL: z.string().trim().min(1, 'VITE_DECIDER_URL is required'),
-  VITE_IC_REPLICA_URL: z.string().trim().min(1, 'VITE_IC_REPLICA_URL is required'),
-  VITE_STORAGE_CANISTER_ID: z.string().trim().min(1, 'VITE_STORAGE_CANISTER_ID is required'),
+  VITE_INDEXER_URL: z.string().trim().min(1, "VITE_INDEXER_URL is required"),
+  VITE_DECIDER_URL: z.string().trim().min(1, "VITE_DECIDER_URL is required"),
+  VITE_IC_REPLICA_URL: z
+    .string()
+    .trim()
+    .min(1, "VITE_IC_REPLICA_URL is required"),
+  VITE_STORAGE_CANISTER_ID: z
+    .string()
+    .trim()
+    .min(1, "VITE_STORAGE_CANISTER_ID is required"),
   VITE_KEY_MANAGER_CANISTER_ID: z
     .string()
     .trim()
-    .min(1, 'VITE_KEY_MANAGER_CANISTER_ID is required'),
+    .min(1, "VITE_KEY_MANAGER_CANISTER_ID is required"),
   VITE_INDEXER_FETCH_LIMIT: optionalNumber(20),
   VITE_EVENT_BLOCK_SPAN: optionalNumber(5_000),
   VITE_SCAN_PAGE_SIZE: optionalNumber(100),
@@ -54,18 +60,24 @@ const envSchema = z.object({
   VITE_TOKENS_COMPRESSED: z
     .string()
     .trim()
-    .min(1, 'VITE_TOKENS_COMPRESSED is required; run scripts/encode-tokens.sh')
-    .regex(/^[A-Za-z0-9+/=]+$/, 'VITE_TOKENS_COMPRESSED must be base64-encoded'),
+    .min(1, "VITE_TOKENS_COMPRESSED is required; run scripts/encode_tokens.sh")
+    .regex(
+      /^[A-Za-z0-9+/=]+$/,
+      "VITE_TOKENS_COMPRESSED must be base64-encoded"
+    ),
   VITE_TOKEN_SYMBOL: z
     .string()
     .trim()
-    .min(1, 'VITE_TOKEN_SYMBOL must not be empty')
-    .catch('zUSD'),
+    .min(1, "VITE_TOKEN_SYMBOL must not be empty")
+    .catch("zUSD"),
 });
 
 export function resolveRuntimeConfig(env: ImportMetaEnv): RuntimeConfig {
   const coercedEnv = Object.fromEntries(
-    Object.entries(env ?? {}).map(([key, value]) => [key, typeof value === 'string' ? value : '']),
+    Object.entries(env ?? {}).map(([key, value]) => [
+      key,
+      typeof value === "string" ? value : "",
+    ])
   );
 
   const parsed = envSchema.parse(coercedEnv);

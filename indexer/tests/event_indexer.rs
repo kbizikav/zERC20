@@ -76,6 +76,7 @@ async fn event_indexer_syncs_against_anvil() -> Result<()> {
         "TT".to_string(),
         deployer_address,
         deploy_mock_endpoint(&provider, deployer_key).await?,
+        18,
     )
     .await
     .context("failed to deploy zERC20 contract")?;

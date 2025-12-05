@@ -23,6 +23,49 @@ pub struct CircomCRHGadget<F: PrimeField + Absorb> {
     field_phantom: PhantomData<F>,
 }
 
+pub fn poseidon_var<F: PrimeField + Absorb>(
+    parameters: &CircomCRHParametersVar<F>,
+    input: &[FpVar<F>],
+) -> Result<FpVar<F>, SynthesisError> {
+    let cs: ConstraintSystemRef<F> = input.cs();
+
+    if cs.is_none() {
+        let mut constants = Vec::with_capacity(input.len());
+        for var in input.iter() {
+            constants.push(var.value()?);
+        }
+        return Ok(FpVar::Constant(circom_poseidon_hash(
+            &parameters.parameters,
+            &constants,
+        )));
+    }
+
+    let mut sponge = PoseidonSpongeVar::new(cs, &parameters.parameters);
+    for value in input.iter() {
+        sponge.absorb(value)?;
+    }
+
+    let _ = sponge.squeeze_field_elements(1)?;
+    Ok(sponge.state[0].clone())
+}
+
+pub fn poseidon2_var<F: PrimeField + Absorb>(
+    parameters: &CircomCRHParametersVar<F>,
+    left: &FpVar<F>,
+    right: &FpVar<F>,
+) -> Result<FpVar<F>, SynthesisError> {
+    poseidon_var(parameters, &[left.clone(), right.clone()])
+}
+
+pub fn poseidon3_var<F: PrimeField + Absorb>(
+    parameters: &CircomCRHParametersVar<F>,
+    left: &FpVar<F>,
+    middle: &FpVar<F>,
+    right: &FpVar<F>,
+) -> Result<FpVar<F>, SynthesisError> {
+    poseidon_var(parameters, &[left.clone(), middle.clone(), right.clone()])
+}
+
 impl<F: PrimeField + Absorb> CRHGadgetTrait<CircomCRH<F>, F> for CircomCRHGadget<F> {
     type InputVar = [FpVar<F>];
     type OutputVar = FpVar<F>;
@@ -32,26 +75,7 @@ impl<F: PrimeField + Absorb> CRHGadgetTrait<CircomCRH<F>, F> for CircomCRHGadget
         parameters: &Self::ParametersVar,
         input: &Self::InputVar,
     ) -> Result<Self::OutputVar, SynthesisError> {
-        let cs: ConstraintSystemRef<F> = input.cs();
-
-        if cs.is_none() {
-            let mut constants = Vec::with_capacity(input.len());
-            for var in input.iter() {
-                constants.push(var.value()?);
-            }
-            return Ok(FpVar::Constant(circom_poseidon_hash(
-                &parameters.parameters,
-                &constants,
-            )));
-        }
-
-        let mut sponge = PoseidonSpongeVar::new(cs, &parameters.parameters);
-        for value in input.iter() {
-            sponge.absorb(value)?;
-        }
-
-        let _ = sponge.squeeze_field_elements(1)?;
-        Ok(sponge.state[0].clone())
+        poseidon_var(parameters, input)
     }
 }
 
@@ -79,23 +103,7 @@ impl<F: PrimeField + Absorb> TwoToOneCRHSchemeGadget<CircomTwoToOneCRH<F>, F>
         left_input: &Self::OutputVar,
         right_input: &Self::OutputVar,
     ) -> Result<Self::OutputVar, SynthesisError> {
-        let cs = left_input.cs().or(right_input.cs());
-
-        if cs.is_none() {
-            let left = left_input.value()?;
-            let right = right_input.value()?;
-            return Ok(FpVar::Constant(circom_poseidon_hash(
-                &parameters.parameters,
-                &[left, right],
-            )));
-        }
-
-        let mut sponge = PoseidonSpongeVar::new(cs, &parameters.parameters);
-        sponge.absorb(left_input)?;
-        sponge.absorb(right_input)?;
-
-        let _ = sponge.squeeze_field_elements(1)?;
-        Ok(sponge.state[0].clone())
+        poseidon2_var(parameters, left_input, right_input)
     }
 }
 
@@ -109,5 +117,64 @@ impl<F: PrimeField + Absorb> AllocVar<PoseidonConfig<F>, F> for CircomCRHParamet
             let parameters = param.borrow().clone();
             Self { parameters }
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CircomCRHParametersVar, poseidon2_var, poseidon3_var};
+    use crate::utils::poseidon::utils::{
+        circom_poseidon2_config, circom_poseidon3_config, poseidon2, poseidon3,
+    };
+
+    use ark_bn254::Fr;
+    use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
+    use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
+    use ark_relations::ns;
+
+    #[test]
+    fn poseidon2_var_matches_host() -> Result<(), SynthesisError> {
+        let cs = ConstraintSystem::<Fr>::new_ref();
+
+        let left_val = Fr::from(7u64);
+        let right_val = Fr::from(8u64);
+
+        let config = circom_poseidon2_config();
+        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
+
+        let left = FpVar::<Fr>::new_witness(ns!(cs, "left"), || Ok(left_val))?;
+        let right = FpVar::<Fr>::new_witness(ns!(cs, "right"), || Ok(right_val))?;
+        let expected = poseidon2(left_val, right_val);
+        let expected_var = FpVar::<Fr>::new_input(ns!(cs, "expected"), || Ok(expected))?;
+
+        let actual = poseidon2_var(&params, &left, &right)?;
+        actual.enforce_equal(&expected_var)?;
+
+        assert!(cs.is_satisfied().unwrap());
+        Ok(())
+    }
+
+    #[test]
+    fn poseidon3_var_matches_host() -> Result<(), SynthesisError> {
+        let cs = ConstraintSystem::<Fr>::new_ref();
+
+        let left_val = Fr::from(3u64);
+        let middle_val = Fr::from(4u64);
+        let right_val = Fr::from(5u64);
+
+        let config = circom_poseidon3_config();
+        let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
+
+        let left = FpVar::<Fr>::new_witness(ns!(cs, "left"), || Ok(left_val))?;
+        let middle = FpVar::<Fr>::new_witness(ns!(cs, "middle"), || Ok(middle_val))?;
+        let right = FpVar::<Fr>::new_witness(ns!(cs, "right"), || Ok(right_val))?;
+        let expected = poseidon3(left_val, middle_val, right_val);
+        let expected_var = FpVar::<Fr>::new_input(ns!(cs, "expected"), || Ok(expected))?;
+
+        let actual = poseidon3_var(&params, &left, &middle, &right)?;
+        actual.enforce_equal(&expected_var)?;
+
+        assert!(cs.is_satisfied().unwrap());
+        Ok(())
     }
 }

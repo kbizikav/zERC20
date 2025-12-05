@@ -1,31 +1,32 @@
 use ark_bn254::Fr;
-use ark_crypto_primitives::{crh::CRHSchemeGadget, sponge::Absorb};
+use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
 use ark_r1cs_std::fields::fp::FpVar;
 use ark_relations::gr1cs::SynthesisError;
 
 use crate::utils::poseidon::{
-    gadgets::{CircomCRHGadget, CircomCRHParametersVar},
-    utils::poseidon2,
+    gadgets::{CircomCRHParametersVar, poseidon3_var},
+    utils::poseidon3,
 };
 
-pub fn compute_leaf_hash(address: Fr, amount: Fr) -> Fr {
-    poseidon2(address, amount)
+pub fn compute_leaf_hash(from: Fr, to: Fr, amount: Fr) -> Fr {
+    poseidon3(from, to, amount)
 }
 
 pub fn leaf_hash_var<F: PrimeField + Absorb>(
     poseidon_params: &CircomCRHParametersVar<F>,
-    addr: &FpVar<F>,
+    from: &FpVar<F>,
+    to: &FpVar<F>,
     amount: &FpVar<F>,
 ) -> Result<FpVar<F>, SynthesisError> {
-    CircomCRHGadget::<F>::evaluate(poseidon_params, &[addr.clone(), amount.clone()])
+    poseidon3_var(poseidon_params, from, to, amount)
 }
 
 #[cfg(test)]
 mod tests {
     use crate::utils::poseidon::circom_poseidon_hash;
     use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::circom_poseidon_config;
+    use crate::utils::poseidon::utils::circom_poseidon3_config;
 
     use super::leaf_hash_var;
     use ark_bn254::Fr;
@@ -37,9 +38,9 @@ mod tests {
     use hex::decode;
 
     const LEAF_HASH_SMALL_HEX: &str =
-        "0x115cc0f5e7d690413df64c6b9662e9cf2a3617f2743245519e19607a4417189a";
+        "0x0e7732d89e6939c0ff03d5e58dab6302f3230e269dc5b968f725df34ab36d732";
     const LEAF_HASH_LARGE_HEX: &str =
-        "0x29003649e4aafd1d71eef6edfdb6a783e209d5b323a0da5aa16cdc9437cc266a";
+        "0x05b689223dde4976bbb63f0d6690fa0dd508d39ef2d299609b9b064ccef34389";
 
     fn sample_field(rng: &mut impl RngCore) -> Fr {
         let mut bytes = [0u8; 32];
@@ -52,18 +53,20 @@ mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let mut rng = test_rng();
 
-        let addr_val = sample_field(&mut rng);
+        let from_val = sample_field(&mut rng);
+        let to_val = sample_field(&mut rng);
         let amount_val = sample_field(&mut rng);
 
-        let config = circom_poseidon_config();
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
-        let addr = FpVar::<Fr>::new_witness(ns!(cs, "addr"), || Ok(addr_val))?;
+        let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_val))?;
+        let to = FpVar::<Fr>::new_witness(ns!(cs, "to"), || Ok(to_val))?;
         let amount = FpVar::<Fr>::new_witness(ns!(cs, "amount"), || Ok(amount_val))?;
-        let expected = circom_poseidon_hash(&config, &[addr_val, amount_val]);
+        let expected = circom_poseidon_hash(&config, &[from_val, to_val, amount_val]);
         let expected_var = FpVar::<Fr>::new_input(ns!(cs, "expected"), || Ok(expected))?;
 
-        let actual = leaf_hash_var(&params, &addr, &amount)?;
+        let actual = leaf_hash_var(&params, &from, &to, &amount)?;
         actual.enforce_equal(&expected_var)?;
 
         assert!(cs.is_satisfied().unwrap());
@@ -75,18 +78,21 @@ mod tests {
         let cs = ConstraintSystem::<Fr>::new_ref();
         let mut rng = test_rng();
 
-        let addr_val = sample_field(&mut rng);
+        let from_val = sample_field(&mut rng);
+        let to_val = sample_field(&mut rng);
         let amount_val = sample_field(&mut rng);
 
-        let config = circom_poseidon_config();
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
-        let addr = FpVar::<Fr>::new_witness(ns!(cs, "addr"), || Ok(addr_val))?;
+        let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_val))?;
+        let to = FpVar::<Fr>::new_witness(ns!(cs, "to"), || Ok(to_val))?;
         let amount = FpVar::<Fr>::new_witness(ns!(cs, "amount"), || Ok(amount_val))?;
-        let expected = circom_poseidon_hash(&config, &[addr_val, amount_val]) + Fr::from(1u64);
+        let expected =
+            circom_poseidon_hash(&config, &[from_val, to_val, amount_val]) + Fr::from(1u64);
         let expected_var = FpVar::<Fr>::new_input(ns!(cs, "expected"), || Ok(expected))?;
 
-        let actual = leaf_hash_var(&params, &addr, &amount)?;
+        let actual = leaf_hash_var(&params, &from, &to, &amount)?;
         actual.enforce_equal(&expected_var)?;
 
         assert!(!cs.is_satisfied().unwrap());
@@ -97,24 +103,26 @@ mod tests {
     fn leaf_hash_matches_small_fixed_vector() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let addr_val = Fr::from(1u64);
-        let amount_val = Fr::from(2u64);
+        let from_val = Fr::from(1u64);
+        let to_val = Fr::from(2u64);
+        let amount_val = Fr::from(3u64);
 
-        let config = circom_poseidon_config();
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let expected_bytes =
             decode(LEAF_HASH_SMALL_HEX.trim_start_matches("0x")).expect("valid small vector hex");
         let expected_field = Fr::from_be_bytes_mod_order(&expected_bytes);
 
-        let host_expected = circom_poseidon_hash(&config, &[addr_val, amount_val]);
+        let host_expected = circom_poseidon_hash(&config, &[from_val, to_val, amount_val]);
         assert_eq!(host_expected, expected_field);
 
-        let addr = FpVar::<Fr>::new_witness(ns!(cs, "addr"), || Ok(addr_val))?;
+        let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_val))?;
+        let to = FpVar::<Fr>::new_witness(ns!(cs, "to"), || Ok(to_val))?;
         let amount = FpVar::<Fr>::new_witness(ns!(cs, "amount"), || Ok(amount_val))?;
         let expected_var = FpVar::<Fr>::new_input(ns!(cs, "expected"), || Ok(expected_field))?;
 
-        let actual = leaf_hash_var(&params, &addr, &amount)?;
+        let actual = leaf_hash_var(&params, &from, &to, &amount)?;
         actual.enforce_equal(&expected_var)?;
 
         assert!(cs.is_satisfied().unwrap());
@@ -125,24 +133,26 @@ mod tests {
     fn leaf_hash_matches_large_fixed_vector() -> Result<(), SynthesisError> {
         let cs = ConstraintSystem::<Fr>::new_ref();
 
-        let addr_val = Fr::from(123_456_789u64);
+        let from_val = Fr::from(123_456_789u64);
+        let to_val = Fr::from(987_654_321u64);
         let amount_val = Fr::from(1_000u64);
 
-        let config = circom_poseidon_config();
+        let config = circom_poseidon3_config();
         let params = CircomCRHParametersVar::new_constant(ns!(cs, "params"), &config)?;
 
         let expected_bytes =
             decode(LEAF_HASH_LARGE_HEX.trim_start_matches("0x")).expect("valid large vector hex");
         let expected_field = Fr::from_be_bytes_mod_order(&expected_bytes);
 
-        let host_expected = circom_poseidon_hash(&config, &[addr_val, amount_val]);
+        let host_expected = circom_poseidon_hash(&config, &[from_val, to_val, amount_val]);
         assert_eq!(host_expected, expected_field);
 
-        let addr = FpVar::<Fr>::new_witness(ns!(cs, "addr"), || Ok(addr_val))?;
+        let from = FpVar::<Fr>::new_witness(ns!(cs, "from"), || Ok(from_val))?;
+        let to = FpVar::<Fr>::new_witness(ns!(cs, "to"), || Ok(to_val))?;
         let amount = FpVar::<Fr>::new_witness(ns!(cs, "amount"), || Ok(amount_val))?;
         let expected_var = FpVar::<Fr>::new_input(ns!(cs, "expected"), || Ok(expected_field))?;
 
-        let actual = leaf_hash_var(&params, &addr, &amount)?;
+        let actual = leaf_hash_var(&params, &from, &to, &amount)?;
         actual.enforce_equal(&expected_var)?;
 
         assert!(cs.is_satisfied().unwrap());

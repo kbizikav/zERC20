@@ -1,34 +1,49 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TestHelperOz5, EndpointV2Mock} from "./utils/TestHelperOz5.sol";
+import {TestHelperOz5, EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {ShaHashChainLib} from "../src/utils/ShaHashChainLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {IOFT} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 
 contract ZERC20Test is TestHelperOz5 {
     zERC20 internal token;
-    EndpointV2Mock internal endpoint;
+    EndpointV2 internal endpoint;
 
     address internal constant ALICE = address(0xA11CE);
     address internal constant BOB = address(0xB0B);
+
+    bytes32 internal constant PERMIT_TYPEHASH =
+        keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
 
     event IndexedTransfer(uint256 indexed index, address from, address to, uint256 value);
     event Teleport(address indexed to, uint256 value);
     event VerifierUpdated(address indexed newVerifier);
 
-    function setUp() public {
-        endpoint = _deployEndpoint(101);
+    function setUp() public override {
+        super.setUp();
+        setUpEndpoints(1, LibraryType.SimpleMessageLib);
+        endpoint = endpointSetup.endpointList[0];
         token = _deployToken(address(this), endpoint, 18);
         token.setMinter(address(this));
     }
 
-    function _deployToken(address owner, EndpointV2Mock endpointMock, uint8 decimals_) private returns (zERC20) {
-        zERC20 impl = new zERC20();
-        bytes memory initData =
-            abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner, address(endpointMock), decimals_));
+    function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (zERC20) {
+        zERC20 impl = new zERC20(address(endpointMock), decimals_);
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return zERC20(address(proxy));
+    }
+
+    function testHashChainMatchesZkpVector() public {
+        address from = address(0x1111111111111111111111111111111111111111);
+        address to = address(0x2222222222222222222222222222222222222222);
+        uint256 value = 0x333;
+        uint256 expected = 0x00b499aa085c64d5668ec9512d24a54cb7cf7174543dd1dd5a806f77d0bb3e93;
+
+        uint256 actual = ShaHashChainLib.compute(0, from, to, value);
+        assertEq(actual, expected, "hash chain should align with zk circuit vector");
     }
 
     function testMintInitializesHashChainAndIndex() public {
@@ -41,7 +56,7 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.balanceOf(ALICE), amount, "minted balance");
         assertEq(token.index(), 1, "index after mint");
 
-        uint256 expectedHash = ShaHashChainLib.compute(0, ALICE, amount);
+        uint256 expectedHash = ShaHashChainLib.compute(0, address(0), ALICE, amount);
         assertEq(token.hashChain(), expectedHash, "hash chain after mint");
     }
 
@@ -63,7 +78,7 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.balanceOf(BOB), transferAmount, "bob balance");
         assertEq(token.index(), startIndex + 1, "index incremented");
 
-        uint256 expectedHash = ShaHashChainLib.compute(previousHash, BOB, transferAmount);
+        uint256 expectedHash = ShaHashChainLib.compute(previousHash, ALICE, BOB, transferAmount);
         assertEq(token.hashChain(), expectedHash, "hash chain chained");
     }
 
@@ -83,8 +98,68 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.totalSupply(), value, "supply after teleport");
         assertEq(token.index(), 1, "index after teleport");
 
-        uint256 expectedHash = ShaHashChainLib.compute(0, ALICE, value);
+        uint256 expectedHash = ShaHashChainLib.compute(0, address(0), ALICE, value);
         assertEq(token.hashChain(), expectedHash, "hash chain after teleport");
+    }
+
+    function testTeleportAccumulatesTotalTeleported() public {
+        uint256 first = 1 ether;
+        uint256 second = 4 ether;
+
+        token.setVerifier(address(this));
+
+        assertEq(token.totalTeleported(), 0, "initial total");
+
+        token.teleport(ALICE, first);
+        assertEq(token.totalTeleported(), first, "after first teleport");
+
+        token.teleport(BOB, second);
+        assertEq(token.totalTeleported(), first + second, "after second teleport");
+    }
+
+    function testPermitSetsAllowanceAndRespectsTypedData() public {
+        uint256 ownerKey = 0xA11CE;
+        address owner = vm.addr(ownerKey);
+        uint256 value = 2 ether;
+        uint256 deadline = block.timestamp + 1 days;
+
+        token.mint(owner, value);
+        uint256 hashAfterMint = token.hashChain();
+        uint256 indexAfterMint = token.index();
+
+        bytes32 structHash =
+            keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+
+        token.permit(owner, BOB, value, deadline, v, r, s);
+
+        assertEq(token.allowance(owner, BOB), value, "permit allowance");
+        assertEq(token.nonces(owner), 1, "nonce consumed");
+
+        vm.prank(BOB);
+        token.transferFrom(owner, BOB, value);
+
+        assertEq(token.balanceOf(BOB), value, "transferred via permit");
+        assertEq(token.index(), indexAfterMint + 1, "index incremented");
+        uint256 expectedHash = ShaHashChainLib.compute(hashAfterMint, owner, BOB, value);
+        assertEq(token.hashChain(), expectedHash, "hash chain after permit transfer");
+    }
+
+    function testPermitRejectsExpiredSignature() public {
+        uint256 ownerKey = 0xBEEF;
+        address owner = vm.addr(ownerKey);
+        uint256 value = 1 ether;
+        uint256 deadline = block.timestamp;
+
+        bytes32 structHash =
+            keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
+        bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
+
+        vm.warp(deadline + 1);
+        vm.expectRevert("ERC20Permit: expired deadline");
+        token.permit(owner, BOB, value, deadline, v, r, s);
     }
 
     function testInitializeSupportsCustomDecimals() public {
@@ -99,11 +174,8 @@ contract ZERC20Test is TestHelperOz5 {
     }
 
     function testInitializeRejectsBelowSharedDecimals() public {
-        zERC20 impl = new zERC20();
-        vm.expectRevert(zERC20.InvalidDecimals.selector);
-        new ERC1967Proxy(
-            address(impl), abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this), address(endpoint), 5))
-        );
+        vm.expectRevert(IOFT.InvalidLocalDecimals.selector);
+        new zERC20(address(endpoint), 5);
     }
 
     function testMintOnlyMinter() public {
@@ -139,7 +211,7 @@ contract ZERC20Test is TestHelperOz5 {
         assertEq(token.totalSupply(), supplyAfterMint - burnAmount, "supply after burn");
         assertEq(token.index(), indexAfterMint + 1, "index increment after burn");
 
-        uint256 expectedHash = ShaHashChainLib.compute(hashAfterMint, address(0), burnAmount);
+        uint256 expectedHash = ShaHashChainLib.compute(hashAfterMint, ALICE, address(0), burnAmount);
         assertEq(token.hashChain(), expectedHash, "hash chain after burn");
     }
 

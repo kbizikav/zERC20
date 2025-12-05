@@ -221,6 +221,7 @@ export async function generateSingleTeleportProof(params: SingleTeleportParams):
     merkleRoot: formatFieldElement(params.aggregationState.aggregationRoot, 'merkleRoot'),
     recipient: formatFieldElement(params.recipientFr, 'recipient'),
     withdrawValue: formatFieldElement(toFieldHex(params.event.value), 'withdrawValue'),
+    from: formatFieldElement(params.event.from, 'from'),
     value: formatFieldElement(toFieldHex(params.event.value), 'value'),
     delta: zeroField,
     secret: formatFieldElement(params.secretHex, 'secret'),

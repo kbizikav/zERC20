@@ -7,7 +7,9 @@ pub use utils::{circom_poseidon_hash, light_poseidon_to_ark_config};
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::poseidon::utils::circom_poseidon_config;
+    use crate::utils::poseidon::utils::{
+        circom_poseidon2_config, circom_poseidon3_config, poseidon3,
+    };
 
     use super::{CircomCRH, CircomTwoToOneCRH, circom_poseidon_hash};
     use ark_bn254::Fr;
@@ -21,7 +23,7 @@ mod tests {
     fn poseidon_config_alignment() {
         let mut light = Poseidon::<Fr>::new_circom(2).unwrap();
 
-        let config = circom_poseidon_config();
+        let config = circom_poseidon2_config();
 
         let zero_inputs = vec![Fr::ZERO; 2];
         let expected = light.hash(&zero_inputs).expect("hash");
@@ -38,7 +40,7 @@ mod tests {
 
     #[test]
     fn circom_crh_interfaces_match() {
-        let config = circom_poseidon_config();
+        let config = circom_poseidon2_config();
 
         let inputs = [Fr::from(1u64), Fr::from(2u64)];
 
@@ -51,7 +53,7 @@ mod tests {
 
     #[test]
     fn circom_two_to_one_matches_light_poseidon() {
-        let config = circom_poseidon_config();
+        let config = circom_poseidon2_config();
 
         let left = Fr::from(11u64);
         let right = Fr::from(22u64);
@@ -64,8 +66,24 @@ mod tests {
     }
 
     #[test]
+    fn poseidon3_matches_light_poseidon() {
+        let config = circom_poseidon3_config();
+
+        let inputs = [Fr::from(3u64), Fr::from(4u64), Fr::from(5u64)];
+
+        let mut light = Poseidon::<Fr>::new_circom(3).unwrap();
+        let expected = light.hash(&inputs).unwrap();
+
+        let actual = circom_poseidon_hash(&config, &inputs);
+        assert_eq!(expected, actual);
+
+        let helper_hash = poseidon3(inputs[0], inputs[1], inputs[2]);
+        assert_eq!(expected, helper_hash);
+    }
+
+    #[test]
     fn circom_crh_differs_from_ark_poseidon() {
-        let circom_config = circom_poseidon_config();
+        let circom_config = circom_poseidon2_config();
 
         let inputs = [Fr::from(1u64), Fr::from(2u64)];
         let inputs = inputs.as_ref();

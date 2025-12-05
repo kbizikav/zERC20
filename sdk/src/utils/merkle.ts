@@ -25,8 +25,16 @@ function intoField(value: bigint | number | string, label: string): bigint {
   return ensureFieldElement(bigIntValue, label);
 }
 
-function poseidon2(left: bigint, right: bigint): bigint {
+export function poseidon2(left: bigint, right: bigint): bigint {
   const result = poseidon([left, right]);
+  if (typeof result !== 'bigint') {
+    throw new Error('poseidon-lite returned a non-bigint result');
+  }
+  return ensureFieldElement(result, 'poseidon result');
+}
+
+export function poseidon3(left: bigint, middle: bigint, right: bigint): bigint {
+  const result = poseidon([left, middle, right]);
   if (typeof result !== 'bigint') {
     throw new Error('poseidon-lite returned a non-bigint result');
   }

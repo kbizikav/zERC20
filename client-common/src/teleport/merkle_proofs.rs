@@ -135,5 +135,9 @@ pub fn generate_global_teleport_merkle_proofs(
 }
 
 fn leaf_hash(event: &IndexedEvent) -> Fr {
-    compute_leaf_hash(address_to_fr(event.to), u256_to_fr(event.value))
+    compute_leaf_hash(
+        address_to_fr(event.from),
+        address_to_fr(event.to),
+        u256_to_fr(event.value),
+    )
 }

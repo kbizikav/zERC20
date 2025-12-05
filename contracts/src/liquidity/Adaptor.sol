@@ -5,12 +5,9 @@ import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
 import {IStargate, Ticket} from "../interfaces/IStargate.sol";
 import {IzERC20} from "../interfaces/IzERC20.sol";
 import {
-    SendParam,
-    MessagingFee,
-    OFTReceipt,
-    MessagingReceipt
-} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/interfaces/IOFT.sol";
-import {OFTComposeMsgCodec} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oft/libs/OFTComposeMsgCodec.sol";
+    SendParam, MessagingFee, OFTReceipt, MessagingReceipt
+} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
+import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -48,12 +45,7 @@ contract Adaptor is ILayerZeroComposer {
     IzERC20 public immutable ZERC20;
     IStargate public immutable STARGATE;
 
-    event StargateSendFailure(
-        uint256 nativeFee,
-        SendParam sendParam,
-        MessagingFee fee,
-        address refundAddress
-    );
+    event StargateSendFailure(uint256 nativeFee, SendParam sendParam, MessagingFee fee, address refundAddress);
     event UnwrapAndBridge(address indexed caller, uint256 amountIn, uint256 amountOut, address receiver, uint32 dstEid);
     event ReturnZerc20(address indexed to, uint32 indexed dstEid, uint256 amountReturned);
 
@@ -108,11 +100,10 @@ contract Adaptor is ILayerZeroComposer {
 
     // ---------------------------- Core flows --------------------------------
 
-    function _unwrapAndBridge(
-        uint256 amount,
-        BridgeRequest memory request,
-        FeeQuote memory quote
-    ) internal returns (uint256 amountOut, bool success) {
+    function _unwrapAndBridge(uint256 amount, BridgeRequest memory request, FeeQuote memory quote)
+        internal
+        returns (uint256 amountOut, bool success)
+    {
         if (msg.value < quote.nativeBridgeFee) revert NativeFeeTooLow();
         uint256 amountAfterUnwrap = LIQUIDITY_MANAGER.unwrap(amount, address(this));
         (amountOut, success) = _bridge(amountAfterUnwrap, request, quote);
@@ -141,9 +132,7 @@ contract Adaptor is ILayerZeroComposer {
 
         /// @dev Stargate reverts if msg.value differs from the quoted native fee, so pass the exact quote and refund any surplus.
         try STARGATE.sendToken{value: nativeFee}(sendParam, fee, request.refundAddress) returns (
-            MessagingReceipt memory,
-            OFTReceipt memory oftReceipt,
-            Ticket memory
+            MessagingReceipt memory, OFTReceipt memory oftReceipt, Ticket memory
         ) {
             amountOut = oftReceipt.amountReceivedLD;
             success = true;
@@ -154,7 +143,7 @@ contract Adaptor is ILayerZeroComposer {
         }
 
         if (success && refundAmount > 0) {
-            (bool refundSuccess, ) = payable(request.refundAddress).call{value: refundAmount}("");
+            (bool refundSuccess,) = payable(request.refundAddress).call{value: refundAmount}("");
             if (!refundSuccess) revert TransferFailed();
         }
     }
@@ -182,31 +171,22 @@ contract Adaptor is ILayerZeroComposer {
     }
 
     // ---------------------------- Quoting -----------------------------------
-    function quoteFee(uint256 amount, BridgeRequest memory request)
-        external
-        view
-        returns (FeeQuote memory quote)
-    {
+    function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
         return _quoteFee(amount, request);
     }
 
-    function _quoteFee(uint256 amount, BridgeRequest memory request)
-        internal
-        view
-        returns (FeeQuote memory quote)
-    {
+    function _quoteFee(uint256 amount, BridgeRequest memory request) internal view returns (FeeQuote memory quote) {
         uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrap(amount);
         uint256 amountAfterUnwrap = amount - tokenUnwrapFee;
         SendParam memory sendParam = _buildSendParam(amountAfterUnwrap, 0, request);
         MessagingFee memory feeQuote = _quoteSend(sendParam);
         uint256 amountReceived = _quoteAmountReceived(sendParam);
         uint256 tokenBridgeFee = amountAfterUnwrap > amountReceived ? amountAfterUnwrap - amountReceived : 0;
-        quote =
-            FeeQuote({
-                tokenUnwrapFee: tokenUnwrapFee,
-                nativeBridgeFee: feeQuote.nativeFee,
-                tokenBridgeFee: tokenBridgeFee
-            });
+        quote = FeeQuote({
+            tokenUnwrapFee: tokenUnwrapFee,
+            nativeBridgeFee: feeQuote.nativeFee,
+            tokenBridgeFee: tokenBridgeFee
+        });
     }
 
     function _quoteSend(SendParam memory sendParam) internal view returns (MessagingFee memory fee) {

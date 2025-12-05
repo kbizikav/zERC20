@@ -17,7 +17,8 @@ use zkp::{
         withdraw_nova::{WithdrawCircuit, WithdrawExternalInputs, dummy_withdraw_ext_input},
     },
     utils::{
-        convertion::u256_to_fr, poseidon::utils::circom_poseidon_config,
+        convertion::{address_to_fr, u256_to_fr},
+        poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
         tree::merkle_tree::MerkleProof,
     },
 };
@@ -63,6 +64,7 @@ pub async fn batch_teleport_proof<const DEPTH: usize>(
             })?;
         external_inputs.push(WithdrawExternalInputs::<Fr, DEPTH> {
             is_dummy: Fr::ZERO,
+            from_address: address_to_fr(event.from),
             value: u256_to_fr(event.value),
             secret,
             leaf_index: Fr::from(leaf_index),
@@ -134,12 +136,13 @@ pub fn load_withdraw_params<const DEPTH: usize>(
             anyhow::bail!("Unsupported transfer tree depth: {}", DEPTH)
         }
     };
-    let poseidon_params = circom_poseidon_config::<Fr>();
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     let pp = fs::read(artifacts_dir.join(format!("{}_nova_pp.bin", prefix)))
         .with_context(|| format!("failed to read {}_nova_pp.bin", prefix))?;
     let vp = fs::read(artifacts_dir.join(format!("{}_nova_vp.bin", prefix)))
         .with_context(|| format!("failed to read {}_nova_vp.bin", prefix))?;
-    NovaParams::from_bytes(poseidon_params, pp, vp)
+    NovaParams::from_bytes((poseidon2_params, poseidon3_params), pp, vp)
         .map_err(|err| anyhow!("failed to deserialize withdraw nova params: {}", err))
 }
 

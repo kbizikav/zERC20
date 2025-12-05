@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Unlicense
 pragma solidity 0.8.30;
 
-import {MessagingFee} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
-import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {PoseidonAggregationLib} from "./utils/PoseidonAggregationLib.sol";
 import {POSEIDON_ZERO_HASH_COUNT, POSEIDON_MAX_LEAVES} from "./utils/PoseidonAggregationConfig.sol";
-import {OAppUpgradeable} from "./utils/layerzero/OAppUpgradeable.sol";
+import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
@@ -92,17 +92,19 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// Constructor
     /// -----------------------------------------------------------------------
 
-    constructor() {
+    constructor(address endpoint) OAppUpgradeable(endpoint) {
+        if (endpoint == address(0)) revert InvalidEndpointCall();
         _disableInitializers();
     }
 
-    /// @notice Initializes the Hub's LayerZero endpoint/delegate pairing alongside upgrade hooks.
-    /// @param endpoint LayerZero endpoint used for cross-chain messaging.
+    /// @notice Initializes the Hub's LayerZero delegate pairing alongside upgrade hooks.
     /// @param delegate Address that MUST become both the contract owner and LayerZero delegate so admin controls and callbacks share the same authority.
-    function initialize(address endpoint, address delegate) external initializer {
-        __OApp_init(endpoint, delegate);
+    function initialize(address delegate) external initializer {
+        __Ownable_init();
+        __OApp_init(delegate);
         __UUPSUpgradeable_init();
         __Hub_init();
+        _transferOwnership(delegate);
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}

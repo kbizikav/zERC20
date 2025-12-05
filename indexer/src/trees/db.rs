@@ -250,13 +250,21 @@ impl DbIncrementalMerkleTree {
             .expect("zero hashes populated during construction")
     }
 
-    pub async fn append_leaf(&self, address: Address, value: U256) -> Result<AppendResult> {
-        let leaves = [(address, value)];
+    pub async fn append_leaf(
+        &self,
+        from: Address,
+        to: Address,
+        value: U256,
+    ) -> Result<AppendResult> {
+        let leaves = [(from, to, value)];
         let mut results = self.append_leaves(&leaves).await?;
         results.pop().ok_or(DbMerkleTreeError::LeafIndexOverflow)
     }
 
-    pub async fn append_leaves(&self, leaves: &[(Address, U256)]) -> Result<Vec<AppendResult>> {
+    pub async fn append_leaves(
+        &self,
+        leaves: &[(Address, Address, U256)],
+    ) -> Result<Vec<AppendResult>> {
         if leaves.is_empty() {
             return Ok(Vec::new());
         }
@@ -269,8 +277,8 @@ impl DbIncrementalMerkleTree {
 
         let mut latest_index = self.latest_index_internal(&mut tx).await?;
         let max_leaves = max_leaf_capacity(self.height);
-        let leaf_batch = u64::try_from(leaves.len())
-            .map_err(|_| DbMerkleTreeError::LeafIndexOverflow)?;
+        let leaf_batch =
+            u64::try_from(leaves.len()).map_err(|_| DbMerkleTreeError::LeafIndexOverflow)?;
         let required = u128::from(latest_index)
             .checked_add(u128::from(leaf_batch))
             .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
@@ -290,7 +298,6 @@ impl DbIncrementalMerkleTree {
             .latest_hash_chain_internal(&mut tx)
             .await?
             .unwrap_or(U256::ZERO);
-
         let mut fetch_positions = HashSet::new();
         for offset in 0..leaves.len() {
             let next_index = latest_index + 1 + offset as u64;
@@ -319,7 +326,7 @@ impl DbIncrementalMerkleTree {
         let mut snapshots: Vec<SnapshotRow> = Vec::with_capacity(leaves.len());
         let mut append_results = Vec::with_capacity(leaves.len());
 
-        for (address, value) in leaves.iter().copied() {
+        for (from, to, value) in leaves.iter().copied() {
             let next_index = latest_index + 1;
             let next_index_i64 =
                 i64::try_from(next_index).map_err(|_| DbMerkleTreeError::U64ToI64 {
@@ -330,7 +337,8 @@ impl DbIncrementalMerkleTree {
                 .checked_sub(1)
                 .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
 
-            let leaf_hash = compute_leaf_hash(address_to_fr(address), u256_to_fr(value));
+            let leaf_hash =
+                compute_leaf_hash(address_to_fr(from), address_to_fr(to), u256_to_fr(value));
             let mut node_hash = leaf_hash;
 
             let mut current_path = BitPath::new(self.height, leaf_index);
@@ -382,7 +390,7 @@ impl DbIncrementalMerkleTree {
                 existing_nodes.insert(root_path, node_hash);
             }
 
-            let new_hash_chain = hash_chain(prev_hash_chain, address, value);
+            let new_hash_chain = hash_chain(prev_hash_chain, from, to, value);
             snapshots.push(SnapshotRow {
                 tree_index: next_index_i64,
                 root_bytes: fr_to_bytes(node_hash),
@@ -419,16 +427,37 @@ impl DbIncrementalMerkleTree {
                     DbMerkleTreeError::database("write merkle update rows batch", err)
                 })?;
 
+            // Deduplicate node paths so a single upsert statement never updates the same row twice.
+            let mut latest_nodes: HashMap<[u8; 12], (Vec<u8>, i64)> = HashMap::new();
+            for update in &planned_updates {
+                latest_nodes
+                    .entry(update.path_bytes)
+                    .and_modify(|entry| {
+                        if update.tree_index > entry.1 {
+                            *entry = (update.new_bytes.clone(), update.tree_index);
+                        }
+                    })
+                    .or_insert_with(|| (update.new_bytes.clone(), update.tree_index));
+            }
+
+            let deduped_nodes: Vec<([u8; 12], Vec<u8>, i64)> = latest_nodes
+                .into_iter()
+                .map(|(path_bytes, (new_bytes, tree_index))| (path_bytes, new_bytes, tree_index))
+                .collect();
+
             let mut nodes_builder = QueryBuilder::<Postgres>::new(format!(
                 "INSERT INTO {table} (token_id, node_path, hash, updated_at_index)",
                 table = MERKLE_NODES_TABLE,
             ));
-            nodes_builder.push_values(&planned_updates, |mut b, update| {
-                b.push_bind(self.partitions.token_id());
-                b.push_bind(update.path_bytes.as_slice());
-                b.push_bind(update.new_bytes.as_slice());
-                b.push_bind(update.tree_index);
-            });
+            nodes_builder.push_values(
+                &deduped_nodes,
+                |mut b, (path_bytes, new_bytes, tree_index)| {
+                    b.push_bind(self.partitions.token_id());
+                    b.push_bind(path_bytes.as_slice());
+                    b.push_bind(new_bytes.as_slice());
+                    b.push_bind(tree_index);
+                },
+            );
             nodes_builder.push(
                 " ON CONFLICT (token_id, node_path)
                   DO UPDATE SET hash = EXCLUDED.hash,

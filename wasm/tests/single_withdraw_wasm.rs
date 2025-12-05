@@ -104,7 +104,7 @@ fn build_witness_input(
     let leaf_address = fr_to_address(leaf_address_fr);
 
     let index = tree
-        .insert(leaf_address, value_u256)
+        .insert(Address::ZERO, leaf_address, value_u256)
         .expect("test tree insert should succeed");
     let proof = tree.prove(index);
     assert_eq!(proof.siblings.len(), tree_height);
@@ -117,6 +117,7 @@ fn build_witness_input(
         merkle_root: fr_to_hex(&root),
         recipient: fr_to_hex(&recipient_fr),
         withdraw_value: fr_to_hex(&withdraw_value_fr),
+        from: fr_to_hex(&address_to_fr(Address::ZERO)),
         value: fr_to_hex(&value_fr),
         delta: fr_to_hex(&delta_fr),
         secret: fr_to_hex(&secret_fr),

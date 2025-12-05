@@ -11,7 +11,7 @@ use zkp::nova::{
     root_nova::{RootCircuit, RootExternalInputs},
     withdraw_nova::{WITHDRAW_STATE_LEN, WithdrawCircuit, dummy_withdraw_ext_input},
 };
-use zkp::utils::poseidon::utils::circom_poseidon_config;
+use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
 fn main() {
     println!("== Nova decider proof benchmarks (single run) ==");
@@ -20,10 +20,14 @@ fn main() {
 }
 
 fn bench_root_decider() -> f64 {
-    let poseidon_params = circom_poseidon_config::<Fr>();
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     let mut setup_rng = StdRng::seed_from_u64(0xDEC1_DEAD);
-    let nova_params = NovaParams::<RootCircuit<Fr>>::rand(poseidon_params.clone(), &mut setup_rng)
-        .expect("root nova params");
+    let nova_params = NovaParams::<RootCircuit<Fr>>::rand(
+        (poseidon2_params.clone(), poseidon3_params.clone()),
+        &mut setup_rng,
+    )
+    .expect("root nova params");
     let state_len = nova_params.state_len().expect("root state length");
 
     let mut nova = nova_params
@@ -33,7 +37,8 @@ fn bench_root_decider() -> f64 {
     let mut step_rng = StdRng::seed_from_u64(0xF00D_FACE);
     let external_input = RootExternalInputs::<Fr> {
         is_dummy: true,
-        address: Fr::zero(),
+        from_address: Fr::zero(),
+        to_address: Fr::zero(),
         value: Fr::zero(),
         siblings: [Fr::zero(); TRANSFER_TREE_HEIGHT],
     };
@@ -53,10 +58,11 @@ fn bench_root_decider() -> f64 {
 }
 
 fn bench_withdraw_decider() -> f64 {
-    let poseidon_params = circom_poseidon_config::<Fr>();
+    let poseidon2_params = circom_poseidon2_config::<Fr>();
+    let poseidon3_params = circom_poseidon3_config();
     let mut setup_rng = StdRng::seed_from_u64(0xA11C_EDA5);
     let nova_params = NovaParams::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>::rand(
-        poseidon_params.clone(),
+        (poseidon2_params.clone(), poseidon3_params.clone()),
         &mut setup_rng,
     )
     .expect("withdraw nova params");

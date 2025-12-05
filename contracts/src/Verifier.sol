@@ -2,13 +2,16 @@
 pragma solidity 0.8.30;
 
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
-import {MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
-import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {
+    MessagingFee,
+    MessagingReceipt
+} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {IzERC20} from "./interfaces/IzERC20.sol";
 import {IRootDecider, IWithdrawDecider} from "./interfaces/IDecider.sol";
 import {IWithdrawVerifier} from "./interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "./utils/GeneralRecipientLib.sol";
-import {OAppUpgradeable} from "./utils/layerzero/OAppUpgradeable.sol";
+import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
@@ -27,6 +30,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     event TransferRootRelayed(uint64 indexed index, uint256 root, bytes lzMsgId);
     event GlobalRootSaved(uint64 indexed aggSeq, uint256 root);
     event EmergencyTriggered(uint64 indexed index, uint256 root1, uint256 root2);
+    event ActivateEmergency();
     event DeactivateEmergency();
     event Teleport(
         address indexed to,
@@ -64,6 +68,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     error NothingToWithdraw(uint256 currentTotal, uint256 totalValue);
     error InsufficientMsgValue(uint256 required, uint256 provided);
 
+    // Root of an empty IncrementalMerkleTree at TRANSFER_TREE_HEIGHT (see zkp test).
     uint256 constant INITIAL_TRANSFER_ROOT =
         8687547638004116013653730449839507042090717944911454416140763808366589487233;
 
@@ -153,14 +158,14 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         return _getVerifierStorage().totalTeleported[recipient];
     }
 
-    constructor() {
+    constructor(address endpoint) OAppUpgradeable(endpoint) {
+        if (endpoint == address(0)) revert InvalidEndpointCall();
         _disableInitializers();
     }
 
-    /// @notice Initializes the verifier with the zERC20 token, Hub endpoint, LayerZero endpoint, and initial deciders.
+    /// @notice Initializes the verifier with the zERC20 token, Hub endpoint, LayerZero delegate, and initial deciders.
     /// @param token_ zERC20 token whose hash chain is reserved/minted against.
     /// @param hubEid_ LayerZero endpoint ID of the Hub contract.
-    /// @param endpoint LayerZero endpoint address (forwarded to OApp init).
     /// @param delegate Address that MUST be the contract owner; it is set as both Ownable owner and LayerZero delegate.
     /// @param rootDecider_ Nova verifier for transfer-root transitions.
     /// @param withdrawGlobalDecider_ Nova verifier for global teleport proofs.
@@ -170,7 +175,6 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     function initialize(
         address token_,
         uint32 hubEid_,
-        address endpoint,
         address delegate,
         address rootDecider_,
         address withdrawGlobalDecider_,
@@ -186,7 +190,8 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
             revert ZeroAddress();
         }
 
-        __OApp_init(endpoint, delegate);
+        __Ownable_init();
+        __OApp_init(delegate);
         __UUPSUpgradeable_init();
         __Verifier_init(
             token_,
@@ -197,6 +202,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
             singleWithdrawGlobalVerifier_,
             singleWithdrawLocalVerifier_
         );
+        _transferOwnership(delegate);
     }
 
     /// @dev Internal initializer that wires storage pointers and seeds the transfer root history with the constant from the spec.
@@ -450,6 +456,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// @notice Allows the owner to proactively pause the contract outside of proof conflicts.
     function activateEmergency() external onlyOwner {
         _pause();
+        emit ActivateEmergency();
     }
 
     /// @notice Clears the emergency pause that is triggered when conflicting transfer roots are observed.

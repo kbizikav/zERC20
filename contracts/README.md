@@ -16,7 +16,9 @@ The scripts consume environment variables through `vm.env*` helpers. Place the v
 
 ### Shared
 - `PRIVATE_KEY`: Hex-encoded private key for the broadcaster account (also used as the default delegate when overrides are omitted)
-- `RPC_URL`: RPC endpoint that matches the target chain passed to `--rpc-url`
+- `RPC_URL`: RPC endpoint that matches the target chain passed to `--rpc-url` (used for Hub deployment in the examples below)
+- `VERIFIER_RPC`: RPC endpoint for the verifier/token chain (used only by the CLI flag in the example command)
+- `DEPLOY_SALT` (string, optional): Overrides the base salt used for deterministic deployments
 
 ### Hub deployment (`DeployHub`)
 - `HUB_EID` (uint32): LayerZero endpoint ID for the chain hosting the Hub (for reference/logging)
@@ -29,12 +31,15 @@ The scripts consume environment variables through `vm.env*` helpers. Place the v
 - `HUB_EID` (uint32): Hub endpoint identifier the verifier should target
 - `VERIFIER_ENDPOINT` (address): LayerZero endpoint contract on the verifier chain
 - `VERIFIER_DELEGATE` (address, optional): Account that can update verifier LayerZero config; defaults to the broadcaster wallet if omitted
-- `LIQUIDITY_MANAGER` (address, optional): LiquidityManager allowed to mint/burn the token; omit to leave the role unset
+- `TOKEN_OWNER` (address, optional): Account that will own the token; defaults to the broadcaster wallet if omitted
+- `TOKEN_DECIMALS` (uint, optional): Token decimals; defaults to `18` and must be at least `6`
 
 ### Sample `.env`
 ```bash
 PRIVATE_KEY=0xabc123...
 RPC_URL=https://base-sepolia.example
+VERIFIER_RPC=https://optimism-sepolia.example
+DEPLOY_SALT=my-optional-salt
 
 HUB_EID=40245
 HUB_ENDPOINT=0x6EDCE65403992e310A62460808c4b910D972f10f
@@ -67,7 +72,7 @@ Run these commands inside `contracts/` to ensure the workspace compiles and test
 Deploying the Hub
 -----------------
 ```bash
-forge script script/Deploy.s.sol:DeployHub \
+forge script script/DeployHub.s.sol:DeployHub \
   --rpc-url $RPC_URL \
   --broadcast \
   -vvvv
@@ -82,12 +87,12 @@ Deploying the Verifier and Token
 --------------------------------
 The `DeployVerifierAndToken` script now reads every parameter from environment variables. Ensure the required values listed above are exported (or loaded via `.env`) for the target chain, then run:
 ```bash
-forge script script/Deploy.s.sol:DeployVerifierAndToken \
+forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken \
   --rpc-url $VERIFIER_RPC \
   --broadcast \
   -vvvv
 ```
-Setting `LIQUIDITY_MANAGER` is optional; omit it to leave the token minter role unset. The script logs the addresses of the token, verifier, and each deployed Nova decider contract and wires the verifier into the token automatically.
+The script logs the addresses of the token, verifier, and each deployed Nova decider contract and wires the verifier into the token automatically.
 
 Deploying Liquidity Manager and Adaptor
 ---------------------------------------

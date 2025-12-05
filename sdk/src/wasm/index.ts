@@ -15,7 +15,7 @@ import initWasm, {
   SingleWithdrawWasm,
   WithdrawNovaWasm,
   seed_message as wasmSeedMessage,
-} from '../assets/wasm/zkerc20_wasm.js';
+} from '../assets/wasm/web/zkerc20_wasm.js';
 
 import {
   AggregationTreeState,
@@ -39,8 +39,8 @@ import {
 import { normalizeHex, toBigInt } from '../utils/hex.js';
 import { NUM_BATCH_INVOICES } from '../constants.js';
 
-const DEFAULT_WASM_FILENAME = 'assets/wasm/zkerc20_wasm_bg.wasm';
-const BUNDLED_WASM_URL = new URL('../assets/wasm/zkerc20_wasm_bg.wasm', import.meta.url).toString();
+const DEFAULT_WASM_FILENAME = 'assets/wasm/web/zkerc20_wasm_bg.wasm';
+const BUNDLED_WASM_URL = new URL('../assets/wasm/web/zkerc20_wasm_bg.wasm', import.meta.url).toString();
 
 export interface WasmLocatorGlobal {
   location?: {

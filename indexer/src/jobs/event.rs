@@ -16,7 +16,7 @@ use client_common::{
     tokens::{TokenEntry, TokenMetadata},
 };
 
-use super::{try_acquire_lock};
+use super::try_acquire_lock;
 use crate::error::Result;
 
 const EVENT_LOCK_SALT: u64 = 0x45564e54; // "EVNT"

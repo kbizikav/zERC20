@@ -159,33 +159,37 @@ async fn tokens_status(state: Data<AppState>) -> actix_web::Result<Json<Vec<Toke
     let futures = contexts.into_iter().map(|token| {
         let state = state.clone();
         async move {
-        let (reserved_index, proved_index) = fetch_onchain_indices(&token).await;
+            let (reserved_index, proved_index) = fetch_onchain_indices(&token).await;
 
-        let events_synced_index = fetch_events_synced_index(&state.pool, token.id).await;
-        let tree_synced_index = fetch_tree_synced_index(&state.pool, token.id).await;
-        let ivc_generated_index = fetch_ivc_generated_index(&state.pool, token.id).await;
+            let events_synced_index = fetch_events_synced_index(&state.pool, token.id).await;
+            let tree_synced_index = fetch_tree_synced_index(&state.pool, token.id).await;
+            let ivc_generated_index = fetch_ivc_generated_index(&state.pool, token.id).await;
 
-        match (events_synced_index, tree_synced_index, ivc_generated_index) {
-            (Ok(events_synced_index), Ok(tree_synced_index), Ok(ivc_generated_index)) => {
-                Ok(TokenStatusResponse {
-                    label: token.label.clone(),
-                    chain_id: token.chain_id,
-                    token_address: token.token_address,
-                    verifier_address: token.verifier_address,
-                    onchain_reserved_index: reserved_index,
-                    onchain_proved_index: proved_index,
-                    events_synced_index,
-                    tree_synced_index,
-                    ivc_generated_index,
-                })
+            match (events_synced_index, tree_synced_index, ivc_generated_index) {
+                (Ok(events_synced_index), Ok(tree_synced_index), Ok(ivc_generated_index)) => {
+                    Ok(TokenStatusResponse {
+                        label: token.label.clone(),
+                        chain_id: token.chain_id,
+                        token_address: token.token_address,
+                        verifier_address: token.verifier_address,
+                        onchain_reserved_index: reserved_index,
+                        onchain_proved_index: proved_index,
+                        events_synced_index,
+                        tree_synced_index,
+                        ivc_generated_index,
+                    })
+                }
+                (events_res, tree_res, ivc_res) => {
+                    let err = events_res
+                        .err()
+                        .or_else(|| tree_res.err())
+                        .or_else(|| ivc_res.err());
+                    Err((
+                        token.label.clone(),
+                        err.unwrap_or_else(|| sqlx::Error::Protocol("unknown status error".into())),
+                    ))
+                }
             }
-            (events_res, tree_res, ivc_res) => {
-                let err = events_res.err().or_else(|| tree_res.err()).or_else(|| ivc_res.err());
-                Err((token.label.clone(), err.unwrap_or_else(|| {
-                    sqlx::Error::Protocol("unknown status error".into())
-                })))
-            }
-        }
         }
     });
 
@@ -512,7 +516,10 @@ async fn fetch_events_synced_index(
         .and_then(|v| if v >= 0 { Some(v as u64) } else { None }))
 }
 
-async fn fetch_tree_synced_index(pool: &PgPool, token_id: i64) -> std::result::Result<Option<u64>, sqlx::Error> {
+async fn fetch_tree_synced_index(
+    pool: &PgPool,
+    token_id: i64,
+) -> std::result::Result<Option<u64>, sqlx::Error> {
     let value: Option<Option<i64>> = sqlx::query_scalar::<_, Option<i64>>(
         r#"
         SELECT MAX(tree_index)

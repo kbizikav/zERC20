@@ -21,12 +21,14 @@ pub const WITHDRAW_STATE_LEN: usize = 4;
 
 #[derive(Clone, Debug)]
 pub struct WithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
-    pub poseidon_params: PoseidonConfig<F>,
+    pub poseidon2_params: PoseidonConfig<F>,
+    pub poseidon3_params: PoseidonConfig<F>,
 }
 
 #[derive(Clone, Debug)]
 pub struct WithdrawExternalInputs<F: PrimeField, const DEPTH: usize> {
     pub is_dummy: F,
+    pub from_address: F,
     pub value: F,
     pub secret: F,
     pub leaf_index: F,
@@ -37,6 +39,7 @@ impl<F: PrimeField, const DEPTH: usize> Default for WithdrawExternalInputs<F, DE
     fn default() -> Self {
         Self {
             is_dummy: F::zero(),
+            from_address: F::zero(),
             value: F::zero(),
             secret: F::zero(),
             leaf_index: F::zero(),
@@ -48,6 +51,7 @@ impl<F: PrimeField, const DEPTH: usize> Default for WithdrawExternalInputs<F, DE
 #[derive(Clone, Debug)]
 pub struct WithdrawExternalInputsVar<F: PrimeField, const DEPTH: usize> {
     pub is_dummy: Boolean<F>,
+    pub from_address: FpVar<F>,
     pub value: FpVar<F>,
     pub secret: FpVar<F>,
     pub leaf_index: FpVar<F>,
@@ -79,6 +83,8 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<WithdrawExternalInputs<F, DEPTH
                 },
                 mode,
             )?;
+            let from_address =
+                FpVar::<F>::new_variable(cs.clone(), || Ok(value.from_address), mode)?;
             let val = FpVar::<F>::new_variable(cs.clone(), || Ok(value.value), mode)?;
             let secret = FpVar::<F>::new_variable(cs.clone(), || Ok(value.secret), mode)?;
             let leaf_index = FpVar::<F>::new_variable(cs.clone(), || Ok(value.leaf_index), mode)?;
@@ -89,6 +95,7 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<WithdrawExternalInputs<F, DEPTH
             )?;
             Ok(Self {
                 is_dummy,
+                from_address,
                 value: val,
                 secret,
                 leaf_index,
@@ -99,13 +106,15 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<WithdrawExternalInputs<F, DEPTH
 }
 
 impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for WithdrawCircuit<F, DEPTH> {
-    type Params = PoseidonConfig<F>;
+    type Params = (PoseidonConfig<F>, PoseidonConfig<F>);
     type ExternalInputs = WithdrawExternalInputs<F, DEPTH>;
     type ExternalInputsVar = WithdrawExternalInputsVar<F, DEPTH>;
 
     fn new(params: Self::Params) -> Result<Self, Error> {
+        let (poseidon2_params, poseidon3_params) = params;
         Ok(Self {
-            poseidon_params: params,
+            poseidon2_params,
+            poseidon3_params,
         })
     }
 
@@ -131,6 +140,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for WithdrawCircuit
 
         let WithdrawExternalInputsVar {
             is_dummy,
+            from_address,
             value,
             secret,
             leaf_index,
@@ -138,15 +148,20 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for WithdrawCircuit
         } = external_inputs;
         let siblings: Vec<FpVar<F>> = siblings.into_iter().collect();
 
-        let poseidon_params = CircomCRHParametersVar {
-            parameters: self.poseidon_params.clone(),
+        let poseidon2_params = CircomCRHParametersVar {
+            parameters: self.poseidon2_params.clone(),
+        };
+        let poseidon3_params = CircomCRHParametersVar {
+            parameters: self.poseidon3_params.clone(),
         };
 
         let (out_root, out_recipient, out_leaf_index_with_offset, out_total) =
             withdraw_step::<F, DEPTH>(
-                &poseidon_params,
+                &poseidon2_params,
+                &poseidon3_params,
                 &merkle_root,
                 &recipient,
+                &from_address,
                 &prev_leaf_index_with_offset,
                 &prev_total_value,
                 &is_dummy,
@@ -171,6 +186,7 @@ pub fn dummy_withdraw_ext_input<const DEPTH: usize>(
 ) -> WithdrawExternalInputs<Fr, DEPTH> {
     WithdrawExternalInputs {
         is_dummy: Fr::ONE,
+        from_address: Fr::ZERO,
         value: u256_to_fr(value),
         secret: Fr::ZERO,
         leaf_index: Fr::from(index),
@@ -187,8 +203,9 @@ mod tests {
         },
         nova::params::NovaParams,
         utils::{
-            convertion::fr_to_address, general_recipient::GeneralRecipient,
-            poseidon::utils::circom_poseidon_config,
+            convertion::fr_to_address,
+            general_recipient::GeneralRecipient,
+            poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
             tree::incremental_merkle_tree::IncrementalMerkleTree,
         },
     };
@@ -236,13 +253,13 @@ mod tests {
         ];
 
         let mut tree = IncrementalMerkleTree::new(DEPTH);
-        tree.insert(Address::ZERO, U256::ZERO)
+        tree.insert(Address::ZERO, Address::ZERO, U256::ZERO)
             .expect("test tree insert should succeed");
 
         let mut indices = vec![];
         for i in 0..4 {
             let index = tree
-                .insert(fr_to_address(addresses[i]), values[i])
+                .insert(Address::ZERO, fr_to_address(addresses[i]), values[i])
                 .expect("test tree insert should succeed");
             indices.push(index);
         }
@@ -256,6 +273,7 @@ mod tests {
             let proof = tree.prove(leaf_index);
             let ext_input = WithdrawExternalInputs::<Fr, DEPTH> {
                 is_dummy: Fr::ZERO,
+                from_address: Fr::ZERO,
                 value: u256_to_fr(*value),
                 secret: secrets[i],
                 leaf_index: Fr::from(leaf_index),
@@ -269,9 +287,13 @@ mod tests {
             external_inputs.push(ext_input);
         }
 
-        let f_params = circom_poseidon_config::<Fr>();
-        let nova_params =
-            NovaParams::<WithdrawCircuit<Fr, DEPTH>>::rand(f_params, &mut rng).unwrap();
+        let poseidon2_params = circom_poseidon2_config::<Fr>();
+        let poseidon3_params = circom_poseidon3_config();
+        let nova_params = NovaParams::<WithdrawCircuit<Fr, DEPTH>>::rand(
+            (poseidon2_params, poseidon3_params),
+            &mut rng,
+        )
+        .unwrap();
 
         let mut nova = nova_params.initial_nova(z_0.clone()).unwrap();
         for external_input in external_inputs.iter() {

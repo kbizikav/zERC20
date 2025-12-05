@@ -527,7 +527,9 @@ async fn advance_contiguous_index(pool: &PgPool, token_id: i64) -> Result<Indexe
             .bind(limit)
             .fetch_all(&mut *tx)
             .await
-            .map_err(|err| EventIndexerError::database("probe next contiguous events batch", err))?;
+            .map_err(|err| {
+                EventIndexerError::database("probe next contiguous events batch", err)
+            })?;
 
         if rows.is_empty() {
             break;
