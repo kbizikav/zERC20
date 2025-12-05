@@ -3,17 +3,17 @@ pragma solidity ^0.8.20;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Hub} from "../src/Hub.sol";
-import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
-import {OptionsBuilder} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/libs/OptionsBuilder.sol";
-import {TestHelperOz5, EndpointV2Mock, MockSendLib} from "./utils/TestHelperOz5.sol";
+import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
+import {TestHelperOz5, EndpointV2, SimpleMessageLibMock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract HubTest is TestHelperOz5 {
     using OptionsBuilder for bytes;
 
     Hub internal hub;
-    EndpointV2Mock internal endpoint;
-    MockSendLib internal sendLib;
+    EndpointV2 internal endpoint;
+    SimpleMessageLibMock internal sendLib;
 
     uint32 internal constant LOCAL_EID = 1;
     uint32 internal constant REMOTE_EID_A = 2;
@@ -25,19 +25,12 @@ contract HubTest is TestHelperOz5 {
 
     bytes32 internal constant PACKET_SENT_SIG = keccak256("PacketSent(bytes,bytes,address)");
 
-    receive() external payable {}
-
-    function setUp() public {
-        endpoint = _deployEndpoint(LOCAL_EID);
-        sendLib = _deployMessageLib();
-
-        endpoint.registerLibrary(address(sendLib));
-        endpoint.setDefaultSendLibrary(REMOTE_EID_A, address(sendLib));
-        endpoint.setDefaultSendLibrary(REMOTE_EID_B, address(sendLib));
-        endpoint.setDefaultReceiveLibrary(REMOTE_EID_A, address(sendLib), 0);
-        endpoint.setDefaultReceiveLibrary(REMOTE_EID_B, address(sendLib), 0);
-        endpoint.setMessagingFee(REMOTE_EID_A, FEE_PER_MESSAGE, 0);
-        endpoint.setMessagingFee(REMOTE_EID_B, FEE_PER_MESSAGE, 0);
+    function setUp() public override {
+        super.setUp();
+        setUpEndpoints(3, LibraryType.SimpleMessageLib);
+        endpoint = endpointSetup.endpointList[0];
+        sendLib = SimpleMessageLibMock(payable(endpointSetup.sendLibs[0]));
+        sendLib.setMessagingFee(FEE_PER_MESSAGE, 0);
 
         hub = _deployInitializedHub();
 
@@ -241,8 +234,7 @@ contract HubTest is TestHelperOz5 {
 
     function testLzReceiveUpdatesRoot() public {
         Hub localHub = _deployInitializedHub();
-        Hub.TokenInfo memory info =
-            Hub.TokenInfo({chainId: 909, eid: 77, verifier: address(0x7), token: address(0x8)});
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 909, eid: 77, verifier: address(0x7), token: address(0x8)});
         localHub.registerToken(info);
 
         Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
@@ -289,8 +281,8 @@ contract HubTest is TestHelperOz5 {
     }
 
     function testHubUpgradePreservesState() public {
-        Hub implementation = new Hub();
-        bytes memory initData = abi.encodeCall(Hub.initialize, (address(endpoint), address(this)));
+        Hub implementation = new Hub(address(endpoint));
+        bytes memory initData = abi.encodeCall(Hub.initialize, (address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         Hub proxiedHub = Hub(address(proxy));
 
@@ -302,7 +294,7 @@ contract HubTest is TestHelperOz5 {
         assertEq(storedVerifier, info.verifier, "verifier not stored initially");
         assertEq(storedToken, info.token, "token not stored initially");
 
-        HubUpgradeMock newImplementation = new HubUpgradeMock();
+        HubUpgradeMock newImplementation = new HubUpgradeMock(address(endpoint));
         proxiedHub.upgradeTo(address(newImplementation));
 
         HubUpgradeMock upgraded = HubUpgradeMock(address(proxiedHub));
@@ -321,8 +313,8 @@ contract HubTest is TestHelperOz5 {
     }
 
     function _deployInitializedHub() internal returns (Hub deployedHub) {
-        Hub implementation = new Hub();
-        bytes memory initData = abi.encodeCall(Hub.initialize, (address(endpoint), address(this)));
+        Hub implementation = new Hub(address(endpoint));
+        bytes memory initData = abi.encodeCall(Hub.initialize, (address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         deployedHub = Hub(address(proxy));
     }
@@ -338,6 +330,8 @@ contract HubTest is TestHelperOz5 {
 }
 
 contract HubUpgradeMock is Hub {
+    constructor(address endpoint) Hub(endpoint) {}
+
     function version() external pure returns (string memory) {
         return "hub-v2";
     }

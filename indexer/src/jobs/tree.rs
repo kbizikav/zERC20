@@ -196,6 +196,7 @@ struct TreeTokenContext {
 #[derive(FromRow)]
 struct EventRow {
     event_index: i64,
+    from_address: Vec<u8>,
     to_address: Vec<u8>,
     value: Vec<u8>,
 }
@@ -224,7 +225,7 @@ async fn ingest_events(
 
         let events: Vec<EventRow> = sqlx::query_as(
             r#"
-            SELECT event_index, to_address, value
+            SELECT event_index, from_address, to_address, value
             FROM indexed_transfer_events
             WHERE token_id = $1
               AND event_index >= $2
@@ -275,11 +276,13 @@ async fn ingest_events(
                 return Ok(());
             }
 
+            let from_address =
+                parse_address(&event.from_address).context("invalid from_address bytes")?;
             let to_address =
                 parse_address(&event.to_address).context("invalid to_address bytes")?;
             let value = parse_u256(&event.value).context("invalid value bytes")?;
 
-            leaves.push((to_address, value));
+            leaves.push((from_address, to_address, value));
             expected_index += 1;
         }
 

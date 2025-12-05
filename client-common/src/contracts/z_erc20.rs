@@ -26,6 +26,17 @@ sol!(
 );
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct Eip712Domain {
+    pub fields: u8,
+    pub name: String,
+    pub version: String,
+    pub chain_id: U256,
+    pub verifying_contract: Address,
+    pub salt: B256,
+    pub extensions: Vec<U256>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TeleportEvent {
     pub to: Address,
     pub value: U256,
@@ -67,16 +78,16 @@ impl ZErc20Contract {
         symbol_: String,
         owner: Address,
         endpoint: Address,
+        decimals: u8,
     ) -> anyhow::Result<Self> {
         let signer = get_provider_with_signer(&provider, private_key);
-        let implementation = zERC20::deploy(signer.clone()).await?;
+        let implementation = zERC20::deploy(signer.clone(), endpoint, decimals).await?;
         let implementation_address = *implementation.address();
 
         let init_data = zERC20::initializeCall {
             name_,
             symbol_,
             initialOwner: owner,
-            endpoint,
         }
         .abi_encode();
 
@@ -112,6 +123,24 @@ impl ZErc20Contract {
         let contract = zERC20::new(self.address, self.provider.clone());
         let addr = contract.minter().call().await?;
         Ok(addr)
+    }
+
+    pub async fn domain_separator(&self) -> ContractResult<B256> {
+        let contract = zERC20::new(self.address, self.provider.clone());
+        let separator = contract.DOMAIN_SEPARATOR().call().await?;
+        Ok(separator)
+    }
+
+    pub async fn eip712_domain(&self) -> ContractResult<Eip712Domain> {
+        let contract = zERC20::new(self.address, self.provider.clone());
+        let domain = contract.eip712Domain().call().await?;
+        Ok(Eip712Domain::from(domain))
+    }
+
+    pub async fn nonces(&self, owner: Address) -> ContractResult<U256> {
+        let contract = zERC20::new(self.address, self.provider.clone());
+        let nonce = contract.nonces(owner).call().await?;
+        Ok(nonce)
     }
 
     pub async fn mint(
@@ -180,6 +209,26 @@ impl ZErc20Contract {
         let signer = get_provider_with_signer(&self.provider, private_key);
         let contract = zERC20::new(self.address, signer.clone());
         let call = contract.transfer(to, amount).with_cloned_provider();
+        send_call_with_legacy(call, &signer, self.legacy_tx).await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn permit(
+        &self,
+        private_key: B256,
+        owner: Address,
+        spender: Address,
+        value: U256,
+        deadline: U256,
+        v: u8,
+        r: B256,
+        s: B256,
+    ) -> ContractResult<PendingTransactionBuilder<Ethereum>> {
+        let signer = get_provider_with_signer(&self.provider, private_key);
+        let contract = zERC20::new(self.address, signer.clone());
+        let call = contract
+            .permit(owner, spender, value, deadline, v, r, s)
+            .with_cloned_provider();
         send_call_with_legacy(call, &signer, self.legacy_tx).await
     }
 
@@ -272,6 +321,20 @@ impl ZErc20Contract {
             .await
             .map_err(|err| ContractError::transport("get_block_number", err))?;
         Ok(n)
+    }
+}
+
+impl From<zERC20::eip712DomainReturn> for Eip712Domain {
+    fn from(value: zERC20::eip712DomainReturn) -> Self {
+        Self {
+            fields: value.fields.as_slice()[0],
+            name: value.name,
+            version: value.version,
+            chain_id: value.chainId,
+            verifying_contract: value.verifyingContract,
+            salt: value.salt,
+            extensions: value.extensions,
+        }
     }
 }
 

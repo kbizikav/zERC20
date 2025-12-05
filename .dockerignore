@@ -1,0 +1,37 @@
+# Version control
+.git
+.gitignore
+.gitmodules
+.github
+
+# Rust build artifacts
+target
+**/target
+
+# Node/JS artifacts
+node_modules
+**/node_modules
+.pnpm-store
+**/dist
+**/build
+**/out
+**/.next
+**/.turbo
+**/.tsbuildinfo
+
+# Wasm-pack output
+wasm/pkg
+
+# Internet Computer artifacts
+.dfx
+.ic.env
+canister_ids.json
+
+# Environment and local config
+config/*
+!config/tokens.example.json
+frontend-app/public/config/*.json
+!frontend-app/public/config/.gitkeep
+
+# OS files
+.DS_Store

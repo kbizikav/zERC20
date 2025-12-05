@@ -2,16 +2,19 @@
 pragma solidity ^0.8.20;
 
 import {Vm} from "forge-std/Vm.sol";
-import {MessagingFee, MessagingReceipt} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OAppSender.sol";
-import {Origin} from "@layerzerolabs/lz-evm-oapp-v2/contracts/oapp/OApp.sol";
+import {
+    MessagingFee,
+    MessagingReceipt
+} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {TestHelperOz5, EndpointV2Mock, MockSendLib} from "./utils/TestHelperOz5.sol";
+import {TestHelperOz5, EndpointV2, SimpleMessageLibMock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 
 contract VerifierTest is TestHelperOz5 {
     Verifier internal verifier;
-    EndpointV2Mock internal endpoint;
-    MockSendLib internal sendLib;
+    EndpointV2 internal endpoint;
+    SimpleMessageLibMock internal sendLib;
 
     address internal constant TOKEN = address(0xdead);
     address internal constant ROOT_DECIDER = address(0x100);
@@ -26,16 +29,12 @@ contract VerifierTest is TestHelperOz5 {
 
     bytes32 internal constant PACKET_SENT_SIG = keccak256("PacketSent(bytes,bytes,address)");
 
-    receive() external payable {}
-
-    function setUp() public {
-        endpoint = _deployEndpoint(LOCAL_EID);
-        sendLib = _deployMessageLib();
-
-        endpoint.registerLibrary(address(sendLib));
-        endpoint.setDefaultSendLibrary(HUB_EID, address(sendLib));
-        endpoint.setDefaultReceiveLibrary(HUB_EID, address(sendLib), 0);
-        endpoint.setMessagingFee(HUB_EID, FEE_PER_MESSAGE, 0);
+    function setUp() public override {
+        super.setUp();
+        setUpEndpoints(2, LibraryType.SimpleMessageLib);
+        endpoint = endpointSetup.endpointList[0];
+        sendLib = SimpleMessageLibMock(payable(endpointSetup.sendLibs[0]));
+        sendLib.setMessagingFee(FEE_PER_MESSAGE, 0);
 
         verifier = _deployVerifier(address(this));
         verifier.setPeer(HUB_EID, _toBytes32(address(this)));
@@ -201,13 +200,12 @@ contract VerifierTest is TestHelperOz5 {
     }
 
     function testVerifierUpgradePreservesState() public {
-        Verifier implementation = new Verifier();
+        Verifier implementation = new Verifier(address(endpoint));
         bytes memory initData = abi.encodeCall(
             Verifier.initialize,
             (
                 TOKEN,
                 HUB_EID,
-                address(endpoint),
                 address(this),
                 ROOT_DECIDER,
                 WITHDRAW_GLOBAL_DECIDER,
@@ -233,7 +231,7 @@ contract VerifierTest is TestHelperOz5 {
             updatedSingleWithdrawLocal
         );
 
-        VerifierUpgradeMock newImplementation = new VerifierUpgradeMock();
+        VerifierUpgradeMock newImplementation = new VerifierUpgradeMock(address(endpoint));
         proxiedVerifier.upgradeTo(address(newImplementation));
 
         VerifierUpgradeMock upgraded = VerifierUpgradeMock(address(proxiedVerifier));
@@ -258,13 +256,12 @@ contract VerifierTest is TestHelperOz5 {
     }
 
     function _deployVerifier(address delegate) internal returns (Verifier) {
-        Verifier implementation = new Verifier();
+        Verifier implementation = new Verifier(address(endpoint));
         bytes memory initData = abi.encodeCall(
             Verifier.initialize,
             (
                 TOKEN,
                 HUB_EID,
-                address(endpoint),
                 delegate,
                 ROOT_DECIDER,
                 WITHDRAW_GLOBAL_DECIDER,
@@ -276,10 +273,11 @@ contract VerifierTest is TestHelperOz5 {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         return Verifier(address(proxy));
     }
-
 }
 
 contract VerifierUpgradeMock is Verifier {
+    constructor(address endpoint) Verifier(endpoint) {}
+
     function version() external pure returns (string memory) {
         return "verifier-v2";
     }

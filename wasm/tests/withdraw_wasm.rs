@@ -18,7 +18,7 @@ use zkp::{
     },
     utils::{
         convertion::{address_to_fr, fr_to_address, u256_to_fr},
-        poseidon::utils::circom_poseidon_config,
+        poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
         tree::incremental_merkle_tree::IncrementalMerkleTree,
     },
 };
@@ -71,13 +71,13 @@ fn test_withdraw_nova_wasm_prove() {
     ];
 
     let mut tree = IncrementalMerkleTree::new(TRANSFER_TREE_HEIGHT);
-    tree.insert(Address::ZERO, U256::ZERO)
+    tree.insert(Address::ZERO, Address::ZERO, U256::ZERO)
         .expect("test tree insert should succeed");
 
     let mut indices = vec![];
     for i in 0..4 {
         let index = tree
-            .insert(fr_to_address(addresses[i]), values[i])
+            .insert(Address::ZERO, fr_to_address(addresses[i]), values[i])
             .expect("test tree insert should succeed");
         indices.push(index);
     }
@@ -95,6 +95,7 @@ fn test_withdraw_nova_wasm_prove() {
         let sibling_hexes: Vec<String> = siblings_vec.iter().map(fr_to_hex).collect();
         let js_step = JsExternalInput {
             is_dummy: false,
+            from: fr_to_hex(&address_to_fr(Address::ZERO)),
             value: fr_to_hex(&u256_to_fr(*value)),
             secret: fr_to_hex(&secrets[i]),
             leaf_index: leaf_index.to_string(),
@@ -111,6 +112,7 @@ fn test_withdraw_nova_wasm_prove() {
         let sibling_hexes = vec![zero_sibling.clone(); TRANSFER_TREE_HEIGHT];
         let js_step = JsExternalInput {
             is_dummy: true,
+            from: fr_to_hex(&ext_input.from_address),
             value: fr_to_hex(&ext_input.value),
             secret: fr_to_hex(&ext_input.secret),
             leaf_index: leaf_index.to_string(),
@@ -119,7 +121,7 @@ fn test_withdraw_nova_wasm_prove() {
         wasm_steps.push(js_step);
     }
 
-    let f_params = circom_poseidon_config::<Fr>();
+    let f_params = (circom_poseidon2_config::<Fr>(), circom_poseidon3_config());
 
     let local_nova_pp_bytes = include_bytes!("../../nova_artifacts/withdraw_local_nova_pp.bin");
     let local_nova_vp_bytes = include_bytes!("../../nova_artifacts/withdraw_local_nova_vp.bin");

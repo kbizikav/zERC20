@@ -36,9 +36,7 @@ Provide optional hub metadata and token definitions in JSON (default path `../co
   "hub": {
     "hub_address": "0x0000000000000000000000000000000000000001",
     "chain_id": 5,
-    "rpc_urls": [
-      "https://eth-goerli.g.alchemy.com/v2/YOUR_KEY"
-    ]
+    "rpc_urls": ["https://eth-goerli.g.alchemy.com/v2/YOUR_KEY"]
   },
   "tokens": [
     {
@@ -71,10 +69,10 @@ Each token must include at least one RPC URL (string or array). Duplicate labels
 Instead of mounting `tokens.json`, you can provide the same metadata as a Base64-encoded,
 gzip-compressed blob via the `TOKENS_COMPRESSED` environment variable (the same format
 used by `VITE_TOKENS_COMPRESSED` in the frontend). Generate the payload with
-`scripts/encode-tokens.sh` and export it before launching `tree-indexer`:
+`scripts/encode_tokens.sh` and export it before launching `tree-indexer`:
 
 ```bash
-export TOKENS_COMPRESSED="$(scripts/encode-tokens.sh config/tokens.json)"
+export TOKENS_COMPRESSED="$(scripts/encode_tokens.sh config/tokens.json)"
 cargo run -p tree-indexer
 ```
 

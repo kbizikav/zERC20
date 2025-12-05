@@ -18,3 +18,6 @@
 [submodule "contracts/lib/poseidon-solidity"]
 	path = contracts/lib/poseidon-solidity
 	url = https://github.com/chancehudson/poseidon-solidity
+[submodule "contracts/lib/devtools"]
+	path = contracts/lib/devtools
+	url = https://github.com/LayerZero-Labs/devtools

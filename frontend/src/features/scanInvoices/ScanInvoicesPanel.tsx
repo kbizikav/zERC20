@@ -27,6 +27,7 @@ import { RedeemProgressModal } from '@features/redeem/RedeemProgressModal';
 import { createRedeemSteps, setStepStatus, type RedeemStage, type RedeemStep } from '@features/redeem/redeemSteps';
 import { yieldToUi } from '@features/redeem/yieldToUi';
 import { toAccountKey } from '@utils/accountKey';
+import type { StorageState } from '@zerc20/sdk';
 
 interface ScanInvoicesPanelProps {
   config: AppConfig;
@@ -46,6 +47,8 @@ interface InvoiceDetail {
   owner: string;
   chainId: bigint;
 }
+
+const EMPTY_INVOICE_LIST: readonly string[] = [];
 
 function isSingleInvoice(invoiceId: string): boolean {
   const bytes = getBytes(normalizeHex(invoiceId));
@@ -75,7 +78,12 @@ export function ScanInvoicesPanel({ config, tokens }: ScanInvoicesPanelProps): J
 
   const availableTokens = useMemo(() => tokens.tokens ?? [], [tokens.tokens]);
   const accountKey = useMemo(() => toAccountKey(wallet.account), [wallet.account]);
-  const storedInvoices = useStorageStore((state) => (accountKey ? state.invoices[accountKey] ?? [] : []));
+  const storedInvoices = useStorageStore(
+    useCallback(
+      (state: StorageState) => (accountKey ? state.invoices[accountKey] ?? EMPTY_INVOICE_LIST : EMPTY_INVOICE_LIST),
+      [accountKey],
+    ),
+  );
   const setStoredInvoices = useStorageStore((state) => state.setInvoices);
   const connectedToken = useMemo(() => {
     const chain = wallet.chainId;

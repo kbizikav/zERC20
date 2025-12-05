@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
 use alloy::primitives::{Address, U256};
-use anyhow::{anyhow, bail, Result};
+use anyhow::{Result, anyhow, bail};
 
 /// Parse a 20-byte address from raw bytes.
 pub fn parse_address(bytes: &[u8]) -> Result<Address> {

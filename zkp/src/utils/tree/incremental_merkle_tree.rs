@@ -27,15 +27,17 @@ pub enum IncrementalMerkleTreeError {
 pub type Result<T> = std::result::Result<T, IncrementalMerkleTreeError>;
 
 pub struct Leaf {
-    pub address: Address,
+    pub from: Address,
+    pub to: Address,
     pub value: U256,
 }
 
 impl Leaf {
     pub fn hash(&self) -> Fr {
-        let address_fr = address_to_fr(self.address);
+        let from_fr = address_to_fr(self.from);
+        let address_fr = address_to_fr(self.to);
         let value_fr = u256_to_fr(self.value);
-        compute_leaf_hash(address_fr, value_fr)
+        compute_leaf_hash(from_fr, address_fr, value_fr)
     }
 }
 
@@ -65,8 +67,8 @@ impl IncrementalMerkleTree {
         }
     }
 
-    pub fn insert(&mut self, address: Address, value: U256) -> Result<u64> {
-        let leaf = Leaf { address, value };
+    pub fn insert(&mut self, from: Address, to: Address, value: U256) -> Result<u64> {
+        let leaf = Leaf { from, to, value };
         let leaf_hash = leaf.hash();
         let index = self.index;
         let height = self.tree.height();
@@ -79,12 +81,9 @@ impl IncrementalMerkleTree {
             });
         }
         self.tree.update_leaf(index, leaf_hash);
-        self.hash_chain = hash_chain(self.hash_chain, leaf.address, leaf.value);
+        self.hash_chain = hash_chain(self.hash_chain, leaf.from, leaf.to, leaf.value);
         self.leaves.insert(index, leaf);
-        self.address_to_indices
-            .entry(address)
-            .or_default()
-            .push(index);
+        self.address_to_indices.entry(to).or_default().push(index);
         self.index = self
             .index
             .checked_add(1)
@@ -121,20 +120,40 @@ fn max_leaf_capacity(height: usize) -> Result<u128> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{nova::constants::TRANSFER_TREE_HEIGHT, utils::convertion::fr_to_u256};
+    use core::str::FromStr;
 
     #[test]
     fn insert_rejects_capacity_overflow() {
         let mut tree = IncrementalMerkleTree::new(2);
         for _ in 0..4 {
-            tree.insert(Address::ZERO, U256::from(1u64))
+            tree.insert(Address::ZERO, Address::ZERO, U256::from(1u64))
                 .expect("within capacity");
         }
-        let err = tree.insert(Address::ZERO, U256::from(1u64)).unwrap_err();
+        let err = tree
+            .insert(Address::ZERO, Address::ZERO, U256::from(1u64))
+            .unwrap_err();
         assert!(matches!(
             err,
             IncrementalMerkleTreeError::TreeFull { capacity, .. } if capacity == 4
         ));
         assert_eq!(tree.index, 4);
         assert_eq!(tree.address_to_indices[&Address::ZERO].len(), 4);
+    }
+
+    #[test]
+    fn initial_transfer_root_matches_expected() {
+        let tree = IncrementalMerkleTree::new(TRANSFER_TREE_HEIGHT);
+        let root = tree.get_root();
+        let root_u256 = fr_to_u256(root);
+        let expected = U256::from_str(
+            "8687547638004116013653730449839507042090717944911454416140763808366589487233",
+        )
+        .expect("decimal fits in U256");
+        assert_eq!(
+            root_u256, expected,
+            "computed initial transfer root {} does not match expected",
+            root_u256
+        );
     }
 }

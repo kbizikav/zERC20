@@ -111,6 +111,7 @@ export class ProofService {
         toFieldHex(params.event.value),
         "withdrawValue"
       ),
+      from: formatFieldElement(params.event.from, "from"),
       value: formatFieldElement(toFieldHex(params.event.value), "value"),
       delta: zeroField,
       secret: formatFieldElement(params.secretHex, "secret"),
@@ -179,6 +180,7 @@ export class ProofService {
     ];
     const steps = sortedEvents.map((event, idx) => ({
       isDummy: false,
+      from: formatFieldElement(event.from, `events[${idx}].from`),
       value: formatFieldElement(
         toFieldHex(event.value),
         `events[${idx}].value`

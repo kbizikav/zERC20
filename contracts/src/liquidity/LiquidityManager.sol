@@ -186,11 +186,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
     // ---------------------------- Internal ----------------------------------
 
-    function _quoteWrap(uint256 amount, LiquidityManagerStorage storage $)
-        internal
-        view
-        returns (uint256 reward)
-    {
+    function _quoteWrap(uint256 amount, LiquidityManagerStorage storage $) internal view returns (uint256 reward) {
         uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
         uint256 rewardAmount = FeeLib.quoteWrap(amount, liquidityBefore, $.lTarget, $.rewardParams);
         uint256 surplus = $.feeSurplus;

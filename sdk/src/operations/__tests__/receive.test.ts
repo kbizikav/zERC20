@@ -88,6 +88,7 @@ describe('generateSingleTeleportProof', () => {
     expect(witnessArg).toHaveProperty('merkleRoot', padHex(99));
     expect(witnessArg).toHaveProperty('withdrawValue');
     expect(witnessArg.withdrawValue).toMatch(/^0x[0-9a-f]{64}$/i);
+    expect(witnessArg).toHaveProperty('from', padHex(11));
     expect(witnessArg).not.toHaveProperty('merkle_root');
     expect(witnessArg).not.toHaveProperty('withdraw_value');
   });

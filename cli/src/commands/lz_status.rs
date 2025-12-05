@@ -1,12 +1,12 @@
 use alloy::{
     primitives::{Address, B256, U256},
     providers::Provider,
-    sol_types::{SolCall, SolEvent, SolValue},
+    sol_types::{SolCall, SolEvent},
 };
 use anyhow::{Context, Result, anyhow};
 use client_common::{
     contracts::utils::{NormalProvider, fetch_tx_input, get_address_from_private_key},
-    contracts::{adaptor::Adaptor, z_erc20::zERC20},
+    contracts::z_erc20::zERC20,
     layerzero::{
         Destination, Endpoint, HttpLayerZeroClient, LayerZeroClient, LzCompose, ScanMessage, Stage,
         WalletMessagesParams,
@@ -189,21 +189,9 @@ fn source_payload(message: &ScanMessage) -> Option<&str> {
 
 #[derive(Debug)]
 struct SendPayloadSummary {
-    dst_eid: u32,
-    to: Address,
     amount: U256,
-    min_amount: U256,
     amount_sent_ld: Option<U256>,
     amount_received_ld: Option<U256>,
-    compose: Option<BridgeRequestSummary>,
-}
-
-#[derive(Debug)]
-struct BridgeRequestSummary {
-    dst_eid: u32,
-    to: Address,
-    refund_address: Address,
-    min_amount_out: U256,
 }
 
 fn print_send_summary(summary: &SendPayloadSummary) {
@@ -247,31 +235,12 @@ fn decode_send_payload(payload_hex: &str) -> Result<SendPayloadSummary> {
         )
     })?;
     let param = call._sendParam;
-    let compose = decode_bridge_request(&param.composeMsg)?;
 
     Ok(SendPayloadSummary {
-        dst_eid: param.dstEid,
-        to: Address::from_word(param.to),
         amount: param.amountLD,
-        min_amount: param.minAmountLD,
         amount_sent_ld: None,
         amount_received_ld: None,
-        compose,
     })
-}
-
-fn decode_bridge_request(bytes: &[u8]) -> Result<Option<BridgeRequestSummary>> {
-    if bytes.is_empty() {
-        return Ok(None);
-    }
-    let request = decode_bridge_request_inner(bytes)
-        .map_err(|err| anyhow!("decode compose BridgeRequest: {err}"))?;
-    Ok(Some(BridgeRequestSummary {
-        dst_eid: request.dstEid,
-        to: request.to,
-        refund_address: request.refundAddress,
-        min_amount_out: request.minAmountOut,
-    }))
 }
 
 fn apply_decimal_conversion(summary: &mut SendPayloadSummary, rate: U256) {
@@ -323,20 +292,6 @@ fn decode_send_call(bytes: &[u8]) -> Result<zERC20::sendCall> {
     }
 
     Err(anyhow!("zERC20::sendCall decode failed"))
-}
-
-fn decode_bridge_request_inner(bytes: &[u8]) -> Result<Adaptor::BridgeRequest> {
-    if let Ok(request) = Adaptor::BridgeRequest::abi_decode(bytes) {
-        return Ok(request);
-    }
-
-    if bytes.len() > 4 {
-        if let Ok(request) = Adaptor::BridgeRequest::abi_decode(&bytes[4..]) {
-            return Ok(request);
-        }
-    }
-
-    Err(anyhow!("Adaptor::BridgeRequest decode failed"))
 }
 
 async fn fetch_and_decode_send(

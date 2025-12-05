@@ -10,4 +10,3 @@ interface IMintableBurnableERC20 {
 
     function burn(address from, uint256 amount) external;
 }
-

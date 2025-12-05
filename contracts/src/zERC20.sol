@@ -4,23 +4,28 @@ pragma solidity 0.8.30;
 import {IzERC20} from "./interfaces/IzERC20.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {OFTUpgradeable} from "./utils/layerzero/oft/OFTUpgradeable.sol";
+import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
+import {ERC20PermitUpgradeable} from
+    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /// @title zERC20
 /// @notice Upgradeable ERC20 token that feeds the zk circuits by enforcing 248-bit transfer values,
-///         hashing `(to, value)` pairs into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
+///         hashing `(from, to, value)` triples into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
 ///         Also implements the LayerZero V2 OFT interface for omnichain transfers.
-contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
+contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, IzERC20 {
     using SlotDerivation for string;
+
+    uint8 private immutable tokenDecimals;
 
     /// @custom:storage-location erc7201:zerc20.storage.zerc20
     struct ZERC20Storage {
         uint256 hashChain;
         uint256 index;
+        uint256 totalTeleported;
         address verifier;
         address minter;
-        uint8 decimals;
     }
 
     function _getZERC20Storage() private pure returns (ZERC20Storage storage $) {
@@ -43,11 +48,11 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     error ZeroAddress();
     /// @notice Reverts when a value exceeds the supported 248-bit range.
     error ValueTooLarge();
-    /// @notice Reverts when the requested decimals are incompatible with shared decimals.
-    error InvalidDecimals();
 
     /// @notice Locks implementation contracts on deployment.
-    constructor() {
+    constructor(address endpoint, uint8 decimals_) OFTCoreUpgradeable(decimals_, endpoint) {
+        if (endpoint == address(0)) revert InvalidEndpointCall();
+        tokenDecimals = decimals_;
         _disableInitializers();
     }
 
@@ -55,21 +60,14 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     /// @param name_ ERC20 name.
     /// @param symbol_ ERC20 symbol.
     /// @param initialOwner Account receiving ownership, LayerZero delegate permissions, and upgrade authority.
-    /// @param endpoint LayerZero endpoint used for OFT messaging.
-    /// @param decimals_ Token decimals; must be >= shared decimals.
-    function initialize(
-        string memory name_,
-        string memory symbol_,
-        address initialOwner,
-        address endpoint,
-        uint8 decimals_
-    ) external initializer {
-        if (initialOwner == address(0) || endpoint == address(0)) revert ZeroAddress();
-        if (decimals_ < sharedDecimals()) revert InvalidDecimals();
-
-        _getZERC20Storage().decimals = decimals_;
-        __OFT_init(name_, symbol_, endpoint, initialOwner);
+    function initialize(string memory name_, string memory symbol_, address initialOwner) external initializer {
+        if (initialOwner == address(0)) revert ZeroAddress();
+        __ERC20_init(name_, symbol_);
+        __ERC20Permit_init(name_);
+        __Ownable_init();
+        __OFTCore_init(initialOwner);
         __UUPSUpgradeable_init();
+        _transferOwnership(initialOwner);
     }
 
     /// @dev Restricts upgrade authorization to the owner.
@@ -90,14 +88,48 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
         return _getZERC20Storage().verifier;
     }
 
-    /// @notice Returns the token decimals.
-    function decimals() public view override returns (uint8) {
-        return _getZERC20Storage().decimals;
-    }
-
     /// @notice Address allowed to mint and burn under the minter role.
     function minter() public view returns (address) {
         return _getZERC20Storage().minter;
+    }
+
+    /// @notice Sum of all values minted through verifier-authorized teleports.
+    function totalTeleported() public view returns (uint256) {
+        return _getZERC20Storage().totalTeleported;
+    }
+
+    /// @notice Returns the token decimals.
+    function decimals() public view override returns (uint8) {
+        return tokenDecimals;
+    }
+
+    function token() public view override returns (address) {
+        return address(this);
+    }
+
+    function approvalRequired() external pure override returns (bool) {
+        return false;
+    }
+
+    function _debit(address _from, uint256 _amountLD, uint256 _minAmountLD, uint32 _dstEid)
+        internal
+        override
+        returns (uint256 amountSentLD, uint256 amountReceivedLD)
+    {
+        (amountSentLD, amountReceivedLD) = _debitView(_amountLD, _minAmountLD, _dstEid);
+        _burn(_from, amountSentLD);
+    }
+
+    function _credit(address _to, uint256 _amountLD, uint32 /*_srcEid*/ )
+        internal
+        override
+        returns (uint256 amountReceivedLD)
+    {
+        if (_to == address(0)) {
+            _to = address(0xdead);
+        }
+        _mint(_to, _amountLD);
+        return _amountLD;
     }
 
     /// @inheritdoc IzERC20
@@ -106,17 +138,19 @@ contract zERC20 is OFTUpgradeable, UUPSUpgradeable, IzERC20 {
     /// @param value Mint amount corresponding to the delta proven in Verifier.teleport.
     function teleport(address to, uint256 value) external {
         if (msg.sender != verifier()) revert OnlyVerifier();
+        ZERC20Storage storage $ = _getZERC20Storage();
         _mint(to, value);
+        $.totalTeleported += value;
         emit Teleport(to, value);
     }
 
     /// @dev Commits every transfer (including mint/burn) to the 248-bit SHA-256 hash chain described in the spec.
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
-    function _afterTokenTransfer(address from, address to, uint256 value) internal override {
+    function _afterTokenTransfer(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         if (value > type(uint248).max) revert ValueTooLarge();
         ZERC20Storage storage $ = _getZERC20Storage();
         super._afterTokenTransfer(from, to, value);
-        $.hashChain = ShaHashChainLib.compute($.hashChain, to, value);
+        $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);
         emit IndexedTransfer($.index++, from, to, value);
     }
 
