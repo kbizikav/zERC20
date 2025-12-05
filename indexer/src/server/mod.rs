@@ -423,7 +423,7 @@ fn address_from_bytes(bytes: &[u8]) -> actix_web::Result<Address> {
     Ok(Address::from(arr))
 }
 
-fn bytes32_to_u256(bytes: &[u8]) -> Result<U256, ()> {
+fn bytes32_to_u256(bytes: &[u8]) -> std::result::Result<U256, ()> {
     if bytes.len() != 32 {
         return Err(());
     }
@@ -512,7 +512,7 @@ async fn fetch_events_synced_index(
         .and_then(|v| if v >= 0 { Some(v as u64) } else { None }))
 }
 
-async fn fetch_tree_synced_index(pool: &PgPool, token_id: i64) -> Result<Option<u64>, sqlx::Error> {
+async fn fetch_tree_synced_index(pool: &PgPool, token_id: i64) -> std::result::Result<Option<u64>, sqlx::Error> {
     let value: Option<Option<i64>> = sqlx::query_scalar::<_, Option<i64>>(
         r#"
         SELECT MAX(tree_index)
@@ -530,7 +530,7 @@ async fn fetch_tree_synced_index(pool: &PgPool, token_id: i64) -> Result<Option<
 async fn fetch_ivc_generated_index(
     pool: &PgPool,
     token_id: i64,
-) -> Result<Option<u64>, sqlx::Error> {
+) -> std::result::Result<Option<u64>, sqlx::Error> {
     let value: Option<Option<i64>> = sqlx::query_scalar::<_, Option<i64>>(
         r#"
         SELECT MAX(end_index)

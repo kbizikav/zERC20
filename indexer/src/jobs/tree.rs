@@ -1,6 +1,6 @@
 use std::{cmp::min, convert::TryFrom, time::Instant};
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use log::{debug, error, info, warn};
 use sqlx::{FromRow, PgPool};
 
@@ -11,6 +11,7 @@ use crate::{
 use client_common::tokens::{TokenEntry, TokenMetadata};
 
 use super::{parse_address, parse_u256, try_acquire_lock};
+use crate::error::Result;
 
 const TREE_LOCK_SALT: u64 = 0x54524545; // "TREE"
 
