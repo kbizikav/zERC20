@@ -398,10 +398,10 @@ impl RootProverJob {
                     update_last_compiled_index(&self.pool, token_id, current_index).await?;
                     state.last_compiled_index = current_index;
                 }
+            }
 
-                if aborted_chunk {
-                    break;
-                }
+            if aborted_chunk {
+                break;
             }
         }
 
