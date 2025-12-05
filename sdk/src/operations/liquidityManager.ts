@@ -55,11 +55,12 @@ export async function wrapWithLiquidityManager({
   amount,
   receiver,
 }: LiquidityActionParams): Promise<LiquidityWrapResult> {
-  const normalizedManager = normalizeHex(liquidityManagerAddress);
+  const normalizedManager = normalizeHex(liquidityManagerAddress) as `0x${string}`;
   const manager = getLiquidityManagerContract(normalizedManager, walletClient);
   const account = ensureAccount(walletClient);
+  const chain = walletClient.chain;
   const receiptClientInstance = receiptClient(walletClient, publicClient);
-  const receiverAddress = receiver ? normalizeHex(receiver) : account;
+  const receiverAddress = (receiver ? normalizeHex(receiver) : account) as `0x${string}`;
 
   const underlying = toAddress((await manager.read.underlyingToken()) as string);
   if (underlying === normalizeHex(zeroAddress)) {
@@ -72,6 +73,7 @@ export async function wrapWithLiquidityManager({
   if (currentAllowance < amount) {
     const approvalHash = await underlyingToken.write.approve([normalizedManager as `0x${string}`, amount], {
       account,
+      chain,
     });
     const approvalReceipt = await waitForTransactionReceipt(receiptClientInstance, { hash: approvalHash });
     approvalTransactionHash = approvalReceipt.transactionHash;
@@ -79,6 +81,7 @@ export async function wrapWithLiquidityManager({
 
   const wrapHash = await manager.write.wrap([amount, receiverAddress], {
     account,
+    chain,
   });
   const wrapReceipt = await waitForTransactionReceipt(receiptClientInstance, { hash: wrapHash });
   return {
@@ -94,13 +97,14 @@ export async function unwrapWithLiquidityManager({
   amount,
   receiver,
 }: LiquidityActionParams): Promise<LiquidityUnwrapResult> {
-  const normalizedManager = normalizeHex(liquidityManagerAddress);
+  const normalizedManager = normalizeHex(liquidityManagerAddress) as `0x${string}`;
   const manager = getLiquidityManagerContract(normalizedManager, walletClient);
   const account = ensureAccount(walletClient);
+  const chain = walletClient.chain;
   const receiptClientInstance = receiptClient(walletClient, publicClient);
-  const receiverAddress = receiver ? normalizeHex(receiver) : account;
+  const receiverAddress = (receiver ? normalizeHex(receiver) : account) as `0x${string}`;
 
-  const unwrapHash = await manager.write.unwrap([amount, receiverAddress], { account });
+  const unwrapHash = await manager.write.unwrap([amount, receiverAddress], { account, chain });
   const receipt = await waitForTransactionReceipt(receiptClientInstance, { hash: unwrapHash });
 
   return {
