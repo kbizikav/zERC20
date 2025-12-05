@@ -9,7 +9,6 @@ import {WithdrawGlobalNovaDecider} from "../src/verifiers/WithdrawGlobalNovaDeci
 import {WithdrawLocalNovaDecider} from "../src/verifiers/WithdrawLocalNovaDecider.sol";
 import {WithdrawGlobalGroth16Verifier} from "../src/verifiers/WithdrawGlobalGroth16Verifier.sol";
 import {WithdrawLocalGroth16Verifier} from "../src/verifiers/WithdrawLocalGroth16Verifier.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 
 /// @notice Deploys the zERC20 token and Verifier contracts to an L2.
@@ -85,12 +84,9 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         address endpoint = cfg.endpoint;
         bytes32 baseSalt = _loadBaseSalt();
 
-        zERC20 tokenImpl =
-            new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}(endpoint, cfg.tokenDecimals);
+        zERC20 tokenImpl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}(endpoint, cfg.tokenDecimals);
         bytes memory tokenInit = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
-        ERC1967Proxy tokenProxy =
-            new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(tokenImpl), tokenInit);
-        zERC20 token = zERC20(address(tokenProxy));
+        zERC20 token = zERC20(_deployProxyAndInit(baseSalt, "TOKEN_PROXY", address(tokenImpl), tokenInit));
         console2.log("Token implementation deployed at", address(tokenImpl));
         console2.log("Token proxy deployed at", address(token));
         console2.log("  owner set to", owner);
@@ -164,9 +160,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
             withdrawLocalGroth16: deps.withdrawLocalGroth16
         });
         bytes memory verifierInit = _encodeVerifierInit(args);
-        ERC1967Proxy verifierProxy =
-            new ERC1967Proxy{salt: _deriveSalt(baseSalt, "VERIFIER_PROXY")}(address(verifierImpl), verifierInit);
-        verifier = Verifier(address(verifierProxy));
+        verifier = Verifier(_deployProxyAndInit(baseSalt, "VERIFIER_PROXY", address(verifierImpl), verifierInit));
 
         console2.log("Verifier implementation deployed at", address(verifierImpl));
         console2.log("Verifier proxy deployed at", address(verifier));

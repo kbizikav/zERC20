@@ -6,7 +6,6 @@ import {Adaptor} from "../src/liquidity/Adaptor.sol";
 import {LiquidityManager} from "../src/liquidity/LiquidityManager.sol";
 import {FeeLib} from "../src/libraries/FeeLib.sol";
 import {zERC20} from "../src/zERC20.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 
 /// @notice Deploys LiquidityManager (upgradeable proxy) and optionally the Adaptor that unwraps + bridges through Stargate.
@@ -65,9 +64,9 @@ contract DeployLiquidity is DeterministicDeployer {
             LiquidityManager.initialize,
             (cfg.underlyingToken, cfg.zerc20Token, cfg.target, cfg.reward, cfg.fee, cfg.owner)
         );
-        ERC1967Proxy proxy =
-            new ERC1967Proxy{salt: _deriveSalt(baseSalt, "LIQUIDITY_MANAGER_PROXY")}(address(implementation), initData);
-        LiquidityManager manager = LiquidityManager(address(proxy));
+        LiquidityManager manager = LiquidityManager(
+            _deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData)
+        );
 
         console2.log("LiquidityManager implementation deployed at", address(implementation));
         console2.log("LiquidityManager proxy deployed at", address(manager));

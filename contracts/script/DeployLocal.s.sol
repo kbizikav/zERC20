@@ -12,7 +12,6 @@ import {WithdrawGlobalGroth16Verifier} from "../src/verifiers/WithdrawGlobalGrot
 import {WithdrawLocalGroth16Verifier} from "../src/verifiers/WithdrawLocalGroth16Verifier.sol";
 import {EndpointV2Mock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
 import {SimpleMessageLibMock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/SimpleMessageLibMock.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 
 /// @dev Minimal helper used by SimpleMessageLibMock to satisfy schedulePacket hook.
@@ -126,8 +125,7 @@ contract DeployLocal is DeterministicDeployer {
         address delegate = cfg.hubDelegate == address(0) ? deployer : cfg.hubDelegate;
         Hub impl = new Hub{salt: _deriveSalt(baseSalt, "HUB_IMPL")}(address(endpoint));
         bytes memory initData = abi.encodeCall(Hub.initialize, (delegate));
-        ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "HUB_PROXY")}(address(impl), initData);
-        hub = Hub(address(proxy));
+        hub = Hub(_deployProxyAndInit(baseSalt, "HUB_PROXY", address(impl), initData));
         console2.log("\tHub implementation deployed at", address(impl));
         console2.log("Hub proxy deployed at", address(hub));
     }
@@ -139,8 +137,7 @@ contract DeployLocal is DeterministicDeployer {
         address owner = cfg.tokenOwner == address(0) ? deployer : cfg.tokenOwner;
         zERC20 impl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}(address(endpoint), cfg.tokenDecimals);
         bytes memory initData = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
-        ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "TOKEN_PROXY")}(address(impl), initData);
-        token = zERC20(address(proxy));
+        token = zERC20(_deployProxyAndInit(baseSalt, "TOKEN_PROXY", address(impl), initData));
         console2.log("\tzERC20 implementation deployed at", address(impl));
         console2.log("zERC20 proxy deployed at", address(token));
         console2.log("\tToken owner set to", owner);
@@ -221,8 +218,7 @@ contract DeployLocal is DeterministicDeployer {
             withdrawLocalGroth16: deps.withdrawLocalGroth16
         });
         bytes memory initData = _encodeVerifierInit(args);
-        ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "VERIFIER_PROXY")}(address(impl), initData);
-        verifier = Verifier(address(proxy));
+        verifier = Verifier(_deployProxyAndInit(baseSalt, "VERIFIER_PROXY", address(impl), initData));
         console2.log("\tVerifier implementation deployed at", address(impl));
         console2.log("Verifier proxy deployed at", address(verifier));
         console2.log("\tVerifier owner set to", delegate);

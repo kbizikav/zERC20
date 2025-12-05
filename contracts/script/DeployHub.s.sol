@@ -3,7 +3,6 @@ pragma solidity ^0.8.20;
 
 import {console2} from "forge-std/console2.sol";
 import {Hub} from "../src/Hub.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 
 /// @notice Deploys the Hub contract to Base Sepolia (or any chain) using config supplied via environment variables.
@@ -30,8 +29,7 @@ contract DeployHub is DeterministicDeployer {
 
         Hub hubImpl = new Hub{salt: _deriveSalt(baseSalt, "HUB_IMPL")}(endpoint);
         bytes memory hubInit = abi.encodeCall(Hub.initialize, (delegate));
-        ERC1967Proxy proxy = new ERC1967Proxy{salt: _deriveSalt(baseSalt, "HUB_PROXY")}(address(hubImpl), hubInit);
-        Hub hub = Hub(address(proxy));
+        Hub hub = Hub(_deployProxyAndInit(baseSalt, "HUB_PROXY", address(hubImpl), hubInit));
 
         console2.log("Hub implementation deployed at", address(hubImpl));
         console2.log("Hub proxy deployed at", address(hub));
