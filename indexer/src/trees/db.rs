@@ -269,11 +269,16 @@ impl DbIncrementalMerkleTree {
 
         let mut latest_index = self.latest_index_internal(&mut tx).await?;
         let max_leaves = max_leaf_capacity(self.height);
+        let leaf_batch = u64::try_from(leaves.len())
+            .map_err(|_| DbMerkleTreeError::LeafIndexOverflow)?;
         let required = u128::from(latest_index)
-            .checked_add(leaves.len() as u128)
+            .checked_add(u128::from(leaf_batch))
             .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
         if required > max_leaves {
-            let attempted = latest_index.saturating_add(leaves.len() as u64);
+            let attempted = latest_index
+                .checked_add(leaf_batch)
+                .and_then(|next| next.checked_sub(1))
+                .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
             return Err(DbMerkleTreeError::TreeFull {
                 height: self.height,
                 capacity: max_leaves,
