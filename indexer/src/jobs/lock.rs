@@ -40,13 +40,13 @@ impl LeaseGuard {
         if let Some(stop_tx) = self.stop_tx.take() {
             let _ = stop_tx.send(());
         }
-        if let Some(handle) = self.renew_task.take() {
-            if let Err(join_err) = handle.await {
-                warn!(
-                    "lease renewal task for key {} panicked: {join_err:?}",
-                    self.lease_key
-                );
-            }
+        if let Some(handle) = self.renew_task.take()
+            && let Err(join_err) = handle.await
+        {
+            warn!(
+                "lease renewal task for key {} panicked: {join_err:?}",
+                self.lease_key
+            );
         }
         let deleted = release_lease(&self.pool, self.lease_key, self.holder).await?;
         if deleted.rows_affected() == 0 {

@@ -32,8 +32,6 @@ pub enum DbMerkleTreeError {
     InvalidTokenId { token_id: i64 },
     #[error("merkle tree height must be in 1..={max_height}, got {height}")]
     InvalidHeight { height: u32, max_height: u32 },
-    #[error("overflow computing next leaf index")]
-    LeafIndexOverflow,
     #[error(
         "merkle tree full: height {height} supports {capacity} leaves, attempted index {index}"
     )]
@@ -42,6 +40,8 @@ pub enum DbMerkleTreeError {
         capacity: u128,
         index: u64,
     },
+    #[error("overflow computing next leaf index")]
+    LeafIndexOverflow,
     #[error("cannot prove merkle state for index 0")]
     InvalidProofTargetZero,
     #[error("merkle tree empty: proof unavailable")]
@@ -123,9 +123,17 @@ pub struct HistoricalProof {
 
 #[derive(Debug)]
 struct NodeUpdateRow {
+    tree_index: i64,
     path_bytes: [u8; 12],
     old_bytes: Vec<u8>,
     new_bytes: Vec<u8>,
+}
+
+#[derive(Debug)]
+struct SnapshotRow {
+    tree_index: i64,
+    root_bytes: [u8; 32],
+    hash_chain_bytes: [u8; 32],
 }
 
 #[derive(Clone, Debug)]
@@ -248,104 +256,155 @@ impl DbIncrementalMerkleTree {
         to: Address,
         value: U256,
     ) -> Result<AppendResult> {
+        let leaves = [(from, to, value)];
+        let mut results = self.append_leaves(&leaves).await?;
+        results.pop().ok_or(DbMerkleTreeError::LeafIndexOverflow)
+    }
+
+    pub async fn append_leaves(
+        &self,
+        leaves: &[(Address, Address, U256)],
+    ) -> Result<Vec<AppendResult>> {
+        if leaves.is_empty() {
+            return Ok(Vec::new());
+        }
+
         let mut tx = self.pool.begin().await.map_err(|err| {
-            DbMerkleTreeError::database("begin transaction for merkle append", err)
+            DbMerkleTreeError::database("begin transaction for merkle append batch", err)
         })?;
 
         self.lock_token_row(&mut tx).await?;
 
-        let latest_index = self.latest_index_internal(&mut tx).await?;
+        let mut latest_index = self.latest_index_internal(&mut tx).await?;
         let max_leaves = max_leaf_capacity(self.height);
-        if u128::from(latest_index) >= max_leaves {
+        let leaf_batch =
+            u64::try_from(leaves.len()).map_err(|_| DbMerkleTreeError::LeafIndexOverflow)?;
+        let required = u128::from(latest_index)
+            .checked_add(u128::from(leaf_batch))
+            .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
+        if required > max_leaves {
+            let attempted = latest_index
+                .checked_add(leaf_batch)
+                .and_then(|next| next.checked_sub(1))
+                .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
             return Err(DbMerkleTreeError::TreeFull {
                 height: self.height,
                 capacity: max_leaves,
-                index: latest_index,
+                index: attempted,
             });
         }
-        let next_index = latest_index + 1;
-        let leaf_index = next_index
-            .checked_sub(1)
-            .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
 
-        let prev_hash_chain = self
+        let mut prev_hash_chain = self
             .latest_hash_chain_internal(&mut tx)
             .await?
             .unwrap_or(U256::ZERO);
-
-        let leaf_hash =
-            compute_leaf_hash(address_to_fr(from), address_to_fr(to), u256_to_fr(value));
-        let mut node_hash = leaf_hash;
-        let next_index_i64 =
-            i64::try_from(next_index).map_err(|_| DbMerkleTreeError::U64ToI64 {
-                label: "merkle index during append",
-                value: next_index,
-            })?;
-
         let mut fetch_positions = HashSet::new();
-        let mut cursor_path = BitPath::new(self.height, leaf_index);
-        fetch_positions.insert(cursor_path);
-        for _ in 0..self.height {
-            fetch_positions.insert(cursor_path.sibling());
-            let mut parent = cursor_path;
-            parent.pop();
-            fetch_positions.insert(parent);
-            cursor_path = parent;
-            if cursor_path.is_empty() {
-                break;
+        for offset in 0..leaves.len() {
+            let next_index = latest_index + 1 + offset as u64;
+            let leaf_index = next_index
+                .checked_sub(1)
+                .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
+
+            let mut cursor_path = BitPath::new(self.height, leaf_index);
+            fetch_positions.insert(cursor_path);
+            for _ in 0..self.height {
+                fetch_positions.insert(cursor_path.sibling());
+                let mut parent = cursor_path;
+                parent.pop();
+                fetch_positions.insert(parent);
+                cursor_path = parent;
+                if cursor_path.is_empty() {
+                    break;
+                }
             }
         }
 
         let position_list: Vec<BitPath> = fetch_positions.into_iter().collect();
         let mut existing_nodes = self.load_node_hashes(&mut tx, &position_list).await?;
 
-        let mut planned_updates: Vec<NodeUpdateRow> = Vec::with_capacity(self.height as usize + 1);
+        let mut planned_updates: Vec<NodeUpdateRow> = Vec::new();
+        let mut snapshots: Vec<SnapshotRow> = Vec::with_capacity(leaves.len());
+        let mut append_results = Vec::with_capacity(leaves.len());
 
-        let mut current_path = BitPath::new(self.height, leaf_index);
-        for _ in 0..self.height {
-            let zero = self.zero_hash_for_path(current_path);
-            let old_hash = existing_nodes.get(&current_path).copied().unwrap_or(zero);
+        for (from, to, value) in leaves.iter().copied() {
+            let next_index = latest_index + 1;
+            let next_index_i64 =
+                i64::try_from(next_index).map_err(|_| DbMerkleTreeError::U64ToI64 {
+                    label: "merkle index during append",
+                    value: next_index,
+                })?;
+            let leaf_index = next_index
+                .checked_sub(1)
+                .ok_or(DbMerkleTreeError::LeafIndexOverflow)?;
 
-            if old_hash != node_hash {
-                planned_updates.push(NodeUpdateRow {
-                    path_bytes: current_path.to_bytes(),
-                    old_bytes: Vec::from(fr_to_bytes(old_hash)),
-                    new_bytes: Vec::from(fr_to_bytes(node_hash)),
-                });
-                existing_nodes.insert(current_path, node_hash);
+            let leaf_hash =
+                compute_leaf_hash(address_to_fr(from), address_to_fr(to), u256_to_fr(value));
+            let mut node_hash = leaf_hash;
+
+            let mut current_path = BitPath::new(self.height, leaf_index);
+            for _ in 0..self.height {
+                let zero = self.zero_hash_for_path(current_path);
+                let old_hash = existing_nodes.get(&current_path).copied().unwrap_or(zero);
+
+                if old_hash != node_hash {
+                    planned_updates.push(NodeUpdateRow {
+                        tree_index: next_index_i64,
+                        path_bytes: current_path.to_bytes(),
+                        old_bytes: Vec::from(fr_to_bytes(old_hash)),
+                        new_bytes: Vec::from(fr_to_bytes(node_hash)),
+                    });
+                    existing_nodes.insert(current_path, node_hash);
+                }
+
+                let sibling_path = current_path.sibling();
+                let sibling_hash = existing_nodes
+                    .get(&sibling_path)
+                    .copied()
+                    .unwrap_or(self.zero_hash_for_path(sibling_path));
+
+                let is_left = (current_path.value() & 1) == 0;
+                let (left, right) = if is_left {
+                    (node_hash, sibling_hash)
+                } else {
+                    (sibling_hash, node_hash)
+                };
+
+                node_hash = poseidon2(left, right);
+                let mut parent_path = current_path;
+                parent_path.pop();
+                current_path = parent_path;
             }
 
-            let sibling_path = current_path.sibling();
-            let sibling_hash = existing_nodes
-                .get(&sibling_path)
+            let root_path = BitPath::default();
+            let root_old = existing_nodes
+                .get(&root_path)
                 .copied()
-                .unwrap_or(self.zero_hash_for_path(sibling_path));
+                .unwrap_or(self.zero_hash_for_path(root_path));
+            if root_old != node_hash {
+                planned_updates.push(NodeUpdateRow {
+                    tree_index: next_index_i64,
+                    path_bytes: root_path.to_bytes(),
+                    old_bytes: Vec::from(fr_to_bytes(root_old)),
+                    new_bytes: Vec::from(fr_to_bytes(node_hash)),
+                });
+                existing_nodes.insert(root_path, node_hash);
+            }
 
-            let is_left = (current_path.value() & 1) == 0;
-            let (left, right) = if is_left {
-                (node_hash, sibling_hash)
-            } else {
-                (sibling_hash, node_hash)
-            };
-
-            node_hash = poseidon2(left, right);
-            let mut parent_path = current_path;
-            parent_path.pop();
-            current_path = parent_path;
-        }
-
-        let root_path = BitPath::default();
-        let root_old = existing_nodes
-            .get(&root_path)
-            .copied()
-            .unwrap_or(self.zero_hash_for_path(root_path));
-        if root_old != node_hash {
-            planned_updates.push(NodeUpdateRow {
-                path_bytes: root_path.to_bytes(),
-                old_bytes: Vec::from(fr_to_bytes(root_old)),
-                new_bytes: Vec::from(fr_to_bytes(node_hash)),
+            let new_hash_chain = hash_chain(prev_hash_chain, from, to, value);
+            snapshots.push(SnapshotRow {
+                tree_index: next_index_i64,
+                root_bytes: fr_to_bytes(node_hash),
+                hash_chain_bytes: new_hash_chain.to_be_bytes::<32>(),
             });
-            existing_nodes.insert(root_path, node_hash);
+            append_results.push(AppendResult {
+                index: next_index,
+                leaf_index,
+                root: node_hash,
+                hash_chain: new_hash_chain,
+            });
+
+            latest_index = next_index;
+            prev_hash_chain = new_hash_chain;
         }
 
         if !planned_updates.is_empty() {
@@ -355,7 +414,7 @@ impl DbIncrementalMerkleTree {
             ));
             updates_builder.push_values(&planned_updates, |mut b, update| {
                 b.push_bind(self.partitions.token_id());
-                b.push_bind(next_index_i64);
+                b.push_bind(update.tree_index);
                 b.push_bind(update.path_bytes.as_slice());
                 b.push_bind(update.old_bytes.as_slice());
                 b.push_bind(update.new_bytes.as_slice());
@@ -376,7 +435,7 @@ impl DbIncrementalMerkleTree {
                 b.push_bind(self.partitions.token_id());
                 b.push_bind(update.path_bytes.as_slice());
                 b.push_bind(update.new_bytes.as_slice());
-                b.push_bind(next_index_i64);
+                b.push_bind(update.tree_index);
             });
             nodes_builder.push(
                 " ON CONFLICT (token_id, node_path)
@@ -391,23 +450,26 @@ impl DbIncrementalMerkleTree {
                 .map_err(|err| DbMerkleTreeError::database("upsert merkle node hash batch", err))?;
         }
 
-        let new_hash_chain = hash_chain(prev_hash_chain, from, to, value);
-        let root_bytes = fr_to_bytes(node_hash);
-        let hash_chain_bytes = new_hash_chain.to_be_bytes::<32>();
-        sqlx::query(&format!(
-            "INSERT INTO {table} (token_id, tree_index, root_hash, hash_chain) VALUES ($1, $2, $3, $4)",
-            table = MERKLE_SNAPSHOTS_TABLE,
-        ))
-        .bind(self.partitions.token_id())
-        .bind(next_index_i64)
-        .bind(root_bytes.as_slice())
-        .bind(hash_chain_bytes.as_slice())
-        .execute(tx.as_mut())
-        .await
-        .map_err(|err| DbMerkleTreeError::database("insert merkle snapshot", err))?;
+        if !snapshots.is_empty() {
+            let mut snapshots_builder = QueryBuilder::<Postgres>::new(format!(
+                "INSERT INTO {table} (token_id, tree_index, root_hash, hash_chain)",
+                table = MERKLE_SNAPSHOTS_TABLE,
+            ));
+            snapshots_builder.push_values(&snapshots, |mut b, snapshot| {
+                b.push_bind(self.partitions.token_id());
+                b.push_bind(snapshot.tree_index);
+                b.push_bind(snapshot.root_bytes.as_slice());
+                b.push_bind(snapshot.hash_chain_bytes.as_slice());
+            });
+            snapshots_builder
+                .build()
+                .execute(tx.as_mut())
+                .await
+                .map_err(|err| DbMerkleTreeError::database("insert merkle snapshots batch", err))?;
+        }
 
         let history_window = self.history_window.get();
-        let gc_threshold = next_index.saturating_sub(history_window);
+        let gc_threshold = latest_index.saturating_sub(history_window);
         let gc_threshold_i64 =
             i64::try_from(gc_threshold).map_err(|_| DbMerkleTreeError::U64ToI64 {
                 label: "gc threshold",
@@ -423,16 +485,11 @@ impl DbIncrementalMerkleTree {
         .await
         .map_err(|err| DbMerkleTreeError::database("prune stale merkle updates", err))?;
 
-        tx.commit()
-            .await
-            .map_err(|err| DbMerkleTreeError::database("commit merkle append transaction", err))?;
+        tx.commit().await.map_err(|err| {
+            DbMerkleTreeError::database("commit merkle append batch transaction", err)
+        })?;
 
-        Ok(AppendResult {
-            index: next_index,
-            leaf_index,
-            root: node_hash,
-            hash_chain: new_hash_chain,
-        })
+        Ok(append_results)
     }
 
     pub async fn prove(&self, target_index: u64, leaf_index: u64) -> Result<HistoricalProof> {
@@ -801,7 +858,7 @@ fn compute_zero_hashes(height: u32) -> Vec<Fr> {
 }
 
 fn max_leaf_capacity(height: u32) -> u128 {
-    let theoretical = 1u128 << height;
+    let theoretical = 1u128.checked_shl(height).unwrap_or(u128::MAX);
     theoretical.min(u128::from(u64::MAX))
 }
 

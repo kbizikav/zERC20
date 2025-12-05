@@ -56,7 +56,7 @@ pub async fn fetch_transfer_events(
                     token_entry.chain_id,
                     token_entry.token_address,
                     *address,
-                    indexer_fetch_limit.clone(),
+                    indexer_fetch_limit,
                 )
                 .await?;
             events.extend(events_of_address);

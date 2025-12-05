@@ -43,7 +43,7 @@ pub async fn fetch_aggregation_tree_state(
         .global_transfer_root(latest_agg_seq)
         .await
         .context("Failed to fetch global transfer root from verifier")?;
-    let aggregation_event = find_aggregation_event(&hub, latest_agg_seq, event_block_span).await?;
+    let aggregation_event = find_aggregation_event(hub, latest_agg_seq, event_block_span).await?;
     if aggregation_event.root != onchain_global_root {
         anyhow::bail!(
             "Mismatch in global transfer root for aggregation sequence {}: on-chain root = {}, event root = {}",
@@ -96,11 +96,7 @@ async fn find_aggregation_event(
         .context("Failed to fetch latest block from hub contract")?;
     let mut to_block = latest_block;
     loop {
-        let from_block = if to_block + 1 > block_span {
-            to_block + 1 - block_span
-        } else {
-            0
-        };
+        let from_block = (to_block + 1).saturating_sub(block_span);
         let events = hub
             .aggregation_root_events(from_block, to_block)
             .await

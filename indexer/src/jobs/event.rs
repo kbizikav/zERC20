@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use log::{debug, error, warn};
 use sqlx::PgPool;
 
@@ -17,6 +17,7 @@ use client_common::{
 };
 
 use super::try_acquire_lock;
+use crate::error::Result;
 
 const EVENT_LOCK_SALT: u64 = 0x45564e54; // "EVNT"
 
@@ -75,7 +76,7 @@ impl EventSyncJob {
             token.contract.clone(),
             self.pool.clone(),
             token.deployed_block_number,
-            token.metadata.clone(),
+            token.metadata,
             self.indexer_config,
         )
         .await

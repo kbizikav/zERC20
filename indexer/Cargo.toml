@@ -22,6 +22,7 @@ rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+futures = { workspace = true }
 rand_chacha = { workspace = true }
 reqwest = { workspace = true }
 toml = "0.8.19"
