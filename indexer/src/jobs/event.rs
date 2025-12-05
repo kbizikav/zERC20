@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+use anyhow::Context;
 use log::{debug, error, warn};
 use sqlx::PgPool;
 
@@ -16,7 +16,8 @@ use client_common::{
     tokens::{TokenEntry, TokenMetadata},
 };
 
-use super::try_acquire_lock;
+use super::{try_acquire_lock};
+use crate::error::Result;
 
 const EVENT_LOCK_SALT: u64 = 0x45564e54; // "EVNT"
 

@@ -42,14 +42,6 @@ pub enum DbMerkleTreeError {
     },
     #[error("overflow computing next leaf index")]
     LeafIndexOverflow,
-    #[error(
-        "merkle tree full: height {height} supports {capacity} leaves, attempted index {index}"
-    )]
-    TreeFull {
-        height: u32,
-        capacity: u128,
-        index: u64,
-    },
     #[error("cannot prove merkle state for index 0")]
     InvalidProofTargetZero,
     #[error("merkle tree empty: proof unavailable")]

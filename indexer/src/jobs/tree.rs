@@ -1,7 +1,6 @@
 use std::{cmp::min, convert::TryFrom, time::Instant};
 
-use alloy::primitives::{Address, U256};
-use anyhow::{Context, Result, bail};
+use anyhow::Context;
 use log::{debug, error, info, warn};
 use sqlx::{FromRow, PgPool};
 
@@ -11,7 +10,8 @@ use crate::{
 };
 use client_common::tokens::{TokenEntry, TokenMetadata};
 
-use super::try_acquire_lock;
+use super::{parse_address, parse_u256, try_acquire_lock};
+use crate::error::Result;
 
 const TREE_LOCK_SALT: u64 = 0x54524545; // "TREE"
 
@@ -347,20 +347,4 @@ async fn contiguous_event_index(pool: &PgPool, token_id: i64) -> Result<Option<u
         Some(value) if value >= 0 => Ok(Some(value as u64)),
         _ => Ok(None),
     }
-}
-
-fn parse_address(bytes: &[u8]) -> Result<Address> {
-    if bytes.len() != 20 {
-        bail!("address bytes must be 20, got {}", bytes.len());
-    }
-    Ok(Address::from_slice(bytes))
-}
-
-fn parse_u256(bytes: &[u8]) -> Result<U256> {
-    if bytes.len() != 32 {
-        bail!("value bytes must be 32, got {}", bytes.len());
-    }
-    let mut arr = [0u8; 32];
-    arr.copy_from_slice(bytes);
-    Ok(U256::from_be_bytes(arr))
 }
