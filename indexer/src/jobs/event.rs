@@ -76,7 +76,7 @@ impl EventSyncJob {
             token.contract.clone(),
             self.pool.clone(),
             token.deployed_block_number,
-            token.metadata.clone(),
+            token.metadata,
             self.indexer_config,
         )
         .await
