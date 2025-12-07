@@ -1,14 +1,58 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
-import {TestHelperOz5, EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
+import {Test} from "forge-std/Test.sol";
+import {EndpointV2Mock as EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {ShaHashChainLib} from "../src/utils/ShaHashChainLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {IOFT} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
+import {IOFT, SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 
-contract ZERC20Test is TestHelperOz5 {
-    zERC20 internal token;
+contract ZERC20Harness is zERC20 {
+    constructor(address endpoint, uint8 decimals_) zERC20(endpoint, decimals_) {}
+
+    function debit(uint256 amountToSendLD, uint256 minAmountToCreditLD, uint32 dstEid)
+        public
+        returns (uint256 amountDebitedLD, uint256 amountToCreditLD)
+    {
+        return _debit(msg.sender, amountToSendLD, minAmountToCreditLD, dstEid);
+    }
+
+    function debitView(uint256 amountToSendLD, uint256 minAmountToCreditLD, uint32 dstEid)
+        public
+        view
+        returns (uint256 amountDebitedLD, uint256 amountToCreditLD)
+    {
+        return _debitView(amountToSendLD, minAmountToCreditLD, dstEid);
+    }
+
+    function credit(address to, uint256 amountToCreditLD, uint32 srcEid) public returns (uint256 amountReceivedLD) {
+        return _credit(to, amountToCreditLD, srcEid);
+    }
+
+    function removeDust(uint256 amountLD) public view returns (uint256) {
+        return _removeDust(amountLD);
+    }
+
+    function toLD(uint64 amountSD) public view returns (uint256) {
+        return _toLD(amountSD);
+    }
+
+    function toSD(uint256 amountLD) public view returns (uint64) {
+        return _toSD(amountLD);
+    }
+
+    function buildMsgAndOptions(SendParam calldata sendParam, uint256 amountToCreditLD)
+        public
+        view
+        returns (bytes memory message, bytes memory options)
+    {
+        return _buildMsgAndOptions(sendParam, amountToCreditLD);
+    }
+}
+
+contract ZERC20Test is Test {
+    ZERC20Harness internal token;
     EndpointV2 internal endpoint;
 
     address internal constant ALICE = address(0xA11CE);
@@ -21,19 +65,17 @@ contract ZERC20Test is TestHelperOz5 {
     event Teleport(address indexed to, uint256 value);
     event VerifierUpdated(address indexed newVerifier);
 
-    function setUp() public override {
-        super.setUp();
-        setUpEndpoints(1, LibraryType.SimpleMessageLib);
-        endpoint = endpointSetup.endpointList[0];
+    function setUp() public {
+        endpoint = new EndpointV2(1, address(this));
         token = _deployToken(address(this), endpoint, 18);
         token.setMinter(address(this));
     }
 
-    function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (zERC20) {
-        zERC20 impl = new zERC20(address(endpointMock), decimals_);
+    function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (ZERC20Harness) {
+        ZERC20Harness impl = new ZERC20Harness(address(endpointMock), decimals_);
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
-        return zERC20(address(proxy));
+        return ZERC20Harness(address(proxy));
     }
 
     function testHashChainMatchesZkpVector() public {
@@ -127,8 +169,7 @@ contract ZERC20Test is TestHelperOz5 {
         uint256 hashAfterMint = token.hashChain();
         uint256 indexAfterMint = token.index();
 
-        bytes32 structHash =
-            keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
+        bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
 
@@ -152,8 +193,7 @@ contract ZERC20Test is TestHelperOz5 {
         uint256 value = 1 ether;
         uint256 deadline = block.timestamp;
 
-        bytes32 structHash =
-            keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
+        bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
 
