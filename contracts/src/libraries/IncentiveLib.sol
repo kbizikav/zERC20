@@ -222,21 +222,21 @@ library IncentiveLib {
         }
 
         // Portion of the path within [0, T).
-        uint256 D = L < T ? L : T;      // start, capped at T
-        uint256 U = L + amount;        // end before capping
-        if (U > T) U = T;              // cap at T
+        uint256 start = L < T ? L : T; // start, capped at T
+        uint256 end = L + amount; // end before capping
+        if (end > T) end = T; // cap at T
 
-        if (U <= D) {
+        if (end <= start) {
             return 0;
         }
 
         // reward_continuous ∝ (T - D)^2 - (T - U)^2
-        uint256 TD = T - D; // T >= D
-        uint256 TU = T - U; // U <= T
+        uint256 distanceToTargetStart = T - start; // T >= start
+        uint256 distanceToTargetEnd = T - end; // end <= T
 
-        uint256 TD2 = TD * TD;
-        uint256 TU2 = TU * TU;
-        uint256 diffSquare = TD2 - TU2; // non-negative because TD >= TU
+        uint256 startDistanceSq = distanceToTargetStart * distanceToTargetStart;
+        uint256 endDistanceSq = distanceToTargetEnd * distanceToTargetEnd;
+        uint256 diffSquare = startDistanceSq - endDistanceSq; // non-negative because start distance >= end distance
 
         // k is provided in basis points, so divide by K_BPS_DENOM.
         uint256 numerator = k_ * diffSquare;
@@ -270,21 +270,21 @@ library IncentiveLib {
         }
 
         // Portion of the path within [0, T).
-        uint256 A = L < T ? L : T;       // start (higher), capped at T
-        uint256 Braw = L - amount;       // end (lower) before capping
-        uint256 B = Braw < T ? Braw : T; // cap at T
+        uint256 start = L < T ? L : T; // start (higher), capped at T
+        uint256 endRaw = L - amount; // end (lower) before capping
+        uint256 end = endRaw < T ? endRaw : T; // cap at T
 
-        if (A <= B) {
+        if (start <= end) {
             return 0;
         }
 
         // fee_continuous ∝ (T - B)^2 - (T - A)^2
-        uint256 TA = T - A; // A <= T
-        uint256 TB = T - B; // B <= T
+        uint256 distanceToTargetStart = T - start; // start <= T
+        uint256 distanceToTargetEnd = T - end; // end <= T
 
-        uint256 TA2 = TA * TA;
-        uint256 TB2 = TB * TB;
-        uint256 diffSquare = TB2 - TA2; // non-negative because TB >= TA
+        uint256 startDistanceSq = distanceToTargetStart * distanceToTargetStart;
+        uint256 endDistanceSq = distanceToTargetEnd * distanceToTargetEnd;
+        uint256 diffSquare = endDistanceSq - startDistanceSq; // non-negative because end distance >= start distance
 
         // k is provided in basis points, so divide by K_BPS_DENOM.
         uint256 numerator = k_ * diffSquare;

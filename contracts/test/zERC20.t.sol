@@ -11,43 +11,43 @@ import {IOFT, SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.
 contract ZERC20Harness is zERC20 {
     constructor(address endpoint, uint8 decimals_) zERC20(endpoint, decimals_) {}
 
-    function debit(uint256 amountToSendLD, uint256 minAmountToCreditLD, uint32 dstEid)
+    function debit(uint256 amountToSendLd, uint256 minAmountToCreditLd, uint32 dstEid)
         public
-        returns (uint256 amountDebitedLD, uint256 amountToCreditLD)
+        returns (uint256 amountDebitedLd, uint256 amountToCreditLd)
     {
-        return _debit(msg.sender, amountToSendLD, minAmountToCreditLD, dstEid);
+        return _debit(msg.sender, amountToSendLd, minAmountToCreditLd, dstEid);
     }
 
-    function debitView(uint256 amountToSendLD, uint256 minAmountToCreditLD, uint32 dstEid)
+    function debitView(uint256 amountToSendLd, uint256 minAmountToCreditLd, uint32 dstEid)
         public
         view
-        returns (uint256 amountDebitedLD, uint256 amountToCreditLD)
+        returns (uint256 amountDebitedLd, uint256 amountToCreditLd)
     {
-        return _debitView(amountToSendLD, minAmountToCreditLD, dstEid);
+        return _debitView(amountToSendLd, minAmountToCreditLd, dstEid);
     }
 
-    function credit(address to, uint256 amountToCreditLD, uint32 srcEid) public returns (uint256 amountReceivedLD) {
-        return _credit(to, amountToCreditLD, srcEid);
+    function credit(address to, uint256 amountToCreditLd, uint32 srcEid) public returns (uint256 amountReceivedLd) {
+        return _credit(to, amountToCreditLd, srcEid);
     }
 
-    function removeDust(uint256 amountLD) public view returns (uint256) {
-        return _removeDust(amountLD);
+    function removeDust(uint256 amountLd) public view returns (uint256) {
+        return _removeDust(amountLd);
     }
 
-    function toLD(uint64 amountSD) public view returns (uint256) {
-        return _toLD(amountSD);
+    function toLd(uint64 amountSd) public view returns (uint256) {
+        return _toLD(amountSd);
     }
 
-    function toSD(uint256 amountLD) public view returns (uint64) {
-        return _toSD(amountLD);
+    function toSd(uint256 amountLd) public view returns (uint64) {
+        return _toSD(amountLd);
     }
 
-    function buildMsgAndOptions(SendParam calldata sendParam, uint256 amountToCreditLD)
+    function buildMsgAndOptions(SendParam calldata sendParam, uint256 amountToCreditLd)
         public
         view
         returns (bytes memory message, bytes memory options)
     {
-        return _buildMsgAndOptions(sendParam, amountToCreditLD);
+        return _buildMsgAndOptions(sendParam, amountToCreditLd);
     }
 }
 
@@ -179,7 +179,8 @@ contract ZERC20Test is Test {
         assertEq(token.nonces(owner), 1, "nonce consumed");
 
         vm.prank(BOB);
-        token.transferFrom(owner, BOB, value);
+        bool transferOk = token.transferFrom(owner, BOB, value);
+        assertTrue(transferOk, "transferFrom should return true");
 
         assertEq(token.balanceOf(BOB), value, "transferred via permit");
         assertEq(token.index(), indexAfterMint + 1, "index incremented");
