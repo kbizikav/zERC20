@@ -126,4 +126,32 @@ contract IncentiveLibTest is Test {
 
         assertEq(fee, 150, "over-withdraw should charge full amount");
     }
+
+    function testWrapRewardGracefullyHandlesHugeParams() public view {
+        uint256 tooLargeTarget = uint256(type(uint128).max) + 1;
+        IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: tooLargeTarget, k: TEN_PERCENT_K});
+
+        uint256 reward = lib.quoteWrapReward(params, type(uint256).max, type(uint256).max, type(uint256).max);
+
+        assertEq(reward, 0, "wrap reward should not revert and return zero when params are too large");
+    }
+
+    function testUnwrapFeeGracefullyHandlesHugeK() public view {
+        uint256 safeTarget = 1_000;
+        uint256 tooLargeK = type(uint256).max;
+        IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: safeTarget, k: tooLargeK});
+
+        uint256 fee = lib.quoteUnwrapFee(params, 1_000, 500);
+
+        assertEq(fee, 0, "unwrap fee should not revert and return zero when k is too large");
+    }
+
+    function testUnwrapFeeIsCappedAtAmount() public view {
+        // With small T and large k, raw fee would exceed amount; it should be capped to amount.
+        IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1, k: 100_000});
+
+        uint256 fee = lib.quoteUnwrapFee(params, 1, 1);
+
+        assertEq(fee, 1, "unwrap fee should never exceed the requested amount");
+    }
 }

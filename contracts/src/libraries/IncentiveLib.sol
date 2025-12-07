@@ -168,6 +168,8 @@ library IncentiveLib {
 
     /// @notice Basis points denominator for k (1 bps = 0.01% = 1 / 10_000).
     uint256 internal constant K_BPS_DENOM = 10_000;
+    /// @notice Largest T such that intermediate squares fit in uint256.
+    uint256 internal constant MAX_TARGET_LIQUIDITY = type(uint128).max;
 
     /*//////////////////////////////////////////////////////////////
                            PUBLIC API (INTERNAL)
@@ -204,7 +206,8 @@ library IncentiveLib {
         uint256 liquidity,
         uint256 amount
     ) internal pure returns (uint256 unwrapFee) {
-        return _rawUnwrapFee(liquidity, params.targetLiquidity, params.k, amount);
+        uint256 raw = _rawUnwrapFee(liquidity, params.targetLiquidity, params.k, amount);
+        return raw > amount ? amount : raw;
     }
 
     /*//////////////////////////////////////////////////////////////
@@ -220,10 +223,22 @@ library IncentiveLib {
         if (T == 0 || amount == 0) {
             return 0;
         }
+        if (T > MAX_TARGET_LIQUIDITY) {
+            return 0;
+        }
+        uint256 maxK = type(uint256).max / T / T;
+        if (k_ > maxK) {
+            return 0;
+        }
 
         // Portion of the path within [0, T).
         uint256 start = L < T ? L : T; // start, capped at T
-        uint256 end = L + amount; // end before capping
+        uint256 end;
+        if (amount > type(uint256).max - L) {
+            end = type(uint256).max; // saturate on overflow
+        } else {
+            end = L + amount; // end before capping
+        }
         if (end > T) end = T; // cap at T
 
         if (end <= start) {
@@ -264,9 +279,16 @@ library IncentiveLib {
         if (T == 0) {
             return 0;
         }
+        if (T > MAX_TARGET_LIQUIDITY) {
+            return 0;
+        }
 
         if (L == 0) {
             return 0; // unreachable in normal use, kept as a safety guard
+        }
+        uint256 maxK = type(uint256).max / T / T;
+        if (k_ > maxK) {
+            return 0;
         }
 
         // Portion of the path within [0, T).

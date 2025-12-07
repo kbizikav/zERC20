@@ -109,7 +109,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         uint256 feeAmount = _quoteUnwrapFee(amount, $);
-        amountOut = amount > feeAmount ? amount - feeAmount : 0;
+        amountOut = amount - feeAmount;
 
         $.zerc20.burn(msg.sender, amount);
         IERC20 underlying = $.underlyingToken;
@@ -167,9 +167,6 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
     {
         uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
         feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidityBefore, amount);
-        if (feeAmount > amount) {
-            feeAmount = amount;
-        }
     }
 
     function _validateFeeParams(IncentiveLib.FeeParams memory params) internal pure {
