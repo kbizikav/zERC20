@@ -79,7 +79,7 @@ pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B25
         if entry.chain_id == args.dst_chain_id {
             let manager = build_liquidity_manager(entry)?;
             let fee = manager
-                .quote_unwrap(args.amount)
+                .quote_unwrap_fee(args.amount)
                 .await
                 .with_context(|| format!("failed to quote unwrap on '{}'", entry.label))?;
             let expected_out = args.amount.saturating_sub(fee);

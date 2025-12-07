@@ -93,7 +93,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         if (receiver == address(0)) revert ZeroReceiver();
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        uint256 reward = _quoteWrap(amount, $);
+        uint256 reward = _quoteWrapReward(amount, $);
 
         if (!$.underlyingToken.transferFrom(msg.sender, address(this), amount)) revert UnderlyingPullFailed();
 
@@ -108,7 +108,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         if (receiver == address(0)) revert ZeroReceiver();
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        uint256 feeAmount = _quoteUnwrap(amount, $);
+        uint256 feeAmount = _quoteUnwrapFee(amount, $);
         amountOut = amount > feeAmount ? amount - feeAmount : 0;
 
         $.zerc20.burn(msg.sender, amount);
@@ -122,12 +122,12 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         emit Unwrapped(msg.sender, receiver, amountOut, feeAmount);
     }
 
-    function quoteWrap(uint256 amount) public view returns (uint256 reward) {
-        return _quoteWrap(amount, _getLiquidityManagerStorage());
+    function quoteWrapReward(uint256 amount) public view returns (uint256 reward) {
+        return _quoteWrapReward(amount, _getLiquidityManagerStorage());
     }
 
-    function quoteUnwrap(uint256 amount) public view returns (uint256 feeAmount) {
-        return _quoteUnwrap(amount, _getLiquidityManagerStorage());
+    function quoteUnwrapFee(uint256 amount) public view returns (uint256 feeAmount) {
+        return _quoteUnwrapFee(amount, _getLiquidityManagerStorage());
     }
 
     // ---------------------------- Admin ------------------------------------
@@ -151,12 +151,16 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
     // ---------------------------- Internal ----------------------------------
 
-    function _quoteWrap(uint256 amount, LiquidityManagerStorage storage $) internal view returns (uint256 reward) {
+    function _quoteWrapReward(uint256 amount, LiquidityManagerStorage storage $)
+        internal
+        view
+        returns (uint256 reward)
+    {
         uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
         reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, $.feeSurplus, amount);
     }
 
-    function _quoteUnwrap(uint256 amount, LiquidityManagerStorage storage $)
+    function _quoteUnwrapFee(uint256 amount, LiquidityManagerStorage storage $)
         internal
         view
         returns (uint256 feeAmount)

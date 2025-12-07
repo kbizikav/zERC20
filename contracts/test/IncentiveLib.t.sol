@@ -5,7 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {IncentiveLib} from "../src/libraries/IncentiveLib.sol";
 
 contract IncentiveLibHarness {
-    function quoteWrap(
+    function quoteWrapReward(
         IncentiveLib.FeeParams memory params,
         uint256 liquidity,
         uint256 feeSurplus,
@@ -14,7 +14,7 @@ contract IncentiveLibHarness {
         return IncentiveLib.quoteWrapReward(params, liquidity, feeSurplus, amount);
     }
 
-    function quoteUnwrap(IncentiveLib.FeeParams memory params, uint256 liquidity, uint256 amount)
+    function quoteUnwrapFee(IncentiveLib.FeeParams memory params, uint256 liquidity, uint256 amount)
         external
         pure
         returns (uint256)
@@ -34,7 +34,7 @@ contract IncentiveLibTest is Test {
     function testWrapRewardRespectsFeeSurplusCap() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 reward = lib.quoteWrap(params, 0, 40, 1_000);
+        uint256 reward = lib.quoteWrapReward(params, 0, 40, 1_000);
 
         assertEq(reward, 40, "wrap reward should cap at fee surplus");
     }
@@ -42,7 +42,7 @@ contract IncentiveLibTest is Test {
     function testWrapRewardFloorsFractionalResult() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 reward = lib.quoteWrap(params, 400, type(uint256).max, 300);
+        uint256 reward = lib.quoteWrapReward(params, 400, type(uint256).max, 300);
 
         assertEq(reward, 13, "wrap reward should floor fractional area");
     }
@@ -50,7 +50,7 @@ contract IncentiveLibTest is Test {
     function testWrapFromZeroUpToHalfTarget() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 reward = lib.quoteWrap(params, 0, type(uint256).max, 500);
+        uint256 reward = lib.quoteWrapReward(params, 0, type(uint256).max, 500);
 
         assertEq(reward, 37, "wrap reward from 0 to mid target");
     }
@@ -58,7 +58,7 @@ contract IncentiveLibTest is Test {
     function testWrapFromZeroToTarget() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 reward = lib.quoteWrap(params, 0, type(uint256).max, 1_000);
+        uint256 reward = lib.quoteWrapReward(params, 0, type(uint256).max, 1_000);
 
         assertEq(reward, 50, "wrap reward from 0 to target");
     }
@@ -66,7 +66,7 @@ contract IncentiveLibTest is Test {
     function testWrapCrossesTargetOnlyPaysBelowTarget() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 reward = lib.quoteWrap(params, 800, type(uint256).max, 400);
+        uint256 reward = lib.quoteWrapReward(params, 800, type(uint256).max, 400);
 
         assertEq(reward, 2, "only below-target segment should earn reward");
     }
@@ -74,7 +74,7 @@ contract IncentiveLibTest is Test {
     function testWrapWhenAlreadyAboveTargetHasNoReward() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 reward = lib.quoteWrap(params, 1_200, type(uint256).max, 100);
+        uint256 reward = lib.quoteWrapReward(params, 1_200, type(uint256).max, 100);
 
         assertEq(reward, 0, "no reward when always above target");
     }
@@ -82,7 +82,7 @@ contract IncentiveLibTest is Test {
     function testUnwrapFeeCeilsFractionalResult() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 fee = lib.quoteUnwrap(params, 700, 250);
+        uint256 fee = lib.quoteUnwrapFee(params, 700, 250);
 
         assertEq(fee, 11, "unwrap fee should ceil fractional area");
     }
@@ -90,7 +90,7 @@ contract IncentiveLibTest is Test {
     function testUnwrapFeeRoundsUpTinyAmounts() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 fee = lib.quoteUnwrap(params, 100, 1);
+        uint256 fee = lib.quoteUnwrapFee(params, 100, 1);
 
         assertEq(fee, 1, "tiny fractional fee should round up to 1");
     }
@@ -98,7 +98,7 @@ contract IncentiveLibTest is Test {
     function testUnwrapFromTargetToZero() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 fee = lib.quoteUnwrap(params, 1_000, 1_000);
+        uint256 fee = lib.quoteUnwrapFee(params, 1_000, 1_000);
 
         assertEq(fee, 50, "unwrap fee mirrors wrap from target to zero");
     }
@@ -106,7 +106,7 @@ contract IncentiveLibTest is Test {
     function testUnwrapAboveTargetStaysAboveTargetHasNoFee() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 fee = lib.quoteUnwrap(params, 1_200, 100);
+        uint256 fee = lib.quoteUnwrapFee(params, 1_200, 100);
 
         assertEq(fee, 0, "no fee when path never dips below target");
     }
@@ -114,7 +114,7 @@ contract IncentiveLibTest is Test {
     function testUnwrapAboveTargetCrossesBelowTarget() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 fee = lib.quoteUnwrap(params, 1_200, 500);
+        uint256 fee = lib.quoteUnwrapFee(params, 1_200, 500);
 
         assertEq(fee, 5, "fee should apply only to below-target segment");
     }
@@ -122,7 +122,7 @@ contract IncentiveLibTest is Test {
     function testUnwrapFeeChargesFullAmountWhenOverdrawn() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
-        uint256 fee = lib.quoteUnwrap(params, 100, 150);
+        uint256 fee = lib.quoteUnwrapFee(params, 100, 150);
 
         assertEq(fee, 150, "over-withdraw should charge full amount");
     }

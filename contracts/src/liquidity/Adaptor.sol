@@ -177,7 +177,7 @@ contract Adaptor is ILayerZeroComposer {
     }
 
     function _quoteFee(uint256 amount, BridgeRequest memory request) internal view returns (FeeQuote memory quote) {
-        uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrap(amount);
+        uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrapFee(amount);
         uint256 amountAfterUnwrap = amount > tokenUnwrapFee ? amount - tokenUnwrapFee : 0;
         SendParam memory sendParam = _buildSendParam(amountAfterUnwrap, 0, request);
         MessagingFee memory feeQuote = _quoteSend(sendParam);
