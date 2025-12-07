@@ -8,7 +8,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {IzERC20} from "../interfaces/IzERC20.sol";
 import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
-import {FeeLib} from "../libraries/FeeLib.sol";
+import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 
 /// @notice Custodies underlying token liquidity and mints/burns zERC20 based on wrap/unwrap flows.
 /// Reward/fee curves follow the piecewise linear formulas described in docs/zerc20-liquidity.md.
@@ -30,11 +30,11 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
     struct LiquidityManagerStorage {
         IERC20 underlyingToken;
         IzERC20 zerc20;
-        FeeLib.FeeParams feeParams;
+        IncentiveLib.FeeParams feeParams;
         uint256 feeSurplus; // Tracks collected fees net of distributed rewards.
     }
 
-    event FeeParamsUpdated(FeeLib.FeeParams params);
+    event FeeParamsUpdated(IncentiveLib.FeeParams params);
     event Wrapped(address indexed caller, address indexed receiver, uint256 amountOut, uint256 reward);
     event Unwrapped(address indexed caller, address indexed receiver, uint256 amountOut, uint256 feeAmount);
     event RewardsWithdrawn(address indexed to, uint256 amount);
@@ -53,7 +53,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
     function initialize(
         address _underlyingToken,
         address _zerc20,
-        FeeLib.FeeParams memory _feeParams,
+        IncentiveLib.FeeParams memory _feeParams,
         address initialOwner
     ) external initializer {
         if (_underlyingToken == address(0) || _zerc20 == address(0)) revert ZeroAddress();
@@ -78,7 +78,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         return _getLiquidityManagerStorage().zerc20;
     }
 
-    function feeParams() public view returns (FeeLib.FeeParams memory params) {
+    function feeParams() public view returns (IncentiveLib.FeeParams memory params) {
         params = _getLiquidityManagerStorage().feeParams;
     }
 
@@ -132,7 +132,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
     // ---------------------------- Admin ------------------------------------
 
-    function setFeeParams(FeeLib.FeeParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
+    function setFeeParams(IncentiveLib.FeeParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
         _validateFeeParams(params);
         _getLiquidityManagerStorage().feeParams = params;
         emit FeeParamsUpdated(params);
@@ -153,7 +153,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
     function _quoteWrap(uint256 amount, LiquidityManagerStorage storage $) internal view returns (uint256 reward) {
         uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
-        reward = FeeLib.quoteWrapReward($.feeParams, liquidityBefore, $.feeSurplus, amount);
+        reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, $.feeSurplus, amount);
     }
 
     function _quoteUnwrap(uint256 amount, LiquidityManagerStorage storage $)
@@ -162,13 +162,13 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         returns (uint256 feeAmount)
     {
         uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
-        feeAmount = FeeLib.quoteUnwrapFee($.feeParams, liquidityBefore, amount);
+        feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidityBefore, amount);
         if (feeAmount > amount) {
             feeAmount = amount;
         }
     }
 
-    function _validateFeeParams(FeeLib.FeeParams memory params) internal pure {
+    function _validateFeeParams(IncentiveLib.FeeParams memory params) internal pure {
         if (params.targetLiquidity == 0) revert InvalidTarget();
     }
 

@@ -2,7 +2,7 @@
 pragma solidity ^0.8.20;
 
 /**
- * @title FeeLib
+ * @title IncentiveLib
  * @notice
  * A pure math library for calculating
  *  - rewards on deposits ("wrap"), and
@@ -147,15 +147,15 @@ pragma solidity ^0.8.20;
  *
  * And uses:
  *
- *   uint256 reward = FeeLib.quoteWrapReward(params, liquidity, feeSurplus, amount);
- *   uint256 fee    = FeeLib.quoteUnwrapFee(params, liquidity, amount);
+ *   uint256 reward = IncentiveLib.quoteWrapReward(params, liquidity, feeSurplus, amount);
+ *   uint256 fee    = IncentiveLib.quoteUnwrapFee(params, liquidity, amount);
  *
  * The caller is responsible for:
  *  - updating its own `liquidity` and `feeSurplus` storage,
  *  - performing any token transfers,
  *  - enforcing any additional business logic.
  */
-library FeeLib {
+library IncentiveLib {
     /**
      * @notice Parameters that define the fee/reward curve.
      */
