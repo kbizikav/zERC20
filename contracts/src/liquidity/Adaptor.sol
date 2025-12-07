@@ -84,8 +84,9 @@ contract Adaptor is ILayerZeroComposer {
         if (ZERC20.balanceOf(address(this)) < amount) revert InsufficientZerc20();
 
         FeeQuote memory quote = _quoteFee(amount, request);
-        /// @dev This never overflows because of quoteFee logic
-        uint256 expectedAmountOut = amount - quote.tokenUnwrapFee - quote.tokenBridgeFee;
+        uint256 amountAfterUnwrap = amount > quote.tokenUnwrapFee ? amount - quote.tokenUnwrapFee : 0;
+        uint256 expectedAmountOut =
+            amountAfterUnwrap > quote.tokenBridgeFee ? amountAfterUnwrap - quote.tokenBridgeFee : 0;
 
         if (expectedAmountOut < request.minAmountOut) {
             _returnZerc20(amount, request);
@@ -177,7 +178,7 @@ contract Adaptor is ILayerZeroComposer {
 
     function _quoteFee(uint256 amount, BridgeRequest memory request) internal view returns (FeeQuote memory quote) {
         uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrap(amount);
-        uint256 amountAfterUnwrap = amount - tokenUnwrapFee;
+        uint256 amountAfterUnwrap = amount > tokenUnwrapFee ? amount - tokenUnwrapFee : 0;
         SendParam memory sendParam = _buildSendParam(amountAfterUnwrap, 0, request);
         MessagingFee memory feeQuote = _quoteSend(sendParam);
         uint256 amountReceived = _quoteAmountReceived(sendParam);

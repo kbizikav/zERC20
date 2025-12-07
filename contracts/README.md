@@ -105,11 +105,8 @@ Required env:
 
 Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
 - `LIQUIDITY_TARGET` (uint256): Target liquidity level that drives rewards/fees (defaults to 1_000_000e6).
+- `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees (defaults to `0`, which disables curve-based incentives).
 - `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
-- `LIQUIDITY_REWARD_SLOPE_BPS` (uint256): Reward slope in bps (defaults to 100).
-- `LIQUIDITY_FEE_LAMBDA1_BPS` (uint256): Fee λ1 in bps (defaults to 40).
-- `LIQUIDITY_FEE_LAMBDA2_BPS` (uint256): Fee λ2 in bps (defaults to 9954).
-- `LIQUIDITY_FEE_DELTA1_BPS` / `LIQUIDITY_FEE_DELTA2_BPS` (uint256): Fee deltas in bps (defaults 6000 / 500).
 - `SET_LIQUIDITY_AS_MINTER` (uint256): Non-zero to set the manager as the token minter (defaults to 1).
 - `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
 - Defaults can also be sourced from `config/chain-config.json` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence.

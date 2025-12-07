@@ -1,88 +1,297 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity ^0.8.20;
 
-/// @notice Pure math helpers for reward + rebalancing fee calculations.
+/**
+ * @title FeeLib
+ * @notice
+ * A pure math library for calculating
+ *  - rewards on deposits ("wrap"), and
+ *  - fees on withdrawals ("unwrap")
+ * for a single-asset liquidity pool.
+ *
+ * ---------------------------------------------------------------------------
+ * Conceptual model
+ * ---------------------------------------------------------------------------
+ *
+ * Think of the pool's total liquidity as a point on a horizontal axis:
+ *
+ *      0 ---------------- L ---------------------- T ----------->
+ *
+ * - L  : current liquidity
+ * - T  : target liquidity (configured in FeeParams)
+ * - k  : incentive strength coefficient (configured in FeeParams)
+ *
+ * The pool wants to:
+ *  - strongly encourage deposits when liquidity is low, and
+ *  - gradually turn off incentives as liquidity approaches T.
+ *
+ * To do this, we define a "reward/fee density" along the liquidity axis:
+ *
+ *   density(x) = k * (1 - x / T)   for 0 <= x < T
+ *              = 0                 for x >= T
+ *
+ * Properties of this density:
+ *  - Highest when x is near 0 (very low liquidity).
+ *  - Decreases linearly as x increases.
+ *  - Reaches exactly 0 at x = T.
+ *  - Is 0 for any x >= T, so once liquidity is at or above T, the pool
+ *    is neutral (no extra rewards or fees from this mechanism).
+ *
+ * ---------------------------------------------------------------------------
+ * Deposit (wrap) rewards as area under the curve
+ * ---------------------------------------------------------------------------
+ *
+ * When someone deposits an amount `amount`, liquidity moves from:
+ *
+ *   L_start = L
+ *   L_end   = L + amount
+ *
+ * But we only care about the part of this movement that is below T, so:
+ *
+ *   D = min(L_start, T)
+ *   U = min(L_end,   T)
+ *
+ * The continuous (ideal, real-valued) reward is the "area under the density
+ * curve" between D and U:
+ *
+ *   reward_continuous = ∫[x=D..U] density(x) dx
+ *
+ * For the linear density defined above, this integral has a closed form:
+ *
+ *   reward_continuous = k / (2T) * [ (T - D)^2 - (T - U)^2 ]
+ *
+ * On-chain, we compute this value in integer arithmetic and round DOWN
+ * (floor) to ensure we never overpay due to rounding.
+ *
+ * Finally, this raw reward is capped by `feeSurplus` passed in by the caller:
+ *
+ *   reward = min(reward_raw, feeSurplus)
+ *
+ * This guarantees that the caller can safely subtract `reward` from its
+ * fee surplus without underflow.
+ *
+ * ---------------------------------------------------------------------------
+ * Withdrawal (unwrap) fees as area under the same curve
+ * ---------------------------------------------------------------------------
+ *
+ * When someone withdraws an amount `amount`, liquidity moves from:
+ *
+ *   L_start = L
+ *   L_end   = L - amount
+ *
+ * Again, we only care about the part of this movement that is below T. So:
+ *
+ *   A = min(L_start,        T)
+ *   B = min(L_start - amount, T)
+ *
+ * (note that B <= A in the relevant region).
+ *
+ * The continuous (ideal) fee is the area under the same density curve
+ * between B and A:
+ *
+ *   fee_continuous = ∫[x=B..A] density(x) dx
+ *
+ * which has the closed form:
+ *
+ *   fee_continuous = k / (2T) * [ (T - B)^2 - (T - A)^2 ]
+ *
+ * On-chain, we compute this value in integer arithmetic and round UP (ceil)
+ * to ensure we never undercharge due to rounding:
+ *
+ *   fee = ceil(fee_continuous)
+ *
+ * Special protection:
+ *  - If `amount > L`, the requested withdrawal is larger than the current
+ *    liquidity. In this case, the library returns:
+ *
+ *      fee = amount
+ *
+ *    This allows the caller to treat such a withdrawal as "net zero" for
+ *    the user (fee equals the requested amount) and prevents liquidity
+ *    underflow in the caller contract.
+ *
+ * ---------------------------------------------------------------------------
+ * No-arbitrage and rounding direction
+ * ---------------------------------------------------------------------------
+ *
+ * In the continuous (real-valued) model:
+ *  - If you move from L to L + amount (deposit), and then back from
+ *    L + amount to L (withdraw), the total reward and total fee are
+ *    exactly equal:
+ *
+ *      reward_continuous = fee_continuous  (same path, reversed)
+ *
+ *  - Similarly for withdraw then deposit along the same path.
+ *
+ * On-chain, we deliberately:
+ *  - round rewards DOWN (floor), and
+ *  - round fees UP   (ceil).
+ *
+ * Therefore, for any path:
+ *
+ *   collected_fee >= paid_reward
+ *
+ * This means an attacker cannot profit by performing atomic deposit/withdraw
+ * cycles that only move liquidity along the same path and back.
+ *
+ * ---------------------------------------------------------------------------
+ * Usage
+ * ---------------------------------------------------------------------------
+ *
+ * The library is stateless. A typical calling contract stores:
+ *
+ *   FeeParams params;
+ *   uint256   liquidity;   // current total liquidity
+ *   uint256   feeSurplus;  // accumulated surplus from past fees
+ *
+ * And uses:
+ *
+ *   uint256 reward = FeeLib.quoteWrapReward(params, liquidity, feeSurplus, amount);
+ *   uint256 fee    = FeeLib.quoteUnwrapFee(params, liquidity, amount);
+ *
+ * The caller is responsible for:
+ *  - updating its own `liquidity` and `feeSurplus` storage,
+ *  - performing any token transfers,
+ *  - enforcing any additional business logic.
+ */
 library FeeLib {
-    uint256 internal constant BPS = 10_000;
-    uint256 internal constant WAD = 1e18;
-
-    struct RewardParams {
-        uint256 liquiditySlopeBps;
-    }
-
+    /**
+     * @notice Parameters that define the fee/reward curve.
+     */
     struct FeeParams {
-        uint256 lambda1Bps; // Marginal fee at the Tier-2 boundary (δ2).
-        uint256 lambda2Bps; // Incremental marginal fee as balance moves below δ2.
-        uint256 delta1Bps; // Utilization threshold (in bps of lTarget) above which rebalancing fee is 0.
-        uint256 delta2Bps; // Lower threshold where the second slope begins.
+        /// @notice Target liquidity T where incentives fade to zero.
+        uint256 targetLiquidity;
+        /// @notice Incentive strength coefficient k (scale chosen by caller).
+        uint256 k;
     }
 
-    function quoteWrap(uint256 amount, uint256 liquidityBefore, uint256 lTarget, RewardParams memory params)
-        internal
-        pure
-        returns (uint256 rewardAmount)
-    {
-        if (amount == 0 || lTarget == 0) {
-            return 0;
-        }
+    /*//////////////////////////////////////////////////////////////
+                           PUBLIC API (INTERNAL)
+    //////////////////////////////////////////////////////////////*/
 
-        if (liquidityBefore >= lTarget) {
-            return 0;
-        }
+    /**
+     * @notice Compute deposit reward for adding `amount` liquidity.
+     * @dev
+     * - Uses the continuous density described in the library header.
+     * - Rounds DOWN (floor).
+     * - Caps the result by `feeSurplus`.
+     */
+    function quoteWrapReward(
+        FeeParams memory params,
+        uint256 liquidity,
+        uint256 feeSurplus,
+        uint256 amount
+    ) internal pure returns (uint256 wrapReward) {
+        uint256 raw = _rawWrapReward(liquidity, params.targetLiquidity, params.k, amount);
 
-        uint256 rewardable = amount;
-        uint256 remainingToTarget = lTarget - liquidityBefore;
-        if (rewardable > remainingToTarget) {
-            rewardable = remainingToTarget;
-        }
-
-        // Integral over x in [0, rewardable] of (1 - (b + x)/B) dx
-        // = rewardable * (B - b)/B - rewardable^2 / (2B)
-        uint256 firstTerm = (rewardable * (lTarget - liquidityBefore)) / lTarget;
-        uint256 secondTerm = (rewardable * rewardable) / (2 * lTarget);
-        uint256 integral = firstTerm > secondTerm ? firstTerm - secondTerm : 0;
-
-        rewardAmount = (params.liquiditySlopeBps * integral) / BPS;
+        if (raw > feeSurplus) return feeSurplus;
+        return raw;
     }
 
-    function quoteUnwrap(uint256 amount, uint256 liquidityBefore, uint256 lTarget, FeeParams memory feeParams)
-        internal
-        pure
-        returns (uint256 feeAmount)
-    {
-        if (amount == 0 || lTarget == 0) {
+    /**
+     * @notice Compute withdrawal fee for removing `amount` liquidity.
+     * @dev
+     * - Uses the same continuous density described in the library header.
+     * - Rounds UP (ceil).
+     * - If `amount > liquidity`, returns `amount` to allow "net-zero" withdrawal.
+     */
+    function quoteUnwrapFee(
+        FeeParams memory params,
+        uint256 liquidity,
+        uint256 amount
+    ) internal pure returns (uint256 unwrapFee) {
+        return _rawUnwrapFee(liquidity, params.targetLiquidity, params.k, amount);
+    }
+
+    /*//////////////////////////////////////////////////////////////
+                         INTERNAL PURE MATH HELPERS
+    //////////////////////////////////////////////////////////////*/
+
+    function _rawWrapReward(
+        uint256 L,
+        uint256 T,
+        uint256 k_,
+        uint256 amount
+    ) internal pure returns (uint256 rewardRaw) {
+        if (T == 0 || amount == 0) {
             return 0;
         }
 
-        uint256 delta1Balance = (lTarget * feeParams.delta1Bps) / BPS;
-        uint256 delta2Balance = (lTarget * feeParams.delta2Bps) / BPS;
+        // Portion of the path within [0, T).
+        uint256 D = L < T ? L : T;      // start, capped at T
+        uint256 U = L + amount;        // end before capping
+        if (U > T) U = T;              // cap at T
 
-        uint256 processAmount = amount > liquidityBefore ? liquidityBefore : amount;
-
-        uint256 t1 = liquidityBefore > delta1Balance ? liquidityBefore - delta1Balance : 0;
-        uint256 t2 = liquidityBefore > delta2Balance ? liquidityBefore - delta2Balance : 0;
-
-        if (processAmount > t1 && delta1Balance > delta2Balance && delta2Balance > 0) {
-            uint256 upper1 = processAmount < t2 ? processAmount : t2;
-            if (upper1 > t1) {
-                uint256 dx1 = upper1 - t1;
-                uint256 span1 = delta1Balance - delta2Balance;
-                uint256 endRate = (feeParams.lambda1Bps * dx1) / span1;
-                feeAmount += (dx1 * endRate) / (2 * BPS);
-            }
-
-            if (processAmount > t2) {
-                uint256 upper2 = processAmount < liquidityBefore ? processAmount : liquidityBefore;
-                if (upper2 > t2) {
-                    uint256 dx2 = upper2 - t2;
-                    feeAmount += (dx2 * feeParams.lambda1Bps) / BPS;
-                    feeAmount += (feeParams.lambda2Bps * dx2 * dx2) / (2 * delta2Balance * BPS);
-                }
-            }
+        if (U <= D) {
+            return 0;
         }
 
-        if (feeAmount > amount) {
-            feeAmount = amount;
+        // reward_continuous ∝ (T - D)^2 - (T - U)^2
+        uint256 TD = T - D; // T >= D
+        uint256 TU = T - U; // U <= T
+
+        uint256 TD2 = TD * TD;
+        uint256 TU2 = TU * TU;
+        uint256 diffSquare = TD2 - TU2; // non-negative because TD >= TU
+
+        uint256 numerator = k_ * diffSquare;
+        uint256 denominator = 2 * T;
+
+        // Floor (round down).
+        rewardRaw = numerator / denominator;
+    }
+
+    function _rawUnwrapFee(
+        uint256 L,
+        uint256 T,
+        uint256 k_,
+        uint256 amount
+    ) internal pure returns (uint256 feeRaw) {
+        if (amount == 0) {
+            return 0;
         }
+
+        // If requested withdrawal exceeds liquidity, charge full amount as fee.
+        if (amount > L) {
+            return amount;
+        }
+
+        if (T == 0) {
+            return 0;
+        }
+
+        if (L == 0) {
+            return 0; // unreachable in normal use, kept as a safety guard
+        }
+
+        // Portion of the path within [0, T).
+        uint256 A = L < T ? L : T;       // start (higher), capped at T
+        uint256 Braw = L - amount;       // end (lower) before capping
+        uint256 B = Braw < T ? Braw : T; // cap at T
+
+        if (A <= B) {
+            return 0;
+        }
+
+        // fee_continuous ∝ (T - B)^2 - (T - A)^2
+        uint256 TA = T - A; // A <= T
+        uint256 TB = T - B; // B <= T
+
+        uint256 TA2 = TA * TA;
+        uint256 TB2 = TB * TB;
+        uint256 diffSquare = TB2 - TA2; // non-negative because TB >= TA
+
+        uint256 numerator = k_ * diffSquare;
+        uint256 denominator = 2 * T;
+
+        // Ceil (round up).
+        feeRaw = _ceilDiv(numerator, denominator);
+    }
+
+    function _ceilDiv(uint256 a, uint256 b) internal pure returns (uint256 c) {
+        if (a == 0) return 0;
+        uint256 q = a / b;
+        uint256 r = a % b;
+        return r == 0 ? q : q + 1;
     }
 }

@@ -15,7 +15,6 @@ import {FeeLib} from "../libraries/FeeLib.sol";
 contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgradeable, ILiquidityManager {
     using SlotDerivation for string;
 
-    uint256 private constant BPS = 10_000;
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
 
     error ZeroAddress();
@@ -26,23 +25,15 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
     error UnderlyingSendFailed();
     error InsufficientLiquidity();
     error InsufficientRewards();
-    error InvalidDeltas();
-    error InvalidDeltaOrder();
-    error InvalidLambda1();
-    error InvalidLambda2();
 
     /// @custom:storage-location erc7201:zerc20.storage.liquidityManager
     struct LiquidityManagerStorage {
         IERC20 underlyingToken;
         IzERC20 zerc20;
-        uint256 lTarget;
-        FeeLib.RewardParams rewardParams;
         FeeLib.FeeParams feeParams;
         uint256 feeSurplus; // Tracks collected fees net of distributed rewards.
     }
 
-    event TargetUpdated(uint256 lTarget);
-    event RewardParamsUpdated(FeeLib.RewardParams params);
     event FeeParamsUpdated(FeeLib.FeeParams params);
     event Wrapped(address indexed caller, address indexed receiver, uint256 amountOut, uint256 reward);
     event Unwrapped(address indexed caller, address indexed receiver, uint256 amountOut, uint256 feeAmount);
@@ -62,14 +53,10 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
     function initialize(
         address _underlyingToken,
         address _zerc20,
-        uint256 _lTarget,
-        FeeLib.RewardParams memory _rewardParams,
         FeeLib.FeeParams memory _feeParams,
         address initialOwner
     ) external initializer {
         if (_underlyingToken == address(0) || _zerc20 == address(0)) revert ZeroAddress();
-        if (_lTarget == 0) revert InvalidTarget();
-        _validateRewardParams(_rewardParams);
         _validateFeeParams(_feeParams);
 
         __AccessControl_init();
@@ -80,8 +67,6 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         $.underlyingToken = IERC20(_underlyingToken);
         $.zerc20 = IzERC20(_zerc20);
-        $.lTarget = _lTarget;
-        $.rewardParams = _rewardParams;
         $.feeParams = _feeParams;
     }
 
@@ -91,14 +76,6 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
     function zerc20() public view returns (IzERC20) {
         return _getLiquidityManagerStorage().zerc20;
-    }
-
-    function lTarget() public view returns (uint256) {
-        return _getLiquidityManagerStorage().lTarget;
-    }
-
-    function rewardParams() public view returns (FeeLib.RewardParams memory params) {
-        params = _getLiquidityManagerStorage().rewardParams;
     }
 
     function feeParams() public view returns (FeeLib.FeeParams memory params) {
@@ -120,9 +97,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
         if (!$.underlyingToken.transferFrom(msg.sender, address(this), amount)) revert UnderlyingPullFailed();
 
-        if (reward > 0) {
-            $.feeSurplus -= reward;
-        }
+        if (reward > 0) $.feeSurplus -= reward;
         amountOut = amount + reward;
         $.zerc20.mint(receiver, amountOut);
         emit Wrapped(msg.sender, receiver, amountOut, reward);
@@ -134,13 +109,15 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         uint256 feeAmount = _quoteUnwrap(amount, $);
-        amountOut = amount - feeAmount;
+        amountOut = amount > feeAmount ? amount - feeAmount : 0;
 
         $.zerc20.burn(msg.sender, amount);
         IERC20 underlying = $.underlyingToken;
-        if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
-        if (!underlying.transfer(receiver, amountOut)) revert UnderlyingSendFailed();
-        $.feeSurplus += feeAmount;
+        if (amountOut > 0) {
+            if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
+            if (!underlying.transfer(receiver, amountOut)) revert UnderlyingSendFailed();
+        }
+        if (feeAmount > 0) $.feeSurplus += feeAmount;
 
         emit Unwrapped(msg.sender, receiver, amountOut, feeAmount);
     }
@@ -154,18 +131,6 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
     }
 
     // ---------------------------- Admin ------------------------------------
-
-    function setTarget(uint256 _lTarget) external onlyRole(FEE_MANAGER_ROLE) {
-        if (_lTarget == 0) revert InvalidTarget();
-        _getLiquidityManagerStorage().lTarget = _lTarget;
-        emit TargetUpdated(_lTarget);
-    }
-
-    function setRewardParams(FeeLib.RewardParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
-        _validateRewardParams(params);
-        _getLiquidityManagerStorage().rewardParams = params;
-        emit RewardParamsUpdated(params);
-    }
 
     function setFeeParams(FeeLib.FeeParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
         _validateFeeParams(params);
@@ -188,12 +153,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
     function _quoteWrap(uint256 amount, LiquidityManagerStorage storage $) internal view returns (uint256 reward) {
         uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
-        uint256 rewardAmount = FeeLib.quoteWrap(amount, liquidityBefore, $.lTarget, $.rewardParams);
-        uint256 surplus = $.feeSurplus;
-
-        if (rewardAmount > 0 && surplus > 0) {
-            reward = rewardAmount > surplus ? surplus : rewardAmount;
-        }
+        reward = FeeLib.quoteWrapReward($.feeParams, liquidityBefore, $.feeSurplus, amount);
     }
 
     function _quoteUnwrap(uint256 amount, LiquidityManagerStorage storage $)
@@ -202,18 +162,14 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         returns (uint256 feeAmount)
     {
         uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
-        feeAmount = FeeLib.quoteUnwrap(amount, liquidityBefore, $.lTarget, $.feeParams);
-    }
-
-    function _validateRewardParams(FeeLib.RewardParams memory params) internal pure {
-        params; // no-op; kept for symmetry and future validation hooks.
+        feeAmount = FeeLib.quoteUnwrapFee($.feeParams, liquidityBefore, amount);
+        if (feeAmount > amount) {
+            feeAmount = amount;
+        }
     }
 
     function _validateFeeParams(FeeLib.FeeParams memory params) internal pure {
-        if (params.delta1Bps > BPS || params.delta2Bps > BPS) revert InvalidDeltas();
-        if (params.delta1Bps <= params.delta2Bps || params.delta2Bps == 0) revert InvalidDeltaOrder();
-        if (params.lambda1Bps > BPS) revert InvalidLambda1();
-        if (params.lambda2Bps > BPS) revert InvalidLambda2();
+        if (params.targetLiquidity == 0) revert InvalidTarget();
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
