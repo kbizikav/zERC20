@@ -19,7 +19,8 @@ pragma solidity ^0.8.20;
  *
  * - L  : current liquidity
  * - T  : target liquidity (configured in FeeParams)
- * - k  : incentive strength coefficient (configured in FeeParams)
+ * - k  : incentive strength coefficient (configured in FeeParams), stored in
+ *        basis points where 1 bps = 0.01% (k = 10_000 => coefficient 1.0).
  *
  * The pool wants to:
  *  - strongly encourage deposits when liquidity is low, and
@@ -161,9 +162,12 @@ library FeeLib {
     struct FeeParams {
         /// @notice Target liquidity T where incentives fade to zero.
         uint256 targetLiquidity;
-        /// @notice Incentive strength coefficient k (scale chosen by caller).
+        /// @notice Incentive strength coefficient k, expressed in basis points (1 = 0.01%).
         uint256 k;
     }
+
+    /// @notice Basis points denominator for k (1 bps = 0.01% = 1 / 10_000).
+    uint256 internal constant K_BPS_DENOM = 10_000;
 
     /*//////////////////////////////////////////////////////////////
                            PUBLIC API (INTERNAL)
@@ -234,8 +238,9 @@ library FeeLib {
         uint256 TU2 = TU * TU;
         uint256 diffSquare = TD2 - TU2; // non-negative because TD >= TU
 
+        // k is provided in basis points, so divide by K_BPS_DENOM.
         uint256 numerator = k_ * diffSquare;
-        uint256 denominator = 2 * T;
+        uint256 denominator = 2 * T * K_BPS_DENOM;
 
         // Floor (round down).
         rewardRaw = numerator / denominator;
@@ -281,8 +286,9 @@ library FeeLib {
         uint256 TB2 = TB * TB;
         uint256 diffSquare = TB2 - TA2; // non-negative because TB >= TA
 
+        // k is provided in basis points, so divide by K_BPS_DENOM.
         uint256 numerator = k_ * diffSquare;
-        uint256 denominator = 2 * T;
+        uint256 denominator = 2 * T * K_BPS_DENOM;
 
         // Ceil (round up).
         feeRaw = _ceilDiv(numerator, denominator);

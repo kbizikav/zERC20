@@ -15,7 +15,7 @@ import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 /// Optional env:
 /// - LIQUIDITY_UNDERLYING_TOKEN (address): ERC20 token held as liquidity (or set in chain-config).
 /// - LIQUIDITY_TARGET (uint256): Target liquidity level used for rewards/fees (defaults to 1_000_000e6).
-/// - LIQUIDITY_K (uint256): Incentive strength coefficient k for the fee curve (defaults to 0; set explicitly for rewards/fees).
+/// - LIQUIDITY_K (uint256): Incentive strength coefficient k for the fee curve, in basis points (1 = 0.01%; defaults to 0; set explicitly for rewards/fees).
 /// - LIQUIDITY_OWNER (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
 /// - SET_LIQUIDITY_AS_MINTER (uint256): When non-zero, attempts to set the manager as zERC20 minter (defaults to 1).
 /// - ADAPTOR_STARGATE (address): Stargate endpoint; when set, deploys the Adaptor wired to the manager (or set in chain-config).

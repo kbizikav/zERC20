@@ -105,7 +105,7 @@ Required env:
 
 Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
 - `LIQUIDITY_TARGET` (uint256): Target liquidity level that drives rewards/fees (defaults to 1_000_000e6).
-- `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees (defaults to `0`, which disables curve-based incentives).
+ - `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `0`, which disables curve-based incentives.
 - `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
 - `SET_LIQUIDITY_AS_MINTER` (uint256): Non-zero to set the manager as the token minter (defaults to 1).
 - `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
