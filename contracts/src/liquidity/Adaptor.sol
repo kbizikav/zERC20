@@ -7,18 +7,23 @@ import {IzERC20} from "../interfaces/IzERC20.sol";
 import {
     SendParam, MessagingFee, OFTReceipt, MessagingReceipt, OFTFeeDetail, OFTLimit
 } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
+import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 /// @notice Receives zERC20 (typically via OFT), unwraps through LiquidityManager, and forwards the underlying token through Stargate.
 contract Adaptor is ILayerZeroComposer {
+    using OptionsBuilder for bytes;
+
+    /// @notice Breaks down the expected fees for unwrapping and bridging.
     struct FeeQuote {
         uint256 tokenUnwrapFee;
         uint256 nativeBridgeFee;
         uint256 tokenBridgeFee;
     }
 
+    /// @notice Parameters for forwarding unwrapped tokens through Stargate.
     struct BridgeRequest {
         uint32 dstEid;
         bytes extraOptions;
@@ -41,6 +46,8 @@ contract Adaptor is ILayerZeroComposer {
     error StargateSendFailed();
     error QuoteFailed();
 
+    uint128 internal constant RETURN_LZ_RECEIVE_GAS = 500_000;
+
     ILiquidityManager public immutable LIQUIDITY_MANAGER;
     IERC20 public immutable UNDERLYING_TOKEN;
     IzERC20 public immutable ZERC20;
@@ -50,6 +57,8 @@ contract Adaptor is ILayerZeroComposer {
     event UnwrapAndBridge(address indexed caller, uint256 amountIn, uint256 amountOut, address receiver, uint32 dstEid);
     event ReturnZerc20(address indexed to, uint32 indexed dstEid, uint256 amountReturned);
 
+    /// @param _liquidityManager LiquidityManager that wraps/unwraps the zERC20.
+    /// @param _stargate Stargate endpoint used for bridging the underlying token.
     constructor(address _liquidityManager, address _stargate) {
         if (_liquidityManager == address(0)) revert ZeroAddress();
         if (_stargate == address(0)) revert ZeroAddress();
@@ -61,6 +70,10 @@ contract Adaptor is ILayerZeroComposer {
 
     // ---------------------------- User flows --------------------------------
 
+    /// @notice Unwraps zERC20 into the underlying token and bridges it through Stargate.
+    /// @param amount zERC20 amount to unwrap.
+    /// @param request Bridge instructions including destination chain and compose payload.
+    /// @return amountOut Tokens delivered on the destination chain.
     function unwrapAndBridge(uint256 amount, BridgeRequest calldata request)
         external
         payable
@@ -75,6 +88,10 @@ contract Adaptor is ILayerZeroComposer {
         if (!bridgeSuccess) revert StargateSendFailed();
     }
 
+    /// @notice LayerZero compose callback used when this adaptor is called via OFT.
+    /// @dev Re-attempts to bridge; if unsafe or failing, wraps back and returns zERC20 to the sender.
+    /// @param _from Expected to be the zERC20 contract that initiated the compose.
+    /// @param _message Encoded `BridgeRequest` and amount in the compose payload.
     function lzCompose(address _from, bytes32, bytes calldata _message, address, bytes calldata)
         external
         payable
@@ -87,20 +104,20 @@ contract Adaptor is ILayerZeroComposer {
 
         (FeeQuote memory quote, bool quoteSuccess) = _quoteFee(amount, request);
         if (!quoteSuccess) {
-            _returnZerc20(amount, request);
+            _returnZerc20(request.dstEid, request.to, amount);
             return;
         }
         uint256 expectedAmountOut = amount - quote.tokenUnwrapFee - quote.tokenBridgeFee;
 
         if (expectedAmountOut < request.minAmountOut) {
-            _returnZerc20(amount, request);
+            _returnZerc20(request.dstEid, request.to, amount);
             return;
         }
         (uint256 bridgedOrUnwrapped, bool success) = _unwrapAndBridge(amount, request, quote);
         if (success) return;
 
         uint256 wrappedAmount = _wrapBack(bridgedOrUnwrapped);
-        _returnZerc20(wrappedAmount, request);
+        _returnZerc20(request.dstEid, request.to, wrappedAmount);
     }
 
     // ---------------------------- Core flows --------------------------------
@@ -158,24 +175,31 @@ contract Adaptor is ILayerZeroComposer {
         wrappedAmount = LIQUIDITY_MANAGER.wrap(amount, address(this));
     }
 
-    function _returnZerc20(uint256 amount, BridgeRequest memory request) internal {
+    function _returnZerc20(uint32 dstEid, address to, uint256 amount) internal {
+        bytes memory extraOptions =
+            OptionsBuilder.newOptions().addExecutorLzReceiveOption(RETURN_LZ_RECEIVE_GAS, 0);
         SendParam memory sendParam = SendParam({
-            dstEid: request.dstEid,
-            to: _toBytes32(request.to),
+            dstEid: dstEid,
+            to: _toBytes32(to),
             amountLD: amount,
             minAmountLD: amount,
-            extraOptions: request.extraOptions,
+            extraOptions: extraOptions,
             composeMsg: bytes(""),
             oftCmd: bytes("")
         });
         MessagingFee memory returnFeeQuote = ZERC20.quoteSend(sendParam, false);
         uint256 nativeFee = returnFeeQuote.nativeFee;
         if (msg.value < nativeFee) revert NativeFeeTooLow();
-        ZERC20.send{value: msg.value}(sendParam, returnFeeQuote, request.refundAddress);
-        emit ReturnZerc20(request.to, request.dstEid, amount);
+        ZERC20.send{value: msg.value}(sendParam, returnFeeQuote, to);
+        emit ReturnZerc20(to, dstEid, amount);
     }
 
     // ---------------------------- Quoting -----------------------------------
+
+    /// @notice Returns fee estimates for unwrapping and bridging the provided amount.
+    /// @param amount zERC20 amount to unwrap.
+    /// @param request Bridge instructions used to derive messaging fees.
+    /// @return quote Fee breakdown (unwrap fee, native bridge fee, token bridge fee).
     function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
         bool success;
         (quote, success) = _quoteFee(amount, request);
