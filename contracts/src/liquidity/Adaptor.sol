@@ -5,7 +5,7 @@ import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
 import {IStargate, Ticket} from "../interfaces/IStargate.sol";
 import {IzERC20} from "../interfaces/IzERC20.sol";
 import {
-    SendParam, MessagingFee, OFTReceipt, MessagingReceipt
+    SendParam, MessagingFee, OFTReceipt, MessagingReceipt, OFTFeeDetail, OFTLimit
 } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
@@ -39,6 +39,7 @@ contract Adaptor is ILayerZeroComposer {
     error InvalidComposeCaller();
     error InsufficientZerc20();
     error StargateSendFailed();
+    error QuoteFailed();
 
     ILiquidityManager public immutable LIQUIDITY_MANAGER;
     IERC20 public immutable UNDERLYING_TOKEN;
@@ -67,10 +68,11 @@ contract Adaptor is ILayerZeroComposer {
     {
         if (!ZERC20.transferFrom(msg.sender, address(this), amount)) revert TokenPullFailed();
         if (ZERC20.balanceOf(address(this)) < amount) revert InsufficientZerc20();
-        FeeQuote memory quote = _quoteFee(amount, request);
-        bool success;
-        (amountOut, success) = _unwrapAndBridge(amount, request, quote);
-        if (!success) revert StargateSendFailed();
+        (FeeQuote memory quote, bool quoteSuccess) = _quoteFee(amount, request);
+        if (!quoteSuccess) revert QuoteFailed();
+        bool bridgeSuccess;
+        (amountOut, bridgeSuccess) = _unwrapAndBridge(amount, request, quote);
+        if (!bridgeSuccess) revert StargateSendFailed();
     }
 
     function lzCompose(address _from, bytes32, bytes calldata _message, address, bytes calldata)
@@ -83,7 +85,11 @@ contract Adaptor is ILayerZeroComposer {
         uint256 amount = OFTComposeMsgCodec.amountLD(_message);
         if (ZERC20.balanceOf(address(this)) < amount) revert InsufficientZerc20();
 
-        FeeQuote memory quote = _quoteFee(amount, request);
+        (FeeQuote memory quote, bool quoteSuccess) = _quoteFee(amount, request);
+        if (!quoteSuccess) {
+            _returnZerc20(amount, request);
+            return;
+        }
         uint256 expectedAmountOut = amount - quote.tokenUnwrapFee - quote.tokenBridgeFee;
 
         if (expectedAmountOut < request.minAmountOut) {
@@ -171,15 +177,25 @@ contract Adaptor is ILayerZeroComposer {
 
     // ---------------------------- Quoting -----------------------------------
     function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
-        return _quoteFee(amount, request);
+        bool success;
+        (quote, success) = _quoteFee(amount, request);
+        if (!success) revert QuoteFailed();
     }
 
-    function _quoteFee(uint256 amount, BridgeRequest memory request) internal view returns (FeeQuote memory quote) {
+    function _quoteFee(uint256 amount, BridgeRequest memory request)
+        internal
+        view
+        returns (FeeQuote memory quote, bool success)
+    {
         uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrapFee(amount);
         uint256 amountAfterUnwrap = amount - tokenUnwrapFee;
         SendParam memory sendParam = _buildSendParam(amountAfterUnwrap, 0, request);
-        MessagingFee memory feeQuote = _quoteSend(sendParam);
-        uint256 amountReceived = _quoteAmountReceived(sendParam);
+        (MessagingFee memory feeQuote, bool feeSuccess) = _quoteSend(sendParam);
+        (uint256 amountReceived, bool amountSuccess) = _quoteAmountReceived(sendParam);
+        success = feeSuccess && amountSuccess;
+        if (!success) {
+            return (quote, success);
+        }
         uint256 tokenBridgeFee = amountAfterUnwrap > amountReceived ? amountAfterUnwrap - amountReceived : 0;
         quote = FeeQuote({
             tokenUnwrapFee: tokenUnwrapFee,
@@ -188,14 +204,31 @@ contract Adaptor is ILayerZeroComposer {
         });
     }
 
-    function _quoteSend(SendParam memory sendParam) internal view returns (MessagingFee memory fee) {
-        fee = STARGATE.quoteSend(sendParam, false);
-        if (fee.lzTokenFee > 0) revert LzTokenFeeUnsupported();
+    function _quoteSend(SendParam memory sendParam) internal view returns (MessagingFee memory fee, bool success) {
+        try STARGATE.quoteSend(sendParam, false) returns (MessagingFee memory feeQuote) {
+            if (feeQuote.lzTokenFee > 0) return (fee, false);
+            fee = feeQuote;
+            success = true;
+        } catch (bytes memory) {
+            success = false;
+        }
     }
 
-    function _quoteAmountReceived(SendParam memory sendParam) internal view returns (uint256 amountReceived) {
-        (,, OFTReceipt memory receipt) = STARGATE.quoteOFT(sendParam);
-        amountReceived = receipt.amountReceivedLD;
+    function _quoteAmountReceived(SendParam memory sendParam)
+        internal
+        view
+        returns (uint256 amountReceived, bool success)
+    {
+        try STARGATE.quoteOFT(sendParam) returns (
+            OFTLimit memory,
+            OFTFeeDetail[] memory,
+            OFTReceipt memory receipt
+        ) {
+            amountReceived = receipt.amountReceivedLD;
+            success = true;
+        } catch (bytes memory) {
+            success = false;
+        }
     }
 
     // ---------------------------- Builders & utils --------------------------
