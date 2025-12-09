@@ -1,6 +1,5 @@
 use crate::contracts::{
     ContractError, ContractResult,
-    adaptor::{MessagingFee, SendParam},
     utils::{NormalProvider, get_provider_with_signer, send_call_with_legacy, uint256_as_u64},
 };
 use alloy::network::Ethereum;
@@ -41,6 +40,23 @@ pub struct TeleportEvent {
     pub to: Address,
     pub value: U256,
     pub eth_block_number: u64,
+}
+
+#[derive(Debug, Clone)]
+pub struct SendParam {
+    pub dst_eid: u32,
+    pub to: B256,
+    pub amount_ld: U256,
+    pub min_amount_ld: U256,
+    pub extra_options: Bytes,
+    pub compose_msg: Bytes,
+    pub oft_cmd: Bytes,
+}
+
+#[derive(Debug, Clone)]
+pub struct MessagingFee {
+    pub native_fee: U256,
+    pub lz_token_fee: U256,
 }
 
 #[derive(Clone)]

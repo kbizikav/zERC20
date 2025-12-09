@@ -348,7 +348,7 @@ impl AdaptorContract {
                         amount: inner.amount,
                         native_bridge_fee: inner.nativeBridgeFee,
                         min_amount_out: inner.minAmountOut,
-                        revert_data: inner.revertData,
+                        revert_data: inner.revertData.clone(),
                     });
                 }
                 Err(_) => continue,
@@ -370,7 +370,7 @@ impl AdaptorContract {
                         to: inner.to,
                         dst_eid: inner.dstEid,
                         amount: inner.amount,
-                        revert_data: inner.revertData,
+                        revert_data: inner.revertData.clone(),
                     });
                 }
                 Err(_) => continue,
@@ -388,8 +388,8 @@ impl AdaptorContract {
                 Ok(event) => {
                     let inner = event.inner;
                     return Ok(DecodeBridgeRequestFailedEvent {
-                        message: inner.message,
-                        revert_data: inner.revertData,
+                        message: inner.message.clone(),
+                        revert_data: inner.revertData.clone(),
                     });
                 }
                 Err(_) => continue,
@@ -408,8 +408,8 @@ impl AdaptorContract {
                     let inner = event.inner;
                     return Ok(QuoteFailedEvent {
                         amount: inner.amount,
-                        request: BridgeRequest::from(inner.request),
-                        revert_data: inner.revertData,
+                        request: BridgeRequest::from(inner.request.clone()),
+                        revert_data: inner.revertData.clone(),
                     });
                 }
                 Err(_) => continue,
@@ -430,7 +430,7 @@ impl AdaptorContract {
                         user: inner.user,
                         amount: inner.amount,
                         min_amount_out: inner.minAmountOut,
-                        revert_data: inner.revertData,
+                        revert_data: inner.revertData.clone(),
                     });
                 }
                 Err(_) => continue,
