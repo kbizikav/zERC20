@@ -64,19 +64,22 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     event BridgeUnderlyingToken(
         address indexed user, address indexed to, uint32 indexed dstEid, uint256 amountOut, uint256 nativeFeeUsed
     );
-    event UnwrapFailed(address indexed user, uint256 amount, uint256 minAmountOut);
+    event UnwrapFailed(address indexed user, uint256 amount, uint256 minAmountOut, bytes revertData);
     event BridgeUnderlyingTokenFailed(
         address indexed user,
         address indexed to,
         uint32 indexed dstEid,
         uint256 amount,
         uint256 nativeBridgeFee,
-        uint256 minAmountOut
+        uint256 minAmountOut,
+        bytes revertData
     );
-    event BridgeZerc20Failed(address indexed user, address indexed to, uint32 indexed dstEid, uint256 amount);
+    event BridgeZerc20Failed(
+        address indexed user, address indexed to, uint32 indexed dstEid, uint256 amount, bytes revertData
+    );
 
-    event DecodeBridgeRequestFailed(bytes message);
-    event QuoteFailed(uint256 amount, BridgeRequest request);
+    event DecodeBridgeRequestFailed(bytes message, bytes revertData);
+    event QuoteFailed(uint256 amount, BridgeRequest request, bytes revertData);
 
     /// @param _liquidityManager LiquidityManager that wraps/unwraps the zERC20.
     /// @param _stargate Stargate endpoint used for bridging the underlying token.
@@ -108,8 +111,8 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         BridgeRequest memory request;
         try this.decodeBridgeRequest(_message) returns (BridgeRequest memory request_) {
             request = request_;
-        } catch {
-            emit DecodeBridgeRequestFailed(_message);
+        } catch (bytes memory revertData) {
+            emit DecodeBridgeRequestFailed(_message, revertData);
             return;
         }
 
@@ -212,16 +215,16 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         FeeQuote memory quote;
         try this.quoteFee(zerc20Amount, request) returns (FeeQuote memory quote_) {
             quote = quote_;
-        } catch {
-            emit QuoteFailed(zerc20Amount, request);
+        } catch (bytes memory revertData) {
+            emit QuoteFailed(zerc20Amount, request, revertData);
             return;
         }
 
         // check min output
         if (zerc20Amount <= quote.tokenUnwrapFee + quote.tokenBridgeFee) {
             try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {}
-            catch {
-                emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount);
+            catch (bytes memory revertData) {
+                emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount, revertData);
             }
             return;
         }
@@ -230,8 +233,8 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         if (amountOutput < request.minAmountOut) {
             // send back zERC20 to user on slippage exceed
             try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {}
-            catch {
-                emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount);
+            catch (bytes memory revertData) {
+                emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount, revertData);
             }
             return;
         }
@@ -240,9 +243,9 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         uint256 underlyingTokenAmount;
         try this.unwrapSelf(user, zerc20Amount, quote.tokenUnwrapFee) returns (uint256 amountOut_) {
             underlyingTokenAmount = amountOut_;
-        } catch {
+        } catch (bytes memory revertData) {
             // this is extremely unlikely to happen since we have already quoted the unwrap fee
-            emit UnwrapFailed(user, zerc20Amount, quote.tokenUnwrapFee);
+            emit UnwrapFailed(user, zerc20Amount, quote.tokenUnwrapFee, revertData);
             return;
         }
 
@@ -252,10 +255,16 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
             uint256 amountOut_
         ) {
             amountOut = amountOut_;
-        } catch {
+        } catch (bytes memory revertData) {
             // this is extremely unlikely to happen since we have already quoted the bridge fee
             emit BridgeUnderlyingTokenFailed(
-                user, request.to, request.dstEid, underlyingTokenAmount, quote.nativeBridgeFee, request.minAmountOut
+                user,
+                request.to,
+                request.dstEid,
+                underlyingTokenAmount,
+                quote.nativeBridgeFee,
+                request.minAmountOut,
+                revertData
             );
             return;
         }
