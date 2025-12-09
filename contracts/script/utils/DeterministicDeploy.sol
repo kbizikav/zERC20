@@ -33,6 +33,8 @@ contract DeterministicProxyFactory {
 abstract contract DeterministicDeployer is Script {
     bytes32 internal constant DEFAULT_DEPLOY_SALT = keccak256("zerc20.deploy.default");
     string internal constant FACTORY_LABEL = "PROXY_FACTORY";
+    // Foundry rewrites CREATE2 during broadcasts to use this canonical deployer.
+    address internal constant CREATE2_DEPLOYER = 0x4e59b44847b379578588920cA78FbF26c0B4956C;
 
     /// @dev Reads `DEPLOY_SALT` from the environment. Falls back to a fixed value when unset.
     function _loadBaseSalt() internal view returns (bytes32) {
@@ -60,16 +62,21 @@ abstract contract DeterministicDeployer is Script {
     /// @dev Ensures the deterministic factory exists for the provided base salt and returns it.
     ///      The factory itself is deployed via CREATE2 so its address is stable per (deployer, baseSalt).
     function _deployFactoryIfNeeded(bytes32 baseSalt) private returns (DeterministicProxyFactory factory) {
-        address deployer = _currentDeployer();
         bytes32 factorySalt = _deriveSalt(baseSalt, FACTORY_LABEL);
         bytes32 initCodeHash = keccak256(type(DeterministicProxyFactory).creationCode);
-        address predicted = _computeCreate2Address(deployer, factorySalt, initCodeHash);
-
-        if (predicted.code.length == 0) {
-            factory = new DeterministicProxyFactory{salt: factorySalt}();
-        } else {
-            factory = DeterministicProxyFactory(predicted);
+        // Prefer the broadcast deployer path first to avoid collisions when running with --broadcast.
+        address broadcastAddress = _computeCreate2Address(CREATE2_DEPLOYER, factorySalt, initCodeHash);
+        if (broadcastAddress.code.length != 0) {
+            return DeterministicProxyFactory(broadcastAddress);
         }
+
+        // Fallback to the local deployer address used in dry-runs/tests.
+        address localAddress = _computeCreate2Address(_currentDeployer(), factorySalt, initCodeHash);
+        if (localAddress.code.length != 0) {
+            return DeterministicProxyFactory(localAddress);
+        }
+
+        factory = new DeterministicProxyFactory{salt: factorySalt}();
     }
 
     function _computeCreate2Address(address deployer, bytes32 salt, bytes32 initCodeHash)
@@ -81,7 +88,7 @@ abstract contract DeterministicDeployer is Script {
     }
 
     /// @dev Returns the address used as the CREATE2 deployer when broadcasting. Falls back to env PRIVATE_KEY for dry-runs.
-    function _currentDeployer() private returns (address) {
+    function _currentDeployer() private view returns (address) {
         // During broadcast this is the broadcaster EOA; in dry-runs fall back to PRIVATE_KEY or the script address.
         address origin = tx.origin;
         if (origin != address(0)) {
