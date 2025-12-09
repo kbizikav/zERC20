@@ -64,6 +64,16 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     event BridgeUnderlyingToken(
         address indexed user, address indexed to, uint32 indexed dstEid, uint256 amountOut, uint256 nativeFeeUsed
     );
+    event UnwrapFailed(address indexed user, uint256 amount, uint256 minAmountOut);
+    event BridgeUnderlyingTokenFailed(
+        address indexed user,
+        address indexed to,
+        uint32 indexed dstEid,
+        uint256 amount,
+        uint256 nativeBridgeFee,
+        uint256 minAmountOut
+    );
+    event BridgeZerc20Failed(address indexed user, address indexed to, uint32 indexed dstEid, uint256 amount);
 
     event DecodeBridgeRequestFailed(bytes message);
     event QuoteFailed(uint256 amount, BridgeRequest request);
@@ -134,6 +144,19 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         });
     }
 
+    function unwrapAndBridge(uint256 zerc20Amount, BridgeRequest calldata request) external payable {
+        address user = msg.sender;
+
+        // pull zERC20 from user
+        if (!ZERC20.transferFrom(user, address(this), zerc20Amount)) revert TransferFailed();
+
+        // record zERC20 & native balance
+        zerc20Balances[user] += zerc20Amount;
+        nativeBalances[user] += msg.value;
+
+        _unwrapAndBridge(user, zerc20Amount, request);
+    }
+
     /// @notice Withdraws previously deposited tokens from the adaptor.
     function withdraw(address token, uint256 amount) external nonReentrant {
         require(amount > 0, ZeroAmount());
@@ -196,14 +219,20 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
         // check min output
         if (zerc20Amount <= quote.tokenUnwrapFee + quote.tokenBridgeFee) {
-            try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {} catch {}
+            try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {}
+            catch {
+                emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount);
+            }
             return;
         }
 
         uint256 amountOutput = zerc20Amount - quote.tokenUnwrapFee - quote.tokenBridgeFee;
         if (amountOutput < request.minAmountOut) {
             // send back zERC20 to user on slippage exceed
-            try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {} catch {}
+            try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {}
+            catch {
+                emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount);
+            }
             return;
         }
 
@@ -213,6 +242,7 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
             underlyingTokenAmount = amountOut_;
         } catch {
             // this is extremely unlikely to happen since we have already quoted the unwrap fee
+            emit UnwrapFailed(user, zerc20Amount, quote.tokenUnwrapFee);
             return;
         }
 
@@ -224,6 +254,9 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
             amountOut = amountOut_;
         } catch {
             // this is extremely unlikely to happen since we have already quoted the bridge fee
+            emit BridgeUnderlyingTokenFailed(
+                user, request.to, request.dstEid, underlyingTokenAmount, quote.nativeBridgeFee, request.minAmountOut
+            );
             return;
         }
 
