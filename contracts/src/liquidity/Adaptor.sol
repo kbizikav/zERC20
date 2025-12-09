@@ -12,6 +12,7 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SelfCall} from "../utils/SelfCall.sol";
 
+/// @title Stargate adaptor for zERC20 unwrap + bridge flows.
 /// @notice Receives zERC20 (typically via OFT), unwraps through LiquidityManager, and forwards the underlying token through Stargate.
 contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     using OptionsBuilder for bytes;
@@ -93,6 +94,10 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         STARGATE = IStargate(_stargate);
     }
 
+    /// @notice Handles LayerZero compose callbacks from the zERC20 to unwrap and bridge.
+    /// @dev Valid　compose messages should not revert to avoid trapping cross-chain flows.
+    /// @param _from Compose sender on the source chain (must be the zERC20 instance).
+    /// @param _message Encoded compose payload carrying the BridgeRequest.
     function lzCompose(address _from, bytes32, bytes calldata _message, address, bytes calldata)
         external
         payable
@@ -148,6 +153,9 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         });
     }
 
+    /// @notice Pulls zERC20 from the caller, unwraps it, and bridges the underlying token per the request.
+    /// @param zerc20Amount Amount of zERC20 to unwrap.
+    /// @param request Bridge configuration and minimum output expectations.
     function unwrapAndBridge(uint256 zerc20Amount, BridgeRequest calldata request) external payable {
         address user = msg.sender;
 
@@ -181,10 +189,18 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
     // ------------------------- External Self-Calls ----------------------------
 
+    /// @notice Decodes a BridgeRequest from a compose payload.
+    /// @param _message Compose payload emitted by the zERC20.
+    /// @return request Decoded bridge instructions.
     function decodeBridgeRequest(bytes calldata _message) external pure returns (BridgeRequest memory request) {
         request = abi.decode(OFTComposeMsgCodec.composeMsg(_message), (BridgeRequest));
     }
 
+    /// @notice Self-call hook to unwrap previously credited zERC20 on behalf of a user.
+    /// @param user Address whose balance is debited.
+    /// @param amount zERC20 amount to unwrap.
+    /// @param amountMinOut Minimum underlying expected from the unwrap.
+    /// @return amountOut Underlying amount returned by the LiquidityManager.
     function unwrapSelf(address user, uint256 amount, uint256 amountMinOut)
         external
         onlySelfCall
@@ -193,6 +209,12 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         amountOut = _unwrap(user, amount, amountMinOut);
     }
 
+    /// @notice Self-call hook to bridge the user's unwrapped underlying tokens through Stargate.
+    /// @param user Address whose balances are debited and refunded on surplus fees.
+    /// @param amount Amount of underlying tokens to bridge.
+    /// @param nativeBridgeFee Native fee budget forwarded to Stargate.
+    /// @param request Bridge parameters including destination and minAmountOut.
+    /// @return amountOut Amount delivered to the destination chain after Stargate fees.
     function bridgeUnderlyingTokenSelf(
         address user,
         uint256 amount,
@@ -202,6 +224,11 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         amountOut = _bridgeUnderlyingToken(user, amount, nativeBridgeFee, request);
     }
 
+    /// @notice Self-call hook to return zERC20 back to the destination when unwrap/bridge cannot proceed.
+    /// @param dstEid Destination endpoint ID for the OFT send.
+    /// @param user Address whose balance is debited and refunded for unused native fee.
+    /// @param to Recipient on the destination chain.
+    /// @param amount Amount of zERC20 to bridge back.
     function bridgeZerc20Self(uint32 dstEid, address user, address to, uint256 amount) external onlySelfCall {
         _bridgeZerc20(dstEid, user, to, amount);
     }
@@ -317,13 +344,10 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         MessagingFee memory fee = MessagingFee({nativeFee: nativeBridgeFee, lzTokenFee: 0});
 
         uint256 actualNativeFee;
-        {
-            uint256 nativeBalanceBefore = address(this).balance;
-            (, OFTReceipt memory oftReceipt,) =
-                STARGATE.sendToken{value: nativeBridgeFee}(sendParam, fee, address(this));
-            amountOut = oftReceipt.amountReceivedLD;
-            actualNativeFee = nativeBalanceBefore - address(this).balance;
-        }
+        uint256 nativeBalanceBefore = address(this).balance;
+        (, OFTReceipt memory oftReceipt,) = STARGATE.sendToken{value: nativeBridgeFee}(sendParam, fee, address(this));
+        amountOut = oftReceipt.amountReceivedLD;
+        actualNativeFee = nativeBalanceBefore - address(this).balance;
         if (!UNDERLYING_TOKEN.approve(address(STARGATE), 0)) revert ApproveFailed();
 
         // refund any surplus native fee back to user if applicable
@@ -386,5 +410,6 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         return bytes32(uint256(uint160(a)));
     }
 
+    /// @notice Accepts native refunds returned by OFT/Stargate send calls.
     receive() external payable {}
 }
