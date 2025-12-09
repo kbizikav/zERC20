@@ -117,7 +117,7 @@ pub struct UnwrapAndBridgeEvent {
 }
 
 #[derive(Debug, Clone)]
-pub struct ReturnZerc20Event {
+pub struct BridgeZerc20Event {
     pub to: Address,
     pub dst_eid: u32,
     pub amount_returned: U256,
@@ -239,15 +239,15 @@ impl AdaptorContract {
         Err(ContractError::MissingEvent("UnwrapAndBridge"))
     }
 
-    pub fn parse_return_zerc20(
+    pub fn parse_bridge_zerc20(
         &self,
         receipt: &TransactionReceipt,
-    ) -> ContractResult<ReturnZerc20Event> {
+    ) -> ContractResult<BridgeZerc20Event> {
         for log in receipt.logs() {
-            match log.log_decode_validate::<Adaptor::ReturnZerc20>() {
+            match log.log_decode_validate::<Adaptor::BridgeZerc20>() {
                 Ok(event) => {
                     let inner = event.inner;
-                    return Ok(ReturnZerc20Event {
+                    return Ok(BridgeZerc20Event {
                         to: inner.to,
                         dst_eid: inner.dstEid,
                         amount_returned: inner.amountReturned,
@@ -256,7 +256,7 @@ impl AdaptorContract {
                 Err(_) => continue,
             }
         }
-        Err(ContractError::MissingEvent("ReturnZerc20"))
+        Err(ContractError::MissingEvent("BridgeZerc20"))
     }
 
     pub fn parse_stargate_send_failure(

@@ -55,7 +55,7 @@ contract Adaptor is ILayerZeroComposer {
 
     event StargateSendFailure(uint256 nativeFee, SendParam sendParam, MessagingFee fee, address refundAddress);
     event UnwrapAndBridge(address indexed caller, uint256 amountIn, uint256 amountOut, address receiver, uint32 dstEid);
-    event ReturnZerc20(address indexed to, uint32 indexed dstEid, uint256 amountReturned);
+    event BridgeZerc20(address indexed to, uint32 indexed dstEid, uint256 amountReturned);
 
     /// @param _liquidityManager LiquidityManager that wraps/unwraps the zERC20.
     /// @param _stargate Stargate endpoint used for bridging the underlying token.
@@ -191,7 +191,7 @@ contract Adaptor is ILayerZeroComposer {
         uint256 nativeFee = returnFeeQuote.nativeFee;
         if (msg.value < nativeFee) revert NativeFeeTooLow();
         ZERC20.send{value: msg.value}(sendParam, returnFeeQuote, to);
-        emit ReturnZerc20(to, dstEid, amount);
+        emit BridgeZerc20(to, dstEid, amount);
     }
 
     // ---------------------------- Quoting -----------------------------------
