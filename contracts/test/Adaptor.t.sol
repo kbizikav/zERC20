@@ -15,6 +15,7 @@ import {
     OFTFeeDetail,
     OFTReceipt
 } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
+import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -92,6 +93,7 @@ contract MockStargate is IStargate {
     SendParam public lastSendParam;
     uint256 public lastValue;
     address public lastRefund;
+    bool public revertSend;
 
     constructor(IERC20 underlying_) {
         underlying = underlying_;
@@ -100,6 +102,10 @@ contract MockStargate is IStargate {
     function setQuote(uint256 nativeFee, uint256 tokenFee_) external {
         nativeFeeQuote = nativeFee;
         tokenFee = tokenFee_;
+    }
+
+    function setRevertSend(bool shouldRevert) external {
+        revertSend = shouldRevert;
     }
 
     function lastSendParamAmount() external view returns (uint256) {
@@ -146,6 +152,7 @@ contract MockStargate is IStargate {
         override
         returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt, Ticket memory)
     {
+        if (revertSend) revert("sendToken reverted");
         lastSendParam = _sendParam;
         lastValue = msg.value;
         lastRefund = _refundAddress;
@@ -166,6 +173,7 @@ contract MockStargate is IStargate {
         MessagingFee calldata _fee,
         address _refundAddress
     ) external payable override returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt) {
+        if (revertSend) revert("sendToken reverted");
         lastSendParam = _sendParam;
         lastValue = msg.value;
         lastRefund = _refundAddress;
@@ -238,6 +246,7 @@ contract AdaptorTest is TestHelperOz5 {
 
     address internal constant USER = address(0xA11CE);
     address internal constant DESTINATION = address(0xB0B);
+    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     uint32 internal constant DST_EID = 101;
 
     function setUp() public override {
@@ -338,10 +347,116 @@ contract AdaptorTest is TestHelperOz5 {
         assertEq(zerc20.lastSendValue(), returnNativeFee, "native fee used for return");
     }
 
+    function testLzComposeEmitsDecodeFailureAndAllowsWithdraw() public {
+        uint256 amount = 25 ether;
+        uint256 nativeFee = 0.01 ether;
+        zerc20.mint(address(adaptor), amount);
+
+        bytes memory composeMsg = abi.encodePacked(OFTComposeMsgCodec.addressToBytes32(USER));
+        bytes memory message = OFTComposeMsgCodec.encode(0, DST_EID, amount, composeMsg);
+
+        vm.expectEmit(false, false, false, false, address(adaptor));
+        emit Adaptor.DecodeBridgeRequestFailed(message, bytes("")); // revertData intentionally unchecked
+
+        adaptor.lzCompose{value: nativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
+
+        assertEq(adaptor.zerc20Balances(USER), amount, "zerc20 credited");
+        assertEq(adaptor.nativeBalances(USER), nativeFee, "native credited");
+
+        vm.prank(USER);
+        adaptor.withdraw(address(zerc20), amount);
+        vm.prank(USER);
+        adaptor.withdraw(NATIVE_TOKEN, nativeFee);
+
+        assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 balance cleared after withdraw");
+        assertEq(adaptor.nativeBalances(USER), 0, "native balance cleared after withdraw");
+        assertEq(zerc20.balanceOf(USER), amount, "zerc20 returned");
+        assertEq(address(USER).balance, nativeFee, "native returned");
+    }
+
+    function testLzComposeBridgeFailureLeavesBalancesWithdrawable() public {
+        uint256 amount = 80 ether;
+        uint256 nativeFee = 0.05 ether;
+
+        manager.setQuoteUnwrapFee(0);
+        stargate.setQuote(nativeFee, 0);
+        stargate.setRevertSend(true);
+        zerc20.mint(address(adaptor), amount);
+
+        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: amount,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+        bytes memory message = _buildComposeMessage(USER, amount, request);
+
+        vm.expectEmit(true, true, false, true, address(adaptor));
+        emit Adaptor.Unwrap(USER, amount, amount);
+
+        adaptor.lzCompose{value: nativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
+
+        assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 debited during unwrap");
+        assertEq(adaptor.underlingTokenBalances(USER), amount, "underlying credited");
+        assertEq(adaptor.nativeBalances(USER), nativeFee, "native still held after bridge revert");
+        assertEq(underlying.balanceOf(address(adaptor)), amount, "underlying retained for withdraw");
+
+        vm.prank(USER);
+        adaptor.withdraw(address(underlying), amount);
+        vm.prank(USER);
+        adaptor.withdraw(NATIVE_TOKEN, nativeFee);
+
+        assertEq(underlying.balanceOf(USER), amount, "underlying withdrawable");
+        assertEq(address(USER).balance, nativeFee, "native withdrawable");
+    }
+
+    function testLzComposeReturnsZerc20OnLowOutput() public {
+        uint256 amount = 40 ether;
+        uint256 returnNativeFee = 0.02 ether;
+
+        manager.setQuoteUnwrapFee(0);
+        stargate.setQuote(returnNativeFee, 0);
+        zerc20.setQuoteSendFee(returnNativeFee);
+        zerc20.mint(address(adaptor), amount);
+
+        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: amount + 1, // force slippage fail inside lzCompose
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+        bytes memory message = _buildComposeMessage(USER, amount, request);
+
+        vm.expectEmit(true, true, true, true, address(adaptor));
+        emit Adaptor.BridgeZerc20(DESTINATION, DST_EID, amount);
+
+        adaptor.lzCompose{value: returnNativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
+
+        assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 debited for return");
+        assertEq(adaptor.underlingTokenBalances(USER), 0, "no underlying credited");
+        assertEq(adaptor.nativeBalances(USER), 0, "native spent for return send");
+        assertEq(zerc20.balanceOf(address(adaptor)), 0, "zerc20 sent back");
+        assertEq(zerc20.lastSendParamAmount(), amount, "returned amount");
+        assertEq(zerc20.lastSendValue(), returnNativeFee, "native fee consumed");
+    }
+
     function _deployZerc20(EndpointV2 endpointMock) private returns (ZERC20AdaptorHarness) {
         ZERC20AdaptorHarness impl = new ZERC20AdaptorHarness(address(endpointMock));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return ZERC20AdaptorHarness(payable(address(proxy)));
+    }
+
+    function _buildComposeMessage(
+        address user,
+        uint256 amount,
+        Adaptor.BridgeRequest memory request
+    ) private pure returns (bytes memory) {
+        bytes memory composeMsg = abi.encodePacked(OFTComposeMsgCodec.addressToBytes32(user), abi.encode(request));
+        return OFTComposeMsgCodec.encode(0, DST_EID, amount, composeMsg);
     }
 }
