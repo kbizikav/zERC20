@@ -95,7 +95,7 @@ contract DeployLiquidity is DeterministicDeployer {
         cfg.zerc20Token = vm.envAddress("ZERC20");
         cfg.underlyingToken = vm.envOr("LIQUIDITY_UNDERLYING_TOKEN", chainCfg.underlyingToken);
         cfg.fee.targetLiquidity = vm.envOr("LIQUIDITY_TARGET", uint256(1_000_000e6));
-        cfg.fee.k = vm.envOr("LIQUIDITY_K", uint256(0));
+        cfg.fee.k = vm.envOr("LIQUIDITY_K", uint256(1_000));
         cfg.owner = vm.envOr("LIQUIDITY_OWNER", address(0));
         cfg.stargate = vm.envOr("ADAPTOR_STARGATE", chainCfg.stargate);
         cfg.setMinter = vm.envOr("SET_LIQUIDITY_AS_MINTER", uint256(1)) != 0;
