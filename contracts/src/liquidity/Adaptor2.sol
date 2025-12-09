@@ -209,22 +209,25 @@ contract Adaptor2 is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
         // unwrap
         uint256 underlyingTokenAmount;
-        try this.unwrapSelf(user, zerc20Amount, quote.tokenUnwrapFee) returns (uint256 amountOut) {
-            underlyingTokenAmount = amountOut;
+        try this.unwrapSelf(user, zerc20Amount, quote.tokenUnwrapFee) returns (uint256 amountOut_) {
+            underlyingTokenAmount = amountOut_;
         } catch {
             // this is extremely unlikely to happen since we have already quoted the unwrap fee
             return;
         }
 
         // bridge
+        uint256 amountOut;
         try this.bridgeUnderlyingTokenSelf(user, underlyingTokenAmount, quote.nativeBridgeFee, request) returns (
-            uint256 amountOut
+            uint256 amountOut_
         ) {
-            emit UnwrapAndBridge(user, zerc20Amount, amountOut, request.to, request.dstEid);
+            amountOut = amountOut_;
         } catch {
             // this is extremely unlikely to happen since we have already quoted the bridge fee
             return;
         }
+
+        emit UnwrapAndBridge(user, zerc20Amount, amountOut, request.to, request.dstEid);
     }
 
     function _unwrap(address user, uint256 amount, uint256 amountMinOut) internal returns (uint256 amountOut) {
