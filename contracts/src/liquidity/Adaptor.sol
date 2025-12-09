@@ -64,6 +64,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     event BridgeUnderlyingToken(
         address indexed user, address indexed to, uint32 indexed dstEid, uint256 amountOut, uint256 nativeFeeUsed
     );
+    event Unwrap(address indexed user, uint256 amountIn, uint256 amountOut);
     event UnwrapFailed(address indexed user, uint256 amount, uint256 minAmountOut, bytes revertData);
     event BridgeUnderlyingTokenFailed(
         address indexed user,
@@ -289,6 +290,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
         // add underlying token balance
         underlingTokenBalances[user] += amountOut;
+        emit Unwrap(user, amount, amountOut);
     }
 
     function _bridgeUnderlyingToken(
@@ -383,4 +385,6 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     function _toBytes32(address a) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(a)));
     }
+
+    receive() external payable {}
 }
