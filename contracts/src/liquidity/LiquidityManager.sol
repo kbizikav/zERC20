@@ -2,6 +2,8 @@
 pragma solidity 0.8.30;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -25,6 +27,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
     error UnderlyingSendFailed();
     error InsufficientLiquidity();
     error InsufficientRewards();
+    error DecimalMismatch();
 
     /// @custom:storage-location erc7201:zerc20.storage.liquidityManager
     struct LiquidityManagerStorage {
@@ -57,6 +60,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         address initialOwner
     ) external initializer {
         if (_underlyingToken == address(0) || _zerc20 == address(0)) revert ZeroAddress();
+        if (IERC20Metadata(_zerc20).decimals() != IERC20Metadata(_underlyingToken).decimals()) revert DecimalMismatch();
         _validateFeeParams(_feeParams);
 
         __AccessControl_init();
