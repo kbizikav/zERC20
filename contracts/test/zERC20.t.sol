@@ -78,7 +78,7 @@ contract ZERC20Test is Test {
         return ZERC20Harness(address(proxy));
     }
 
-    function testHashChainMatchesZkpVector() public {
+    function testHashChainMatchesZkpVector() public pure {
         address from = address(0x1111111111111111111111111111111111111111);
         address to = address(0x2222222222222222222222222222222222222222);
         uint256 value = 0x333;

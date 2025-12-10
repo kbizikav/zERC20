@@ -134,11 +134,15 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
         uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrapFee(amount);
         uint256 amountAfterUnwrap = amount - tokenUnwrapFee;
+        if (amountAfterUnwrap == 0) {
+            // Early return to avoid Stargate quote revert on zero amount
+            return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
+        }
         SendParam memory sendParam = SendParam({
             dstEid: request.dstEid,
             to: _toBytes32(request.to),
             amountLD: amountAfterUnwrap,
-            minAmountLD: 0, // use zero to avoid revert
+            minAmountLD: 0, // set 0 to prevent a revert of the minimum amount
             extraOptions: request.extraOptions,
             composeMsg: bytes(""),
             oftCmd: bytes("")
