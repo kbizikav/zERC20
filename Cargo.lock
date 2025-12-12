@@ -2372,6 +2372,7 @@ dependencies = [
  "env_logger",
  "hex",
  "log",
+ "reqwest",
  "serde_json",
  "tokio",
 ]
