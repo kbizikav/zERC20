@@ -10,9 +10,9 @@ interface ILiquidityManager {
 
     function unwrap(uint256 amount, address receiver) external returns (uint256 amountOut);
 
-    function quoteWrap(uint256 amount) external view returns (uint256 rewardAmount);
+    function quoteWrapReward(uint256 amount) external view returns (uint256 rewardAmount);
 
-    function quoteUnwrap(uint256 amount) external view returns (uint256 feeAmount);
+    function quoteUnwrapFee(uint256 amount) external view returns (uint256 feeAmount);
 
     function underlyingToken() external view returns (IERC20);
 

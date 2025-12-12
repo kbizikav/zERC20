@@ -4,7 +4,7 @@ pragma solidity ^0.8.20;
 import {console2} from "forge-std/console2.sol";
 import {Adaptor} from "../src/liquidity/Adaptor.sol";
 import {LiquidityManager} from "../src/liquidity/LiquidityManager.sol";
-import {FeeLib} from "../src/libraries/FeeLib.sol";
+import {IncentiveLib} from "../src/libraries/IncentiveLib.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 
@@ -15,12 +15,8 @@ import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 /// Optional env:
 /// - LIQUIDITY_UNDERLYING_TOKEN (address): ERC20 token held as liquidity (or set in chain-config).
 /// - LIQUIDITY_TARGET (uint256): Target liquidity level used for rewards/fees (defaults to 1_000_000e6).
+/// - LIQUIDITY_K (uint256): Incentive strength coefficient k for the fee curve, in basis points (1 = 0.01%; defaults to 0; set explicitly for rewards/fees).
 /// - LIQUIDITY_OWNER (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
-/// - LIQUIDITY_REWARD_SLOPE_BPS (uint256): Reward slope in bps (defaults to 100).
-/// - LIQUIDITY_FEE_LAMBDA1_BPS (uint256): Fee curve λ1 in bps (defaults to 40).
-/// - LIQUIDITY_FEE_LAMBDA2_BPS (uint256): Fee curve λ2 in bps (defaults to 9_954).
-/// - LIQUIDITY_FEE_DELTA1_BPS (uint256): Fee curve δ1 in bps of target (defaults to 6_000).
-/// - LIQUIDITY_FEE_DELTA2_BPS (uint256): Fee curve δ2 in bps of target (defaults to 500).
 /// - SET_LIQUIDITY_AS_MINTER (uint256): When non-zero, attempts to set the manager as zERC20 minter (defaults to 1).
 /// - ADAPTOR_STARGATE (address): Stargate endpoint; when set, deploys the Adaptor wired to the manager (or set in chain-config).
 /// - CHAIN_CONFIG_PATH (string): Optional path to per-chain defaults (underlyingToken/stargate); falls back to `config/chain-config.json`.
@@ -30,12 +26,10 @@ contract DeployLiquidity is DeterministicDeployer {
     struct Config {
         address zerc20Token;
         address underlyingToken;
-        uint256 target;
+        IncentiveLib.FeeParams fee;
         address owner;
         address stargate;
         bool setMinter;
-        FeeLib.RewardParams reward;
-        FeeLib.FeeParams fee;
     }
 
     struct ChainConfig {
@@ -62,7 +56,7 @@ contract DeployLiquidity is DeterministicDeployer {
         LiquidityManager implementation = new LiquidityManager{salt: _deriveSalt(baseSalt, "LIQUIDITY_MANAGER_IMPL")}();
         bytes memory initData = abi.encodeCall(
             LiquidityManager.initialize,
-            (cfg.underlyingToken, cfg.zerc20Token, cfg.target, cfg.reward, cfg.fee, cfg.owner)
+            (cfg.underlyingToken, cfg.zerc20Token, cfg.fee, cfg.owner)
         );
         LiquidityManager manager = LiquidityManager(
             _deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData)
@@ -73,10 +67,8 @@ contract DeployLiquidity is DeterministicDeployer {
         console2.log("  owner set to", cfg.owner);
         console2.log("  underlying token", cfg.underlyingToken);
         console2.log("  zERC20 token", cfg.zerc20Token);
-        console2.log("  target liquidity", cfg.target);
-        console2.log("  fee params lambda1/lambda2", cfg.fee.lambda1Bps, cfg.fee.lambda2Bps);
-        console2.log("  fee params delta1/delta2", cfg.fee.delta1Bps, cfg.fee.delta2Bps);
-        console2.log("  reward slope bps", cfg.reward.liquiditySlopeBps);
+        console2.log("  target liquidity", cfg.fee.targetLiquidity);
+        console2.log("  incentive coefficient k", cfg.fee.k);
 
         if (cfg.setMinter) {
             try zERC20(cfg.zerc20Token).setMinter(address(manager)) {
@@ -102,21 +94,15 @@ contract DeployLiquidity is DeterministicDeployer {
 
         cfg.zerc20Token = vm.envAddress("ZERC20");
         cfg.underlyingToken = vm.envOr("LIQUIDITY_UNDERLYING_TOKEN", chainCfg.underlyingToken);
-        cfg.target = vm.envOr("LIQUIDITY_TARGET", uint256(1_000_000e6));
+        cfg.fee.targetLiquidity = vm.envOr("LIQUIDITY_TARGET", uint256(1_000_000e6));
+        cfg.fee.k = vm.envOr("LIQUIDITY_K", uint256(1_000));
         cfg.owner = vm.envOr("LIQUIDITY_OWNER", address(0));
         cfg.stargate = vm.envOr("ADAPTOR_STARGATE", chainCfg.stargate);
         cfg.setMinter = vm.envOr("SET_LIQUIDITY_AS_MINTER", uint256(1)) != 0;
-        cfg.reward = FeeLib.RewardParams({liquiditySlopeBps: vm.envOr("LIQUIDITY_REWARD_SLOPE_BPS", uint256(100))});
-        cfg.fee = FeeLib.FeeParams({
-            lambda1Bps: vm.envOr("LIQUIDITY_FEE_LAMBDA1_BPS", uint256(40)),
-            lambda2Bps: vm.envOr("LIQUIDITY_FEE_LAMBDA2_BPS", uint256(9_954)),
-            delta1Bps: vm.envOr("LIQUIDITY_FEE_DELTA1_BPS", uint256(6_000)),
-            delta2Bps: vm.envOr("LIQUIDITY_FEE_DELTA2_BPS", uint256(500))
-        });
 
         if (cfg.zerc20Token == address(0)) revert Zerc20TokenRequired();
         if (cfg.underlyingToken == address(0)) revert UnderlyingTokenRequired();
-        if (cfg.target == 0) revert LiquidityTargetRequired();
+        if (cfg.fee.targetLiquidity == 0) revert LiquidityTargetRequired();
     }
 
     function _loadChainConfig() internal view returns (ChainConfig memory chainCfg) {

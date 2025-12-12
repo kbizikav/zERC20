@@ -84,19 +84,19 @@ impl LiquidityManagerContract {
         Ok(addr)
     }
 
-    pub async fn quote_wrap(&self, amount: U256) -> ContractResult<U256> {
+    pub async fn quote_wrap_reward(&self, amount: U256) -> ContractResult<U256> {
         let reward = self
             .contract_with_provider()
-            .quoteWrap(amount)
+            .quoteWrapReward(amount)
             .call()
             .await?;
         Ok(reward)
     }
 
-    pub async fn quote_unwrap(&self, amount: U256) -> ContractResult<U256> {
+    pub async fn quote_unwrap_fee(&self, amount: U256) -> ContractResult<U256> {
         let fee = self
             .contract_with_provider()
-            .quoteUnwrap(amount)
+            .quoteUnwrapFee(amount)
             .call()
             .await?;
         Ok(fee)

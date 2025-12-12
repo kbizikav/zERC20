@@ -24,34 +24,12 @@ abstract contract DeterministicDeployer is Script {
         return keccak256(abi.encodePacked(baseSalt, label));
     }
 
-    /// @dev Deploys an ERC1967 proxy with an empty `_data` payload so the CREATE2 init_code stays stable.
-    function _deployProxy(bytes32 baseSalt, string memory label, address implementation)
-        internal
-        returns (address proxy)
-    {
-        proxy = address(new ERC1967Proxy{salt: _deriveSalt(baseSalt, label)}(implementation, ""));
-    }
-
-    /// @dev Deploys a proxy and then initializes it via delegatecall, reverting with the original error on failure.
+    /// @dev Deploys a proxy and runs the initializer in a single call.
+    ///      The proxy init data remains empty to keep the CREATE2 init code stable.
     function _deployProxyAndInit(bytes32 baseSalt, string memory label, address implementation, bytes memory initCalldata)
         internal
         returns (address proxy)
     {
-        proxy = _deployProxy(baseSalt, label, implementation);
-        _initProxy(proxy, initCalldata);
-    }
-
-    /// @dev Runs the initializer on a freshly deployed proxy; bubbles up the revert reason when present.
-    function _initProxy(address proxy, bytes memory initCalldata) internal {
-        if (initCalldata.length == 0) return;
-        (bool ok, bytes memory revertData) = proxy.call(initCalldata);
-        if (!ok) {
-            if (revertData.length != 0) {
-                assembly {
-                    revert(add(revertData, 0x20), mload(revertData))
-                }
-            }
-            revert ProxyInitFailed(revertData);
-        }
+        proxy = address(new ERC1967Proxy{salt: _deriveSalt(baseSalt, label)}(implementation, initCalldata));
     }
 }
