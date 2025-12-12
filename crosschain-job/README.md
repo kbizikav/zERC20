@@ -31,6 +31,12 @@ The key variables are:
   as hex. Use `0x` for empty payloads.
 - `RELAY_NATIVE_FEE_BUFFER_BPS` / `BROADCAST_NATIVE_FEE_BUFFER_BPS` — fee
   safety buffers expressed in basis points (default 1000 = +10%).
+- `CONFIRMATION_TIMEOUT_SECS` / `CONFIRMATION_POLL_INTERVAL_SECS` — how long
+  to wait (and how frequently to poll) for LayerZero deliveries to show up on
+  the destination chain before retrying.
+- `LZ_SCAN_API_URL` / `LZ_SCAN_API_KEY` — optional LayerZero Scan endpoint
+  and API key used to log stuck-message status when a delivery does not land
+  before the confirmation timeout.
 
 Tokens are loaded through `client-common::tokens::TokensFile`, so each entry
 needs an RPC URL list, verifier address, and chain identifier. The optional
@@ -59,5 +65,8 @@ cargo run -p crosschain-job -- --once
 ```
 
 Press `Ctrl+C` to stop the long-running scheduler. The process logs every
-submitted transaction and warns when hub metadata diverges from the local
-configuration.
+submitted transaction, confirms that the corresponding LayerZero payload was
+applied on the destination chain (Hub for relays, Verifiers for broadcasts),
+and automatically re-submits if a delivery gets stuck (e.g., out-of-gas on the
+destination executor). Warnings are also emitted when hub metadata diverges
+from the local configuration.

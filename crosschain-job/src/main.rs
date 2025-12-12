@@ -13,10 +13,12 @@ use client_common::{
         utils::{get_provider, get_provider_with_fallback},
         verifier::VerifierContract,
     },
+    layerzero::{HttpLayerZeroClient, LayerZeroClient},
     tokens::{HubEntry, TokenEntry, load_tokens_from_compressed, load_tokens_from_path},
 };
-use log::{error, info, warn};
-use tokio::time::{self, MissedTickBehavior};
+use log::{debug, error, info, warn};
+use reqwest::Url;
+use tokio::time::{self, Instant, MissedTickBehavior, sleep};
 
 #[derive(Parser, Debug)]
 #[command(
@@ -86,6 +88,32 @@ struct Cli {
     )]
     broadcast_fee_buffer_bps: u64,
 
+    /// Maximum time in seconds to wait for cross-chain delivery confirmation.
+    #[arg(
+        long,
+        env = "CONFIRMATION_TIMEOUT_SECS",
+        value_name = "SECONDS",
+        default_value_t = 120
+    )]
+    confirmation_timeout_secs: u64,
+
+    /// Poll interval in seconds while waiting for cross-chain delivery confirmation.
+    #[arg(
+        long,
+        env = "CONFIRMATION_POLL_INTERVAL_SECS",
+        value_name = "SECONDS",
+        default_value_t = 5
+    )]
+    confirmation_poll_interval_secs: u64,
+
+    /// Optional LayerZero Scan base URL used to inspect stuck messages.
+    #[arg(long, env = "LZ_SCAN_API_URL", value_name = "URL")]
+    lz_scan_api_url: Option<String>,
+
+    /// Optional LayerZero Scan API key.
+    #[arg(long, env = "LZ_SCAN_API_KEY", value_name = "KEY")]
+    lz_scan_api_key: Option<String>,
+
     /// Run each job once and exit.
     #[arg(long, env = "JOB_ONCE", default_value_t = false)]
     once: bool,
@@ -108,6 +136,138 @@ impl HexData {
     }
 }
 
+#[derive(Clone, Debug)]
+struct ConfirmationSettings {
+    poll_interval: Duration,
+    timeout: Duration,
+}
+
+#[derive(Clone)]
+struct LayerZeroProbe {
+    client: HttpLayerZeroClient,
+}
+
+impl LayerZeroProbe {
+    async fn log_tx_messages(&self, tx_hash: B256, context: &str) {
+        let hash_hex = format!("{tx_hash:#x}");
+        match self.client.tx_messages(&hash_hex).await {
+            Ok(Some(messages)) => {
+                for (idx, message) in messages.data.iter().enumerate() {
+                    let status = message
+                        .status
+                        .as_ref()
+                        .and_then(|s| s.name.as_deref())
+                        .unwrap_or("<unknown>");
+                    let dest_status = message
+                        .destination
+                        .as_ref()
+                        .and_then(|d| d.status.as_deref())
+                        .unwrap_or("<unknown>");
+                    debug!(
+                        "LayerZero Scan status for {context} message #{idx} (tx={hash_hex}): source={status}, destination={dest_status}"
+                    );
+                }
+            }
+            Ok(None) => debug!("LayerZero Scan has no message record for tx {hash_hex}"),
+            Err(err) => warn!("LayerZero Scan lookup failed for tx {hash_hex}: {err}",),
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+struct HubTokenLayout {
+    eid: u32,
+    position: u64,
+}
+
+#[derive(Clone)]
+struct HubContext {
+    contract: HubContract,
+    layout: HashMap<u64, HubTokenLayout>,
+}
+
+#[derive(Clone)]
+struct HubRelayDestination {
+    hub: HubContract,
+    layout: HubTokenLayout,
+}
+
+impl HubRelayDestination {
+    async fn current_tree_index(&self) -> Result<Option<u64>> {
+        // `position` is derived from the Hub's token info array, so treat failures as transient RPC issues.
+        let index = self
+            .hub
+            .transfer_tree_index(self.layout.position)
+            .await
+            .context("failed to read hub transfer tree index")?;
+        Ok(Some(index))
+    }
+
+    async fn wait_for_index(
+        &self,
+        expected_index: u64,
+        confirmation: &ConfirmationSettings,
+    ) -> Result<bool> {
+        let deadline = Instant::now() + confirmation.timeout;
+        loop {
+            if let Some(current) = self.current_tree_index().await? {
+                if current >= expected_index {
+                    return Ok(true);
+                }
+            }
+
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            sleep(confirmation.poll_interval).await;
+        }
+    }
+}
+
+struct BroadcastDestination {
+    label: String,
+    chain_id: u64,
+    eid: u32,
+    verifier: VerifierContract,
+}
+
+impl BroadcastDestination {
+    async fn has_root(&self, agg_seq: u64, root: U256) -> Result<bool> {
+        let latest_seq = self
+            .verifier
+            .latest_agg_seq()
+            .await
+            .context("failed to fetch verifier latestAggSeq")?;
+        if latest_seq < agg_seq {
+            return Ok(false);
+        }
+        let stored_root = self
+            .verifier
+            .global_transfer_root(agg_seq)
+            .await
+            .context("failed to fetch verifier globalTransferRoots entry")?;
+        Ok(stored_root == root && stored_root != U256::ZERO)
+    }
+
+    async fn wait_for_root(
+        &self,
+        agg_seq: u64,
+        root: U256,
+        confirmation: &ConfirmationSettings,
+    ) -> Result<bool> {
+        let deadline = Instant::now() + confirmation.timeout;
+        loop {
+            if self.has_root(agg_seq, root).await? {
+                return Ok(true);
+            }
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            sleep(confirmation.poll_interval).await;
+        }
+    }
+}
+
 struct RelayJob {
     label: String,
     chain_id: u64,
@@ -116,6 +276,9 @@ struct RelayJob {
     lz_options: Vec<u8>,
     interval: Duration,
     fee_buffer_bps: u64,
+    destination: Option<HubRelayDestination>,
+    confirmation: ConfirmationSettings,
+    lz_probe: Option<LayerZeroProbe>,
 }
 
 impl RelayJob {
@@ -140,17 +303,47 @@ impl RelayJob {
     }
 
     async fn execute_once(&self) -> Result<()> {
-        let up_to_date = self
+        let latest_proved_index = self
             .contract
-            .is_up_to_date()
+            .latest_proved_index()
             .await
-            .context("failed to query verifier freshness")?;
-        if up_to_date {
+            .context("failed to fetch latest proved index")?;
+        let proved_root = self
+            .contract
+            .proved_transfer_root(latest_proved_index)
+            .await
+            .context("failed to fetch proved transfer root")?;
+        if proved_root == U256::ZERO {
             info!(
-                "skipping relayTransferRoot for '{}' (chain {}) because the verifier is up to date",
-                self.label, self.chain_id
+                "skipping relayTransferRoot for '{}' (chain {}) because no proved root exists at index {}",
+                self.label, self.chain_id, latest_proved_index
             );
             return Ok(());
+        }
+
+        if let Some(dest) = &self.destination {
+            if let Some(current_index) = dest.current_tree_index().await? {
+                if current_index >= latest_proved_index {
+                    info!(
+                        "skipping relayTransferRoot for '{}' (chain {}) because hub already has index {}",
+                        self.label, self.chain_id, current_index
+                    );
+                    return Ok(());
+                }
+            }
+        } else {
+            let up_to_date = self
+                .contract
+                .is_up_to_date()
+                .await
+                .context("failed to query verifier freshness")?;
+            if up_to_date {
+                info!(
+                    "skipping relayTransferRoot for '{}' (chain {}) because the verifier is up to date",
+                    self.label, self.chain_id
+                );
+                return Ok(());
+            }
         }
 
         let (native_fee, lz_token_fee) = self
@@ -172,7 +365,7 @@ impl RelayJob {
             .relay_transfer_root(self.private_key, fee_with_buffer, &self.lz_options)
             .await
             .context("failed to submit relayTransferRoot transaction")?;
-        let tx_hash = pending.tx_hash();
+        let tx_hash = *pending.tx_hash();
 
         info!(
             "submitted relayTransferRoot for '{}' (chain {}, tx={tx_hash:#x}, fee={} wei, buffer_bps={})",
@@ -182,18 +375,38 @@ impl RelayJob {
         let receipt = wait_for_receipt(pending)
             .await
             .context("relayTransferRoot transaction reverted or missing receipt")?;
+        let mut relay_event = None;
         match self.contract.parse_transfer_root_relayed(&receipt) {
             Ok((index, root, guid)) => {
                 info!(
                     "relayTransferRoot confirmed for '{}' (index={}, root={root:#x}, guid={guid:#x})",
                     self.label, index
                 );
+                relay_event = Some((index, root));
             }
             Err(err) => {
                 warn!(
                     "relayTransferRoot receipt for '{}' missing event: {err:?}",
                     self.label
                 );
+            }
+        }
+
+        if let (Some(dest), Some((index, root))) = (&self.destination, relay_event) {
+            let delivered = dest.wait_for_index(index, &self.confirmation).await?;
+            if delivered {
+                info!(
+                    "hub applied transfer root for '{}' (index={}, root={root:#x})",
+                    self.label, index
+                );
+            } else {
+                warn!(
+                    "hub did not reflect transfer root for '{}' (index={}) before timeout; will retry on the next loop",
+                    self.label, index
+                );
+                if let Some(probe) = &self.lz_probe {
+                    probe.log_tx_messages(tx_hash, "relayTransferRoot").await;
+                }
             }
         }
 
@@ -209,6 +422,10 @@ struct BroadcastJob {
     target_eids: Vec<u32>,
     fee_buffer_bps: u64,
     last_broadcast_root: Option<U256>,
+    last_broadcast_seq: Option<u64>,
+    destinations: Vec<BroadcastDestination>,
+    confirmation: ConfirmationSettings,
+    lz_probe: Option<LayerZeroProbe>,
 }
 
 impl BroadcastJob {
@@ -232,18 +449,42 @@ impl BroadcastJob {
             return Ok(());
         }
 
+        let agg_seq = self
+            .contract
+            .agg_seq()
+            .await
+            .context("failed to fetch hub aggSeq")?;
         let current_root = self
             .contract
             .current_aggregation_root()
             .await
             .context("failed to compute current aggregation root")?;
-        if let Some(last_root) = self.last_broadcast_root {
-            if last_root == current_root {
-                info!(
-                    "skipping Hub.broadcast because aggregation root {current_root:#x} was already relayed"
-                );
-                return Ok(());
-            }
+        let missing_targets = self
+            .destinations_missing(agg_seq, current_root)
+            .await
+            .context("failed to evaluate broadcast destinations")?;
+
+        if missing_targets.is_empty() && self.last_broadcast_root.is_none() {
+            // Align local cache when everything is already in sync to avoid a redundant rebroadcast on startup.
+            self.last_broadcast_root = Some(current_root);
+            self.last_broadcast_seq = Some(agg_seq);
+            info!(
+                "skipping Hub.broadcast because all verifiers already have agg_seq {} root {current_root:#x}",
+                agg_seq
+            );
+            return Ok(());
+        }
+
+        let root_changed = self
+            .last_broadcast_root
+            .map(|root| root != current_root)
+            .unwrap_or(true);
+
+        if !root_changed && missing_targets.is_empty() {
+            info!(
+                "skipping Hub.broadcast because aggregation root {current_root:#x} is already delivered to all targets"
+            );
+            return Ok(());
         }
 
         let options = Bytes::copy_from_slice(&self.lz_options);
@@ -264,7 +505,7 @@ impl BroadcastJob {
             )
             .await
             .context("failed to submit Hub.broadcast transaction")?;
-        let tx_hash = pending.tx_hash();
+        let tx_hash = *pending.tx_hash();
 
         info!(
             "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
@@ -281,12 +522,65 @@ impl BroadcastJob {
                 event.agg_seq, event.snapshot_len, event.root
             );
             self.last_broadcast_root = Some(event.root);
+            self.last_broadcast_seq = Some(event.agg_seq);
+            self.confirm_destinations(event.agg_seq, event.root, tx_hash)
+                .await;
         } else {
             warn!("Hub.broadcast receipt did not contain AggregationRootUpdated event");
             self.last_broadcast_root = Some(current_root);
+            self.last_broadcast_seq = Some(agg_seq.saturating_add(1));
+            if let Some(probe) = &self.lz_probe {
+                probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
+            }
         }
 
         Ok(())
+    }
+
+    async fn destinations_missing(&self, agg_seq: u64, root: U256) -> Result<Vec<String>> {
+        let mut missing = Vec::new();
+        for dest in &self.destinations {
+            match dest.has_root(agg_seq, root).await {
+                Ok(true) => continue,
+                Ok(false) => missing.push(dest.label.clone()),
+                Err(err) => {
+                    warn!(
+                        "failed to check global root on verifier '{}' (chain {}, eid {}): {err:?}",
+                        dest.label, dest.chain_id, dest.eid
+                    );
+                    missing.push(dest.label.clone());
+                }
+            }
+        }
+        Ok(missing)
+    }
+
+    async fn confirm_destinations(&self, agg_seq: u64, root: U256, tx_hash: B256) {
+        for dest in &self.destinations {
+            match dest.wait_for_root(agg_seq, root, &self.confirmation).await {
+                Ok(true) => {
+                    info!(
+                        "verifier '{}' (eid {}) confirmed agg_seq {} (root={root:#x})",
+                        dest.label, dest.eid, agg_seq
+                    );
+                }
+                Ok(false) => {
+                    warn!(
+                        "verifier '{}' (eid {}) did not ingest agg_seq {} before timeout; will rebroadcast",
+                        dest.label, dest.eid, agg_seq
+                    );
+                    if let Some(probe) = &self.lz_probe {
+                        probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
+                    }
+                }
+                Err(err) => {
+                    warn!(
+                        "failed to confirm agg_seq {} on verifier '{}' (chain {}, eid {}): {err:?}",
+                        agg_seq, dest.label, dest.chain_id, dest.eid
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -323,6 +617,12 @@ async fn main() -> Result<()> {
     if cli.broadcast_interval_secs == 0 && !cli.once {
         bail!("BROADCAST_INTERVAL_SECS must be greater than zero");
     }
+    if cli.confirmation_timeout_secs == 0 {
+        bail!("CONFIRMATION_TIMEOUT_SECS must be greater than zero");
+    }
+    if cli.confirmation_poll_interval_secs == 0 {
+        bail!("CONFIRMATION_POLL_INTERVAL_SECS must be greater than zero");
+    }
 
     let (tokens, hub_entry) = load_tokens_config(&cli.tokens_file_path)?;
     if tokens.is_empty() {
@@ -332,36 +632,32 @@ async fn main() -> Result<()> {
         );
     }
 
-    let relay_options = cli.relay_options.into_vec();
-    let broadcast_options = cli.broadcast_options.into_vec();
+    let relay_options = cli.relay_options.clone().into_vec();
+    let broadcast_options = cli.broadcast_options.clone().into_vec();
     let private_key = parse_private_key(&cli.relay_private_key)?;
+    let confirmation = ConfirmationSettings {
+        poll_interval: Duration::from_secs(cli.confirmation_poll_interval_secs),
+        timeout: Duration::from_secs(cli.confirmation_timeout_secs),
+    };
+    let lz_probe = build_layerzero_probe(&cli)?;
 
-    let mut relay_jobs = Vec::with_capacity(tokens.len());
-    for token in &tokens {
-        let provider = build_provider(&token.rpc_urls)
-            .with_context(|| format!("failed to construct provider for token '{}'", token.label))?;
-        let contract =
-            VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
-        relay_jobs.push(RelayJob {
-            label: token.label.clone(),
-            chain_id: token.chain_id,
-            contract,
-            private_key,
-            lz_options: relay_options.clone(),
-            interval: Duration::from_secs(cli.relay_interval_secs),
-            fee_buffer_bps: cli.relay_fee_buffer_bps,
-        });
-    }
-
+    let mut hub_context: Option<HubContext> = None;
     let mut broadcast_job = match hub_entry {
         Some(hub) => {
             let provider = build_provider(&hub.rpc_urls)
                 .with_context(|| "failed to construct provider for hub".to_string())?;
             let contract = HubContract::new(provider, hub.hub_address);
 
-            let mut target_eids = resolve_target_eids(&contract, &tokens).await?;
+            let (mut target_eids, layout) = resolve_target_eids(&contract, &tokens).await?;
             target_eids.sort_unstable();
             target_eids.dedup();
+
+            let destinations = build_broadcast_destinations(&tokens, &layout)?;
+
+            hub_context = Some(HubContext {
+                contract: contract.clone(),
+                layout,
+            });
 
             Some(BroadcastJob {
                 contract,
@@ -371,6 +667,10 @@ async fn main() -> Result<()> {
                 target_eids,
                 fee_buffer_bps: cli.broadcast_fee_buffer_bps,
                 last_broadcast_root: None,
+                last_broadcast_seq: None,
+                destinations,
+                confirmation: confirmation.clone(),
+                lz_probe: lz_probe.clone(),
             })
         }
         None => {
@@ -381,6 +681,36 @@ async fn main() -> Result<()> {
             None
         }
     };
+
+    let mut relay_jobs = Vec::with_capacity(tokens.len());
+    for token in &tokens {
+        let provider = build_provider(&token.rpc_urls)
+            .with_context(|| format!("failed to construct provider for token '{}'", token.label))?;
+        let contract =
+            VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
+
+        let destination = hub_context.as_ref().and_then(|ctx| {
+            ctx.layout
+                .get(&token.chain_id)
+                .map(|layout| HubRelayDestination {
+                    hub: ctx.contract.clone(),
+                    layout: layout.clone(),
+                })
+        });
+
+        relay_jobs.push(RelayJob {
+            label: token.label.clone(),
+            chain_id: token.chain_id,
+            contract,
+            private_key,
+            lz_options: relay_options.clone(),
+            interval: Duration::from_secs(cli.relay_interval_secs),
+            fee_buffer_bps: cli.relay_fee_buffer_bps,
+            destination,
+            confirmation: confirmation.clone(),
+            lz_probe: lz_probe.clone(),
+        });
+    }
 
     if cli.once {
         for job in relay_jobs {
@@ -424,16 +754,22 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn resolve_target_eids(hub: &HubContract, tokens: &[TokenEntry]) -> Result<Vec<u32>> {
+async fn resolve_target_eids(
+    hub: &HubContract,
+    tokens: &[TokenEntry],
+) -> Result<(Vec<u32>, HashMap<u64, HubTokenLayout>)> {
     let hub_infos = hub
         .token_infos()
         .await
         .context("failed to query hub token infos")?;
 
     let mut infos_by_chain = HashMap::with_capacity(hub_infos.len());
-    for info in hub_infos {
+    for (idx, info) in hub_infos.into_iter().enumerate() {
         let chain_id = info.chain_id;
-        if infos_by_chain.insert(chain_id, info).is_some() {
+        if infos_by_chain
+            .insert(chain_id, (info, idx as u64))
+            .is_some()
+        {
             warn!(
                 "hub reports duplicate token info entries for chain_id {}",
                 chain_id
@@ -442,11 +778,19 @@ async fn resolve_target_eids(hub: &HubContract, tokens: &[TokenEntry]) -> Result
     }
 
     let mut eids = Vec::with_capacity(tokens.len());
+    let mut layout = HashMap::with_capacity(tokens.len());
     for token in tokens {
         match infos_by_chain.get(&token.chain_id) {
-            Some(info) => {
+            Some((info, position)) => {
                 log_token_info_mismatch(token, info);
                 eids.push(info.eid);
+                layout.insert(
+                    token.chain_id,
+                    HubTokenLayout {
+                        eid: info.eid,
+                        position: *position,
+                    },
+                );
             }
             None => {
                 warn!(
@@ -457,7 +801,7 @@ async fn resolve_target_eids(hub: &HubContract, tokens: &[TokenEntry]) -> Result
         }
     }
 
-    Ok(eids)
+    Ok((eids, layout))
 }
 
 fn log_token_info_mismatch(token: &TokenEntry, info: &HubTokenInfo) {
@@ -473,6 +817,36 @@ fn log_token_info_mismatch(token: &TokenEntry, info: &HubTokenInfo) {
             token.label, token.chain_id, info.chain_id
         );
     }
+}
+
+fn build_broadcast_destinations(
+    tokens: &[TokenEntry],
+    layout: &HashMap<u64, HubTokenLayout>,
+) -> Result<Vec<BroadcastDestination>> {
+    let mut destinations = Vec::with_capacity(tokens.len());
+    for token in tokens {
+        let Some(info) = layout.get(&token.chain_id) else {
+            continue;
+        };
+
+        let provider = build_provider(&token.rpc_urls).with_context(|| {
+            format!(
+                "failed to construct provider for broadcast destination '{}'",
+                token.label
+            )
+        })?;
+
+        let contract =
+            VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
+        destinations.push(BroadcastDestination {
+            label: token.label.clone(),
+            chain_id: token.chain_id,
+            eid: info.eid,
+            verifier: contract,
+        });
+    }
+
+    Ok(destinations)
 }
 
 fn build_provider(rpc_urls: &[String]) -> Result<client_common::contracts::utils::NormalProvider> {
@@ -513,6 +887,18 @@ fn load_tokens_config_from_env() -> Result<Option<(Vec<TokenEntry>, Option<HubEn
             bail!("TOKENS_COMPRESSED contains invalid unicode")
         }
     }
+}
+
+fn build_layerzero_probe(cli: &Cli) -> Result<Option<LayerZeroProbe>> {
+    let Some(url) = cli.lz_scan_api_url.as_ref() else {
+        return Ok(None);
+    };
+
+    let parsed =
+        Url::parse(url).with_context(|| format!("invalid LZ_SCAN_API_URL provided: {url}"))?;
+    let client = HttpLayerZeroClient::new(parsed, cli.lz_scan_api_key.clone())
+        .context("failed to construct LayerZero Scan client")?;
+    Ok(Some(LayerZeroProbe { client }))
 }
 
 fn parse_private_key(input: &str) -> Result<B256> {
