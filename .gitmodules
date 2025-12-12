@@ -21,3 +21,6 @@
 [submodule "contracts/lib/devtools"]
 	path = contracts/lib/devtools
 	url = https://github.com/LayerZero-Labs/devtools
+[submodule "contracts/lib/solady"]
+	path = contracts/lib/solady
+	url = https://github.com/vectorized/solady

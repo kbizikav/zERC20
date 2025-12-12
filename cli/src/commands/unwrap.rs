@@ -7,10 +7,10 @@ use alloy::{
 use anyhow::{Context, Result, bail, ensure};
 use client_common::{
     contracts::{
-        adaptor::{Adaptor, AdaptorContract, BridgeRequest, SendParam},
+        adaptor::{Adaptor, AdaptorContract, BridgeRequest},
         erc20::Erc20Contract,
         utils::get_address_from_private_key,
-        z_erc20::ZErc20Contract,
+        z_erc20::{SendParam, ZErc20Contract},
     },
     tokens::TokenEntry,
 };
@@ -157,12 +157,11 @@ async fn unwrap_cross_chain(
         .context("failed to build initial bridge extra options")?;
     let return_bridge_request = BridgeRequest {
         dst_eid: src_eid,
+        to: caller,
+        min_amount_out: U256::ZERO,
         extra_options: return_extra_options,
         compose_msg: Bytes::new(),
         oft_cmd: Bytes::new(),
-        refund_address: caller,
-        to: caller,
-        min_amount_out: U256::ZERO,
     };
 
     let return_fee_quote = adaptor

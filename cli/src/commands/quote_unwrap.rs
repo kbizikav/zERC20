@@ -21,7 +21,6 @@ const OPTIONS_TYPE_3: u16 = 3;
 pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B256) -> Result<()> {
     let caller = get_address_from_private_key(private_key);
     let receiver = args.receiver.unwrap_or(caller);
-    let refund_address = args.refund_address.unwrap_or(caller);
     let min_amount_out = args.min_amount_out.unwrap_or(args.amount);
 
     let dst_entry = find_token_by_chain(tokens, args.dst_chain_id)
@@ -60,12 +59,11 @@ pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B25
 
         let request = BridgeRequest {
             dst_eid,
+            to: receiver,
+            min_amount_out,
             extra_options: extra_options.clone(),
             compose_msg: compose_msg.clone(),
             oft_cmd: oft_cmd.clone(),
-            refund_address,
-            to: receiver,
-            min_amount_out,
         };
 
         println!("Token label         : {}", entry.label);
@@ -79,7 +77,7 @@ pub async fn run(args: &QuoteUnwrapArgs, tokens: &[TokenEntry], private_key: B25
         if entry.chain_id == args.dst_chain_id {
             let manager = build_liquidity_manager(entry)?;
             let fee = manager
-                .quote_unwrap(args.amount)
+                .quote_unwrap_fee(args.amount)
                 .await
                 .with_context(|| format!("failed to quote unwrap on '{}'", entry.label))?;
             let expected_out = args.amount.saturating_sub(fee);

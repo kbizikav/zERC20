@@ -20,24 +20,35 @@ sol!(
 #[derive(Debug, Clone)]
 pub struct BridgeRequest {
     pub dst_eid: u32,
+    pub to: Address,
+    pub min_amount_out: U256,
     pub extra_options: Bytes,
     pub compose_msg: Bytes,
     pub oft_cmd: Bytes,
-    pub refund_address: Address,
-    pub to: Address,
-    pub min_amount_out: U256,
 }
 
 impl From<BridgeRequest> for Adaptor::BridgeRequest {
     fn from(value: BridgeRequest) -> Self {
         Self {
             dstEid: value.dst_eid,
+            to: value.to,
+            minAmountOut: value.min_amount_out,
             extraOptions: value.extra_options,
             composeMsg: value.compose_msg,
             oftCmd: value.oft_cmd,
-            refundAddress: value.refund_address,
+        }
+    }
+}
+
+impl From<Adaptor::BridgeRequest> for BridgeRequest {
+    fn from(value: Adaptor::BridgeRequest) -> Self {
+        Self {
+            dst_eid: value.dstEid,
             to: value.to,
-            minAmountOut: value.min_amount_out,
+            min_amount_out: value.minAmountOut,
+            extra_options: value.extraOptions,
+            compose_msg: value.composeMsg,
+            oft_cmd: value.oftCmd,
         }
     }
 }
@@ -60,54 +71,6 @@ impl From<Adaptor::FeeQuote> for FeeQuote {
 }
 
 #[derive(Debug, Clone)]
-pub struct SendParam {
-    pub dst_eid: u32,
-    pub to: B256,
-    pub amount_ld: U256,
-    pub min_amount_ld: U256,
-    pub extra_options: Bytes,
-    pub compose_msg: Bytes,
-    pub oft_cmd: Bytes,
-}
-
-impl From<Adaptor::SendParam> for SendParam {
-    fn from(value: Adaptor::SendParam) -> Self {
-        Self {
-            dst_eid: value.dstEid,
-            to: value.to,
-            amount_ld: value.amountLD,
-            min_amount_ld: value.minAmountLD,
-            extra_options: value.extraOptions,
-            compose_msg: value.composeMsg,
-            oft_cmd: value.oftCmd,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct MessagingFee {
-    pub native_fee: U256,
-    pub lz_token_fee: U256,
-}
-
-impl From<Adaptor::MessagingFee> for MessagingFee {
-    fn from(value: Adaptor::MessagingFee) -> Self {
-        Self {
-            native_fee: value.nativeFee,
-            lz_token_fee: value.lzTokenFee,
-        }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct StargateSendFailureEvent {
-    pub native_fee: U256,
-    pub send_param: SendParam,
-    pub fee: MessagingFee,
-    pub refund_address: Address,
-}
-
-#[derive(Debug, Clone)]
 pub struct UnwrapAndBridgeEvent {
     pub caller: Address,
     pub amount_in: U256,
@@ -117,10 +80,60 @@ pub struct UnwrapAndBridgeEvent {
 }
 
 #[derive(Debug, Clone)]
-pub struct ReturnZerc20Event {
+pub struct BridgeUnderlyingTokenEvent {
+    pub user: Address,
+    pub to: Address,
+    pub dst_eid: u32,
+    pub amount_out: U256,
+    pub native_fee_used: U256,
+}
+
+#[derive(Debug, Clone)]
+pub struct BridgeZerc20Event {
     pub to: Address,
     pub dst_eid: u32,
     pub amount_returned: U256,
+}
+
+#[derive(Debug, Clone)]
+pub struct BridgeUnderlyingTokenFailedEvent {
+    pub user: Address,
+    pub to: Address,
+    pub dst_eid: u32,
+    pub amount: U256,
+    pub native_bridge_fee: U256,
+    pub min_amount_out: U256,
+    pub revert_data: Bytes,
+}
+
+#[derive(Debug, Clone)]
+pub struct BridgeZerc20FailedEvent {
+    pub user: Address,
+    pub to: Address,
+    pub dst_eid: u32,
+    pub amount: U256,
+    pub revert_data: Bytes,
+}
+
+#[derive(Debug, Clone)]
+pub struct DecodeBridgeRequestFailedEvent {
+    pub message: Bytes,
+    pub revert_data: Bytes,
+}
+
+#[derive(Debug, Clone)]
+pub struct QuoteFailedEvent {
+    pub amount: U256,
+    pub request: BridgeRequest,
+    pub revert_data: Bytes,
+}
+
+#[derive(Debug, Clone)]
+pub struct UnwrapFailedEvent {
+    pub user: Address,
+    pub amount: U256,
+    pub min_amount_out: U256,
+    pub revert_data: Bytes,
 }
 
 #[derive(Clone)]
@@ -188,6 +201,33 @@ impl AdaptorContract {
         Ok(addr)
     }
 
+    pub async fn native_balance_of(&self, user: Address) -> ContractResult<U256> {
+        let balance = self
+            .contract_with_provider()
+            .nativeBalances(user)
+            .call()
+            .await?;
+        Ok(balance)
+    }
+
+    pub async fn underlying_balance_of(&self, user: Address) -> ContractResult<U256> {
+        let balance = self
+            .contract_with_provider()
+            .underlingTokenBalances(user)
+            .call()
+            .await?;
+        Ok(balance)
+    }
+
+    pub async fn zerc20_balance_of(&self, user: Address) -> ContractResult<U256> {
+        let balance = self
+            .contract_with_provider()
+            .zerc20Balances(user)
+            .call()
+            .await?;
+        Ok(balance)
+    }
+
     pub async fn quote_fee(
         &self,
         amount: U256,
@@ -217,6 +257,18 @@ impl AdaptorContract {
         send_call_with_legacy(call, &signer, self.legacy_tx).await
     }
 
+    pub async fn withdraw(
+        &self,
+        private_key: B256,
+        token: Address,
+        amount: U256,
+    ) -> ContractResult<PendingTransactionBuilder<Ethereum>> {
+        let signer = get_provider_with_signer(&self.provider, private_key);
+        let contract = Adaptor::new(self.address, signer.clone());
+        let call = contract.withdraw(token, amount).with_cloned_provider();
+        send_call_with_legacy(call, &signer, self.legacy_tx).await
+    }
+
     pub fn parse_unwrap_and_bridge(
         &self,
         receipt: &TransactionReceipt,
@@ -239,15 +291,15 @@ impl AdaptorContract {
         Err(ContractError::MissingEvent("UnwrapAndBridge"))
     }
 
-    pub fn parse_return_zerc20(
+    pub fn parse_bridge_zerc20(
         &self,
         receipt: &TransactionReceipt,
-    ) -> ContractResult<ReturnZerc20Event> {
+    ) -> ContractResult<BridgeZerc20Event> {
         for log in receipt.logs() {
-            match log.log_decode_validate::<Adaptor::ReturnZerc20>() {
+            match log.log_decode_validate::<Adaptor::BridgeZerc20>() {
                 Ok(event) => {
                     let inner = event.inner;
-                    return Ok(ReturnZerc20Event {
+                    return Ok(BridgeZerc20Event {
                         to: inner.to,
                         dst_eid: inner.dstEid,
                         amount_returned: inner.amountReturned,
@@ -256,28 +308,135 @@ impl AdaptorContract {
                 Err(_) => continue,
             }
         }
-        Err(ContractError::MissingEvent("ReturnZerc20"))
+        Err(ContractError::MissingEvent("BridgeZerc20"))
     }
 
-    pub fn parse_stargate_send_failure(
+    pub fn parse_bridge_underlying_token(
         &self,
         receipt: &TransactionReceipt,
-    ) -> ContractResult<StargateSendFailureEvent> {
+    ) -> ContractResult<BridgeUnderlyingTokenEvent> {
         for log in receipt.logs() {
-            match log.log_decode_validate::<Adaptor::StargateSendFailure>() {
+            match log.log_decode_validate::<Adaptor::BridgeUnderlyingToken>() {
                 Ok(event) => {
                     let inner = event.inner;
-                    return Ok(StargateSendFailureEvent {
-                        native_fee: inner.nativeFee,
-                        send_param: SendParam::from(inner.sendParam.clone()),
-                        fee: MessagingFee::from(inner.fee.clone()),
-                        refund_address: inner.refundAddress,
+                    return Ok(BridgeUnderlyingTokenEvent {
+                        user: inner.user,
+                        to: inner.to,
+                        dst_eid: inner.dstEid,
+                        amount_out: inner.amountOut,
+                        native_fee_used: inner.nativeFeeUsed,
                     });
                 }
                 Err(_) => continue,
             }
         }
-        Err(ContractError::MissingEvent("StargateSendFailure"))
+        Err(ContractError::MissingEvent("BridgeUnderlyingToken"))
+    }
+
+    pub fn parse_bridge_underlying_token_failed(
+        &self,
+        receipt: &TransactionReceipt,
+    ) -> ContractResult<BridgeUnderlyingTokenFailedEvent> {
+        for log in receipt.logs() {
+            match log.log_decode_validate::<Adaptor::BridgeUnderlyingTokenFailed>() {
+                Ok(event) => {
+                    let inner = event.inner;
+                    return Ok(BridgeUnderlyingTokenFailedEvent {
+                        user: inner.user,
+                        to: inner.to,
+                        dst_eid: inner.dstEid,
+                        amount: inner.amount,
+                        native_bridge_fee: inner.nativeBridgeFee,
+                        min_amount_out: inner.minAmountOut,
+                        revert_data: inner.revertData.clone(),
+                    });
+                }
+                Err(_) => continue,
+            }
+        }
+        Err(ContractError::MissingEvent("BridgeUnderlyingTokenFailed"))
+    }
+
+    pub fn parse_bridge_zerc20_failed(
+        &self,
+        receipt: &TransactionReceipt,
+    ) -> ContractResult<BridgeZerc20FailedEvent> {
+        for log in receipt.logs() {
+            match log.log_decode_validate::<Adaptor::BridgeZerc20Failed>() {
+                Ok(event) => {
+                    let inner = event.inner;
+                    return Ok(BridgeZerc20FailedEvent {
+                        user: inner.user,
+                        to: inner.to,
+                        dst_eid: inner.dstEid,
+                        amount: inner.amount,
+                        revert_data: inner.revertData.clone(),
+                    });
+                }
+                Err(_) => continue,
+            }
+        }
+        Err(ContractError::MissingEvent("BridgeZerc20Failed"))
+    }
+
+    pub fn parse_decode_bridge_request_failed(
+        &self,
+        receipt: &TransactionReceipt,
+    ) -> ContractResult<DecodeBridgeRequestFailedEvent> {
+        for log in receipt.logs() {
+            match log.log_decode_validate::<Adaptor::DecodeBridgeRequestFailed>() {
+                Ok(event) => {
+                    let inner = event.inner;
+                    return Ok(DecodeBridgeRequestFailedEvent {
+                        message: inner.message.clone(),
+                        revert_data: inner.revertData.clone(),
+                    });
+                }
+                Err(_) => continue,
+            }
+        }
+        Err(ContractError::MissingEvent("DecodeBridgeRequestFailed"))
+    }
+
+    pub fn parse_quote_failed(
+        &self,
+        receipt: &TransactionReceipt,
+    ) -> ContractResult<QuoteFailedEvent> {
+        for log in receipt.logs() {
+            match log.log_decode_validate::<Adaptor::QuoteFailed>() {
+                Ok(event) => {
+                    let inner = event.inner;
+                    return Ok(QuoteFailedEvent {
+                        amount: inner.amount,
+                        request: BridgeRequest::from(inner.request.clone()),
+                        revert_data: inner.revertData.clone(),
+                    });
+                }
+                Err(_) => continue,
+            }
+        }
+        Err(ContractError::MissingEvent("QuoteFailed"))
+    }
+
+    pub fn parse_unwrap_failed(
+        &self,
+        receipt: &TransactionReceipt,
+    ) -> ContractResult<UnwrapFailedEvent> {
+        for log in receipt.logs() {
+            match log.log_decode_validate::<Adaptor::UnwrapFailed>() {
+                Ok(event) => {
+                    let inner = event.inner;
+                    return Ok(UnwrapFailedEvent {
+                        user: inner.user,
+                        amount: inner.amount,
+                        min_amount_out: inner.minAmountOut,
+                        revert_data: inner.revertData.clone(),
+                    });
+                }
+                Err(_) => continue,
+            }
+        }
+        Err(ContractError::MissingEvent("UnwrapFailed"))
     }
 
     pub async fn latest_block(&self) -> ContractResult<u64> {

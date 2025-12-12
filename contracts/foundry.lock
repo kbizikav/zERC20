@@ -5,6 +5,9 @@
       "rev": "2ff4988f85b5c94032eb71bbc4073e69c078179d"
     }
   },
+  "lib/devtools": {
+    "rev": "270a49d03f223523c9ae2b1900a490f8ba083bdc"
+  },
   "lib/forge-std": {
     "tag": {
       "name": "v1.11.0",
@@ -24,6 +27,12 @@
     "tag": {
       "name": "v0.0.5",
       "rev": "8205c97ec4a35a9adb854b70b2c9ba92668d1304"
+    }
+  },
+  "lib/solady": {
+    "tag": {
+      "name": "v0.1.26",
+      "rev": "acd959aa4bd04720d640bf4e6a5c71037510cc4b"
     }
   },
   "lib/solidity-bytes-utils": {

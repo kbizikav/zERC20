@@ -17,10 +17,10 @@ import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, IzERC20 {
     using SlotDerivation for string;
 
-    uint8 private immutable tokenDecimals;
+    uint8 private immutable TOKEN_DECIMALS;
 
     /// @custom:storage-location erc7201:zerc20.storage.zerc20
-    struct ZERC20Storage {
+    struct Zerc20Storage {
         uint256 hashChain;
         uint256 index;
         uint256 totalTeleported;
@@ -28,7 +28,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         address minter;
     }
 
-    function _getZERC20Storage() private pure returns (ZERC20Storage storage $) {
+    function _getZerc20Storage() private pure returns (Zerc20Storage storage $) {
         bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.zerc20");
         assembly {
             $.slot := slot
@@ -52,7 +52,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @notice Locks implementation contracts on deployment.
     constructor(address endpoint, uint8 decimals_) OFTCoreUpgradeable(decimals_, endpoint) {
         if (endpoint == address(0)) revert InvalidEndpointCall();
-        tokenDecimals = decimals_;
+        TOKEN_DECIMALS = decimals_;
         _disableInitializers();
     }
 
@@ -75,32 +75,32 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
 
     /// @notice Hash chain committing every transfer's destination and value pair.
     function hashChain() public view returns (uint256) {
-        return _getZERC20Storage().hashChain;
+        return _getZerc20Storage().hashChain;
     }
 
     /// @notice Index of the next transfer, matching the off-chain Merkle tree leaf position.
     function index() public view returns (uint256) {
-        return _getZERC20Storage().index;
+        return _getZerc20Storage().index;
     }
 
     /// @notice Address allowed to call verifier-only functions such as teleport.
     function verifier() public view returns (address) {
-        return _getZERC20Storage().verifier;
+        return _getZerc20Storage().verifier;
     }
 
     /// @notice Address allowed to mint and burn under the minter role.
     function minter() public view returns (address) {
-        return _getZERC20Storage().minter;
+        return _getZerc20Storage().minter;
     }
 
     /// @notice Sum of all values minted through verifier-authorized teleports.
     function totalTeleported() public view returns (uint256) {
-        return _getZERC20Storage().totalTeleported;
+        return _getZerc20Storage().totalTeleported;
     }
 
     /// @notice Returns the token decimals.
     function decimals() public view override returns (uint8) {
-        return tokenDecimals;
+        return TOKEN_DECIMALS;
     }
 
     function token() public view override returns (address) {
@@ -111,25 +111,25 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         return false;
     }
 
-    function _debit(address _from, uint256 _amountLD, uint256 _minAmountLD, uint32 _dstEid)
+    function _debit(address from, uint256 amountLd, uint256 minAmountLd, uint32 dstEid)
         internal
         override
-        returns (uint256 amountSentLD, uint256 amountReceivedLD)
+        returns (uint256 amountSentLd, uint256 amountReceivedLd)
     {
-        (amountSentLD, amountReceivedLD) = _debitView(_amountLD, _minAmountLD, _dstEid);
-        _burn(_from, amountSentLD);
+        (amountSentLd, amountReceivedLd) = _debitView(amountLd, minAmountLd, dstEid);
+        _burn(from, amountSentLd);
     }
 
-    function _credit(address _to, uint256 _amountLD, uint32 /*_srcEid*/ )
+    function _credit(address to, uint256 amountLd, uint32 /*_srcEid*/ )
         internal
         override
-        returns (uint256 amountReceivedLD)
+        returns (uint256 amountReceivedLd)
     {
-        if (_to == address(0)) {
-            _to = address(0xdead);
+        if (to == address(0)) {
+            to = address(0xdead);
         }
-        _mint(_to, _amountLD);
-        return _amountLD;
+        _mint(to, amountLd);
+        return amountLd;
     }
 
     /// @inheritdoc IzERC20
@@ -138,7 +138,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @param value Mint amount corresponding to the delta proven in Verifier.teleport.
     function teleport(address to, uint256 value) external {
         if (msg.sender != verifier()) revert OnlyVerifier();
-        ZERC20Storage storage $ = _getZERC20Storage();
+        Zerc20Storage storage $ = _getZerc20Storage();
         _mint(to, value);
         $.totalTeleported += value;
         emit Teleport(to, value);
@@ -148,7 +148,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
     function _afterTokenTransfer(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         if (value > type(uint248).max) revert ValueTooLarge();
-        ZERC20Storage storage $ = _getZERC20Storage();
+        Zerc20Storage storage $ = _getZerc20Storage();
         super._afterTokenTransfer(from, to, value);
         $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);
         emit IndexedTransfer($.index++, from, to, value);
@@ -159,7 +159,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @param newVerifier LayerZero-aware Verifier contract.
     function setVerifier(address newVerifier) external onlyOwner {
         if (newVerifier == address(0)) revert ZeroAddress();
-        _getZERC20Storage().verifier = newVerifier;
+        _getZerc20Storage().verifier = newVerifier;
         emit VerifierUpdated(newVerifier);
     }
 
@@ -167,7 +167,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @dev Unlike verifier, the spec allows disabling the minter by setting address(0) on chains without deposits.
     /// @param newMinter Contract that exercises `mint`/`burn` for bridge deposits.
     function setMinter(address newMinter) external onlyOwner {
-        _getZERC20Storage().minter = newMinter;
+        _getZerc20Storage().minter = newMinter;
         emit MinterUpdated(newMinter);
     }
 
