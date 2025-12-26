@@ -30,3 +30,4 @@ frontend-app/public/config/*.json
 .dfx
 .ic.env
 canister_ids.json
+solana-groth16-program/test-ledger/
