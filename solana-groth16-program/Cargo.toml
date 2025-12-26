@@ -17,6 +17,7 @@ clap = { workspace = true, features = ["derive"], optional = true }
 
 [dev-dependencies]
 solana-program-test = "2.3.0"
+solana-sdk = { version = "2.3.0", features = ["full"] }
 tokio = { version = "1.36", features = ["macros", "rt-multi-thread"] }
 
 [features]
