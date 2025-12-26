@@ -8,6 +8,8 @@ members = [
     "cli",
     "crosschain-job",
     "api-types",
+    "solana-groth16-verifier",
+    "solana-groth16-program",
     "zstorage/frontend",
     "zstorage/backend/key_manager",
     "zstorage/backend/storage",

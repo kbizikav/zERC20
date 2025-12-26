@@ -1,0 +1,16 @@
+[package]
+name = "solana-groth16-verifier"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["lib"]
+
+[dependencies]
+ark-bn254 = { workspace = true, default-features = false, features = ["curve"] }
+ark-ec = { workspace = true, default-features = false }
+ark-ff = { workspace = true, default-features = false }
+ark-groth16 = { workspace = true, default-features = false }
+ark-serialize = { workspace = true, default-features = false }
+ark-std = { workspace = true, default-features = false }
+ark-snark = { workspace = true, default-features = false }
