@@ -9,8 +9,8 @@ use actix_web::{
 use alloy::primitives::{Address, U256};
 use anyhow::{Context, Result, anyhow};
 use api_types::indexer::{
-    EventsQuery, HistoricalProof, IndexedEvent, ProveManyRequest, TokenStatusResponse,
-    TreeIndexQuery, TreeIndexResponse,
+    AllEventsQuery, EventsQuery, HistoricalProof, IndexedEvent, IndexedEventWithChain,
+    ProveManyRequest, TokenStatusResponse, TreeIndexQuery, TreeIndexResponse,
 };
 use ark_bn254::Fr;
 use ark_ff::{BigInteger, PrimeField};
@@ -138,6 +138,7 @@ pub async fn run_http_server(
             .route("/healthz", web::get().to(health))
             .route("/status", web::get().to(tokens_status))
             .route("/events", web::get().to(events_by_recipient))
+            .route("/all-events", web::get().to(events_by_recipients))
             .route("/proofs", web::post().to(prove_many))
             .route("/tree-index", web::get().to(tree_index_by_root))
     })
@@ -284,6 +285,106 @@ async fn events_by_recipient(
             .map_err(|_| ErrorInternalServerError("stored value must be 32 bytes"))?;
 
         events.push(IndexedEvent {
+            event_index,
+            from,
+            to,
+            value,
+            eth_block_number: block_number,
+        });
+    }
+
+    Ok(Json(events))
+}
+
+async fn events_by_recipients(
+    state: Data<AppState>,
+    query: Query<AllEventsQuery>,
+) -> actix_web::Result<Json<Vec<IndexedEventWithChain>>> {
+    let params = query.into_inner();
+    if params.recipients.is_empty() {
+        return Ok(Json(Vec::new()));
+    }
+
+    let limit = params.limit.unwrap_or(100);
+    let limit = limit.min(1_000);
+    let limit_i64 = i64::try_from(limit).map_err(|_| ErrorBadRequest("limit is too large"))?;
+
+    let to_addresses: Vec<Vec<u8>> = params
+        .recipients
+        .iter()
+        .map(|address| address.as_slice().to_vec())
+        .collect();
+
+    let rows = sqlx::query(
+        r#"
+        SELECT chain_id, token_address, event_index, from_address, to_address, value, eth_block_number
+        FROM (
+            SELECT
+                t.chain_id,
+                t.token_address,
+                e.event_index,
+                e.from_address,
+                e.to_address,
+                e.value,
+                e.eth_block_number,
+                ROW_NUMBER() OVER (PARTITION BY e.token_id, e.to_address ORDER BY e.event_index ASC) AS rn
+            FROM indexed_transfer_events e
+            JOIN tokens t ON t.id = e.token_id
+            WHERE e.to_address = ANY($1)
+        ) ranked
+        WHERE rn <= $2
+        ORDER BY chain_id ASC, token_address ASC, event_index ASC
+        "#,
+    )
+    .bind(to_addresses)
+    .bind(limit_i64)
+    .fetch_all(&state.pool)
+    .await
+    .map_err(|err| {
+        error!("failed to fetch events for recipients: {err:?}");
+        ErrorInternalServerError("failed to fetch events")
+    })?;
+
+    let mut events = Vec::with_capacity(rows.len());
+    for row in rows {
+        let chain_id: i64 = row.try_get("chain_id").map_err(|_| {
+            ErrorInternalServerError("invalid chain_id value retrieved from database")
+        })?;
+        let token_bytes: Vec<u8> = row.try_get("token_address").map_err(|_| {
+            ErrorInternalServerError("invalid token_address value retrieved from database")
+        })?;
+        let event_index: i64 = row.try_get("event_index").map_err(|_| {
+            ErrorInternalServerError("invalid event_index value retrieved from database")
+        })?;
+        let from_bytes: Vec<u8> = row.try_get("from_address").map_err(|_| {
+            ErrorInternalServerError("invalid from_address value retrieved from database")
+        })?;
+        let to_bytes: Vec<u8> = row.try_get("to_address").map_err(|_| {
+            ErrorInternalServerError("invalid to_address value retrieved from database")
+        })?;
+        let value_bytes: Vec<u8> = row
+            .try_get("value")
+            .map_err(|_| ErrorInternalServerError("invalid value retrieved from database"))?;
+        let block_number: i64 = row.try_get("eth_block_number").map_err(|_| {
+            ErrorInternalServerError("invalid eth_block_number retrieved from database")
+        })?;
+
+        let chain_id = u64::try_from(chain_id)
+            .map_err(|_| ErrorInternalServerError("chain_id does not fit into u64"))?;
+        let event_index = u64::try_from(event_index)
+            .map_err(|_| ErrorInternalServerError("event_index does not fit into u64"))?;
+        let block_number = u64::try_from(block_number)
+            .map_err(|_| ErrorInternalServerError("block number does not fit into u64"))?;
+
+        let token_address = address_from_bytes(&token_bytes)?;
+        let from = address_from_bytes(&from_bytes)?;
+        let to = address_from_bytes(&to_bytes)?;
+        let value = bytes32_to_u256(&value_bytes)
+            .map_err(|_| ErrorInternalServerError("stored value must be 32 bytes"))?;
+
+        events.push(IndexedEventWithChain {
+            chain_id,
+            token_address,
             event_index,
             from,
             to,
