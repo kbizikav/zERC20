@@ -6,15 +6,18 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IzERC20} from "../interfaces/IzERC20.sol";
 import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
 import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 
 /// @notice Custodies underlying token liquidity and mints/burns zERC20 based on wrap/unwrap flows.
 /// Reward/fee curves follow the piecewise linear formulas described in docs/zerc20-liquidity.md.
-contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgradeable, ILiquidityManager {
+contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, ILiquidityManager {
+    using SafeERC20 for IERC20;
     using SlotDerivation for string;
 
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
@@ -64,6 +67,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         _validateFeeParams(_feeParams);
 
         __AccessControl_init();
+        __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
         _grantRole(DEFAULT_ADMIN_ROLE, initialOwner);
         _grantRole(FEE_MANAGER_ROLE, initialOwner);
@@ -92,22 +96,27 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
 
     // ---------------------------- User ----------------------------------
 
-    function wrap(uint256 amount, address receiver) external returns (uint256 amountOut) {
+    function wrap(uint256 amount, address receiver) external nonReentrant returns (uint256 amountOut) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        uint256 reward = _quoteWrapReward(amount, $);
+        IERC20 underlying = $.underlyingToken;
+        uint256 liquidityBefore = underlying.balanceOf(address(this));
 
-        if (!$.underlyingToken.transferFrom(msg.sender, address(this), amount)) revert UnderlyingPullFailed();
+        underlying.safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = underlying.balanceOf(address(this)) - liquidityBefore;
+        if (received == 0) revert UnderlyingPullFailed();
+
+        uint256 reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, $.feeSurplus, received);
 
         if (reward > 0) $.feeSurplus -= reward;
-        amountOut = amount + reward;
+        amountOut = received + reward;
         $.zerc20.mint(receiver, amountOut);
         emit Wrapped(msg.sender, receiver, amountOut, reward);
     }
 
-    function unwrap(uint256 amount, address receiver) external returns (uint256 amountOut) {
+    function unwrap(uint256 amount, address receiver) external nonReentrant returns (uint256 amountOut) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
 
@@ -119,7 +128,7 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         IERC20 underlying = $.underlyingToken;
         if (amountOut > 0) {
             if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
-            if (!underlying.transfer(receiver, amountOut)) revert UnderlyingSendFailed();
+            underlying.safeTransfer(receiver, amountOut);
         }
         if (feeAmount > 0) $.feeSurplus += feeAmount;
 
@@ -142,14 +151,14 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         emit FeeParamsUpdated(params);
     }
 
-    function withdrawRewards(address to, uint256 amount) external onlyRole(DEFAULT_ADMIN_ROLE) {
+    function withdrawRewards(address to, uint256 amount) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         if (to == address(0)) revert ZeroReceiver();
         if (amount == 0) revert ZeroAmount();
         if (amount > $.feeSurplus) revert InsufficientRewards();
 
         $.feeSurplus -= amount;
-        if (!$.underlyingToken.transfer(to, amount)) revert UnderlyingSendFailed();
+        $.underlyingToken.safeTransfer(to, amount);
         emit RewardsWithdrawn(to, amount);
     }
 
