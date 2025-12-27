@@ -101,16 +101,6 @@ pragma solidity ^0.8.20;
  *
  *   fee = ceil(fee_continuous)
  *
- * Special protection:
- *  - If `amount > L`, the requested withdrawal is larger than the current
- *    liquidity. In this case, the library returns:
- *
- *      fee = amount
- *
- *    This allows the caller to treat such a withdrawal as "net zero" for
- *    the user (fee equals the requested amount) and prevents liquidity
- *    underflow in the caller contract.
- *
  * ---------------------------------------------------------------------------
  * No-arbitrage and rounding direction
  * ---------------------------------------------------------------------------
@@ -288,7 +278,7 @@ library IncentiveLib {
 
         // Portion of the path within [0, T).
         uint256 start = L < T ? L : T; // start (higher), capped at T
-        uint256 endRaw = L - amount; // end (lower) before capping
+        uint256 endRaw = amount >= L ? 0 : L - amount; // end (lower) before capping
         uint256 end = endRaw < T ? endRaw : T; // cap at T
 
         if (start <= end) {
