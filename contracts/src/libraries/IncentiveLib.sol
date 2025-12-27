@@ -182,16 +182,15 @@ library IncentiveLib {
      * - Rounds DOWN (floor).
      * - Caps the result by `feeSurplus`.
      */
-    function quoteWrapReward(
-        FeeParams memory params,
-        uint256 liquidity,
-        uint256 feeSurplus,
-        uint256 amount
-    ) internal pure returns (uint256 wrapReward) {
-        uint256 raw = _rawWrapReward(liquidity, params.targetLiquidity, params.k, amount);
+    function quoteWrapReward(FeeParams memory params, uint256 liquidity, uint256 feeSurplus, uint256 amount)
+        internal
+        pure
+        returns (uint256 wrapReward)
+    {
+        uint256 reward = _rawWrapReward(liquidity, params.targetLiquidity, params.k, amount);
 
-        if (raw > feeSurplus) return feeSurplus;
-        return raw;
+        if (reward > feeSurplus) return feeSurplus;
+        return reward;
     }
 
     /**
@@ -201,25 +200,32 @@ library IncentiveLib {
      * - Rounds UP (ceil).
      * - If `amount > liquidity`, returns `amount` to allow "net-zero" withdrawal.
      */
-    function quoteUnwrapFee(
-        FeeParams memory params,
-        uint256 liquidity,
-        uint256 amount
-    ) internal pure returns (uint256 unwrapFee) {
-        uint256 raw = _rawUnwrapFee(liquidity, params.targetLiquidity, params.k, amount);
-        return raw > amount ? amount : raw;
+    function quoteUnwrapFee(FeeParams memory params, uint256 liquidity, uint256 amount)
+        internal
+        pure
+        returns (uint256 unwrapFee)
+    {
+        uint256 fee = _rawUnwrapFee(liquidity, params.targetLiquidity, params.k, amount);
+
+        if (liquidity > amount) {
+            // Sufficient liquidity case.
+            return fee;
+        } else {
+            // Insufficient liquidity: charge the shortfall as fee
+            uint256 liquidityMinusFee = liquidity >= fee ? liquidity - fee : 0;
+            return amount - liquidityMinusFee;
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
                          INTERNAL PURE MATH HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function _rawWrapReward(
-        uint256 L,
-        uint256 T,
-        uint256 k_,
-        uint256 amount
-    ) internal pure returns (uint256 rewardRaw) {
+    function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount)
+        internal
+        pure
+        returns (uint256 rewardRaw)
+    {
         if (T == 0 || amount == 0) {
             return 0;
         }
@@ -261,19 +267,9 @@ library IncentiveLib {
         rewardRaw = numerator / denominator;
     }
 
-    function _rawUnwrapFee(
-        uint256 L,
-        uint256 T,
-        uint256 k_,
-        uint256 amount
-    ) internal pure returns (uint256 feeRaw) {
+    function _rawUnwrapFee(uint256 L, uint256 T, uint256 k_, uint256 amount) internal pure returns (uint256 feeRaw) {
         if (amount == 0) {
             return 0;
-        }
-
-        // If requested withdrawal exceeds liquidity, charge full amount as fee.
-        if (amount > L) {
-            return amount;
         }
 
         if (T == 0) {

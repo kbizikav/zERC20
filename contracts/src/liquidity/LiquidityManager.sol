@@ -6,7 +6,7 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -16,7 +16,13 @@ import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 
 /// @notice Custodies underlying token liquidity and mints/burns zERC20 based on wrap/unwrap flows.
 /// Reward/fee curves follow the piecewise linear formulas described in docs/zerc20-liquidity.md.
-contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, ILiquidityManager {
+contract LiquidityManager is
+    Initializable,
+    UUPSUpgradeable,
+    AccessControlUpgradeable,
+    ReentrancyGuardUpgradeable,
+    ILiquidityManager
+{
     using SafeERC20 for IERC20;
     using SlotDerivation for string;
 
@@ -169,8 +175,11 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         view
         returns (uint256 reward)
     {
-        uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
-        reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, $.feeSurplus, amount);
+        uint256 balance = $.underlyingToken.balanceOf(address(this));
+        uint256 feeSurplus_ = $.feeSurplus;
+        // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
+        uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
+        reward = IncentiveLib.quoteWrapReward($.feeParams, liquidity, feeSurplus_, amount);
     }
 
     function _quoteUnwrapFee(uint256 amount, LiquidityManagerStorage storage $)
@@ -178,8 +187,11 @@ contract LiquidityManager is Initializable, UUPSUpgradeable, AccessControlUpgrad
         view
         returns (uint256 feeAmount)
     {
-        uint256 liquidityBefore = $.underlyingToken.balanceOf(address(this));
-        feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidityBefore, amount);
+        uint256 balance = $.underlyingToken.balanceOf(address(this));
+        uint256 feeSurplus_ = $.feeSurplus;
+        // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
+        uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
+        feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidity, amount);
     }
 
     function _validateFeeParams(IncentiveLib.FeeParams memory params) internal pure {
