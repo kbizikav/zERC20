@@ -200,7 +200,7 @@ library IncentiveLib {
             // Sufficient liquidity case: charge the raw fee
             return fee;
         } else {
-            // Insufficient liquidity: charge the shortfall as fee
+            // Insufficient liquidity: charge the shortfall plus the curve fee, capped at amount.
             uint256 liquidityMinusFee = liquidity >= fee ? liquidity - fee : 0;
             return amount - liquidityMinusFee;
         }
@@ -278,6 +278,7 @@ library IncentiveLib {
 
         // Portion of the path within [0, T).
         uint256 start = L < T ? L : T; // start (higher), capped at T
+        // Insufficient liquidity: clamp the end to 0 to model draining all liquidity.
         uint256 endRaw = amount >= L ? 0 : L - amount; // end (lower) before capping
         uint256 end = endRaw < T ? endRaw : T; // cap at T
 
