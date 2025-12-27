@@ -44,6 +44,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     error TransferFailed();
     error ApproveFailed();
     error InvalidComposeCaller();
+    error InvalidComposeSender();
     error InsufficientZerc20Balance();
     error InsufficientUnderlyingBalance();
     error InsufficientNativeBalance();
@@ -57,6 +58,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     IERC20 public immutable UNDERLYING_TOKEN;
     IzERC20 public immutable ZERC20;
     IStargate public immutable STARGATE;
+    address public immutable LZ_ENDPOINT;
 
     mapping(address => uint256) public underlingTokenBalances;
     mapping(address => uint256) public zerc20Balances;
@@ -87,13 +89,16 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
     /// @param _liquidityManager LiquidityManager that wraps/unwraps the zERC20.
     /// @param _stargate Stargate endpoint used for bridging the underlying token.
-    constructor(address _liquidityManager, address _stargate) {
+    /// @param _lzEndpoint LayerZero endpoint that invokes lzCompose.
+    constructor(address _liquidityManager, address _stargate, address _lzEndpoint) {
         if (_liquidityManager == address(0)) revert ZeroAddress();
         if (_stargate == address(0)) revert ZeroAddress();
+        if (_lzEndpoint == address(0)) revert ZeroAddress();
         LIQUIDITY_MANAGER = ILiquidityManager(_liquidityManager);
         UNDERLYING_TOKEN = IERC20(LIQUIDITY_MANAGER.underlyingToken());
         ZERC20 = IzERC20(address(LIQUIDITY_MANAGER.zerc20()));
         STARGATE = IStargate(_stargate);
+        LZ_ENDPOINT = _lzEndpoint;
     }
 
     /// @notice Handles LayerZero compose callbacks from the zERC20 to unwrap and bridge.
@@ -106,6 +111,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         override
         nonReentrant
     {
+        if (msg.sender != LZ_ENDPOINT) revert InvalidComposeSender();
         if (_from != address(ZERC20)) revert InvalidComposeCaller();
 
         bytes32 composeFromBytes = OFTComposeMsgCodec.composeFrom(_message);
@@ -151,8 +157,8 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
             amountLD: amountAfterUnwrap,
             minAmountLD: 0, // set 0 to prevent a revert of the minimum amount
             extraOptions: request.extraOptions,
-            composeMsg: bytes(""),
-            oftCmd: bytes("")
+            composeMsg: request.composeMsg,
+            oftCmd: request.oftCmd
         });
         MessagingFee memory feeQuote = STARGATE.quoteSend(sendParam, false);
         (,, OFTReceipt memory receipt) = STARGATE.quoteOFT(sendParam);
@@ -419,6 +425,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     function _toBytes32(address a) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(a)));
     }
+
 
     function _ensureAllowance(IERC20 token, address spender, uint256 amount) internal {
         if (amount == 0) return;

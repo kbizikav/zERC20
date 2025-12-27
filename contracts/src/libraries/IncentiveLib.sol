@@ -111,50 +111,6 @@ pragma solidity ^0.8.20;
  *  - Intermediate squares are bounded by requiring T <= MAX_TARGET_LIQUIDITY.
  *  - Multiplication by k is guarded by a maxK check to avoid overflow.
  *  - Subtractions along the path are clamped or ordered to avoid underflow.
- *
- * ---------------------------------------------------------------------------
- * No-arbitrage and rounding direction
- * ---------------------------------------------------------------------------
- *
- * In the continuous (real-valued) model:
- *  - If you move from L to L + amount (deposit), and then back from
- *    L + amount to L (withdraw), the total reward and total fee are
- *    exactly equal:
- *
- *      reward_continuous = fee_continuous  (same path, reversed)
- *
- *  - Similarly for withdraw then deposit along the same path.
- *
- * On-chain, we deliberately:
- *  - round rewards DOWN (floor), and
- *  - round fees UP   (ceil).
- *
- * Therefore, for any path:
- *
- *   collected_fee >= paid_reward
- *
- * This means an attacker cannot profit by performing atomic deposit/withdraw
- * cycles that only move liquidity along the same path and back.
- *
- * ---------------------------------------------------------------------------
- * Usage
- * ---------------------------------------------------------------------------
- *
- * The library is stateless. A typical calling contract stores:
- *
- *   FeeParams params;
- *   uint256   liquidity;   // current total liquidity
- *   uint256   feeSurplus;  // accumulated surplus from past fees
- *
- * And uses:
- *
- *   uint256 reward = IncentiveLib.quoteWrapReward(params, liquidity, feeSurplus, amount);
- *   uint256 fee    = IncentiveLib.quoteUnwrapFee(params, liquidity, amount);
- *
- * The caller is responsible for:
- *  - updating its own `liquidity` and `feeSurplus` storage,
- *  - performing any token transfers,
- *  - enforcing any additional business logic.
  */
 library IncentiveLib {
     error InvalidTarget();

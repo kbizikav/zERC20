@@ -272,7 +272,7 @@ contract AdaptorTest is TestHelperOz5 {
         zerc20 = _deployZerc20(endpoint);
         manager = new MockLiquidityManager(underlying, address(zerc20));
         stargate = new MockStargate(underlying);
-        adaptor = new Adaptor(address(manager), address(stargate));
+        adaptor = new Adaptor(address(manager), address(stargate), address(endpoint));
 
         zerc20.setMinter(address(this));
     }
@@ -362,6 +362,13 @@ contract AdaptorTest is TestHelperOz5 {
         assertEq(zerc20.lastSendValue(), returnNativeFee, "native fee used for return");
     }
 
+    function testLzComposeRejectsNonEndpointCaller() public {
+        bytes memory message = bytes("invalid");
+
+        vm.expectRevert(Adaptor.InvalidComposeSender.selector);
+        adaptor.lzCompose(address(zerc20), bytes32(0), message, address(0), bytes(""));
+    }
+
     function testLzComposeEmitsDecodeFailureAndAllowsWithdraw() public {
         uint256 amount = 25 ether;
         uint256 nativeFee = 0.01 ether;
@@ -373,6 +380,8 @@ contract AdaptorTest is TestHelperOz5 {
         vm.expectEmit(false, false, false, false, address(adaptor));
         emit Adaptor.DecodeBridgeRequestFailed(message, bytes("")); // revertData intentionally unchecked
 
+        vm.deal(address(endpoint), nativeFee);
+        vm.prank(address(endpoint));
         adaptor.lzCompose{value: nativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
 
         assertEq(adaptor.zerc20Balances(USER), amount, "zerc20 credited");
@@ -411,6 +420,8 @@ contract AdaptorTest is TestHelperOz5 {
         vm.expectEmit(true, true, false, true, address(adaptor));
         emit Adaptor.Unwrap(USER, amount, amount);
 
+        vm.deal(address(endpoint), nativeFee);
+        vm.prank(address(endpoint));
         adaptor.lzCompose{value: nativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
 
         assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 debited during unwrap");
@@ -449,6 +460,8 @@ contract AdaptorTest is TestHelperOz5 {
         vm.expectEmit(true, true, true, true, address(adaptor));
         emit Adaptor.BridgeZerc20(DESTINATION, DST_EID, amount);
 
+        vm.deal(address(endpoint), returnNativeFee);
+        vm.prank(address(endpoint));
         adaptor.lzCompose{value: returnNativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
 
         assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 debited for return");
