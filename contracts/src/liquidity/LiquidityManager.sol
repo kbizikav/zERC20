@@ -108,13 +108,16 @@ contract LiquidityManager is
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         IERC20 underlying = $.underlyingToken;
-        uint256 liquidityBefore = underlying.balanceOf(address(this));
+        uint256 balanceBefore = underlying.balanceOf(address(this));
 
         underlying.safeTransferFrom(msg.sender, address(this), amount);
-        uint256 received = underlying.balanceOf(address(this)) - liquidityBefore;
+        uint256 received = underlying.balanceOf(address(this)) - balanceBefore;
         if (received == 0) revert UnderlyingPullFailed();
 
-        uint256 reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, $.feeSurplus, received);
+        uint256 feeSurplus_ = $.feeSurplus;
+        // Keep reward calculation aligned with pre-deposit liquidity.
+        uint256 liquidityBefore = balanceBefore >= feeSurplus_ ? balanceBefore - feeSurplus_ : 0;
+        uint256 reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, feeSurplus_, received);
 
         if (reward > 0) $.feeSurplus -= reward;
         amountOut = received + reward;

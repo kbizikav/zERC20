@@ -198,7 +198,6 @@ library IncentiveLib {
      * @dev
      * - Uses the same continuous density described in the library header.
      * - Rounds UP (ceil).
-     * - If `amount > liquidity`, returns `amount` to allow "net-zero" withdrawal.
      */
     function quoteUnwrapFee(FeeParams memory params, uint256 liquidity, uint256 amount)
         internal
@@ -208,7 +207,7 @@ library IncentiveLib {
         uint256 fee = _rawUnwrapFee(liquidity, params.targetLiquidity, params.k, amount);
 
         if (liquidity > amount) {
-            // Sufficient liquidity case.
+            // Sufficient liquidity case: charge the raw fee
             return fee;
         } else {
             // Insufficient liquidity: charge the shortfall as fee
