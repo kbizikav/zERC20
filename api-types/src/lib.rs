@@ -201,6 +201,22 @@ pub mod indexer {
         pub eth_block_number: u64,
     }
 
+    #[serde_as]
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub struct IndexedEventWithChain {
+        pub chain_id: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub token_address: Address,
+        pub event_index: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub from: Address,
+        #[serde_as(as = "DisplayFromStr")]
+        pub to: Address,
+        #[serde(with = "crate::serde_utils::u256_hex")]
+        pub value: U256,
+        pub eth_block_number: u64,
+    }
+
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     pub struct HistoricalProof {
         pub target_index: u64,
@@ -236,6 +252,16 @@ pub mod indexer {
         pub token_address: Address,
         #[serde_as(as = "DisplayFromStr")]
         pub to: Address,
+        #[serde(default)]
+        pub limit: Option<usize>,
+    }
+
+    #[serde_as]
+    #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+    pub struct AllEventsQuery {
+        #[serde_as(as = "Vec<DisplayFromStr>")]
+        #[serde(default)]
+        pub recipients: Vec<Address>,
         #[serde(default)]
         pub limit: Option<usize>,
     }

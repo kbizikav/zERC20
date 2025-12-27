@@ -7,7 +7,10 @@ use reqwest::{Client, Url};
 use thiserror::Error;
 use tokio::sync::Mutex;
 
-pub use api_types::indexer::{EventsQuery, HistoricalProof, IndexedEvent, TreeIndexQuery};
+pub use api_types::indexer::{
+    AllEventsQuery, EventsQuery, HistoricalProof, IndexedEvent, IndexedEventWithChain,
+    TreeIndexQuery,
+};
 
 #[derive(Debug, Error)]
 pub enum IndexerError {
@@ -53,6 +56,12 @@ pub trait IndexerClient: Send + Sync {
         to: Address,
         limit: Option<usize>,
     ) -> IndexerResult<Vec<IndexedEvent>>;
+
+    async fn all_events(
+        &self,
+        recipients: &[Address],
+        limit: Option<usize>,
+    ) -> IndexerResult<Vec<IndexedEventWithChain>>;
 
     async fn prove_many(
         &self,
@@ -139,6 +148,33 @@ impl IndexerClient for HttpIndexerClient {
         Ok(events)
     }
 
+    async fn all_events(
+        &self,
+        recipients: &[Address],
+        limit: Option<usize>,
+    ) -> IndexerResult<Vec<IndexedEventWithChain>> {
+        let url = self.endpoint("all-events")?;
+        let params = AllEventsQuery {
+            recipients: recipients.to_vec(),
+            limit,
+        };
+
+        let response = self
+            .client
+            .get(url)
+            .query(&params)
+            .send()
+            .await
+            .map_err(IndexerError::EventsRequest)?
+            .error_for_status()
+            .map_err(IndexerError::EventsStatus)?;
+
+        let events: Vec<IndexedEventWithChain> =
+            response.json().await.map_err(IndexerError::EventsDecode)?;
+
+        Ok(events)
+    }
+
     async fn prove_many(
         &self,
         chain_id: u64,
@@ -204,6 +240,7 @@ impl IndexerClient for HttpIndexerClient {
 #[derive(Clone, Debug, Default)]
 pub struct TestIndexerClient {
     events: Arc<Mutex<VecDeque<IndexerResult<Vec<IndexedEvent>>>>>,
+    all_events: Arc<Mutex<VecDeque<IndexerResult<Vec<IndexedEventWithChain>>>>>,
     prove_many: Arc<Mutex<VecDeque<IndexerResult<Vec<HistoricalProof>>>>>,
     tree_index: Arc<Mutex<VecDeque<IndexerResult<u64>>>>,
 }
@@ -215,6 +252,13 @@ impl TestIndexerClient {
 
     pub async fn enqueue_events_response(&self, response: IndexerResult<Vec<IndexedEvent>>) {
         self.events.lock().await.push_back(response);
+    }
+
+    pub async fn enqueue_all_events_response(
+        &self,
+        response: IndexerResult<Vec<IndexedEventWithChain>>,
+    ) {
+        self.all_events.lock().await.push_back(response);
     }
 
     pub async fn enqueue_prove_many_response(&self, response: IndexerResult<Vec<HistoricalProof>>) {
@@ -249,6 +293,15 @@ impl IndexerClient for TestIndexerClient {
     ) -> IndexerResult<Vec<IndexedEvent>> {
         let _ = (chain_id, token_address, to, limit);
         Self::take_next(&self.events, "events_by_recipient").await
+    }
+
+    async fn all_events(
+        &self,
+        recipients: &[Address],
+        limit: Option<usize>,
+    ) -> IndexerResult<Vec<IndexedEventWithChain>> {
+        let _ = (recipients, limit);
+        Self::take_next(&self.all_events, "all_events").await
     }
 
     async fn prove_many(
