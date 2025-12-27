@@ -28,6 +28,7 @@ contract LiquidityManager is
     using SafeERC20 for IERC20;
     using SlotDerivation for string;
 
+    /// @notice Role allowed to update incentive curve parameters.
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
 
     error ZeroAddress();
@@ -48,22 +49,25 @@ contract LiquidityManager is
         uint256 feeSurplus; // Tracks collected fees net of distributed rewards.
     }
 
+    /// @notice Emitted when fee parameters are updated.
     event FeeParamsUpdated(IncentiveLib.FeeParams params);
+    /// @notice Emitted after a successful wrap.
     event Wrapped(address indexed caller, address indexed receiver, uint256 amountOut, uint256 reward);
+    /// @notice Emitted after a successful unwrap.
     event Unwrapped(address indexed caller, address indexed receiver, uint256 amountOut, uint256 feeAmount);
+    /// @notice Emitted after admin withdraws fee surplus.
     event RewardsWithdrawn(address indexed to, uint256 amount);
 
+    /// @notice Locks implementation contracts on deployment.
     constructor() {
         _disableInitializers();
     }
 
-    function _getLiquidityManagerStorage() private pure returns (LiquidityManagerStorage storage $) {
-        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.liquidityManager");
-        assembly {
-            $.slot := slot
-        }
-    }
-
+    /// @notice Initializes the liquidity manager with tokens, fee params, and admin roles.
+    /// @param _underlyingToken ERC20 token being wrapped.
+    /// @param _zerc20 zERC20 token minted/burned by this contract.
+    /// @param _feeParams Incentive curve parameters for rewards and fees.
+    /// @param initialOwner Account receiving admin and fee-manager roles.
     function initialize(
         address _underlyingToken,
         address _zerc20,
@@ -88,28 +92,21 @@ contract LiquidityManager is
         $.feeParams = _feeParams;
     }
 
-    function underlyingToken() public view returns (IERC20) {
-        return _getLiquidityManagerStorage().underlyingToken;
-    }
-
-    function zerc20() public view returns (IzERC20) {
-        return _getLiquidityManagerStorage().zerc20;
-    }
-
-    function feeParams() public view returns (IncentiveLib.FeeParams memory params) {
-        params = _getLiquidityManagerStorage().feeParams;
-    }
-
-    function feeSurplus() public view returns (uint256) {
-        return _getLiquidityManagerStorage().feeSurplus;
-    }
-
     // ---------------------------- User ----------------------------------
 
+    /// @notice Pulls underlying from the caller and mints zERC20 to `receiver`.
+    /// @param amount Amount of underlying to deposit.
+    /// @param receiver Address receiving minted zERC20.
+    /// @return amountOut zERC20 minted, including any reward.
     function wrap(uint256 amount, address receiver) external nonReentrant returns (uint256 amountOut) {
         amountOut = _wrap(amount, receiver);
     }
 
+    /// @notice Wraps with a minimum output check to enforce slippage constraints.
+    /// @param amount Amount of underlying to deposit.
+    /// @param minOut Minimum acceptable zERC20 minted.
+    /// @param receiver Address receiving minted zERC20.
+    /// @return amountOut zERC20 minted, including any reward.
     function wrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
         external
         nonReentrant
@@ -119,10 +116,19 @@ contract LiquidityManager is
         if (amountOut < minOut) revert SlippageExceeded();
     }
 
+    /// @notice Burns zERC20 from the caller and releases underlying to `receiver`.
+    /// @param amount Amount of zERC20 to burn.
+    /// @param receiver Address receiving the underlying.
+    /// @return amountOut Underlying released after fees.
     function unwrap(uint256 amount, address receiver) external nonReentrant returns (uint256 amountOut) {
         amountOut = _unwrap(amount, receiver);
     }
 
+    /// @notice Unwraps with a minimum output check to enforce slippage constraints.
+    /// @param amount Amount of zERC20 to burn.
+    /// @param minOut Minimum acceptable underlying released.
+    /// @param receiver Address receiving the underlying.
+    /// @return amountOut Underlying released after fees.
     function unwrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
         external
         nonReentrant
@@ -132,22 +138,55 @@ contract LiquidityManager is
         if (amountOut < minOut) revert SlippageExceeded();
     }
 
+    // ---------------------------- Views ----------------------------------
+
+    /// @notice Quotes reward paid for wrapping `amount` at current liquidity.
+    /// @param amount Amount of underlying to wrap.
+    /// @return reward Reward amount paid from fee surplus.
     function quoteWrapReward(uint256 amount) public view returns (uint256 reward) {
         return _quoteWrapReward(amount, _getLiquidityManagerStorage());
     }
 
+    /// @notice Quotes fee charged for unwrapping `amount` at current liquidity.
+    /// @param amount Amount of zERC20 to unwrap.
+    /// @return feeAmount Fee charged in underlying units.
     function quoteUnwrapFee(uint256 amount) public view returns (uint256 feeAmount) {
         return _quoteUnwrapFee(amount, _getLiquidityManagerStorage());
     }
 
+    /// @notice Returns the wrapped underlying token.
+    function underlyingToken() public view returns (IERC20) {
+        return _getLiquidityManagerStorage().underlyingToken;
+    }
+
+    /// @notice Returns the zERC20 token minted/burned by this contract.
+    function zerc20() public view returns (IzERC20) {
+        return _getLiquidityManagerStorage().zerc20;
+    }
+
+    /// @notice Returns the incentive curve parameters.
+    function feeParams() public view returns (IncentiveLib.FeeParams memory params) {
+        params = _getLiquidityManagerStorage().feeParams;
+    }
+
+    /// @notice Returns the fee surplus available for rewards and admin withdrawals.
+    function feeSurplus() public view returns (uint256) {
+        return _getLiquidityManagerStorage().feeSurplus;
+    }
+
     // ---------------------------- Admin ------------------------------------
 
+    /// @notice Updates the incentive curve parameters.
+    /// @param params New fee parameters.
     function setFeeParams(IncentiveLib.FeeParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
         IncentiveLib._validateFeeParams(params);
         _getLiquidityManagerStorage().feeParams = params;
         emit FeeParamsUpdated(params);
     }
 
+    /// @notice Withdraws accumulated fee surplus to the provided address.
+    /// @param to Recipient of the withdrawal.
+    /// @param amount Amount of underlying to withdraw.
     function withdrawRewards(address to, uint256 amount) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         if (to == address(0)) revert ZeroReceiver();
@@ -161,6 +200,15 @@ contract LiquidityManager is
 
     // ---------------------------- Internal ----------------------------------
 
+    /// @dev Returns the storage pointer for ERC-7201 layout.
+    function _getLiquidityManagerStorage() private pure returns (LiquidityManagerStorage storage $) {
+        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.liquidityManager");
+        assembly {
+            $.slot := slot
+        }
+    }
+
+    /// @dev Quotes wrapping reward using current token balance and fee surplus.
     function _quoteWrapReward(uint256 amount, LiquidityManagerStorage storage $)
         internal
         view
@@ -173,6 +221,7 @@ contract LiquidityManager is
         reward = IncentiveLib.quoteWrapReward($.feeParams, liquidity, feeSurplus_, amount);
     }
 
+    /// @dev Quotes unwrap fee using current token balance and fee surplus.
     function _quoteUnwrapFee(uint256 amount, LiquidityManagerStorage storage $)
         internal
         view
@@ -185,6 +234,7 @@ contract LiquidityManager is
         feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidity, amount);
     }
 
+    /// @dev Internal wrap implementation using pre-deposit liquidity for reward quotes.
     function _wrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
@@ -208,6 +258,7 @@ contract LiquidityManager is
         emit Wrapped(msg.sender, receiver, amountOut, reward);
     }
 
+    /// @dev Internal unwrap implementation that burns zERC20 and transfers underlying.
     function _unwrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
@@ -227,5 +278,6 @@ contract LiquidityManager is
         emit Unwrapped(msg.sender, receiver, amountOut, feeAmount);
     }
 
+    /// @dev Restricts upgrade authorization to admins.
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 }
