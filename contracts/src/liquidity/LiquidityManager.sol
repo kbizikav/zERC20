@@ -16,6 +16,8 @@ import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 
 /// @notice Custodies underlying token liquidity and mints/burns zERC20 based on wrap/unwrap flows.
 /// Reward/fee curves follow the piecewise linear formulas described in docs/zerc20-liquidity.md.
+/// @dev Liquidity is derived from the underlying token balance; direct transfers (donations) intentionally
+///      affect incentive calculations and are not ignored by separate accounting.
 contract LiquidityManager is
     Initializable,
     UUPSUpgradeable,
@@ -36,6 +38,7 @@ contract LiquidityManager is
     error InsufficientLiquidity();
     error InsufficientRewards();
     error DecimalMismatch();
+    error SlippageExceeded();
 
     /// @custom:storage-location erc7201:zerc20.storage.liquidityManager
     struct LiquidityManagerStorage {
@@ -67,7 +70,9 @@ contract LiquidityManager is
         IncentiveLib.FeeParams memory _feeParams,
         address initialOwner
     ) external initializer {
-        if (_underlyingToken == address(0) || _zerc20 == address(0)) revert ZeroAddress();
+        if (_underlyingToken == address(0) || _zerc20 == address(0) || initialOwner == address(0)) {
+            revert ZeroAddress();
+        }
         if (IERC20Metadata(_zerc20).decimals() != IERC20Metadata(_underlyingToken).decimals()) revert DecimalMismatch();
         IncentiveLib._validateFeeParams(_feeParams);
 
@@ -102,45 +107,29 @@ contract LiquidityManager is
     // ---------------------------- User ----------------------------------
 
     function wrap(uint256 amount, address receiver) external nonReentrant returns (uint256 amountOut) {
-        if (amount == 0) revert ZeroAmount();
-        if (receiver == address(0)) revert ZeroReceiver();
+        amountOut = _wrap(amount, receiver);
+    }
 
-        LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        IERC20 underlying = $.underlyingToken;
-        uint256 balanceBefore = underlying.balanceOf(address(this));
-
-        underlying.safeTransferFrom(msg.sender, address(this), amount);
-        uint256 received = underlying.balanceOf(address(this)) - balanceBefore;
-        if (received == 0) revert UnderlyingPullFailed();
-
-        uint256 feeSurplus_ = $.feeSurplus;
-        // Keep reward calculation aligned with pre-deposit liquidity.
-        uint256 liquidityBefore = balanceBefore >= feeSurplus_ ? balanceBefore - feeSurplus_ : 0;
-        uint256 reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, feeSurplus_, received);
-
-        if (reward > 0) $.feeSurplus -= reward;
-        amountOut = received + reward;
-        $.zerc20.mint(receiver, amountOut);
-        emit Wrapped(msg.sender, receiver, amountOut, reward);
+    function wrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
+        external
+        nonReentrant
+        returns (uint256 amountOut)
+    {
+        amountOut = _wrap(amount, receiver);
+        if (amountOut < minOut) revert SlippageExceeded();
     }
 
     function unwrap(uint256 amount, address receiver) external nonReentrant returns (uint256 amountOut) {
-        if (amount == 0) revert ZeroAmount();
-        if (receiver == address(0)) revert ZeroReceiver();
+        amountOut = _unwrap(amount, receiver);
+    }
 
-        LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        uint256 feeAmount = _quoteUnwrapFee(amount, $);
-        amountOut = amount - feeAmount;
-
-        $.zerc20.burn(msg.sender, amount);
-        IERC20 underlying = $.underlyingToken;
-        if (amountOut > 0) {
-            if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
-            underlying.safeTransfer(receiver, amountOut);
-        }
-        if (feeAmount > 0) $.feeSurplus += feeAmount;
-
-        emit Unwrapped(msg.sender, receiver, amountOut, feeAmount);
+    function unwrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
+        external
+        nonReentrant
+        returns (uint256 amountOut)
+    {
+        amountOut = _unwrap(amount, receiver);
+        if (amountOut < minOut) revert SlippageExceeded();
     }
 
     function quoteWrapReward(uint256 amount) public view returns (uint256 reward) {
@@ -194,6 +183,48 @@ contract LiquidityManager is
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
         feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidity, amount);
+    }
+
+    function _wrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
+        if (amount == 0) revert ZeroAmount();
+        if (receiver == address(0)) revert ZeroReceiver();
+
+        LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
+        IERC20 underlying = $.underlyingToken;
+        uint256 balanceBefore = underlying.balanceOf(address(this));
+
+        underlying.safeTransferFrom(msg.sender, address(this), amount);
+        uint256 received = underlying.balanceOf(address(this)) - balanceBefore;
+        if (received == 0) revert UnderlyingPullFailed();
+
+        uint256 feeSurplus_ = $.feeSurplus;
+        // Keep reward calculation aligned with pre-deposit liquidity.
+        uint256 liquidityBefore = balanceBefore >= feeSurplus_ ? balanceBefore - feeSurplus_ : 0;
+        uint256 reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, feeSurplus_, received);
+
+        if (reward > 0) $.feeSurplus -= reward;
+        amountOut = received + reward;
+        $.zerc20.mint(receiver, amountOut);
+        emit Wrapped(msg.sender, receiver, amountOut, reward);
+    }
+
+    function _unwrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
+        if (amount == 0) revert ZeroAmount();
+        if (receiver == address(0)) revert ZeroReceiver();
+
+        LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
+        uint256 feeAmount = _quoteUnwrapFee(amount, $);
+        amountOut = amount - feeAmount;
+
+        $.zerc20.burn(msg.sender, amount);
+        IERC20 underlying = $.underlyingToken;
+        if (amountOut > 0) {
+            if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
+            underlying.safeTransfer(receiver, amountOut);
+        }
+        if (feeAmount > 0) $.feeSurplus += feeAmount;
+
+        emit Unwrapped(msg.sender, receiver, amountOut, feeAmount);
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}

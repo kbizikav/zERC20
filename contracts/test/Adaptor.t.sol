@@ -54,9 +54,24 @@ contract MockLiquidityManager is ILiquidityManager {
         revert("wrap not implemented");
     }
 
+    function wrapWithMinOut(uint256, uint256, address) external pure override returns (uint256) {
+        revert("wrap not implemented");
+    }
+
     function unwrap(uint256 amount, address receiver) external override returns (uint256 amountOut) {
         if (unwrapShouldRevert) revert("unwrap disabled");
         amountOut = amount - unwrapFeeQuote;
+        MintableToken(address(underlying)).mint(receiver, amountOut);
+    }
+
+    function unwrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
+        external
+        override
+        returns (uint256 amountOut)
+    {
+        if (unwrapShouldRevert) revert("unwrap disabled");
+        amountOut = amount - unwrapFeeQuote;
+        if (amountOut < minOut) revert("slippage");
         MintableToken(address(underlying)).mint(receiver, amountOut);
     }
 

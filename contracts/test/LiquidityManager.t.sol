@@ -58,6 +58,15 @@ contract LiquidityManagerTest is Test {
         new ERC1967Proxy(address(impl), initData);
     }
 
+    function testInitializeRevertsOnZeroOwner() public {
+        LiquidityManager impl = new LiquidityManager();
+        bytes memory initData =
+            abi.encodeCall(LiquidityManager.initialize, (address(underlying), address(token), params, address(0)));
+
+        vm.expectRevert(LiquidityManager.ZeroAddress.selector);
+        new ERC1967Proxy(address(impl), initData);
+    }
+
     function testWrapThenUnwrapAccruesFeeAndPaysRewards() public {
         vm.prank(ALICE);
         underlying.approve(address(manager), type(uint256).max);
@@ -90,6 +99,55 @@ contract LiquidityManagerTest is Test {
 
         uint256 expectedUnderlying = 400 ether + fee;
         assertEq(underlying.balanceOf(address(manager)), expectedUnderlying, "underlying held by manager");
+    }
+
+    function testWrapWithMinOutRevertsOnSlippage() public {
+        _accrueFeeSurplus();
+
+        uint256 reward = manager.quoteWrapReward(100 ether);
+        uint256 minOut = 100 ether + reward + 1;
+
+        vm.prank(ALICE);
+        vm.expectRevert(LiquidityManager.SlippageExceeded.selector);
+        manager.wrapWithMinOut(100 ether, minOut, ALICE);
+    }
+
+    function testWrapWithMinOutSucceeds() public {
+        _accrueFeeSurplus();
+
+        uint256 reward = manager.quoteWrapReward(100 ether);
+        uint256 minOut = 100 ether + reward;
+
+        vm.prank(ALICE);
+        uint256 minted = manager.wrapWithMinOut(100 ether, minOut, ALICE);
+
+        assertEq(minted, minOut, "wrap with min out");
+    }
+
+    function testUnwrapWithMinOutRevertsOnSlippage() public {
+        vm.startPrank(ALICE);
+        underlying.approve(address(manager), type(uint256).max);
+        manager.wrap(500 ether, ALICE);
+
+        uint256 fee = manager.quoteUnwrapFee(200 ether);
+        uint256 minOut = 200 ether - fee + 1;
+
+        vm.expectRevert(LiquidityManager.SlippageExceeded.selector);
+        manager.unwrapWithMinOut(200 ether, minOut, ALICE);
+        vm.stopPrank();
+    }
+
+    function testUnwrapWithMinOutSucceeds() public {
+        vm.startPrank(ALICE);
+        underlying.approve(address(manager), type(uint256).max);
+        manager.wrap(500 ether, ALICE);
+
+        uint256 fee = manager.quoteUnwrapFee(200 ether);
+        uint256 minOut = 200 ether - fee;
+        uint256 received = manager.unwrapWithMinOut(200 ether, minOut, ALICE);
+
+        vm.stopPrank();
+        assertEq(received, minOut, "unwrap with min out");
     }
 
     function testWithdrawRewardsRequiresAdminAndEmitsSurplus() public {
@@ -126,6 +184,22 @@ contract LiquidityManagerTest is Test {
 
         vm.expectRevert(IncentiveLib.InvalidK.selector);
         manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 1, k: 10_001}));
+    }
+
+    function testSetFeeParamsRejectsOversizedTarget() public {
+        uint256 tooLargeTarget = uint256(type(uint128).max) + 1;
+        IncentiveLib.FeeParams memory newParams = IncentiveLib.FeeParams({targetLiquidity: tooLargeTarget, k: 1});
+
+        vm.expectRevert(IncentiveLib.InvalidTarget.selector);
+        manager.setFeeParams(newParams);
+    }
+
+    function testSetFeeParamsRejectsOverflowingK() public {
+        uint256 largeTarget = type(uint128).max;
+        IncentiveLib.FeeParams memory newParams = IncentiveLib.FeeParams({targetLiquidity: largeTarget, k: 2});
+
+        vm.expectRevert(IncentiveLib.InvalidK.selector);
+        manager.setFeeParams(newParams);
     }
 
     function _accrueFeeSurplus() private returns (uint256 feeAmount) {

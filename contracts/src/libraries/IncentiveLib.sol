@@ -226,7 +226,10 @@ library IncentiveLib {
 
     function _validateFeeParams(FeeParams memory params) internal pure {
         if (params.targetLiquidity == 0) revert InvalidTarget();
+        if (params.targetLiquidity > MAX_TARGET_LIQUIDITY) revert InvalidTarget();
         if (params.k > K_BPS_DENOM) revert InvalidK();
+        uint256 maxK = type(uint256).max / params.targetLiquidity / params.targetLiquidity;
+        if (params.k > maxK) revert InvalidK();
     }
 
     function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount)

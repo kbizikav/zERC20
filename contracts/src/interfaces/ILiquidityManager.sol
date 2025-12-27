@@ -8,7 +8,11 @@ import {IzERC20} from "./IzERC20.sol";
 interface ILiquidityManager {
     function wrap(uint256 amount, address receiver) external returns (uint256 amountOut);
 
+    function wrapWithMinOut(uint256 amount, uint256 minOut, address receiver) external returns (uint256 amountOut);
+
     function unwrap(uint256 amount, address receiver) external returns (uint256 amountOut);
+
+    function unwrapWithMinOut(uint256 amount, uint256 minOut, address receiver) external returns (uint256 amountOut);
 
     function quoteWrapReward(uint256 amount) external view returns (uint256 rewardAmount);
 
