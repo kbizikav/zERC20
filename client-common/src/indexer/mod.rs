@@ -240,7 +240,7 @@ impl IndexerClient for HttpIndexerClient {
 #[derive(Clone, Debug, Default)]
 pub struct TestIndexerClient {
     events: Arc<Mutex<VecDeque<IndexerResult<Vec<IndexedEvent>>>>>,
-    events_by_recipients: Arc<Mutex<VecDeque<IndexerResult<Vec<IndexedEventWithChain>>>>>,
+    all_events: Arc<Mutex<VecDeque<IndexerResult<Vec<IndexedEventWithChain>>>>>,
     prove_many: Arc<Mutex<VecDeque<IndexerResult<Vec<HistoricalProof>>>>>,
     tree_index: Arc<Mutex<VecDeque<IndexerResult<u64>>>>,
 }
@@ -254,11 +254,11 @@ impl TestIndexerClient {
         self.events.lock().await.push_back(response);
     }
 
-    pub async fn enqueue_events_by_recipients_response(
+    pub async fn enqueue_all_events_response(
         &self,
         response: IndexerResult<Vec<IndexedEventWithChain>>,
     ) {
-        self.events_by_recipients.lock().await.push_back(response);
+        self.all_events.lock().await.push_back(response);
     }
 
     pub async fn enqueue_prove_many_response(&self, response: IndexerResult<Vec<HistoricalProof>>) {
@@ -301,7 +301,7 @@ impl IndexerClient for TestIndexerClient {
         limit: Option<usize>,
     ) -> IndexerResult<Vec<IndexedEventWithChain>> {
         let _ = (recipients, limit);
-        Self::take_next(&self.events_by_recipients, "all_events").await
+        Self::take_next(&self.all_events, "all_events").await
     }
 
     async fn prove_many(

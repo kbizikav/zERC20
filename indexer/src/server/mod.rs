@@ -138,7 +138,7 @@ pub async fn run_http_server(
             .route("/healthz", web::get().to(health))
             .route("/status", web::get().to(tokens_status))
             .route("/events", web::get().to(events_by_recipient))
-            .route("/all-events", web::get().to(events_by_recipients))
+            .route("/all-events", web::get().to(all_events))
             .route("/proofs", web::post().to(prove_many))
             .route("/tree-index", web::get().to(tree_index_by_root))
     })
@@ -296,7 +296,7 @@ async fn events_by_recipient(
     Ok(Json(events))
 }
 
-async fn events_by_recipients(
+async fn all_events(
     state: Data<AppState>,
     query: Query<AllEventsQuery>,
 ) -> actix_web::Result<Json<Vec<IndexedEventWithChain>>> {
