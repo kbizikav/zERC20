@@ -105,6 +105,7 @@ contract MockStargate is IStargate {
 
     uint256 public nativeFeeQuote;
     uint256 public tokenFee;
+    uint256 public bonus;
     SendParam public lastSendParam;
     uint256 public lastValue;
     address public lastRefund;
@@ -117,6 +118,10 @@ contract MockStargate is IStargate {
     function setQuote(uint256 nativeFee, uint256 tokenFee_) external {
         nativeFeeQuote = nativeFee;
         tokenFee = tokenFee_;
+    }
+
+    function setBonus(uint256 bonus_) external {
+        bonus = bonus_;
     }
 
     function setRevertSend(bool shouldRevert) external {
@@ -150,6 +155,9 @@ contract MockStargate is IStargate {
         limit = OFTLimit({minAmountLD: 0, maxAmountLD: type(uint256).max});
         oftFeeDetails = new OFTFeeDetail[](0);
         uint256 amountReceived = _sendParam.amountLD > tokenFee ? _sendParam.amountLD - tokenFee : 0;
+        if (bonus > 0) {
+            amountReceived += bonus;
+        }
         receipt = OFTReceipt({amountSentLD: _sendParam.amountLD, amountReceivedLD: amountReceived});
     }
 
@@ -180,6 +188,9 @@ contract MockStargate is IStargate {
             fee: MessagingFee({nativeFee: msg.value, lzTokenFee: _fee.lzTokenFee})
         });
         uint256 amountReceived = _sendParam.amountLD > tokenFee ? _sendParam.amountLD - tokenFee : 0;
+        if (bonus > 0) {
+            amountReceived += bonus;
+        }
         oftReceipt = OFTReceipt({amountSentLD: _sendParam.amountLD, amountReceivedLD: amountReceived});
     }
 
@@ -201,6 +212,9 @@ contract MockStargate is IStargate {
             fee: MessagingFee({nativeFee: msg.value, lzTokenFee: _fee.lzTokenFee})
         });
         uint256 amountReceived = _sendParam.amountLD > tokenFee ? _sendParam.amountLD - tokenFee : 0;
+        if (bonus > 0) {
+            amountReceived += bonus;
+        }
         oftReceipt = OFTReceipt({amountSentLD: _sendParam.amountLD, amountReceivedLD: amountReceived});
     }
 
@@ -275,6 +289,55 @@ contract AdaptorTest is TestHelperOz5 {
         adaptor = new Adaptor(address(manager), address(stargate), address(endpoint));
 
         zerc20.setMinter(address(this));
+    }
+
+    function testConstructorRevertsOnStargateTokenMismatch() public {
+        MintableToken otherUnderlying = new MintableToken();
+        MockStargate badStargate = new MockStargate(otherUnderlying);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Adaptor.UnderlyingTokenMismatch.selector, address(underlying), address(otherUnderlying)
+            )
+        );
+        new Adaptor(address(manager), address(badStargate), address(endpoint));
+    }
+
+    function testQuoteFeeSaturatesBridgeFee() public {
+        uint256 amount = 10 ether;
+
+        manager.setQuoteUnwrapFee(0);
+        stargate.setQuote(0, 0);
+        stargate.setBonus(1 ether);
+
+        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        Adaptor.FeeQuote memory quote = adaptor.quoteFee(amount, request);
+        assertEq(quote.tokenBridgeFee, 0, "bridge fee floors at 0");
+    }
+
+    function testReceiveCreditsNativeBalance() public {
+        uint256 amount = 0.15 ether;
+
+        vm.deal(USER, amount);
+        vm.prank(USER);
+        (bool success,) = address(adaptor).call{value: amount}("");
+        assertTrue(success, "receive failed");
+
+        assertEq(adaptor.nativeBalances(USER), amount, "native credited");
+
+        vm.prank(USER);
+        adaptor.withdraw(NATIVE_TOKEN, amount);
+
+        assertEq(adaptor.nativeBalances(USER), 0, "native balance cleared");
+        assertEq(address(USER).balance, amount, "native returned");
     }
 
     function testUnwrapAndBridgeConsumesFeesAndEmits() public {
