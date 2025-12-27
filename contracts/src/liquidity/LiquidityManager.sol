@@ -29,7 +29,6 @@ contract LiquidityManager is
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
 
     error ZeroAddress();
-    error InvalidTarget();
     error ZeroAmount();
     error ZeroReceiver();
     error UnderlyingPullFailed();
@@ -70,7 +69,7 @@ contract LiquidityManager is
     ) external initializer {
         if (_underlyingToken == address(0) || _zerc20 == address(0)) revert ZeroAddress();
         if (IERC20Metadata(_zerc20).decimals() != IERC20Metadata(_underlyingToken).decimals()) revert DecimalMismatch();
-        _validateFeeParams(_feeParams);
+        IncentiveLib._validateFeeParams(_feeParams);
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -155,7 +154,7 @@ contract LiquidityManager is
     // ---------------------------- Admin ------------------------------------
 
     function setFeeParams(IncentiveLib.FeeParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
-        _validateFeeParams(params);
+        IncentiveLib._validateFeeParams(params);
         _getLiquidityManagerStorage().feeParams = params;
         emit FeeParamsUpdated(params);
     }
@@ -195,10 +194,6 @@ contract LiquidityManager is
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
         feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidity, amount);
-    }
-
-    function _validateFeeParams(IncentiveLib.FeeParams memory params) internal pure {
-        if (params.targetLiquidity == 0) revert InvalidTarget();
     }
 
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}

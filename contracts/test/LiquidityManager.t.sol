@@ -121,8 +121,11 @@ contract LiquidityManagerTest is Test {
         assertEq(stored.targetLiquidity, newParams.targetLiquidity, "target stored");
         assertEq(stored.k, newParams.k, "k stored");
 
-        vm.expectRevert(LiquidityManager.InvalidTarget.selector);
+        vm.expectRevert(IncentiveLib.InvalidTarget.selector);
         manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 0, k: 1}));
+
+        vm.expectRevert(IncentiveLib.InvalidK.selector);
+        manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 1, k: 10_001}));
     }
 
     function _accrueFeeSurplus() private returns (uint256 feeAmount) {

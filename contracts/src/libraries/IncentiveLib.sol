@@ -101,6 +101,17 @@ pragma solidity ^0.8.20;
  *
  *   fee = ceil(fee_continuous)
  *
+ * Insufficient liquidity edge case:
+ *  - If `amount > L`, we clamp the end of the curve path at 0 (draining all
+ *    liquidity), then add the shortfall on top of the curve fee.
+ *  - This effectively charges: fee = amount - max(L - fee_curve, 0),
+ *    which is capped to `amount` in the caller.
+ *
+ * Arithmetic safety:
+ *  - Intermediate squares are bounded by requiring T <= MAX_TARGET_LIQUIDITY.
+ *  - Multiplication by k is guarded by a maxK check to avoid overflow.
+ *  - Subtractions along the path are clamped or ordered to avoid underflow.
+ *
  * ---------------------------------------------------------------------------
  * No-arbitrage and rounding direction
  * ---------------------------------------------------------------------------
@@ -146,6 +157,9 @@ pragma solidity ^0.8.20;
  *  - enforcing any additional business logic.
  */
 library IncentiveLib {
+    error InvalidTarget();
+    error InvalidK();
+
     /**
      * @notice Parameters that define the fee/reward curve.
      */
@@ -209,6 +223,11 @@ library IncentiveLib {
     /*//////////////////////////////////////////////////////////////
                          INTERNAL PURE MATH HELPERS
     //////////////////////////////////////////////////////////////*/
+
+    function _validateFeeParams(FeeParams memory params) internal pure {
+        if (params.targetLiquidity == 0) revert InvalidTarget();
+        if (params.k > K_BPS_DENOM) revert InvalidK();
+    }
 
     function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount)
         internal
