@@ -64,6 +64,9 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     mapping(address => uint256) public underlingTokenBalances;
     mapping(address => uint256) public zerc20Balances;
     mapping(address => uint256) public nativeBalances;
+    address private _refundRecipient;
+    uint256 private _refundAccrued;
+    bool private _refundActive;
 
     event UnwrapAndBridge(address indexed caller, uint256 amountIn, uint256 amountOut, address receiver, uint32 dstEid);
     event BridgeZerc20(address indexed to, uint32 indexed dstEid, uint256 amountReturned);
@@ -156,6 +159,10 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     /// @return quote Fee breakdown (unwrap fee, native bridge fee, token bridge fee).
     function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
         uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrapFee(amount);
+        if (tokenUnwrapFee >= amount) {
+            // Prevent underflow and short-circuit when unwrap fee consumes the amount.
+            return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
+        }
         uint256 amountAfterUnwrap = amount - tokenUnwrapFee;
         if (amountAfterUnwrap == 0) {
             // Early return to avoid Stargate quote revert on zero amount
@@ -364,13 +371,18 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         _debitUnderlyingBalance(user, amount);
 
         uint256 actualNativeFee;
+        _startRefundTracking(user);
         (amountOut, actualNativeFee) = _sendUnderlyingToken(amount, nativeBridgeFee, request);
-        // refund any surplus native fee back to user if applicable
-        // usually shouldn't happen unless there is a change in Stargate fee structure
+        // Refund any surplus native fee back to user if applicable.
+        // Usually shouldn't happen unless there is a change in Stargate fee structure.
+        uint256 refundDue = 0;
         if (nativeBridgeFee > actualNativeFee) {
-            nativeBalances[user] += nativeBridgeFee - actualNativeFee;
+            refundDue = nativeBridgeFee - actualNativeFee;
         }
-        if (amountOut < request.minAmountOut) revert OutputTooLow(amountOut, request.minAmountOut);
+        if (refundDue > _refundAccrued) {
+            nativeBalances[user] += refundDue - _refundAccrued;
+        }
+        _stopRefundTracking();
         emit BridgeUnderlyingToken(user, request.to, request.dstEid, amountOut, actualNativeFee);
     }
 
@@ -424,15 +436,20 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
         _debitNativeBalance(user, nativeFee);
 
+        _startRefundTracking(user);
         uint256 nativeBalanceBefore = address(this).balance;
         ZERC20.send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 actualNativeFee = nativeBalanceBefore - nativeBalanceAfter;
-        // refund any surplus native fee back to user if applicable
+        // Refund any surplus native fee back to user if applicable.
+        uint256 refundDue = 0;
         if (nativeFee > actualNativeFee) {
-            uint256 refundAmount = nativeFee - actualNativeFee;
-            nativeBalances[user] += refundAmount;
+            refundDue = nativeFee - actualNativeFee;
         }
+        if (refundDue > _refundAccrued) {
+            nativeBalances[user] += refundDue - _refundAccrued;
+        }
+        _stopRefundTracking();
         emit BridgeZerc20(to, dstEid, amount);
     }
 
@@ -478,6 +495,18 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         token.forceApprove(spender, amount);
     }
 
+    function _startRefundTracking(address user) internal {
+        _refundActive = true;
+        _refundRecipient = user;
+        _refundAccrued = 0;
+    }
+
+    function _stopRefundTracking() internal {
+        _refundActive = false;
+        _refundRecipient = address(0);
+        _refundAccrued = 0;
+    }
+
     function _isNativeUnderlying() internal view returns (bool) {
         return address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
     }
@@ -491,8 +520,14 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
     /// @notice Accepts native refunds returned by OFT/Stargate send calls.
     receive() external payable {
-        if (msg.sender == LZ_ENDPOINT) return;
         if (msg.sender == address(LIQUIDITY_MANAGER)) return;
+        if (_refundActive) {
+            nativeBalances[_refundRecipient] += msg.value;
+            _refundAccrued += msg.value;
+            emit NativeDeposit(_refundRecipient, msg.value);
+            return;
+        }
+        if (msg.sender == LZ_ENDPOINT || msg.sender == address(STARGATE)) return;
         nativeBalances[msg.sender] += msg.value;
         emit NativeDeposit(msg.sender, msg.value);
     }

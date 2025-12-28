@@ -98,6 +98,10 @@ Deploying Liquidity Manager and Adaptor
 ---------------------------------------
 The `DeployLiquidity` script deploys an upgradeable `LiquidityManager` and, when provided a Stargate address, a stateless `Adaptor` wired to that manager.
 
+Purpose notes:
+- `LiquidityManager` is the liquidity policy boundary for the system. It exists to keep the zERC20 supply anchored to real underlying liquidity while encoding the incentive curve that governs when liquidity should be attracted or released.
+- `Adaptor` is the cross-chain exit and recovery boundary. It exists to turn zERC20 inflows into a controlled release of underlying value via Stargate while preserving user intent through slippage limits and refund accounting when bridging conditions change.
+
 Required env:
 - `ZERC20` (address): zERC20 token the manager mints/burns.
 - `LIQUIDITY_UNDERLYING_TOKEN` (address): Underlying ERC20 held by the manager.
@@ -105,9 +109,8 @@ Required env:
 
 Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
 - `LIQUIDITY_TARGET` (uint256): Target liquidity level that drives rewards/fees (defaults to 1_000_000e6).
- - `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `0`, which disables curve-based incentives.
+- `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `0`, which disables curve-based incentives.
 - `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
-- `SET_LIQUIDITY_AS_MINTER` (uint256): Non-zero to set the manager as the token minter (defaults to 1).
 - `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
 - Defaults can also be sourced from `config/chain-config.json` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence.
 

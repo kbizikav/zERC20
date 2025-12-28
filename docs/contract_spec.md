@@ -2,17 +2,17 @@
 
 ## Purpose And Trust Model
 
-- The system provides a privacy-preserving wrapped asset (`zERC20`) that supports private proof-of-burn redemptions via zero-knowledge proofs. On each chain, a `Verifier` contract validates per-token transfer roots and teleport proofs, while a single cross-chain `Hub` contract aggregates all transfer roots to derive global state. A `Minter` contract bridges native/ERC20 liquidity into zERC20.
-- Trusted actors are limited to (a) the deployer who sets immutable parameters and initial deciders/verifiers, and (b) the upgrade/owner roles on each upgradeable contract. Owner compromises enable reconfiguration of verifiers, token registries, or minter roles.
+- The system provides a privacy-preserving wrapped asset (`zERC20`) that supports private proof-of-burn redemptions via zero-knowledge proofs. On each chain, a `Verifier` contract validates per-token transfer roots and teleport proofs, while a single cross-chain `Hub` contract aggregates all transfer roots to derive global state. Liquidity is anchored and released through `LiquidityManager`, with `Adaptor` handling cross-chain exit intent and recovery.
+- Trusted actors are limited to (a) the deployer who sets immutable parameters and initial deciders/verifiers, and (b) the upgrade/owner roles on each upgradeable contract. Owner compromises enable reconfiguration of verifiers, token registries, liquidity policy, or bridge parameters.
 
 ## Components
 
 ### zERC20 (`contracts/src/zERC20.sol`)
 
 - Upgradeable ERC-20 that overrides `_afterTokenTransfer` to (1) enforce `value <= 2^248 - 1`, (2) append `(to, value)` to a SHA-256 hash chain truncated to 248 bits, and (3) emit `IndexedTransfer(index++, from, to, value)` for deterministic ordering. This history feeds the proof system (`hashChain` and `index` are public inputs).
-- Maintains `verifier` (allowed to call `teleport`) and `minter` (allowed to mint/burn for the deposit contract). Owner-only setters guard against zero addresses, except that `minter` may be set to `address(0)` on chains that deliberately disable the Minter flow.
+- Maintains `verifier` (allowed to call `teleport`) and a liquidity authority (allowed to mint/burn for liquidity entry and exit). Owner-only setters guard against zero addresses, except that the liquidity authority may be set to `address(0)` on chains that deliberately disable liquidity flows.
 - `teleport(address to, uint256 value)` is invoked solely by the Verifier once a teleport proof succeeds, minting directly to the provided address. zERC20 keeps emitting the legacy `Teleport(to, value)` for backwards compatibility, while the Verifier’s `Teleport` event additionally records `{isGlobal, rootHint, transferRoot, GeneralRecipient}` for forensic linking.
-- Exposes auxiliary mint/burn entrypoints for the Minter (`mint`, `burn`) plus a UUPS upgrade hook restricted to `owner`.
+- Exposes auxiliary mint/burn entrypoints for the liquidity authority (`mint`, `burn`) plus a UUPS upgrade hook restricted to `owner`.
 
 ### Verifier (`contracts/src/Verifier.sol`)
 
@@ -33,12 +33,16 @@
 - `broadcast` snapshots the current leaves, computes a PoseidonT3 aggregation tree (height 6, zero nodes pre-computed in storage), increments `aggSeq`, and multicasts the `(globalRoot, aggSeq)` payload to the requested target EIDs. Any excess `msg.value` is refunded. The emitted `AggregationRootUpdated` event exposes both the leaf snapshot and their tree indices for auditing.
 - Fee handling: `quoteBroadcast` estimates native fees; `broadcast` verifies sufficient funding and reverts if LayerZero attempts to charge LZ tokens (`LayerZeroTokenFeeUnsupported`). Each `_lzSend` uses identical payload/options.
 
-### Minter (`contracts/src/Minter.sol`)
+### LiquidityManager (`contracts/src/liquidity/LiquidityManager.sol`)
 
-- UUPS upgradeable wrapper that mints/burns zERC20 in exchange for native or ERC-20 liquidity:
-  - If `tokenAddress == address(0)`, `depositNative` accepts `msg.value` and mints zERC20; `withdrawNative` burns and transfers native currency, reverting on insufficient balance or failed send.
-  - Otherwise, `depositToken` pulls ERC-20 via `SafeERC20`, measures the actual tokens received (to handle fee-on-transfer or rebasing tokens), mints the received amount 1:1 of zERC20, and `withdrawToken` performs the inverse path after verifying contract liquidity.
-- Only zERC20 configured at initialization can be minted/burned (`IMintableBurnableERC20`). All entrypoints guard zero amounts, enforce role separation (users call deposit/withdraw; contract owner solely controls upgrades), and rely on external audits of zERC20’s `minter` assignment.
+- Custody and policy boundary for liquidity. It exists to keep zERC20 supply anchored to real underlying liquidity while expressing the incentive curve that decides when liquidity should be attracted or released.
+- Acts as the sole liquidity authority for minting/burning zERC20 on that chain, ensuring supply changes are traceable to explicit liquidity entry/exit policy.
+- Accumulates fee surplus as a governance-controlled reserve that funds future incentives or withdrawals.
+
+### Adaptor (`contracts/src/liquidity/Adaptor.sol`)
+
+- Cross-chain exit and recovery boundary. It exists to honor user intent when converting zERC20 into underlying liquidity across chains, while providing a safe fallback when bridge conditions or fees make the exit untenable.
+- Coordinates with the LiquidityManager for unwrapping and uses Stargate as the transport, while ensuring surplus fees and refunds remain attributable to the initiating user.
 
 ## Key Flows
 
@@ -49,10 +53,10 @@
 3. **Teleport (local or global)**: Users compile either a Nova (`teleport`) or Groth16 (`singleTeleport`) proof showing cumulative transfers to burn addresses represented by `GeneralRecipient`. The verifier cross-checks the claimed root (`rootHint` selects either local or global arrays), confirms the recipient hash and chain id match the caller’s environment, ensures the requested total exceeds the previously teleported amount, and mints the delta on zERC20 via `IzERC20.teleport` while emitting `Verifier.Teleport` with `{isGlobal, rootHint, transferRoot, GeneralRecipient}` so every mint is traceable to its origin.
 4. **Global aggregation**: Verifiers periodically call `relayTransferRoot` so the Hub ingests `(root, index)` through LayerZero. Once multiple verifiers have contributed, the Hub calls `broadcast`, which Poseidon-aggregates the per-token roots, increments `aggSeq`, and sends the new global root back to every verifier. These global roots enable cross-chain teleports (`isGlobal=true`) without waiting for remote relays.
 
-### Deposit / Redemption Flow
+### Liquidity Entry / Exit Flow
 
-1. Users supply native/underlying tokens to the `Minter` via `depositNative` or `depositToken`. The contract mints zERC20 using its dedicated `minter` role.
-2. To exit, users burn zERC20 inside `withdrawNative`/`withdrawToken`. The contract checks its liquidity and transfers assets back. The same `IMintableBurnableERC20` interface enforces symmetrical mint/burn accounting.
+1. Users enter the system by wrapping underlying through `LiquidityManager`, which exists to anchor zERC20 supply to available liquidity while applying incentive policy around the target liquidity band.
+2. Users exit either locally by unwrapping via `LiquidityManager` or cross-chain through `Adaptor`, which exists to preserve exit intent (slippage limits, refunds) when bridging the underlying to another chain.
 
 ## Security & Operational Notes
 
