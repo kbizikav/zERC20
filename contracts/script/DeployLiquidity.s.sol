@@ -63,7 +63,7 @@ contract DeployLiquidity is DeterministicDeployer {
             (cfg.underlyingToken, cfg.zerc20Token, cfg.fee, cfg.owner)
         );
         LiquidityManager manager = LiquidityManager(
-            _deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData)
+            payable(_deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
         );
 
         console2.log("LiquidityManager implementation deployed at", address(implementation));

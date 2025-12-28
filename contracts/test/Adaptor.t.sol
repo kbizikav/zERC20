@@ -32,15 +32,15 @@ contract MintableToken is ERC20 {
 
 contract MockLiquidityManager is ILiquidityManager {
     address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-    IERC20 public immutable underlying;
-    IzERC20 public immutable zerc20Token;
+    IERC20 public immutable UNDERLYING;
+    IzERC20 public immutable ZERC20_TOKEN;
 
     uint256 public unwrapFeeQuote;
     bool public unwrapShouldRevert;
 
     constructor(IERC20 underlying_, address zerc20_) {
-        underlying = underlying_;
-        zerc20Token = IzERC20(zerc20_);
+        UNDERLYING = underlying_;
+        ZERC20_TOKEN = IzERC20(zerc20_);
     }
 
     function setQuoteUnwrapFee(uint256 fee) external {
@@ -62,11 +62,11 @@ contract MockLiquidityManager is ILiquidityManager {
     function unwrap(uint256 amount, address receiver) external override returns (uint256 amountOut) {
         if (unwrapShouldRevert) revert("unwrap disabled");
         amountOut = amount - unwrapFeeQuote;
-        if (address(underlying) == NATIVE_TOKEN) {
+        if (address(UNDERLYING) == NATIVE_TOKEN) {
             (bool success,) = payable(receiver).call{value: amountOut}("");
             require(success, "native transfer failed");
         } else {
-            MintableToken(address(underlying)).mint(receiver, amountOut);
+            MintableToken(address(UNDERLYING)).mint(receiver, amountOut);
         }
     }
 
@@ -78,11 +78,11 @@ contract MockLiquidityManager is ILiquidityManager {
         if (unwrapShouldRevert) revert("unwrap disabled");
         amountOut = amount - unwrapFeeQuote;
         if (amountOut < minOut) revert("slippage");
-        if (address(underlying) == NATIVE_TOKEN) {
+        if (address(UNDERLYING) == NATIVE_TOKEN) {
             (bool success,) = payable(receiver).call{value: amountOut}("");
             require(success, "native transfer failed");
         } else {
-            MintableToken(address(underlying)).mint(receiver, amountOut);
+            MintableToken(address(UNDERLYING)).mint(receiver, amountOut);
         }
     }
 
@@ -95,11 +95,11 @@ contract MockLiquidityManager is ILiquidityManager {
     }
 
     function underlyingToken() external view override returns (IERC20) {
-        return underlying;
+        return UNDERLYING;
     }
 
     function zerc20() external view override returns (IzERC20) {
-        return zerc20Token;
+        return ZERC20_TOKEN;
     }
 
     function feeSurplus() external pure override returns (uint256) {
@@ -113,8 +113,8 @@ contract MockLiquidityManager is ILiquidityManager {
 
 contract MockStargate is IStargate {
     address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
-    address public immutable underlying;
-    bool public immutable isNative;
+    address public immutable UNDERLYING;
+    bool public immutable IS_NATIVE;
 
     uint256 public nativeFeeQuote;
     uint256 public tokenFee;
@@ -125,8 +125,8 @@ contract MockStargate is IStargate {
     bool public revertSend;
 
     constructor(address underlying_) {
-        underlying = underlying_;
-        isNative = underlying_ == NATIVE_TOKEN || underlying_ == address(0);
+        UNDERLYING = underlying_;
+        IS_NATIVE = underlying_ == NATIVE_TOKEN || underlying_ == address(0);
     }
 
     function setQuote(uint256 nativeFee, uint256 tokenFee_) external {
@@ -152,7 +152,7 @@ contract MockStargate is IStargate {
     }
 
     function token() external view override returns (address) {
-        return underlying;
+        return UNDERLYING;
     }
 
     function approvalRequired() external pure override returns (bool) {
@@ -163,6 +163,7 @@ contract MockStargate is IStargate {
         return 18;
     }
 
+    /// forge-lint: disable-next-line(mixed-case-function)
     function quoteOFT(
         SendParam calldata _sendParam
     ) external view override returns (OFTLimit memory limit, OFTFeeDetail[] memory oftFeeDetails, OFTReceipt memory receipt) {
@@ -187,21 +188,21 @@ contract MockStargate is IStargate {
         external
         payable
         override
-        returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt, Ticket memory)
+        returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt, Ticket memory ticket)
     {
         if (revertSend) revert("sendToken reverted");
         lastSendParam = _sendParam;
         lastValue = msg.value;
         lastRefund = _refundAddress;
 
-        if (isNative) {
+        if (IS_NATIVE) {
             require(
                 msg.value == _sendParam.amountLD + _fee.nativeFee,
                 "native value mismatch"
             );
         } else {
             require(
-                IERC20(underlying).transferFrom(msg.sender, address(this), _sendParam.amountLD),
+                IERC20(UNDERLYING).transferFrom(msg.sender, address(this), _sendParam.amountLD),
                 "transfer failed"
             );
         }
@@ -216,6 +217,7 @@ contract MockStargate is IStargate {
             amountReceived += bonus;
         }
         oftReceipt = OFTReceipt({amountSentLD: _sendParam.amountLD, amountReceivedLD: amountReceived});
+        ticket = Ticket({ticketId: 0, passengerBytes: bytes("")});
     }
 
     function send(
@@ -228,14 +230,14 @@ contract MockStargate is IStargate {
         lastValue = msg.value;
         lastRefund = _refundAddress;
 
-        if (isNative) {
+        if (IS_NATIVE) {
             require(
                 msg.value == _sendParam.amountLD + _fee.nativeFee,
                 "native value mismatch"
             );
         } else {
             require(
-                IERC20(underlying).transferFrom(msg.sender, address(this), _sendParam.amountLD),
+                IERC20(UNDERLYING).transferFrom(msg.sender, address(this), _sendParam.amountLD),
                 "transfer failed"
             );
         }
@@ -286,7 +288,7 @@ contract ZERC20AdaptorHarness is zERC20 {
         lastSendParam = _sendParam;
         lastSendValue = msg.value;
 
-        (uint256 amountSentLD, uint256 amountReceivedLD) =
+        (uint256 amountSentLd, uint256 amountReceivedLd) =
             _debit(msg.sender, _sendParam.amountLD, _sendParam.minAmountLD, _sendParam.dstEid);
 
         msgReceipt = MessagingReceipt({
@@ -294,7 +296,7 @@ contract ZERC20AdaptorHarness is zERC20 {
             nonce: 0,
             fee: MessagingFee({nativeFee: msg.value, lzTokenFee: _fee.lzTokenFee})
         });
-        oftReceipt = OFTReceipt({amountSentLD: amountSentLD, amountReceivedLD: amountReceivedLD});
+        oftReceipt = OFTReceipt({amountSentLD: amountSentLd, amountReceivedLD: amountReceivedLd});
     }
 }
 

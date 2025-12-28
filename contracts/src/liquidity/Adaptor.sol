@@ -360,10 +360,25 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         uint256 nativeBridgeFee,
         BridgeRequest calldata request
     ) internal returns (uint256 amountOut) {
-        bool isNative = _isNativeUnderlying();
         _debitNativeBalance(user, nativeBridgeFee);
         _debitUnderlyingBalance(user, amount);
 
+        uint256 actualNativeFee;
+        (amountOut, actualNativeFee) = _sendUnderlyingToken(amount, nativeBridgeFee, request);
+        // refund any surplus native fee back to user if applicable
+        // usually shouldn't happen unless there is a change in Stargate fee structure
+        if (nativeBridgeFee > actualNativeFee) {
+            nativeBalances[user] += nativeBridgeFee - actualNativeFee;
+        }
+        if (amountOut < request.minAmountOut) revert OutputTooLow(amountOut, request.minAmountOut);
+        emit BridgeUnderlyingToken(user, request.to, request.dstEid, amountOut, actualNativeFee);
+    }
+
+    function _sendUnderlyingToken(uint256 amount, uint256 nativeBridgeFee, BridgeRequest calldata request)
+        internal
+        returns (uint256 amountOut, uint256 actualNativeFee)
+    {
+        bool isNative = _isNativeUnderlying();
         SendParam memory sendParam = SendParam({
             dstEid: request.dstEid,
             to: _toBytes32(request.to),
@@ -380,7 +395,6 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         if (isNative) {
             sendValue += amount;
         }
-        uint256 actualNativeFee;
         uint256 nativeBalanceBefore = address(this).balance;
         (, OFTReceipt memory oftReceipt,) = STARGATE.sendToken{value: sendValue}(sendParam, fee, address(this));
         amountOut = oftReceipt.amountReceivedLD;
@@ -391,13 +405,6 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
             if (totalSpent < amount) revert AmountMismatch(amount, totalSpent);
             actualNativeFee = totalSpent - amount;
         }
-        // refund any surplus native fee back to user if applicable
-        // usually shouldn't happen unless there is a change in Stargate fee structure
-        if (nativeBridgeFee > actualNativeFee) {
-            nativeBalances[user] += nativeBridgeFee - actualNativeFee;
-        }
-        if (amountOut < request.minAmountOut) revert OutputTooLow(amountOut, request.minAmountOut);
-        emit BridgeUnderlyingToken(user, request.to, request.dstEid, amountOut, actualNativeFee);
     }
 
     function _bridgeZerc20(uint32 dstEid, address user, address to, uint256 amount) internal {

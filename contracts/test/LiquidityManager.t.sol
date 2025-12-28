@@ -10,10 +10,10 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {EndpointV2Mock as EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
 
 contract MintableERC20 is ERC20 {
-    uint8 private immutable _decimals;
+    uint8 private immutable DECIMALS;
 
     constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) {
-        _decimals = decimals_;
+        DECIMALS = decimals_;
     }
 
     function mint(address to, uint256 amount) external {
@@ -21,7 +21,7 @@ contract MintableERC20 is ERC20 {
     }
 
     function decimals() public view override returns (uint8) {
-        return _decimals;
+        return DECIMALS;
     }
 }
 
@@ -264,7 +264,7 @@ contract LiquidityManagerTest is Test {
         LiquidityManager implementation = new LiquidityManager();
         bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (underlying_, zerc20_, feeParams, owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
-        return LiquidityManager(address(proxy));
+        return LiquidityManager(payable(address(proxy)));
     }
 
     function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (zERC20) {
