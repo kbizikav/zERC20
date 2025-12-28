@@ -17,6 +17,7 @@ import {ILiquidityManager} from "../src/interfaces/ILiquidityManager.sol";
 /// - CHAIN_CONFIG_PATH (string)     : Optional path to chain-config JSON (defaults to config/chain-config.json).
 contract MintApproveAndWrap is Script {
     string internal constant DEFAULT_CHAIN_CONFIG_PATH = "config/chain-config.json";
+    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     struct Inputs {
         address underlyingToken;
@@ -36,18 +37,30 @@ contract MintApproveAndWrap is Script {
 
         vm.startBroadcast(inputs.broadcasterKey);
 
-        console2.log("Minting underlying tokens");
-        console2.log("  token", inputs.underlyingToken);
-        console2.log("  to", inputs.broadcaster);
-        console2.log("  amount", inputs.amount);
-        IMintableBurnableERC20(inputs.underlyingToken).mint(inputs.broadcaster, inputs.amount);
+        bool isNative = inputs.underlyingToken == NATIVE_TOKEN;
 
-        console2.log("Approving LiquidityManager", inputs.liquidityManager);
-        bool approved = IERC20(inputs.underlyingToken).approve(inputs.liquidityManager, inputs.amount);
-        require(approved, "approve failed");
+        if (isNative) {
+            console2.log("Using native token for wrap");
+        } else {
+            console2.log("Minting underlying tokens");
+            console2.log("  token", inputs.underlyingToken);
+            console2.log("  to", inputs.broadcaster);
+            console2.log("  amount", inputs.amount);
+            IMintableBurnableERC20(inputs.underlyingToken).mint(inputs.broadcaster, inputs.amount);
+
+            console2.log("Approving LiquidityManager", inputs.liquidityManager);
+            bool approved = IERC20(inputs.underlyingToken).approve(inputs.liquidityManager, inputs.amount);
+            require(approved, "approve failed");
+        }
 
         console2.log("Wrapping and sending to", inputs.wrapReceiver);
-        uint256 amountOut = ILiquidityManager(inputs.liquidityManager).wrap(inputs.amount, inputs.wrapReceiver);
+        uint256 amountOut;
+        if (isNative) {
+            amountOut =
+                ILiquidityManager(inputs.liquidityManager).wrap{value: inputs.amount}(inputs.amount, inputs.wrapReceiver);
+        } else {
+            amountOut = ILiquidityManager(inputs.liquidityManager).wrap(inputs.amount, inputs.wrapReceiver);
+        }
         console2.log("zERC20 minted", amountOut);
 
         vm.stopBroadcast();

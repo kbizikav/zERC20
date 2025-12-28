@@ -30,6 +30,7 @@ contract LiquidityManager is
 
     /// @notice Role allowed to update incentive curve parameters.
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
+    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     error ZeroAddress();
     error ZeroAmount();
@@ -40,6 +41,8 @@ contract LiquidityManager is
     error InsufficientRewards();
     error DecimalMismatch();
     error SlippageExceeded();
+    error InvalidMsgValue(uint256 expected, uint256 actual);
+    error NativeTokenNotSupported();
 
     /// @custom:storage-location erc7201:zerc20.storage.liquidityManager
     struct LiquidityManagerStorage {
@@ -77,7 +80,12 @@ contract LiquidityManager is
         if (_underlyingToken == address(0) || _zerc20 == address(0) || initialOwner == address(0)) {
             revert ZeroAddress();
         }
-        if (IERC20Metadata(_zerc20).decimals() != IERC20Metadata(_underlyingToken).decimals()) revert DecimalMismatch();
+        bool isNative = _underlyingToken == NATIVE_TOKEN;
+        if (isNative) {
+            if (IERC20Metadata(_zerc20).decimals() != 18) revert DecimalMismatch();
+        } else {
+            if (IERC20Metadata(_zerc20).decimals() != IERC20Metadata(_underlyingToken).decimals()) revert DecimalMismatch();
+        }
         IncentiveLib._validateFeeParams(_feeParams);
 
         __AccessControl_init();
@@ -98,7 +106,7 @@ contract LiquidityManager is
     /// @param amount Amount of underlying to deposit.
     /// @param receiver Address receiving minted zERC20.
     /// @return amountOut zERC20 minted, including any reward.
-    function wrap(uint256 amount, address receiver) external nonReentrant returns (uint256 amountOut) {
+    function wrap(uint256 amount, address receiver) external payable nonReentrant returns (uint256 amountOut) {
         amountOut = _wrap(amount, receiver);
     }
 
@@ -109,6 +117,7 @@ contract LiquidityManager is
     /// @return amountOut zERC20 minted, including any reward.
     function wrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
         external
+        payable
         nonReentrant
         returns (uint256 amountOut)
     {
@@ -194,7 +203,12 @@ contract LiquidityManager is
         if (amount > $.feeSurplus) revert InsufficientRewards();
 
         $.feeSurplus -= amount;
-        $.underlyingToken.safeTransfer(to, amount);
+        if (_isNativeUnderlying($)) {
+            (bool success,) = payable(to).call{value: amount}("");
+            if (!success) revert UnderlyingSendFailed();
+        } else {
+            $.underlyingToken.safeTransfer(to, amount);
+        }
         emit RewardsWithdrawn(to, amount);
     }
 
@@ -208,13 +222,24 @@ contract LiquidityManager is
         }
     }
 
+    function _isNativeUnderlying(LiquidityManagerStorage storage $) private view returns (bool) {
+        return address($.underlyingToken) == NATIVE_TOKEN;
+    }
+
+    function _underlyingBalance(LiquidityManagerStorage storage $) private view returns (uint256) {
+        if (_isNativeUnderlying($)) {
+            return address(this).balance;
+        }
+        return $.underlyingToken.balanceOf(address(this));
+    }
+
     /// @dev Quotes wrapping reward using current token balance and fee surplus.
     function _quoteWrapReward(uint256 amount, LiquidityManagerStorage storage $)
         internal
         view
         returns (uint256 reward)
     {
-        uint256 balance = $.underlyingToken.balanceOf(address(this));
+        uint256 balance = _underlyingBalance($);
         uint256 feeSurplus_ = $.feeSurplus;
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
@@ -227,7 +252,7 @@ contract LiquidityManager is
         view
         returns (uint256 feeAmount)
     {
-        uint256 balance = $.underlyingToken.balanceOf(address(this));
+        uint256 balance = _underlyingBalance($);
         uint256 feeSurplus_ = $.feeSurplus;
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
@@ -240,11 +265,19 @@ contract LiquidityManager is
         if (receiver == address(0)) revert ZeroReceiver();
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        IERC20 underlying = $.underlyingToken;
-        uint256 balanceBefore = underlying.balanceOf(address(this));
+        bool isNative = _isNativeUnderlying($);
+        uint256 balanceBefore = isNative ? address(this).balance - msg.value : _underlyingBalance($);
+        uint256 received;
 
-        underlying.safeTransferFrom(msg.sender, address(this), amount);
-        uint256 received = underlying.balanceOf(address(this)) - balanceBefore;
+        if (isNative) {
+            if (msg.value != amount) revert InvalidMsgValue(amount, msg.value);
+            received = msg.value;
+        } else {
+            if (msg.value != 0) revert InvalidMsgValue(0, msg.value);
+            IERC20 underlying = $.underlyingToken;
+            underlying.safeTransferFrom(msg.sender, address(this), amount);
+            received = _underlyingBalance($) - balanceBefore;
+        }
         if (received == 0) revert UnderlyingPullFailed();
 
         uint256 feeSurplus_ = $.feeSurplus;
@@ -268,10 +301,16 @@ contract LiquidityManager is
         amountOut = amount - feeAmount;
 
         $.zerc20.burn(msg.sender, amount);
-        IERC20 underlying = $.underlyingToken;
         if (amountOut > 0) {
-            if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
-            underlying.safeTransfer(receiver, amountOut);
+            if (_isNativeUnderlying($)) {
+                if (address(this).balance < amountOut) revert InsufficientLiquidity();
+                (bool success,) = payable(receiver).call{value: amountOut}("");
+                if (!success) revert UnderlyingSendFailed();
+            } else {
+                IERC20 underlying = $.underlyingToken;
+                if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
+                underlying.safeTransfer(receiver, amountOut);
+            }
         }
         if (feeAmount > 0) $.feeSurplus += feeAmount;
 
@@ -280,4 +319,10 @@ contract LiquidityManager is
 
     /// @dev Restricts upgrade authorization to admins.
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+
+    receive() external payable nonReentrant {
+        LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
+        if (!_isNativeUnderlying($)) revert NativeTokenNotSupported();
+        _wrap(msg.value, msg.sender);
+    }
 }

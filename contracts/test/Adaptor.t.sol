@@ -31,6 +31,7 @@ contract MintableToken is ERC20 {
 }
 
 contract MockLiquidityManager is ILiquidityManager {
+    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
     IERC20 public immutable underlying;
     IzERC20 public immutable zerc20Token;
 
@@ -50,18 +51,23 @@ contract MockLiquidityManager is ILiquidityManager {
         unwrapShouldRevert = shouldRevert;
     }
 
-    function wrap(uint256, address) external pure override returns (uint256) {
+    function wrap(uint256, address) external payable override returns (uint256) {
         revert("wrap not implemented");
     }
 
-    function wrapWithMinOut(uint256, uint256, address) external pure override returns (uint256) {
+    function wrapWithMinOut(uint256, uint256, address) external payable override returns (uint256) {
         revert("wrap not implemented");
     }
 
     function unwrap(uint256 amount, address receiver) external override returns (uint256 amountOut) {
         if (unwrapShouldRevert) revert("unwrap disabled");
         amountOut = amount - unwrapFeeQuote;
-        MintableToken(address(underlying)).mint(receiver, amountOut);
+        if (address(underlying) == NATIVE_TOKEN) {
+            (bool success,) = payable(receiver).call{value: amountOut}("");
+            require(success, "native transfer failed");
+        } else {
+            MintableToken(address(underlying)).mint(receiver, amountOut);
+        }
     }
 
     function unwrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
@@ -72,7 +78,12 @@ contract MockLiquidityManager is ILiquidityManager {
         if (unwrapShouldRevert) revert("unwrap disabled");
         amountOut = amount - unwrapFeeQuote;
         if (amountOut < minOut) revert("slippage");
-        MintableToken(address(underlying)).mint(receiver, amountOut);
+        if (address(underlying) == NATIVE_TOKEN) {
+            (bool success,) = payable(receiver).call{value: amountOut}("");
+            require(success, "native transfer failed");
+        } else {
+            MintableToken(address(underlying)).mint(receiver, amountOut);
+        }
     }
 
     function quoteWrapReward(uint256) external pure override returns (uint256) {
@@ -101,7 +112,9 @@ contract MockLiquidityManager is ILiquidityManager {
 }
 
 contract MockStargate is IStargate {
-    IERC20 public immutable underlying;
+    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address public immutable underlying;
+    bool public immutable isNative;
 
     uint256 public nativeFeeQuote;
     uint256 public tokenFee;
@@ -111,8 +124,9 @@ contract MockStargate is IStargate {
     address public lastRefund;
     bool public revertSend;
 
-    constructor(IERC20 underlying_) {
+    constructor(address underlying_) {
         underlying = underlying_;
+        isNative = underlying_ == NATIVE_TOKEN || underlying_ == address(0);
     }
 
     function setQuote(uint256 nativeFee, uint256 tokenFee_) external {
@@ -138,7 +152,7 @@ contract MockStargate is IStargate {
     }
 
     function token() external view override returns (address) {
-        return address(underlying);
+        return underlying;
     }
 
     function approvalRequired() external pure override returns (bool) {
@@ -180,12 +194,22 @@ contract MockStargate is IStargate {
         lastValue = msg.value;
         lastRefund = _refundAddress;
 
-        require(underlying.transferFrom(msg.sender, address(this), _sendParam.amountLD), "transfer failed");
+        if (isNative) {
+            require(
+                msg.value == _sendParam.amountLD + _fee.nativeFee,
+                "native value mismatch"
+            );
+        } else {
+            require(
+                IERC20(underlying).transferFrom(msg.sender, address(this), _sendParam.amountLD),
+                "transfer failed"
+            );
+        }
 
         msgReceipt = MessagingReceipt({
             guid: bytes32(0),
             nonce: 0,
-            fee: MessagingFee({nativeFee: msg.value, lzTokenFee: _fee.lzTokenFee})
+            fee: MessagingFee({nativeFee: _fee.nativeFee, lzTokenFee: _fee.lzTokenFee})
         });
         uint256 amountReceived = _sendParam.amountLD > tokenFee ? _sendParam.amountLD - tokenFee : 0;
         if (bonus > 0) {
@@ -204,12 +228,22 @@ contract MockStargate is IStargate {
         lastValue = msg.value;
         lastRefund = _refundAddress;
 
-        require(underlying.transferFrom(msg.sender, address(this), _sendParam.amountLD), "transfer failed");
+        if (isNative) {
+            require(
+                msg.value == _sendParam.amountLD + _fee.nativeFee,
+                "native value mismatch"
+            );
+        } else {
+            require(
+                IERC20(underlying).transferFrom(msg.sender, address(this), _sendParam.amountLD),
+                "transfer failed"
+            );
+        }
 
         msgReceipt = MessagingReceipt({
             guid: bytes32(0),
             nonce: 0,
-            fee: MessagingFee({nativeFee: msg.value, lzTokenFee: _fee.lzTokenFee})
+            fee: MessagingFee({nativeFee: _fee.nativeFee, lzTokenFee: _fee.lzTokenFee})
         });
         uint256 amountReceived = _sendParam.amountLD > tokenFee ? _sendParam.amountLD - tokenFee : 0;
         if (bonus > 0) {
@@ -285,7 +319,7 @@ contract AdaptorTest is TestHelperOz5 {
         underlying = new MintableToken();
         zerc20 = _deployZerc20(endpoint);
         manager = new MockLiquidityManager(underlying, address(zerc20));
-        stargate = new MockStargate(underlying);
+        stargate = new MockStargate(address(underlying));
         adaptor = new Adaptor(address(manager), address(stargate), address(endpoint));
 
         zerc20.setMinter(address(this));
@@ -293,7 +327,7 @@ contract AdaptorTest is TestHelperOz5 {
 
     function testConstructorRevertsOnStargateTokenMismatch() public {
         MintableToken otherUnderlying = new MintableToken();
-        MockStargate badStargate = new MockStargate(otherUnderlying);
+        MockStargate badStargate = new MockStargate(address(otherUnderlying));
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -385,6 +419,48 @@ contract AdaptorTest is TestHelperOz5 {
         assertEq(underlying.allowance(address(adaptor), address(stargate)), 0, "allowance reset");
         assertEq(stargate.lastSendParamAmount(), expectedUnderlying, "bridged amount");
         assertEq(stargate.lastValue(), nativeFee, "native fee forwarded");
+    }
+
+    function testUnwrapAndBridgeNativeUnderlying() public {
+        uint256 amount = 100 ether;
+        uint256 unwrapFee = 1 ether;
+        uint256 bridgeTokenFee = 0.5 ether;
+        uint256 nativeFee = 0.05 ether;
+
+        MockLiquidityManager nativeManager = new MockLiquidityManager(IERC20(NATIVE_TOKEN), address(zerc20));
+        MockStargate nativeStargate = new MockStargate(NATIVE_TOKEN);
+        Adaptor nativeAdaptor = new Adaptor(address(nativeManager), address(nativeStargate), address(endpoint));
+
+        nativeManager.setQuoteUnwrapFee(unwrapFee);
+        nativeStargate.setQuote(nativeFee, bridgeTokenFee);
+
+        uint256 expectedUnderlying = amount - unwrapFee;
+        uint256 expectedBridged = expectedUnderlying - bridgeTokenFee;
+        vm.deal(address(nativeManager), expectedUnderlying);
+
+        zerc20.mint(USER, amount);
+        vm.prank(USER);
+        zerc20.approve(address(nativeAdaptor), amount);
+
+        vm.deal(USER, nativeFee);
+
+        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: expectedBridged - 1,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.prank(USER);
+        nativeAdaptor.unwrapAndBridge{value: nativeFee}(amount, request);
+
+        assertEq(nativeAdaptor.zerc20Balances(USER), 0, "zerc20 balance cleared");
+        assertEq(nativeAdaptor.underlingTokenBalances(USER), 0, "underlying balance cleared");
+        assertEq(nativeAdaptor.nativeBalances(USER), 0, "native balance cleared");
+        assertEq(nativeStargate.lastSendParamAmount(), expectedUnderlying, "bridged amount");
+        assertEq(nativeStargate.lastValue(), expectedUnderlying + nativeFee, "native amount + fee forwarded");
     }
 
     function testUnwrapAndBridgeReturnsZerc20OnLowOutput() public {

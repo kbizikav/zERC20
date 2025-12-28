@@ -6,9 +6,12 @@ import {IzERC20} from "./IzERC20.sol";
 
 /// @dev External-facing interface for LiquidityManager so adaptors and callers can interact cleanly.
 interface ILiquidityManager {
-    function wrap(uint256 amount, address receiver) external returns (uint256 amountOut);
+    function wrap(uint256 amount, address receiver) external payable returns (uint256 amountOut);
 
-    function wrapWithMinOut(uint256 amount, uint256 minOut, address receiver) external returns (uint256 amountOut);
+    function wrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
+        external
+        payable
+        returns (uint256 amountOut);
 
     function unwrap(uint256 amount, address receiver) external returns (uint256 amountOut);
 

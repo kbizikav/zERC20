@@ -102,7 +102,11 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         STARGATE = IStargate(_stargate);
         LZ_ENDPOINT = _lzEndpoint;
         address stargateToken = STARGATE.token();
-        if (stargateToken != address(UNDERLYING_TOKEN)) {
+        if (_isNativeUnderlying()) {
+            if (stargateToken != NATIVE_TOKEN && stargateToken != address(0)) {
+                revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), stargateToken);
+            }
+        } else if (stargateToken != address(UNDERLYING_TOKEN)) {
             revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), stargateToken);
         }
     }
@@ -195,16 +199,21 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     /// @notice Withdraws previously deposited tokens from the adaptor.
     function withdraw(address token, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        if (token == address(UNDERLYING_TOKEN)) {
+        if (token == NATIVE_TOKEN) {
+            if (_isNativeUnderlying()) {
+                _debitCombinedNativeBalance(msg.sender, amount);
+            } else {
+                _debitNativeBalance(msg.sender, amount);
+            }
+            (bool success,) = payable(msg.sender).call{value: amount}("");
+            if (!success) revert TransferFailed();
+        } else if (token == address(UNDERLYING_TOKEN)) {
+            if (_isNativeUnderlying()) revert InvalidToken();
             _debitUnderlyingBalance(msg.sender, amount);
             UNDERLYING_TOKEN.safeTransfer(msg.sender, amount);
         } else if (token == address(ZERC20)) {
             _debitZerc20Balance(msg.sender, amount);
             IERC20(address(ZERC20)).safeTransfer(msg.sender, amount);
-        } else if (token == NATIVE_TOKEN) {
-            _debitNativeBalance(msg.sender, amount);
-            (bool success,) = payable(msg.sender).call{value: amount}("");
-            if (!success) revert TransferFailed();
         } else {
             revert InvalidToken();
         }
@@ -326,13 +335,13 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     function _unwrap(address user, uint256 amount, uint256 amountMinOut) internal returns (uint256 amountOut) {
         _debitZerc20Balance(user, amount);
 
-        uint256 underlyingTokenBalanceBefore = UNDERLYING_TOKEN.balanceOf(address(this));
+        uint256 underlyingTokenBalanceBefore = _underlyingBalance();
 
         // unwrap
         amountOut = LIQUIDITY_MANAGER.unwrap(amount, address(this));
         if (amountOut < amountMinOut) revert OutputTooLow(amountOut, amountMinOut);
 
-        uint256 underlyingTokenBalanceAfter = UNDERLYING_TOKEN.balanceOf(address(this));
+        uint256 underlyingTokenBalanceAfter = _underlyingBalance();
         uint256 actualAmountOut = underlyingTokenBalanceAfter - underlyingTokenBalanceBefore;
         if (actualAmountOut == 0) revert ZeroAmount();
         if (actualAmountOut < amountMinOut) revert OutputTooLow(actualAmountOut, amountMinOut);
@@ -351,6 +360,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         uint256 nativeBridgeFee,
         BridgeRequest calldata request
     ) internal returns (uint256 amountOut) {
+        bool isNative = _isNativeUnderlying();
         _debitNativeBalance(user, nativeBridgeFee);
         _debitUnderlyingBalance(user, amount);
 
@@ -366,11 +376,21 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         _ensureAllowance(UNDERLYING_TOKEN, address(STARGATE), amount);
         MessagingFee memory fee = MessagingFee({nativeFee: nativeBridgeFee, lzTokenFee: 0});
 
+        uint256 sendValue = nativeBridgeFee;
+        if (isNative) {
+            sendValue += amount;
+        }
         uint256 actualNativeFee;
         uint256 nativeBalanceBefore = address(this).balance;
-        (, OFTReceipt memory oftReceipt,) = STARGATE.sendToken{value: nativeBridgeFee}(sendParam, fee, address(this));
+        (, OFTReceipt memory oftReceipt,) = STARGATE.sendToken{value: sendValue}(sendParam, fee, address(this));
         amountOut = oftReceipt.amountReceivedLD;
-        actualNativeFee = nativeBalanceBefore - address(this).balance;
+        uint256 nativeBalanceAfter = address(this).balance;
+        uint256 totalSpent = nativeBalanceBefore - nativeBalanceAfter;
+        actualNativeFee = totalSpent;
+        if (isNative) {
+            if (totalSpent < amount) revert AmountMismatch(amount, totalSpent);
+            actualNativeFee = totalSpent - amount;
+        }
         // refund any surplus native fee back to user if applicable
         // usually shouldn't happen unless there is a change in Stargate fee structure
         if (nativeBridgeFee > actualNativeFee) {
@@ -421,6 +441,18 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         underlingTokenBalances[user] = userUnderlyingBalance - amount;
     }
 
+    function _debitCombinedNativeBalance(address user, uint256 amount) internal {
+        uint256 userUnderlyingBalance = underlingTokenBalances[user];
+        uint256 userNativeBalance = nativeBalances[user];
+        if (userUnderlyingBalance + userNativeBalance < amount) revert InsufficientNativeBalance();
+        if (userUnderlyingBalance >= amount) {
+            underlingTokenBalances[user] = userUnderlyingBalance - amount;
+            return;
+        }
+        underlingTokenBalances[user] = 0;
+        nativeBalances[user] = userNativeBalance - (amount - userUnderlyingBalance);
+    }
+
     function _debitZerc20Balance(address user, uint256 amount) internal {
         uint256 userBalance = zerc20Balances[user];
         if (userBalance < amount) revert InsufficientZerc20Balance();
@@ -433,14 +465,27 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
     function _ensureAllowance(IERC20 token, address spender, uint256 amount) internal {
         if (amount == 0) return;
+        if (_isNativeUnderlying()) return;
         uint256 currentAllowance = token.allowance(address(this), spender);
         if (currentAllowance >= amount) return;
         token.forceApprove(spender, amount);
     }
 
+    function _isNativeUnderlying() internal view returns (bool) {
+        return address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
+    }
+
+    function _underlyingBalance() internal view returns (uint256) {
+        if (_isNativeUnderlying()) {
+            return address(this).balance;
+        }
+        return UNDERLYING_TOKEN.balanceOf(address(this));
+    }
+
     /// @notice Accepts native refunds returned by OFT/Stargate send calls.
     receive() external payable {
         if (msg.sender == LZ_ENDPOINT) return;
+        if (msg.sender == address(LIQUIDITY_MANAGER)) return;
         nativeBalances[msg.sender] += msg.value;
         emit NativeDeposit(msg.sender, msg.value);
     }

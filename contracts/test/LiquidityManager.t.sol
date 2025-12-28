@@ -35,6 +35,7 @@ contract LiquidityManagerTest is Test {
     address internal constant ALICE = address(0xA11CE);
     address internal constant REWARD_COLLECTOR = address(0xC0FFEE);
     uint256 internal constant START_BALANCE = 10_000 ether;
+    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     function setUp() public {
         endpoint = new EndpointV2(1, address(this));
@@ -148,6 +149,44 @@ contract LiquidityManagerTest is Test {
 
         vm.stopPrank();
         assertEq(received, minOut, "unwrap with min out");
+    }
+
+    function testWrapAndUnwrapNativeUnderlying() public {
+        zERC20 nativeToken = _deployToken(address(this), endpoint, 18);
+        LiquidityManager nativeManager = _deployManager(NATIVE_TOKEN, address(nativeToken), params, address(this));
+        nativeToken.setMinter(address(nativeManager));
+
+        uint256 amount = 2 ether;
+        vm.deal(ALICE, amount);
+
+        vm.prank(ALICE);
+        uint256 minted = nativeManager.wrap{value: amount}(amount, ALICE);
+
+        assertEq(minted, amount, "native wrap mints principal");
+        assertEq(nativeToken.balanceOf(ALICE), amount, "zerc20 minted to receiver");
+        assertEq(address(nativeManager).balance, amount, "native held by manager");
+
+        uint256 fee = nativeManager.quoteUnwrapFee(amount);
+
+        vm.prank(ALICE);
+        uint256 received = nativeManager.unwrap(amount, ALICE);
+
+        assertEq(received, amount - fee, "unwrap pays fee");
+        assertEq(nativeManager.feeSurplus(), fee, "fee surplus grows");
+        assertEq(address(ALICE).balance, amount - fee, "native sent to receiver");
+        assertEq(address(nativeManager).balance, fee, "native fee retained");
+    }
+
+    function testWrapNativeRevertsOnValueMismatch() public {
+        LiquidityManager nativeManager = _deployManager(NATIVE_TOKEN, address(token), params, address(this));
+        token.setMinter(address(nativeManager));
+
+        vm.deal(ALICE, 1 ether);
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(LiquidityManager.InvalidMsgValue.selector, 2 ether, 1 ether)
+        );
+        nativeManager.wrap{value: 1 ether}(2 ether, ALICE);
     }
 
     function testWithdrawRewardsRequiresAdminAndEmitsSurplus() public {
