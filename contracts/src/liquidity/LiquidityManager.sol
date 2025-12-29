@@ -30,6 +30,8 @@ contract LiquidityManager is
 
     /// @notice Role allowed to update incentive curve parameters.
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
+
+    /// @notice ERC7528 native token address convention
     address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     error ZeroAddress();
@@ -84,7 +86,9 @@ contract LiquidityManager is
         if (isNative) {
             if (IERC20Metadata(_zerc20).decimals() != 18) revert DecimalMismatch();
         } else {
-            if (IERC20Metadata(_zerc20).decimals() != IERC20Metadata(_underlyingToken).decimals()) revert DecimalMismatch();
+            if (IERC20Metadata(_zerc20).decimals() != IERC20Metadata(_underlyingToken).decimals()) {
+                revert DecimalMismatch();
+            }
         }
         IncentiveLib._validateFeeParams(_feeParams);
 
@@ -266,6 +270,7 @@ contract LiquidityManager is
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         bool isNative = _isNativeUnderlying($);
+        /// @note: for native, msg.value is already in address(this).balance; for ERC20, balance updates after transferFrom.
         uint256 balanceBefore = isNative ? address(this).balance - msg.value : _underlyingBalance($);
         uint256 received;
 
