@@ -95,7 +95,7 @@ contract MintApproveAndWrap is Script {
         underlying = _parseAddress(json, string.concat(base, ".underlyingToken"));
     }
 
-    function _parseAddress(string memory json, string memory key) private view returns (address value) {
+    function _parseAddress(string memory json, string memory key) private pure returns (address value) {
         try vm.parseJsonAddress(json, key) returns (address parsed) {
             value = parsed;
         } catch (bytes memory) {

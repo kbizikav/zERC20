@@ -1,0 +1,14 @@
+{
+  "chains": {
+    "421614": {
+      "label": "arb-sepolia-eth",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "stargate": "0x6fddB6270F6c71f31B62AE0260cfa8E2e2d186E0"
+    },
+    "11155420": {
+      "label": "op-sepolia-eth",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "stargate": "0xa31dCc5C71E25146b598bADA33E303627D7fC97e"
+    }
+  }
+}

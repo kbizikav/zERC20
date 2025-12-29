@@ -3,14 +3,12 @@
     "421614": {
       "label": "arb-sepolia-usdc",
       "underlyingToken": "0x3253a335E7bFfB4790Aa4C25C4250d206E9b9773",
-      "stargate": "0x543BdA7c6cA4384FE90B1F5929bb851F52888983",
-      "lzEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f"
+      "stargate": "0x543BdA7c6cA4384FE90B1F5929bb851F52888983"
     },
     "11155420": {
       "label": "op-sepolia-usdc",
       "underlyingToken": "0x488327236B65C61A6c083e8d811a4E0D3d1D4268",
-      "stargate": "0x314B753272a3C79646b92A87dbFDEE643237033a",
-      "lzEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f"
+      "stargate": "0x314B753272a3C79646b92A87dbFDEE643237033a"
     }
   }
 }

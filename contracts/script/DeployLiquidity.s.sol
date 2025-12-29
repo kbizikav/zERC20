@@ -19,7 +19,7 @@ import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 /// - LIQUIDITY_OWNER (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
 /// - SET_LIQUIDITY_AS_MINTER (uint256): When non-zero, attempts to set the manager as zERC20 minter (defaults to 1).
 /// - ADAPTOR_STARGATE (address): Stargate endpoint; when set, deploys the Adaptor wired to the manager (or set in chain-config).
-/// - ADAPTOR_LZ_ENDPOINT (address): LayerZero endpoint used to validate lzCompose callers.
+/// - LZ_ENDPOINT (address): LayerZero endpoint used to validate lzCompose callers.
 /// - CHAIN_CONFIG_PATH (string): Optional path to per-chain defaults (underlyingToken/stargate); falls back to `config/chain-config.json`.
 contract DeployLiquidity is DeterministicDeployer {
     string internal constant DEFAULT_CHAIN_CONFIG_PATH = "config/chain-config.json";
@@ -37,7 +37,6 @@ contract DeployLiquidity is DeterministicDeployer {
     struct ChainConfig {
         address underlyingToken;
         address stargate;
-        address lzEndpoint;
     }
 
     error Zerc20TokenRequired();
@@ -106,7 +105,9 @@ contract DeployLiquidity is DeterministicDeployer {
         cfg.fee.k = vm.envOr("LIQUIDITY_K", uint256(1_000));
         cfg.owner = vm.envOr("LIQUIDITY_OWNER", address(0));
         cfg.stargate = vm.envOr("ADAPTOR_STARGATE", chainCfg.stargate);
-        cfg.lzEndpoint = vm.envOr("ADAPTOR_LZ_ENDPOINT", chainCfg.lzEndpoint);
+        if (cfg.stargate != address(0)) {
+            cfg.lzEndpoint = vm.envAddress("LZ_ENDPOINT");
+        }
         cfg.setMinter = vm.envOr("SET_LIQUIDITY_AS_MINTER", uint256(1)) != 0;
 
         if (cfg.zerc20Token == address(0)) revert Zerc20TokenRequired();
@@ -127,10 +128,9 @@ contract DeployLiquidity is DeterministicDeployer {
         string memory base = string.concat(".chains[\"", _toString(block.chainid), "\"]");
         chainCfg.underlyingToken = _parseAddress(json, string.concat(base, ".underlyingToken"));
         chainCfg.stargate = _parseAddress(json, string.concat(base, ".stargate"));
-        chainCfg.lzEndpoint = _parseAddress(json, string.concat(base, ".lzEndpoint"));
     }
 
-    function _parseAddress(string memory json, string memory key) private view returns (address value) {
+    function _parseAddress(string memory json, string memory key) private pure returns (address value) {
         try vm.parseJsonAddress(json, key) returns (address parsed) {
             value = parsed;
         } catch (bytes memory) {

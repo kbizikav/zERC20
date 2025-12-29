@@ -55,7 +55,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         cfg.tokenName = vm.envString("TOKEN_NAME");
         cfg.tokenSymbol = vm.envString("TOKEN_SYMBOL");
         cfg.hubEid = uint32(vm.envUint("HUB_EID"));
-        cfg.endpoint = vm.envAddress("VERIFIER_ENDPOINT");
+        cfg.endpoint = vm.envAddress("LZ_ENDPOINT");
         cfg.delegate = vm.envOr("VERIFIER_DELEGATE", address(0));
         cfg.owner = vm.envOr("TOKEN_OWNER", address(0));
         uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
