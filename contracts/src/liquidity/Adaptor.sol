@@ -10,6 +10,7 @@ import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTCompo
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {SelfCall} from "../utils/SelfCall.sol";
 
@@ -51,6 +52,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     error InsufficientNativeBalance();
 
     uint128 internal constant RETURN_LZ_RECEIVE_GAS = 500_000;
+    uint8 internal constant NATIVE_DECIMALS = 18;
 
     /// @dev erc-7528 native token address convention
     address constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -111,6 +113,8 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         }
     }
 
+    // ---------------------------- External ---------------------------------
+
     /// @notice Handles LayerZero compose callbacks from the zERC20 to unwrap and bridge.
     /// @dev Valid　compose messages should not revert to avoid trapping cross-chain flows.
     /// @param _from Compose sender on the source chain (must be the zERC20 instance).
@@ -146,41 +150,6 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         }
 
         _unwrapAndBridge(user, zerc20Amount, request);
-    }
-
-    // ---------------------------- Operations ---------------------------------
-
-    /// @notice Returns fee estimates for unwrapping and bridging the provided amount.
-    /// @param amount zERC20 amount to unwrap.
-    /// @param request Bridge instructions used to derive messaging fees.
-    /// @return quote Fee breakdown (unwrap fee, native bridge fee, token bridge fee).
-    function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
-        uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrapFee(amount);
-        if (tokenUnwrapFee >= amount) {
-            // Prevent underflow and short-circuit when unwrap fee consumes the amount.
-            return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
-        }
-        uint256 amountAfterUnwrap = amount - tokenUnwrapFee;
-        if (amountAfterUnwrap == 0) {
-            // Early return to avoid Stargate quote revert on zero amount
-            return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
-        }
-        SendParam memory sendParam = SendParam({
-            dstEid: request.dstEid,
-            to: _toBytes32(request.to),
-            amountLD: amountAfterUnwrap,
-            minAmountLD: 0, // set 0 to prevent a revert of the minimum amount
-            extraOptions: request.extraOptions,
-            composeMsg: request.composeMsg,
-            oftCmd: request.oftCmd
-        });
-        MessagingFee memory feeQuote = STARGATE.quoteSend(sendParam, false);
-        (,, OFTReceipt memory receipt) = STARGATE.quoteOFT(sendParam);
-        uint256 tokenBridgeFee = 0;
-        if (receipt.amountReceivedLD < amountAfterUnwrap) {
-            tokenBridgeFee = amountAfterUnwrap - receipt.amountReceivedLD;
-        }
-        quote = FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: feeQuote.nativeFee, tokenBridgeFee: tokenBridgeFee});
     }
 
     /// @notice Pulls zERC20 from the caller, unwraps it, and bridges the underlying token per the request.
@@ -223,7 +192,50 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         }
     }
 
-    // ------------------------- External Self-Calls ----------------------------
+    // ---------------------------- Views ---------------------------------
+
+    /// @notice Returns fee estimates for unwrapping and bridging the provided amount.
+    /// @param amount zERC20 amount to unwrap.
+    /// @param request Bridge instructions used to derive messaging fees.
+    /// @return quote Fee breakdown (unwrap fee, native bridge fee, token bridge fee).
+    function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
+        uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrapFee(amount);
+        if (tokenUnwrapFee >= amount) {
+            // Prevent underflow and short-circuit when unwrap fee consumes the amount.
+            return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
+        }
+        uint256 amountAfterUnwrap = amount - tokenUnwrapFee;
+        if (amountAfterUnwrap == 0) {
+            // Early return to avoid Stargate quote revert on zero amount
+            return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
+        }
+        uint256 amountAfterDust = _removeStargateDust(amountAfterUnwrap);
+        if (amountAfterDust == 0) {
+            // Misconfigured Stargate asset or dust rounds to zero; avoid InvalidAmount.
+            return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: amountAfterUnwrap});
+        }
+
+        SendParam memory sendParam = SendParam({
+            dstEid: request.dstEid,
+            to: _toBytes32(request.to),
+            amountLD: amountAfterDust,
+            minAmountLD: 0, // set 0 to prevent a revert of the minimum amount
+            extraOptions: request.extraOptions,
+            composeMsg: request.composeMsg,
+            oftCmd: request.oftCmd
+        });
+        MessagingFee memory feeQuote = STARGATE.quoteSend(sendParam, false);
+        (,, OFTReceipt memory receipt) = STARGATE.quoteOFT(sendParam);
+        uint256 tokenBridgeFee = 0;
+        if (receipt.amountReceivedLD < amountAfterUnwrap) {
+            tokenBridgeFee = amountAfterUnwrap - receipt.amountReceivedLD;
+        }
+        quote = FeeQuote({
+            tokenUnwrapFee: tokenUnwrapFee,
+            nativeBridgeFee: feeQuote.nativeFee,
+            tokenBridgeFee: tokenBridgeFee
+        });
+    }
 
     /// @notice Decodes a BridgeRequest from a compose payload.
     /// @param _message Compose payload emitted by the zERC20.
@@ -231,6 +243,8 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
     function decodeBridgeRequest(bytes calldata _message) external pure returns (BridgeRequest memory request) {
         request = abi.decode(OFTComposeMsgCodec.composeMsg(_message), (BridgeRequest));
     }
+
+    // ------------------------- External Self-Calls ----------------------------
 
     /// @notice Self-call hook to unwrap previously credited zERC20 on behalf of a user.
     /// @param user Address whose balance is debited.
@@ -364,16 +378,21 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
         uint256 nativeBridgeFee,
         BridgeRequest calldata request
     ) internal returns (uint256 amountOut) {
+        uint256 amountToBridge = _removeStargateDust(amount);
+        if (amountToBridge == 0 || amountToBridge < request.minAmountOut) {
+            revert OutputTooLow(amountToBridge, request.minAmountOut);
+        }
+
         _debitNativeBalance(user, nativeBridgeFee);
-        _debitUnderlyingBalance(user, amount);
+        _debitUnderlyingBalance(user, amountToBridge);
 
         uint256 actualNativeFee;
-        (amountOut, actualNativeFee) = _sendUnderlyingToken(amount, nativeBridgeFee, request);
+        (amountOut, actualNativeFee) = _innerBridgeUnderlyingToken(amountToBridge, nativeBridgeFee, request);
         _applyNativeFeeRefund(user, nativeBridgeFee, actualNativeFee);
         emit BridgeUnderlyingToken(user, request.to, request.dstEid, amountOut, actualNativeFee);
     }
 
-    function _sendUnderlyingToken(uint256 amount, uint256 nativeBridgeFee, BridgeRequest calldata request)
+    function _innerBridgeUnderlyingToken(uint256 amount, uint256 nativeBridgeFee, BridgeRequest calldata request)
         internal
         returns (uint256 amountOut, uint256 actualNativeFee)
     {
@@ -483,6 +502,18 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
     function _isNativeUnderlying() internal view returns (bool) {
         return address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
+    }
+
+    function _removeStargateDust(uint256 amount) internal view returns (uint256 dustlessAmount) {
+        uint8 sharedDecimals = STARGATE.sharedDecimals();
+        uint8 localDecimals = _isNativeUnderlying()
+            ? NATIVE_DECIMALS
+            : IERC20Metadata(address(UNDERLYING_TOKEN)).decimals();
+        if (localDecimals < sharedDecimals) {
+            return 0;
+        }
+        uint256 conversionRate = 10 ** uint256(localDecimals - sharedDecimals);
+        dustlessAmount = (amount / conversionRate) * conversionRate;
     }
 
     function _underlyingBalance() internal view returns (uint256) {
