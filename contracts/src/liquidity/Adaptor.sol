@@ -513,7 +513,7 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
             return 0;
         }
         uint256 conversionRate = 10 ** uint256(localDecimals - sharedDecimals);
-        dustlessAmount = (amount / conversionRate) * conversionRate;
+        dustlessAmount = amount - (amount % conversionRate);
     }
 
     function _underlyingBalance() internal view returns (uint256) {
@@ -525,8 +525,11 @@ contract Adaptor is ReentrancyGuard, SelfCall, ILayerZeroComposer {
 
     /// @notice Accepts native transfers; Stargate/OFT refunds are handled via balance deltas.
     receive() external payable {
-        if (msg.sender == address(LIQUIDITY_MANAGER)) return;
-        if (msg.sender == LZ_ENDPOINT || msg.sender == address(STARGATE)) return;
+        if (
+            msg.sender == address(LIQUIDITY_MANAGER) ||
+            msg.sender == LZ_ENDPOINT ||
+            msg.sender == address(STARGATE)
+        ) return;
         nativeBalances[msg.sender] += msg.value;
         emit NativeDeposit(msg.sender, msg.value);
     }
