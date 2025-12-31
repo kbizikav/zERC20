@@ -37,7 +37,19 @@
 
 - Custody and policy boundary for liquidity. It exists to keep zERC20 supply anchored to real underlying liquidity while expressing the incentive curve that decides when liquidity should be attracted or released.
 - Acts as the sole liquidity authority for minting/burning zERC20 on that chain, ensuring supply changes are traceable to explicit liquidity entry/exit policy.
+- Wraps pull underlying into the contract, quote reward on the pre-deposit liquidity balance, and mints `amount + reward` of zERC20 to the receiver. Rewards draw down `feeSurplus` and are zero when surplus is empty.
+- Unwraps burn zERC20, apply the IncentiveLib fee curve, and release `amount - fee` underlying. Fees accrue into `feeSurplus`; if the contract cannot cover the post-fee amount it reverts with `InsufficientLiquidity`.
+- "Liquidity" for the curve is `underlyingBalance - feeSurplus`; direct transfers into the manager intentionally change incentives because they change the observed balance.
+- Handles both ERC-20 and native underlying. Native wraps require `msg.value == amount`, and the receive hook wraps directly to `msg.sender`.
 - Accumulates fee surplus as a governance-controlled reserve that funds future incentives or withdrawals.
+
+### IncentiveLib (`contracts/src/libraries/IncentiveLib.sol`)
+
+- Defines a linear incentive density over liquidity L with target T and strength k (bps): `density(x) = k * (1 - x / T)` for `x < T`, and `0` for `x >= T`.
+- Wrap reward is the area under `density(x)` from `L` to `L + amount`, clamped to `[0, T]`, rounded down (floor), and capped by `feeSurplus`.
+- Unwrap fee is the area under `density(x)` from `L` to `L - amount`, clamped to `[0, T]`, rounded up (ceil).
+- When liquidity is insufficient (`amount > L`), the curve integrates down to zero and then charges the remaining shortfall on top: `fee = amount - max(L - fee_curve, 0)`, capped at `amount`. This makes `amountOut = max(L - fee_curve, 0)` and can reduce the payout to zero when liquidity is exhausted.
+- When a wrap/unwrap stays entirely above target (`L >= T` and the path never dips below T), reward/fee is zero; if the path crosses T, only the below-target segment contributes.
 
 ### Adaptor (`contracts/src/liquidity/Adaptor.sol`)
 
@@ -56,7 +68,7 @@
 ### Liquidity Entry / Exit Flow
 
 1. Users enter the system by wrapping underlying through `LiquidityManager`, which exists to anchor zERC20 supply to available liquidity while applying incentive policy around the target liquidity band.
-2. Users exit either locally by unwrapping via `LiquidityManager` or cross-chain through `Adaptor`, which exists to preserve exit intent (slippage limits, refunds) when bridging the underlying to another chain.
+2. Users exit either locally by unwrapping via `LiquidityManager` (paying the curve fee into `feeSurplus`) or cross-chain through `Adaptor`, which exists to preserve exit intent (slippage limits, refunds) when bridging the underlying to another chain.
 
 ## Security & Operational Notes
 
