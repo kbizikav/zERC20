@@ -114,7 +114,7 @@ export async function unwrapAndBridgeWithAdaptor({
   const account = ensureAccount(walletClient);
   const receiptClientInstance = receiptClient(walletClient, publicClient);
 
-  const zerc20Address = normalizeHex((await adaptor.read.ZERC20()) as string);
+  const zerc20Address = normalizeHex((await adaptor.read.zerc20()) as string);
   const zerc20 = getZerc20Contract(zerc20Address, walletClient);
   const currentAllowance = ensureBigintLike(await zerc20.read.allowance([account, normalizedAdaptor]), 'allowance');
   let approvalTransactionHash: string | undefined;
