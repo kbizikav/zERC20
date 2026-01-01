@@ -119,12 +119,28 @@ contract IncentiveLibTest is Test {
         assertEq(fee, 5, "fee should apply only to below-target segment");
     }
 
-    function testUnwrapFeeChargesFullAmountWhenOverdrawn() public view {
+    function testUnwrapFeeOverdrawStartsFromZero() public view {
         IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
 
         uint256 fee = lib.quoteUnwrapFee(params, 100, 150);
 
-        assertEq(fee, 150, "over-withdraw should charge full amount");
+        assertEq(fee, 60, "over-withdraw should charge from zero-liquidity path");
+    }
+
+    function testUnwrapFeeOverdrawAboveTargetChargesShortfallPlusCurve() public view {
+        IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000, k: TEN_PERCENT_K});
+
+        uint256 fee = lib.quoteUnwrapFee(params, 1_200, 1_500);
+
+        assertEq(fee, 350, "over-withdraw should add shortfall plus full curve fee");
+    }
+
+    function testUnwrapFeeOverdrawCapsAtAmountWhenFeeExceedsLiquidity() public view {
+        IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1, k: 100_000});
+
+        uint256 fee = lib.quoteUnwrapFee(params, 1, 2);
+
+        assertEq(fee, 2, "over-withdraw should cap fee at amount");
     }
 
     function testWrapRewardGracefullyHandlesHugeParams() public view {

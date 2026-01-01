@@ -176,28 +176,28 @@ impl AdaptorContract {
     pub async fn liquidity_manager(&self) -> ContractResult<Address> {
         let addr = self
             .contract_with_provider()
-            .LIQUIDITY_MANAGER()
+            .liquidityManager()
             .call()
             .await?;
         Ok(addr)
     }
 
     pub async fn stargate(&self) -> ContractResult<Address> {
-        let addr = self.contract_with_provider().STARGATE().call().await?;
+        let addr = self.contract_with_provider().stargate().call().await?;
         Ok(addr)
     }
 
     pub async fn underlying_token(&self) -> ContractResult<Address> {
         let addr = self
             .contract_with_provider()
-            .UNDERLYING_TOKEN()
+            .underlyingToken()
             .call()
             .await?;
         Ok(addr)
     }
 
     pub async fn zerc20(&self) -> ContractResult<Address> {
-        let addr = self.contract_with_provider().ZERC20().call().await?;
+        let addr = self.contract_with_provider().zerc20().call().await?;
         Ok(addr)
     }
 

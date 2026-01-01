@@ -2,6 +2,7 @@ import type { PublicClient, WalletClient } from 'viem';
 import { zeroAddress } from 'viem';
 import { waitForTransactionReceipt } from 'viem/actions';
 
+import { NATIVE_TOKEN } from '../constants.js';
 import { getErc20Contract, getLiquidityManagerContract } from '../onchain/contracts.js';
 import { normalizeHex, toBigInt } from '../utils/hex.js';
 
@@ -66,22 +67,31 @@ export async function wrapWithLiquidityManager({
   if (underlying === normalizeHex(zeroAddress)) {
     throw new Error('liquidity manager is not configured with an underlying token');
   }
-  const underlyingToken = getErc20Contract(underlying, walletClient);
-  const currentAllowance = ensureBigintLike(await underlyingToken.read.allowance([account, normalizedManager]), 'allowance');
+  const nativeToken = normalizeHex(NATIVE_TOKEN) as `0x${string}`;
+  const isNative = underlying === nativeToken;
   let approvalTransactionHash: string | undefined;
 
-  if (currentAllowance < amount) {
-    const approvalHash = await underlyingToken.write.approve([normalizedManager as `0x${string}`, amount], {
-      account,
-      chain,
-    });
-    const approvalReceipt = await waitForTransactionReceipt(receiptClientInstance, { hash: approvalHash });
-    approvalTransactionHash = approvalReceipt.transactionHash;
+  if (!isNative) {
+    const underlyingToken = getErc20Contract(underlying, walletClient);
+    const currentAllowance = ensureBigintLike(
+      await underlyingToken.read.allowance([account, normalizedManager]),
+      'allowance',
+    );
+
+    if (currentAllowance < amount) {
+      const approvalHash = await underlyingToken.write.approve([normalizedManager as `0x${string}`, amount], {
+        account,
+        chain,
+      });
+      const approvalReceipt = await waitForTransactionReceipt(receiptClientInstance, { hash: approvalHash });
+      approvalTransactionHash = approvalReceipt.transactionHash;
+    }
   }
 
   const wrapHash = await manager.write.wrap([amount, receiverAddress], {
     account,
     chain,
+    value: isNative ? amount : undefined,
   });
   const wrapReceipt = await waitForTransactionReceipt(receiptClientInstance, { hash: wrapHash });
   return {

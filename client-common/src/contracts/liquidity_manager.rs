@@ -108,9 +108,23 @@ impl LiquidityManagerContract {
         amount: U256,
         receiver: Address,
     ) -> ContractResult<PendingTransactionBuilder<Ethereum>> {
+        self.wrap_with_value(private_key, amount, receiver, U256::ZERO)
+            .await
+    }
+
+    pub async fn wrap_with_value(
+        &self,
+        private_key: B256,
+        amount: U256,
+        receiver: Address,
+        value: U256,
+    ) -> ContractResult<PendingTransactionBuilder<Ethereum>> {
         let signer = get_provider_with_signer(&self.provider, private_key);
         let contract = LiquidityManager::new(self.address, signer.clone());
-        let call = contract.wrap(amount, receiver).with_cloned_provider();
+        let call = contract
+            .wrap(amount, receiver)
+            .value(value)
+            .with_cloned_provider();
         send_call_with_legacy(call, &signer, self.legacy_tx).await
     }
 

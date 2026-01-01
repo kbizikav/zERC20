@@ -17,10 +17,11 @@ This document explains how the zk-wormhole-enabled ERC-20 (zERC20) system is spl
 
 | Component | Role |
 | --- | --- |
-| `zERC20` (`src/zERC20.sol`) | Upgradeable ERC-20 that emits `IndexedTransfer` events, maintains the truncated SHA-256 hash chain, and exposes `teleport` for verifiers plus `mint`/`burn` hooks for the minter. |
+| `zERC20` (`src/zERC20.sol`) | Upgradeable ERC-20 that emits `IndexedTransfer` events, maintains the truncated SHA-256 hash chain, and exposes `teleport` for verifiers plus `mint`/`burn` hooks for the liquidity authority. |
 | `Verifier` (`src/Verifier.sol`) | LayerZero OApp + UUPS proxy that (a) reserves hash-chain checkpoints, (b) verifies Nova/Groth16 proofs, (c) tracks `totalTeleported` per recipient, and (d) relays local roots to the hub. |
 | `Hub` (`src/Hub.sol`) | Aggregates every verifier’s latest root into a Poseidon tree and broadcasts the global root/sequence back to all verifiers through LayerZero. |
-| `Minter` (`src/Minter.sol`) | Custodial bridge that mints/burns zERC20 in exchange for native/ERC-20 liquidity so users can enter and exit the system. |
+| `LiquidityManager` (`src/liquidity/LiquidityManager.sol`) | Liquidity policy boundary that anchors zERC20 supply to real underlying collateral and encodes the incentive curve for when liquidity should be attracted or released. |
+| `Adaptor` (`src/liquidity/Adaptor.sol`) | Cross-chain exit boundary that converts zERC20 into underlying liquidity via Stargate while preserving user intent through refunds and fallback when bridging cannot proceed. |
 
 ### Circuits and Generated Artifacts
 

@@ -101,61 +101,21 @@ pragma solidity ^0.8.20;
  *
  *   fee = ceil(fee_continuous)
  *
- * Special protection:
- *  - If `amount > L`, the requested withdrawal is larger than the current
- *    liquidity. In this case, the library returns:
+ * Insufficient liquidity edge case:
+ *  - If `amount > L`, we clamp the end of the curve path at 0 (draining all
+ *    liquidity), then add the shortfall on top of the curve fee.
+ *  - This effectively charges: fee = amount - max(L - fee_curve, 0),
+ *    which is capped to `amount` in the caller.
  *
- *      fee = amount
- *
- *    This allows the caller to treat such a withdrawal as "net zero" for
- *    the user (fee equals the requested amount) and prevents liquidity
- *    underflow in the caller contract.
- *
- * ---------------------------------------------------------------------------
- * No-arbitrage and rounding direction
- * ---------------------------------------------------------------------------
- *
- * In the continuous (real-valued) model:
- *  - If you move from L to L + amount (deposit), and then back from
- *    L + amount to L (withdraw), the total reward and total fee are
- *    exactly equal:
- *
- *      reward_continuous = fee_continuous  (same path, reversed)
- *
- *  - Similarly for withdraw then deposit along the same path.
- *
- * On-chain, we deliberately:
- *  - round rewards DOWN (floor), and
- *  - round fees UP   (ceil).
- *
- * Therefore, for any path:
- *
- *   collected_fee >= paid_reward
- *
- * This means an attacker cannot profit by performing atomic deposit/withdraw
- * cycles that only move liquidity along the same path and back.
- *
- * ---------------------------------------------------------------------------
- * Usage
- * ---------------------------------------------------------------------------
- *
- * The library is stateless. A typical calling contract stores:
- *
- *   FeeParams params;
- *   uint256   liquidity;   // current total liquidity
- *   uint256   feeSurplus;  // accumulated surplus from past fees
- *
- * And uses:
- *
- *   uint256 reward = IncentiveLib.quoteWrapReward(params, liquidity, feeSurplus, amount);
- *   uint256 fee    = IncentiveLib.quoteUnwrapFee(params, liquidity, amount);
- *
- * The caller is responsible for:
- *  - updating its own `liquidity` and `feeSurplus` storage,
- *  - performing any token transfers,
- *  - enforcing any additional business logic.
+ * Arithmetic safety:
+ *  - Intermediate squares are bounded by requiring T <= MAX_TARGET_LIQUIDITY.
+ *  - Multiplication by k is guarded by a maxK check to avoid overflow.
+ *  - Subtractions along the path are clamped or ordered to avoid underflow.
  */
 library IncentiveLib {
+    error InvalidTarget();
+    error InvalidK();
+
     /**
      * @notice Parameters that define the fee/reward curve.
      */
@@ -182,16 +142,15 @@ library IncentiveLib {
      * - Rounds DOWN (floor).
      * - Caps the result by `feeSurplus`.
      */
-    function quoteWrapReward(
-        FeeParams memory params,
-        uint256 liquidity,
-        uint256 feeSurplus,
-        uint256 amount
-    ) internal pure returns (uint256 wrapReward) {
-        uint256 raw = _rawWrapReward(liquidity, params.targetLiquidity, params.k, amount);
+    function quoteWrapReward(FeeParams memory params, uint256 liquidity, uint256 feeSurplus, uint256 amount)
+        internal
+        pure
+        returns (uint256 wrapReward)
+    {
+        uint256 reward = _rawWrapReward(liquidity, params.targetLiquidity, params.k, amount);
 
-        if (raw > feeSurplus) return feeSurplus;
-        return raw;
+        if (reward > feeSurplus) return feeSurplus;
+        return reward;
     }
 
     /**
@@ -199,27 +158,41 @@ library IncentiveLib {
      * @dev
      * - Uses the same continuous density described in the library header.
      * - Rounds UP (ceil).
-     * - If `amount > liquidity`, returns `amount` to allow "net-zero" withdrawal.
      */
-    function quoteUnwrapFee(
-        FeeParams memory params,
-        uint256 liquidity,
-        uint256 amount
-    ) internal pure returns (uint256 unwrapFee) {
-        uint256 raw = _rawUnwrapFee(liquidity, params.targetLiquidity, params.k, amount);
-        return raw > amount ? amount : raw;
+    function quoteUnwrapFee(FeeParams memory params, uint256 liquidity, uint256 amount)
+        internal
+        pure
+        returns (uint256 unwrapFee)
+    {
+        uint256 fee = _rawUnwrapFee(liquidity, params.targetLiquidity, params.k, amount);
+
+        if (liquidity > amount) {
+            // Sufficient liquidity case: charge the raw fee
+            return fee;
+        } else {
+            // Insufficient liquidity: charge the shortfall plus the curve fee, capped at amount.
+            uint256 liquidityMinusFee = liquidity >= fee ? liquidity - fee : 0;
+            return amount - liquidityMinusFee;
+        }
     }
 
     /*//////////////////////////////////////////////////////////////
                          INTERNAL PURE MATH HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function _rawWrapReward(
-        uint256 L,
-        uint256 T,
-        uint256 k_,
-        uint256 amount
-    ) internal pure returns (uint256 rewardRaw) {
+    function _validateFeeParams(FeeParams memory params) internal pure {
+        if (params.targetLiquidity == 0) revert InvalidTarget();
+        if (params.targetLiquidity > MAX_TARGET_LIQUIDITY) revert InvalidTarget();
+        if (params.k > K_BPS_DENOM) revert InvalidK();
+        uint256 maxK = type(uint256).max / params.targetLiquidity / params.targetLiquidity;
+        if (params.k > maxK) revert InvalidK();
+    }
+
+    function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount)
+        internal
+        pure
+        returns (uint256 rewardRaw)
+    {
         if (T == 0 || amount == 0) {
             return 0;
         }
@@ -261,19 +234,9 @@ library IncentiveLib {
         rewardRaw = numerator / denominator;
     }
 
-    function _rawUnwrapFee(
-        uint256 L,
-        uint256 T,
-        uint256 k_,
-        uint256 amount
-    ) internal pure returns (uint256 feeRaw) {
+    function _rawUnwrapFee(uint256 L, uint256 T, uint256 k_, uint256 amount) internal pure returns (uint256 feeRaw) {
         if (amount == 0) {
             return 0;
-        }
-
-        // If requested withdrawal exceeds liquidity, charge full amount as fee.
-        if (amount > L) {
-            return amount;
         }
 
         if (T == 0) {
@@ -293,7 +256,8 @@ library IncentiveLib {
 
         // Portion of the path within [0, T).
         uint256 start = L < T ? L : T; // start (higher), capped at T
-        uint256 endRaw = L - amount; // end (lower) before capping
+        // Insufficient liquidity: clamp the end to 0 to model draining all liquidity.
+        uint256 endRaw = amount >= L ? 0 : L - amount; // end (lower) before capping
         uint256 end = endRaw < T ? endRaw : T; // cap at T
 
         if (start <= end) {

@@ -10,10 +10,10 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {EndpointV2Mock as EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
 
 contract MintableERC20 is ERC20 {
-    uint8 private immutable _decimals;
+    uint8 private immutable DECIMALS;
 
     constructor(string memory name_, string memory symbol_, uint8 decimals_) ERC20(name_, symbol_) {
-        _decimals = decimals_;
+        DECIMALS = decimals_;
     }
 
     function mint(address to, uint256 amount) external {
@@ -21,7 +21,7 @@ contract MintableERC20 is ERC20 {
     }
 
     function decimals() public view override returns (uint8) {
-        return _decimals;
+        return DECIMALS;
     }
 }
 
@@ -35,6 +35,7 @@ contract LiquidityManagerTest is Test {
     address internal constant ALICE = address(0xA11CE);
     address internal constant REWARD_COLLECTOR = address(0xC0FFEE);
     uint256 internal constant START_BALANCE = 10_000 ether;
+    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     function setUp() public {
         endpoint = new EndpointV2(1, address(this));
@@ -55,6 +56,15 @@ contract LiquidityManagerTest is Test {
             abi.encodeCall(LiquidityManager.initialize, (address(usdc), address(token), params, address(this)));
 
         vm.expectRevert(LiquidityManager.DecimalMismatch.selector);
+        new ERC1967Proxy(address(impl), initData);
+    }
+
+    function testInitializeRevertsOnZeroOwner() public {
+        LiquidityManager impl = new LiquidityManager();
+        bytes memory initData =
+            abi.encodeCall(LiquidityManager.initialize, (address(underlying), address(token), params, address(0)));
+
+        vm.expectRevert(LiquidityManager.ZeroAddress.selector);
         new ERC1967Proxy(address(impl), initData);
     }
 
@@ -92,6 +102,93 @@ contract LiquidityManagerTest is Test {
         assertEq(underlying.balanceOf(address(manager)), expectedUnderlying, "underlying held by manager");
     }
 
+    function testWrapWithMinOutRevertsOnSlippage() public {
+        _accrueFeeSurplus();
+
+        uint256 reward = manager.quoteWrapReward(100 ether);
+        uint256 minOut = 100 ether + reward + 1;
+
+        vm.prank(ALICE);
+        vm.expectRevert(LiquidityManager.SlippageExceeded.selector);
+        manager.wrapWithMinOut(100 ether, minOut, ALICE);
+    }
+
+    function testWrapWithMinOutSucceeds() public {
+        _accrueFeeSurplus();
+
+        uint256 reward = manager.quoteWrapReward(100 ether);
+        uint256 minOut = 100 ether + reward;
+
+        vm.prank(ALICE);
+        uint256 minted = manager.wrapWithMinOut(100 ether, minOut, ALICE);
+
+        assertEq(minted, minOut, "wrap with min out");
+    }
+
+    function testUnwrapWithMinOutRevertsOnSlippage() public {
+        vm.startPrank(ALICE);
+        underlying.approve(address(manager), type(uint256).max);
+        manager.wrap(500 ether, ALICE);
+
+        uint256 fee = manager.quoteUnwrapFee(200 ether);
+        uint256 minOut = 200 ether - fee + 1;
+
+        vm.expectRevert(LiquidityManager.SlippageExceeded.selector);
+        manager.unwrapWithMinOut(200 ether, minOut, ALICE);
+        vm.stopPrank();
+    }
+
+    function testUnwrapWithMinOutSucceeds() public {
+        vm.startPrank(ALICE);
+        underlying.approve(address(manager), type(uint256).max);
+        manager.wrap(500 ether, ALICE);
+
+        uint256 fee = manager.quoteUnwrapFee(200 ether);
+        uint256 minOut = 200 ether - fee;
+        uint256 received = manager.unwrapWithMinOut(200 ether, minOut, ALICE);
+
+        vm.stopPrank();
+        assertEq(received, minOut, "unwrap with min out");
+    }
+
+    function testWrapAndUnwrapNativeUnderlying() public {
+        zERC20 nativeToken = _deployToken(address(this), endpoint, 18);
+        LiquidityManager nativeManager = _deployManager(NATIVE_TOKEN, address(nativeToken), params, address(this));
+        nativeToken.setMinter(address(nativeManager));
+
+        uint256 amount = 2 ether;
+        vm.deal(ALICE, amount);
+
+        vm.prank(ALICE);
+        uint256 minted = nativeManager.wrap{value: amount}(amount, ALICE);
+
+        assertEq(minted, amount, "native wrap mints principal");
+        assertEq(nativeToken.balanceOf(ALICE), amount, "zerc20 minted to receiver");
+        assertEq(address(nativeManager).balance, amount, "native held by manager");
+
+        uint256 fee = nativeManager.quoteUnwrapFee(amount);
+
+        vm.prank(ALICE);
+        uint256 received = nativeManager.unwrap(amount, ALICE);
+
+        assertEq(received, amount - fee, "unwrap pays fee");
+        assertEq(nativeManager.feeSurplus(), fee, "fee surplus grows");
+        assertEq(address(ALICE).balance, amount - fee, "native sent to receiver");
+        assertEq(address(nativeManager).balance, fee, "native fee retained");
+    }
+
+    function testWrapNativeRevertsOnValueMismatch() public {
+        LiquidityManager nativeManager = _deployManager(NATIVE_TOKEN, address(token), params, address(this));
+        token.setMinter(address(nativeManager));
+
+        vm.deal(ALICE, 1 ether);
+        vm.prank(ALICE);
+        vm.expectRevert(
+            abi.encodeWithSelector(LiquidityManager.InvalidMsgValue.selector, 2 ether, 1 ether)
+        );
+        nativeManager.wrap{value: 1 ether}(2 ether, ALICE);
+    }
+
     function testWithdrawRewardsRequiresAdminAndEmitsSurplus() public {
         uint256 accruedFee = _accrueFeeSurplus();
 
@@ -121,8 +218,27 @@ contract LiquidityManagerTest is Test {
         assertEq(stored.targetLiquidity, newParams.targetLiquidity, "target stored");
         assertEq(stored.k, newParams.k, "k stored");
 
-        vm.expectRevert(LiquidityManager.InvalidTarget.selector);
+        vm.expectRevert(IncentiveLib.InvalidTarget.selector);
         manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 0, k: 1}));
+
+        vm.expectRevert(IncentiveLib.InvalidK.selector);
+        manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 1, k: 10_001}));
+    }
+
+    function testSetFeeParamsRejectsOversizedTarget() public {
+        uint256 tooLargeTarget = uint256(type(uint128).max) + 1;
+        IncentiveLib.FeeParams memory newParams = IncentiveLib.FeeParams({targetLiquidity: tooLargeTarget, k: 1});
+
+        vm.expectRevert(IncentiveLib.InvalidTarget.selector);
+        manager.setFeeParams(newParams);
+    }
+
+    function testSetFeeParamsRejectsOverflowingK() public {
+        uint256 largeTarget = type(uint128).max;
+        IncentiveLib.FeeParams memory newParams = IncentiveLib.FeeParams({targetLiquidity: largeTarget, k: 2});
+
+        vm.expectRevert(IncentiveLib.InvalidK.selector);
+        manager.setFeeParams(newParams);
     }
 
     function _accrueFeeSurplus() private returns (uint256 feeAmount) {
@@ -148,7 +264,7 @@ contract LiquidityManagerTest is Test {
         LiquidityManager implementation = new LiquidityManager();
         bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (underlying_, zerc20_, feeParams, owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
-        return LiquidityManager(address(proxy));
+        return LiquidityManager(payable(address(proxy)));
     }
 
     function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (zERC20) {

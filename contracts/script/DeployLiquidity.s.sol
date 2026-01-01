@@ -19,6 +19,7 @@ import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 /// - LIQUIDITY_OWNER (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
 /// - SET_LIQUIDITY_AS_MINTER (uint256): When non-zero, attempts to set the manager as zERC20 minter (defaults to 1).
 /// - ADAPTOR_STARGATE (address): Stargate endpoint; when set, deploys the Adaptor wired to the manager (or set in chain-config).
+/// - LZ_ENDPOINT (address): LayerZero endpoint used to validate lzCompose callers.
 /// - CHAIN_CONFIG_PATH (string): Optional path to per-chain defaults (underlyingToken/stargate); falls back to `config/chain-config.json`.
 contract DeployLiquidity is DeterministicDeployer {
     string internal constant DEFAULT_CHAIN_CONFIG_PATH = "config/chain-config.json";
@@ -29,6 +30,7 @@ contract DeployLiquidity is DeterministicDeployer {
         IncentiveLib.FeeParams fee;
         address owner;
         address stargate;
+        address lzEndpoint;
         bool setMinter;
     }
 
@@ -40,6 +42,7 @@ contract DeployLiquidity is DeterministicDeployer {
     error Zerc20TokenRequired();
     error UnderlyingTokenRequired();
     error LiquidityTargetRequired();
+    error LzEndpointRequired();
 
     function run() external {
         Config memory cfg = _loadConfig();
@@ -59,7 +62,7 @@ contract DeployLiquidity is DeterministicDeployer {
             (cfg.underlyingToken, cfg.zerc20Token, cfg.fee, cfg.owner)
         );
         LiquidityManager manager = LiquidityManager(
-            _deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData)
+            payable(_deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
         );
 
         console2.log("LiquidityManager implementation deployed at", address(implementation));
@@ -79,9 +82,23 @@ contract DeployLiquidity is DeterministicDeployer {
         }
 
         if (cfg.stargate != address(0)) {
-            Adaptor adaptor = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(address(manager), cfg.stargate);
-            console2.log("Adaptor deployed at", address(adaptor));
+            if (cfg.lzEndpoint == address(0)) revert LzEndpointRequired();
+            Adaptor adaptorImplementation = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}();
+            bytes memory adaptorInitData = abi.encodeCall(
+                Adaptor.initialize, (address(manager), cfg.stargate, cfg.lzEndpoint, cfg.owner)
+            );
+            Adaptor adaptor = Adaptor(
+                payable(
+                    _deployProxyAndInit(
+                        baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData
+                    )
+                )
+            );
+            console2.log("Adaptor implementation deployed at", address(adaptorImplementation));
+            console2.log("Adaptor proxy deployed at", address(adaptor));
+            console2.log("  owner set to", cfg.owner);
             console2.log("  stargate", cfg.stargate);
+            console2.log("  lz endpoint", cfg.lzEndpoint);
         } else {
             console2.log("Adaptor skipped (ADAPTOR_STARGATE not set)");
         }
@@ -98,6 +115,9 @@ contract DeployLiquidity is DeterministicDeployer {
         cfg.fee.k = vm.envOr("LIQUIDITY_K", uint256(1_000));
         cfg.owner = vm.envOr("LIQUIDITY_OWNER", address(0));
         cfg.stargate = vm.envOr("ADAPTOR_STARGATE", chainCfg.stargate);
+        if (cfg.stargate != address(0)) {
+            cfg.lzEndpoint = vm.envAddress("LZ_ENDPOINT");
+        }
         cfg.setMinter = vm.envOr("SET_LIQUIDITY_AS_MINTER", uint256(1)) != 0;
 
         if (cfg.zerc20Token == address(0)) revert Zerc20TokenRequired();
@@ -120,7 +140,7 @@ contract DeployLiquidity is DeterministicDeployer {
         chainCfg.stargate = _parseAddress(json, string.concat(base, ".stargate"));
     }
 
-    function _parseAddress(string memory json, string memory key) private view returns (address value) {
+    function _parseAddress(string memory json, string memory key) private pure returns (address value) {
         try vm.parseJsonAddress(json, key) returns (address parsed) {
             value = parsed;
         } catch (bytes memory) {

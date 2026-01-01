@@ -193,12 +193,14 @@ contract ZERC20Test is Test {
         address owner = vm.addr(ownerKey);
         uint256 value = 1 ether;
         uint256 deadline = block.timestamp;
+        if (deadline > 0) {
+            deadline -= 1;
+        }
 
         bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
 
-        vm.warp(deadline + 1);
         vm.expectRevert("ERC20Permit: expired deadline");
         token.permit(owner, BOB, value, deadline, v, r, s);
     }

@@ -22,14 +22,14 @@ The scripts consume environment variables through `vm.env*` helpers. Place the v
 
 ### Hub deployment (`DeployHub`)
 - `HUB_EID` (uint32): LayerZero endpoint ID for the chain hosting the Hub (for reference/logging)
-- `HUB_ENDPOINT` (address): LayerZero endpoint contract on that chain
+- `LZ_ENDPOINT` (address): LayerZero endpoint contract on that chain
 - `HUB_DELEGATE` (address, optional): Account that will own the Hub and manage LayerZero config; defaults to the broadcaster wallet if omitted
 
 ### Verifier and token deployment (`DeployVerifierAndToken`)
 - `TOKEN_NAME` (string): ERC20 token name
 - `TOKEN_SYMBOL` (string): ERC20 token symbol
 - `HUB_EID` (uint32): Hub endpoint identifier the verifier should target
-- `VERIFIER_ENDPOINT` (address): LayerZero endpoint contract on the verifier chain
+- `LZ_ENDPOINT` (address): LayerZero endpoint contract on the verifier chain
 - `VERIFIER_DELEGATE` (address, optional): Account that can update verifier LayerZero config; defaults to the broadcaster wallet if omitted
 - `TOKEN_OWNER` (address, optional): Account that will own the token; defaults to the broadcaster wallet if omitted
 - `TOKEN_DECIMALS` (uint, optional): Token decimals; defaults to `18` and must be at least `6`
@@ -42,13 +42,13 @@ VERIFIER_RPC=https://optimism-sepolia.example
 DEPLOY_SALT=my-optional-salt
 
 HUB_EID=40245
-HUB_ENDPOINT=0x6EDCE65403992e310A62460808c4b910D972f10f
+LZ_ENDPOINT=0x6EDCE65403992e310A62460808c4b910D972f10f
 # HUB_DELEGATE=0xYourDelegate # optional; defaults to PRIVATE_KEY holder
 
 TOKEN_NAME=zUSD
 TOKEN_SYMBOL=zUSD
 HUB_EID=40245
-VERIFIER_ENDPOINT=0x6EDCE65403992e310A62460808c4b910D972f10f
+# LZ_ENDPOINT already set above
 # VERIFIER_DELEGATE=0xYourVerifierDelegate # optional; defaults to PRIVATE_KEY holder
 # LIQUIDITY_MANAGER=0x0000000000000000000000000000000000000000
 
@@ -98,6 +98,10 @@ Deploying Liquidity Manager and Adaptor
 ---------------------------------------
 The `DeployLiquidity` script deploys an upgradeable `LiquidityManager` and, when provided a Stargate address, a stateless `Adaptor` wired to that manager.
 
+Purpose notes:
+- `LiquidityManager` is the liquidity policy boundary for the system. It exists to keep the zERC20 supply anchored to real underlying liquidity while encoding the incentive curve that governs when liquidity should be attracted or released.
+- `Adaptor` is the cross-chain exit and recovery boundary. It exists to turn zERC20 inflows into a controlled release of underlying value via Stargate while preserving user intent through slippage limits and refund accounting when bridging conditions change.
+
 Required env:
 - `ZERC20` (address): zERC20 token the manager mints/burns.
 - `LIQUIDITY_UNDERLYING_TOKEN` (address): Underlying ERC20 held by the manager.
@@ -105,10 +109,10 @@ Required env:
 
 Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
 - `LIQUIDITY_TARGET` (uint256): Target liquidity level that drives rewards/fees (defaults to 1_000_000e6).
- - `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `0`, which disables curve-based incentives.
+- `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `0`, which disables curve-based incentives.
 - `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
-- `SET_LIQUIDITY_AS_MINTER` (uint256): Non-zero to set the manager as the token minter (defaults to 1).
 - `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
+- `LZ_ENDPOINT` (address): LayerZero endpoint used to validate `lzCompose` callers (set explicitly when deploying the Adaptor).
 - Defaults can also be sourced from `config/chain-config.json` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence.
 
 Example:
