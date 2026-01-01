@@ -83,10 +83,20 @@ contract DeployLiquidity is DeterministicDeployer {
 
         if (cfg.stargate != address(0)) {
             if (cfg.lzEndpoint == address(0)) revert LzEndpointRequired();
-            Adaptor adaptor = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(
-                address(manager), cfg.stargate, cfg.lzEndpoint
+            Adaptor adaptorImplementation = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}();
+            bytes memory adaptorInitData = abi.encodeCall(
+                Adaptor.initialize, (address(manager), cfg.stargate, cfg.lzEndpoint, cfg.owner)
             );
-            console2.log("Adaptor deployed at", address(adaptor));
+            Adaptor adaptor = Adaptor(
+                payable(
+                    _deployProxyAndInit(
+                        baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData
+                    )
+                )
+            );
+            console2.log("Adaptor implementation deployed at", address(adaptorImplementation));
+            console2.log("Adaptor proxy deployed at", address(adaptor));
+            console2.log("  owner set to", cfg.owner);
             console2.log("  stargate", cfg.stargate);
             console2.log("  lz endpoint", cfg.lzEndpoint);
         } else {

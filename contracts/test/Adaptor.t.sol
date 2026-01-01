@@ -322,21 +322,24 @@ contract AdaptorTest is TestHelperOz5 {
         zerc20 = _deployZerc20(endpoint);
         manager = new MockLiquidityManager(underlying, address(zerc20));
         stargate = new MockStargate(address(underlying));
-        adaptor = new Adaptor(address(manager), address(stargate), address(endpoint));
+        adaptor = _deployAdaptor(address(manager), address(stargate), address(endpoint), address(this));
 
         zerc20.setMinter(address(this));
     }
 
-    function testConstructorRevertsOnStargateTokenMismatch() public {
+    function testInitializeRevertsOnStargateTokenMismatch() public {
         MintableToken otherUnderlying = new MintableToken();
         MockStargate badStargate = new MockStargate(address(otherUnderlying));
+        Adaptor implementation = new Adaptor();
+        bytes memory initData =
+            abi.encodeCall(Adaptor.initialize, (address(manager), address(badStargate), address(endpoint), address(this)));
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 Adaptor.UnderlyingTokenMismatch.selector, address(underlying), address(otherUnderlying)
             )
         );
-        new Adaptor(address(manager), address(badStargate), address(endpoint));
+        new ERC1967Proxy(address(implementation), initData);
     }
 
     function testQuoteFeeSaturatesBridgeFee() public {
@@ -431,7 +434,8 @@ contract AdaptorTest is TestHelperOz5 {
 
         MockLiquidityManager nativeManager = new MockLiquidityManager(IERC20(NATIVE_TOKEN), address(zerc20));
         MockStargate nativeStargate = new MockStargate(NATIVE_TOKEN);
-        Adaptor nativeAdaptor = new Adaptor(address(nativeManager), address(nativeStargate), address(endpoint));
+        Adaptor nativeAdaptor =
+            _deployAdaptor(address(nativeManager), address(nativeStargate), address(endpoint), address(this));
 
         nativeManager.setQuoteUnwrapFee(unwrapFee);
         nativeStargate.setQuote(nativeFee, bridgeTokenFee);
@@ -618,6 +622,16 @@ contract AdaptorTest is TestHelperOz5 {
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return ZERC20AdaptorHarness(payable(address(proxy)));
+    }
+
+    function _deployAdaptor(address manager_, address stargate_, address lzEndpoint_, address owner)
+        private
+        returns (Adaptor)
+    {
+        Adaptor implementation = new Adaptor();
+        bytes memory initData = abi.encodeCall(Adaptor.initialize, (manager_, stargate_, lzEndpoint_, owner));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        return Adaptor(payable(address(proxy)));
     }
 
     function _buildComposeMessage(
