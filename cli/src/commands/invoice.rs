@@ -236,7 +236,7 @@ pub async fn issue(
     );
 
     let signing_key = signing_key_from_b256(private_key)?;
-    let signature = sign_invoice(&signing_key, invoice_id)?;
+    let signature = sign_invoice(&signing_key, invoice_id, &args.tag)?;
     let submission = InvoiceSubmission {
         invoice_id: invoice_id.as_slice().to_vec(),
         signature: signature.to_vec(),
@@ -404,10 +404,10 @@ fn signing_key_from_b256(secret: B256) -> Result<SigningKey> {
         .map_err(|_| anyhow::anyhow!("failed to derive signing key from PRIVATE_KEY"))
 }
 
-fn sign_invoice(signing_key: &SigningKey, invoice_id: B256) -> Result<[u8; 65]> {
+fn sign_invoice(signing_key: &SigningKey, invoice_id: B256, tag: &str) -> Result<[u8; 65]> {
     let mut invoice_bytes = [0u8; 32];
     invoice_bytes.copy_from_slice(invoice_id.as_slice());
-    let message = invoice_signature_message(&invoice_bytes);
+    let message = invoice_signature_message(&invoice_bytes, tag);
     let digest: [u8; 32] = keccak256(&message).into();
 
     let (signature, recovery_id) = signing_key

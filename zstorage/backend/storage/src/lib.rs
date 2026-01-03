@@ -190,9 +190,9 @@ fn get_announcement(id: u64) -> Option<Announcement> {
 fn submit_invoice(input: InvoiceSubmission) -> Result<(), String> {
     let invoice_id = normalize_invoice_id(&input.invoice_id)?;
     let signature = parse_signature(&input.signature)?;
-    let message = invoice_signature_message(&invoice_id);
-    let signer_bytes = recover_address_from_signature(&signature, &message)?;
     let tag = normalize_tag(&input.tag);
+    let message = invoice_signature_message(&invoice_id, &tag);
+    let signer_bytes = recover_address_from_signature(&signature, &message)?;
 
     STATE.with(|cell| {
         let mut state = cell.borrow_mut();
@@ -306,10 +306,11 @@ fn migrate_state(state: StateV1) -> State {
     }
 }
 
-pub fn invoice_signature_message(invoice_id: &[u8; 32]) -> Vec<u8> {
+pub fn invoice_signature_message(invoice_id: &[u8; 32], tag: &str) -> Vec<u8> {
     let message = format!(
-        "ICP Stealth Invoice Submission:\ninvoice_id: 0x{}",
-        hex::encode(invoice_id)
+        "ICP Stealth Invoice Submission:\ninvoice_id: 0x{}\ntag: {}",
+        hex::encode(invoice_id),
+        tag
     );
     eip191_message(message.as_bytes())
 }

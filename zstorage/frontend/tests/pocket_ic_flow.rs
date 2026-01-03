@@ -211,7 +211,7 @@ fn pocket_ic_upgrade_preserves_storage_state() {
     let owner = derive_address(&signing_key);
     let mut invoice_id = [0u8; 32];
     rng.fill_bytes(&mut invoice_id);
-    let message = invoice_signature_message(&invoice_id);
+        let message = invoice_signature_message(&invoice_id, types::DEFAULT_TAG);
     let signature =
         sign_authorization(&message, &signing_key).expect("failed to sign invoice message");
 

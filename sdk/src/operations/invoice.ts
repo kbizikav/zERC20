@@ -108,7 +108,7 @@ export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<I
     });
   }
 
-  const signatureMessage = invoiceMessageText(invoiceBytes);
+  const signatureMessage = invoiceMessageText(invoiceBytes, tag);
 
   return {
     invoiceId: invoiceIdHex,
