@@ -2,6 +2,7 @@ export interface AnnouncementInput {
   ibeCiphertext: Uint8Array;
   ciphertext: Uint8Array;
   nonce: Uint8Array;
+  tag: string;
 }
 
 export interface Announcement {
@@ -10,6 +11,7 @@ export interface Announcement {
   ciphertext: Uint8Array;
   nonce: Uint8Array;
   createdAtNs: bigint;
+  tag: string;
 }
 
 export interface AnnouncementPage {
@@ -20,6 +22,7 @@ export interface AnnouncementPage {
 export interface InvoiceSubmission {
   invoiceId: Uint8Array;
   signature: Uint8Array;
+  tag: string;
 }
 
 export interface DecryptedAnnouncement {

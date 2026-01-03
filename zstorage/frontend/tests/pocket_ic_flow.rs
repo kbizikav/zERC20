@@ -133,7 +133,7 @@ fn pocket_ic_end_to_end_flow() {
                 .expect("failed to decrypt vet key");
 
         let page = client
-            .list_announcements(None, Some(50))
+            .list_announcements(None, Some(50), types::DEFAULT_TAG)
             .await
             .expect("failed to list announcements");
         let decrypted =

@@ -4,6 +4,7 @@ type AnnouncementInput = record {
   ibe_ciphertext : blob;
   ciphertext : blob;
   nonce : blob;
+  tag : text;
 };
 
 type Announcement = record {
@@ -12,6 +13,7 @@ type Announcement = record {
   ciphertext : blob;
   nonce : blob;
   created_at_ns : nat64;
+  tag : text;
 };
 
 type AnnouncementPage = record {
@@ -22,6 +24,7 @@ type AnnouncementPage = record {
 type InvoiceSubmission = record {
   invoice_id : blob;
   signature : blob;
+  tag : text;
 };
 
 type SubmitAnnouncementResult = variant { ok : Announcement; err : text };
@@ -33,7 +36,7 @@ type ListInvoicesResult = variant { ok : vec blob; err : text };
 service : (opt InitArgs) -> {
   submit_announcement : (AnnouncementInput) -> (SubmitAnnouncementResult);
   submit_invoice : (InvoiceSubmission) -> (SubmitInvoiceResult);
-  list_invoices : (blob) -> (ListInvoicesResult) query;
-  list_announcements : (opt nat64, opt nat32) -> (AnnouncementPage) query;
+  list_invoices : (blob, text) -> (ListInvoicesResult) query;
+  list_announcements : (opt nat64, opt nat32, text) -> (AnnouncementPage) query;
   get_announcement : (nat64) -> (opt Announcement) query;
 }

@@ -11,6 +11,7 @@ import {
   InvoiceSubmission,
 } from './types.js';
 import { StealthError } from './errors.js';
+import { DEFAULT_STORAGE_TAG } from '../constants.js';
 
 export type KeyManagerActor = {
   get_view_public_key: ActorMethod<[Uint8Array], CanisterResult<Uint8Array>>;
@@ -22,6 +23,7 @@ export interface AnnouncementInputCandid {
   ibe_ciphertext: Uint8Array;
   ciphertext: Uint8Array;
   nonce: Uint8Array;
+  tag: string;
 }
 
 export interface EncryptedViewKeyRequestCandid {
@@ -35,13 +37,14 @@ export interface EncryptedViewKeyRequestCandid {
 export interface InvoiceSubmissionCandid {
   invoice_id: Uint8Array;
   signature: Uint8Array;
+  tag: string;
 }
 
 export type StorageActor = {
   submit_announcement: ActorMethod<[AnnouncementInputCandid], CanisterResult<AnnouncementCandid>>;
   submit_invoice: ActorMethod<[InvoiceSubmissionCandid], CanisterResult<null>>;
-  list_invoices: ActorMethod<[Uint8Array], CanisterResult<Uint8Array[]>>;
-  list_announcements: ActorMethod<[[] | [bigint], [] | [number]], AnnouncementPageCandid>;
+  list_invoices: ActorMethod<[Uint8Array, string], CanisterResult<Uint8Array[]>>;
+  list_announcements: ActorMethod<[[] | [bigint], [] | [number], string], AnnouncementPageCandid>;
   get_announcement: ActorMethod<[bigint], [] | [AnnouncementCandid]>;
 };
 
@@ -51,6 +54,7 @@ export interface AnnouncementCandid {
   ciphertext: Uint8Array;
   nonce: Uint8Array;
   created_at_ns: bigint;
+  tag: string;
 }
 
 export interface AnnouncementPageCandid {
@@ -111,17 +115,17 @@ export class StealthCanisterClient {
     unwrapResult(result, 'submit_invoice');
   }
 
-  async listInvoices(address: Uint8Array): Promise<Uint8Array[]> {
+  async listInvoices(address: Uint8Array, tag: string = DEFAULT_STORAGE_TAG): Promise<Uint8Array[]> {
     const actor = await this.getStorageActor();
-    const result = await actor.list_invoices(address);
+    const result = await actor.list_invoices(address, tag);
     return unwrapResult(result, 'list_invoices');
   }
 
-  async listAnnouncements(startAfter?: bigint, limit?: number): Promise<AnnouncementPage> {
+  async listAnnouncements(startAfter?: bigint, limit?: number, tag: string = DEFAULT_STORAGE_TAG): Promise<AnnouncementPage> {
     const actor = await this.getStorageActor();
     const start = (startAfter === undefined ? [] : [startAfter]) as [] | [bigint];
     const cappedLimit = (limit === undefined ? [] : [limit]) as [] | [number];
-    const page = await actor.list_announcements(start, cappedLimit);
+    const page = await actor.list_announcements(start, cappedLimit, tag);
     return {
       announcements: page.announcements.map(mapAnnouncement),
       nextId: page.next_id.length === 0 ? null : page.next_id[0],
@@ -183,6 +187,7 @@ function mapAnnouncement(announcement: AnnouncementCandid): Announcement {
     ciphertext: announcement.ciphertext,
     nonce: announcement.nonce,
     createdAtNs: announcement.created_at_ns,
+    tag: announcement.tag,
   };
 }
 
@@ -191,6 +196,7 @@ function toCandidAnnouncementInput(input: AnnouncementInput): AnnouncementInputC
     ibe_ciphertext: input.ibeCiphertext,
     ciphertext: input.ciphertext,
     nonce: input.nonce,
+    tag: input.tag,
   };
 }
 
@@ -208,6 +214,7 @@ function toCandidInvoiceSubmission(submission: InvoiceSubmission): InvoiceSubmis
   return {
     invoice_id: submission.invoiceId,
     signature: submission.signature,
+    tag: submission.tag,
   };
 }
 
@@ -241,6 +248,7 @@ const storageIdlFactory: IDL.InterfaceFactory = ({ IDL: idl }) => {
     ibe_ciphertext: idl.Vec(idl.Nat8),
     ciphertext: idl.Vec(idl.Nat8),
     nonce: idl.Vec(idl.Nat8),
+    tag: idl.Text,
   });
 
   const Announcement = idl.Record({
@@ -249,6 +257,7 @@ const storageIdlFactory: IDL.InterfaceFactory = ({ IDL: idl }) => {
     ciphertext: idl.Vec(idl.Nat8),
     nonce: idl.Vec(idl.Nat8),
     created_at_ns: idl.Nat64,
+    tag: idl.Text,
   });
 
   const AnnouncementPage = idl.Record({
@@ -259,6 +268,7 @@ const storageIdlFactory: IDL.InterfaceFactory = ({ IDL: idl }) => {
   const InvoiceSubmission = idl.Record({
     invoice_id: idl.Vec(idl.Nat8),
     signature: idl.Vec(idl.Nat8),
+    tag: idl.Text,
   });
 
   const SubmitAnnouncementResult = idl.Variant({ Ok: Announcement, Err: idl.Text });
@@ -268,8 +278,8 @@ const storageIdlFactory: IDL.InterfaceFactory = ({ IDL: idl }) => {
   return idl.Service({
     submit_announcement: idl.Func([AnnouncementInput], [SubmitAnnouncementResult], []),
     submit_invoice: idl.Func([InvoiceSubmission], [SubmitInvoiceResult], []),
-    list_invoices: idl.Func([idl.Vec(idl.Nat8)], [ListInvoicesResult], ['query']),
-    list_announcements: idl.Func([idl.Opt(idl.Nat64), idl.Opt(idl.Nat32)], [AnnouncementPage], ['query']),
+    list_invoices: idl.Func([idl.Vec(idl.Nat8), idl.Text], [ListInvoicesResult], ['query']),
+    list_announcements: idl.Func([idl.Opt(idl.Nat64), idl.Opt(idl.Nat32), idl.Text], [AnnouncementPage], ['query']),
     get_announcement: idl.Func([idl.Nat64], [idl.Opt(Announcement)], ['query']),
   });
 };

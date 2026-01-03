@@ -1,11 +1,15 @@
 use candid::CandidType;
 use serde::{Deserialize, Serialize};
 
+pub const DEFAULT_TAG: &str = "v1";
+
 #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
 pub struct AnnouncementInput {
     pub ibe_ciphertext: Vec<u8>,
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
+    #[serde(default = "default_tag")]
+    pub tag: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
@@ -15,6 +19,8 @@ pub struct Announcement {
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
     pub created_at_ns: u64,
+    #[serde(default = "default_tag")]
+    pub tag: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
@@ -27,6 +33,8 @@ pub struct AnnouncementPage {
 pub struct InvoiceSubmission {
     pub invoice_id: Vec<u8>,
     pub signature: Vec<u8>,
+    #[serde(default = "default_tag")]
+    pub tag: String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, CandidType)]
@@ -49,4 +57,8 @@ pub struct EncryptedViewKeyRequest {
 pub struct EncryptedViewKeyResponse {
     pub encrypted_key: Vec<u8>,
     pub view_public_key: Vec<u8>,
+}
+
+fn default_tag() -> String {
+    DEFAULT_TAG.to_string()
 }

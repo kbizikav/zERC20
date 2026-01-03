@@ -104,8 +104,8 @@ impl StealthCanisterClient {
         result.map_err(ClientError::Canister)
     }
 
-    pub async fn list_invoices(&self, address: [u8; 20]) -> ClientResult<Vec<Vec<u8>>> {
-        let arg = candid::Encode!(&address.to_vec())?;
+    pub async fn list_invoices(&self, address: [u8; 20], tag: &str) -> ClientResult<Vec<Vec<u8>>> {
+        let arg = candid::Encode!(&address.to_vec(), &tag.to_string())?;
         let response = self
             .agent
             .query(&self.storage_canister_id, "list_invoices")
@@ -121,8 +121,9 @@ impl StealthCanisterClient {
         &self,
         start_after: Option<u64>,
         limit: Option<u32>,
+        tag: &str,
     ) -> ClientResult<types::AnnouncementPage> {
-        let arg = candid::Encode!(&start_after, &limit)?;
+        let arg = candid::Encode!(&start_after, &limit, &tag.to_string())?;
         let response = self
             .agent
             .query(&self.storage_canister_id, "list_announcements")

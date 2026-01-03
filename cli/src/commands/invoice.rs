@@ -158,7 +158,7 @@ pub async fn list(
         .owner
         .unwrap_or_else(|| get_address_from_private_key(private_key));
     let raw_invoice_ids = client
-        .list_invoices(address_to_array(owner))
+        .list_invoices(address_to_array(owner), &args.tag)
         .await
         .with_context(|| format!("failed to load invoice ids for {}", owner))?;
     let invoice_ids = decode_invoice_ids(raw_invoice_ids)?;
@@ -209,7 +209,7 @@ pub async fn issue(
     let recipient_bytes = address_to_array(recipient);
     let existing_invoice_ids = decode_invoice_ids(
         client
-            .list_invoices(recipient_bytes)
+            .list_invoices(recipient_bytes, &args.tag)
             .await
             .with_context(|| {
                 format!(
@@ -240,6 +240,7 @@ pub async fn issue(
     let submission = InvoiceSubmission {
         invoice_id: invoice_id.as_slice().to_vec(),
         signature: signature.to_vec(),
+        tag: args.tag.clone(),
     };
     client
         .submit_invoice(&submission)

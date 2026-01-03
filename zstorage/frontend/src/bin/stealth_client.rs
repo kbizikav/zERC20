@@ -145,7 +145,7 @@ async fn run_demo_flow(cli: &Cli, client: &StealthCanisterClient) -> Result<()> 
     );
 
     let page = client
-        .list_announcements(None, Some(50))
+        .list_announcements(None, Some(50), types::DEFAULT_TAG)
         .await
         .context("failed to list announcements")?;
     let decrypted = scan_announcements(&view_key, &page.announcements)
