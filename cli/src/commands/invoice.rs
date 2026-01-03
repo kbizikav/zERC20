@@ -158,7 +158,7 @@ pub async fn list(
         .owner
         .unwrap_or_else(|| get_address_from_private_key(private_key));
     let raw_invoice_ids = client
-        .list_invoices(address_to_array(owner))
+        .list_invoices(address_to_array(owner), &args.tag)
         .await
         .with_context(|| format!("failed to load invoice ids for {}", owner))?;
     let invoice_ids = decode_invoice_ids(raw_invoice_ids)?;
@@ -209,7 +209,7 @@ pub async fn issue(
     let recipient_bytes = address_to_array(recipient);
     let existing_invoice_ids = decode_invoice_ids(
         client
-            .list_invoices(recipient_bytes)
+            .list_invoices(recipient_bytes, &args.tag)
             .await
             .with_context(|| {
                 format!(
@@ -236,10 +236,11 @@ pub async fn issue(
     );
 
     let signing_key = signing_key_from_b256(private_key)?;
-    let signature = sign_invoice(&signing_key, invoice_id)?;
+    let signature = sign_invoice(&signing_key, invoice_id, &args.tag)?;
     let submission = InvoiceSubmission {
         invoice_id: invoice_id.as_slice().to_vec(),
         signature: signature.to_vec(),
+        tag: args.tag.clone(),
     };
     client
         .submit_invoice(&submission)
@@ -403,10 +404,10 @@ fn signing_key_from_b256(secret: B256) -> Result<SigningKey> {
         .map_err(|_| anyhow::anyhow!("failed to derive signing key from PRIVATE_KEY"))
 }
 
-fn sign_invoice(signing_key: &SigningKey, invoice_id: B256) -> Result<[u8; 65]> {
+fn sign_invoice(signing_key: &SigningKey, invoice_id: B256, tag: &str) -> Result<[u8; 65]> {
     let mut invoice_bytes = [0u8; 32];
     invoice_bytes.copy_from_slice(invoice_id.as_slice());
-    let message = invoice_signature_message(&invoice_bytes);
+    let message = invoice_signature_message(&invoice_bytes, tag);
     let digest: [u8; 32] = keccak256(&message).into();
 
     let (signature, recovery_id) = signing_key

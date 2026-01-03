@@ -8,6 +8,7 @@ import {
 
 import { Announcement, AnnouncementInput, DecryptedAnnouncement } from './types.js';
 import { AnnouncementIgnoredError, StealthError } from './errors.js';
+import { DEFAULT_STORAGE_TAG } from '../constants.js';
 
 const SESSION_KEY_LEN = 32;
 const NONCE_LEN = 12;
@@ -16,6 +17,7 @@ export interface EncryptPayloadOptions {
   identity?: Uint8Array;
   seed?: Uint8Array;
   randomBytes?: (length: number) => Uint8Array;
+  tag?: string;
 }
 
 export async function encryptAnnouncement(
@@ -72,6 +74,7 @@ export async function encryptAnnouncementWithArtifacts(
       ibeCiphertext,
       ciphertext,
       nonce,
+      tag: options.tag ?? DEFAULT_STORAGE_TAG,
     },
     sessionKey: sessionKeyCopy,
   };

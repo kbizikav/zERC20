@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { StealthCanisterClient } from '../client.js';
 import { AnnouncementInput } from '../types.js';
 import { StealthError } from '../errors.js';
+import { DEFAULT_STORAGE_TAG } from '../../constants.js';
 
 type LocalnetConfig = {
   host: string;
@@ -72,12 +73,14 @@ if (!runLocalnetTests || !localnetConfig) {
       expect(created.ibeCiphertext).toEqual(input.ibeCiphertext);
       expect(created.nonce).toEqual(input.nonce);
       expect(created.createdAtNs).toBeTypeOf('bigint');
+      expect(created.tag).toBe(input.tag);
 
       const fetched = await client.getAnnouncement(created.id);
       expect(fetched).not.toBeNull();
       expect(fetched?.ciphertext).toEqual(input.ciphertext);
       expect(fetched?.ibeCiphertext).toEqual(input.ibeCiphertext);
       expect(fetched?.nonce).toEqual(input.nonce);
+      expect(fetched?.tag).toBe(input.tag);
 
       const page = await client.listAnnouncements();
       const match = page.announcements.find((item) => item.id === created.id);
@@ -85,6 +88,7 @@ if (!runLocalnetTests || !localnetConfig) {
       expect(match?.ciphertext).toEqual(input.ciphertext);
       expect(match?.ibeCiphertext).toEqual(input.ibeCiphertext);
       expect(match?.nonce).toEqual(input.nonce);
+      expect(match?.tag).toBe(input.tag);
     });
   });
 }
@@ -94,6 +98,7 @@ function randomAnnouncement(): AnnouncementInput {
     ibeCiphertext: randomBytes(256),
     ciphertext: randomBytes(64),
     nonce: randomBytes(12),
+    tag: DEFAULT_STORAGE_TAG,
   };
 }
 

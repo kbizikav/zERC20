@@ -103,7 +103,7 @@ This document explains how the zk-wormhole-enabled ERC-20 (zERC20) system is spl
 
 ## Stealth Announcements & Invoice Flows
 
-1. **Invoice issuance:** wallets/CLI call `storage.submit_invoice` with a signed payload produced by `storage::invoice_signature_message`. Each invoice deterministically maps to either a single burn address or a batch of addresses derived from the signer’s seed.
+1. **Invoice issuance:** wallets/CLI call `storage.submit_invoice` with a signed payload produced by `storage::invoice_signature_message` (includes the invoice `tag`). Each invoice deterministically maps to either a single burn address or a batch of addresses derived from the signer’s seed.
 2. **Announcement publishing:** senders fetch the recipient’s IBE public key from the key manager, derive a random AES key, encrypt the `FullBurnAddress` (or invoice reference), wrap the AES key in an IBE ciphertext, and submit the tuple to the storage canister.
 3. **Recipient scanning:** users periodically run `scan_receive_transfers` (CLI) or the browser scanner. Both rely on the stealth clients to:
    - Request encrypted view keys (authenticated by EVM signatures + transport keys).

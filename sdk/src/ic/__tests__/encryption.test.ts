@@ -5,6 +5,7 @@ import { MasterPublicKey, MasterPublicKeyId } from '@dfinity/vetkeys';
 
 import { deriveContext } from '../config.js';
 import { encryptAnnouncement } from '../encryption.js';
+import { DEFAULT_STORAGE_TAG } from '../../constants.js';
 
 beforeAll(() => {
   if (typeof globalThis.crypto === 'undefined') {
@@ -28,5 +29,6 @@ describe('encryption helpers', () => {
     expect(announcement.ciphertext.byteLength).toBeGreaterThan(0);
     expect(announcement.nonce.byteLength).toBe(12);
     expect(announcement.ibeCiphertext.byteLength).toBeGreaterThan(announcement.ciphertext.byteLength);
+    expect(announcement.tag).toBe(DEFAULT_STORAGE_TAG);
   });
 });

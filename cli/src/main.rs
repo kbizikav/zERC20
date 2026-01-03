@@ -196,6 +196,10 @@ pub struct ScanReceiveTransfersArgs {
     /// Authorization TTL in seconds for requesting the encrypted view key.
     #[arg(long, env = "SCAN_AUTHORIZATION_TTL", default_value_t = 600)]
     pub authorization_ttl_seconds: u64,
+
+    /// Tag used to filter announcements.
+    #[arg(long, default_value = "v1", value_name = "TAG")]
+    pub tag: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -340,6 +344,10 @@ pub struct InvoiceListArgs {
     /// Optional override address for listing (defaults to signer address).
     #[arg(long, value_parser = parse_address, value_name = "ADDRESS")]
     pub owner: Option<Address>,
+
+    /// Tag used to filter invoices.
+    #[arg(long, default_value = "v1", value_name = "TAG")]
+    pub tag: String,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -355,6 +363,10 @@ pub struct InvoiceIssueArgs {
     /// Enable batch mode (prints ten burn addresses).
     #[arg(long, default_value_t = false)]
     pub batch: bool,
+
+    /// Tag used when issuing invoices.
+    #[arg(long, default_value = "v1", value_name = "TAG")]
+    pub tag: String,
 }
 
 #[derive(Args, Debug, Clone)]

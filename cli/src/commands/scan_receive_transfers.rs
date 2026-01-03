@@ -88,7 +88,7 @@ pub async fn run(
     let mut saved = Vec::new();
     loop {
         let page = client
-            .list_announcements(start_after, Some(args.page_size))
+            .list_announcements(start_after, Some(args.page_size), &args.tag)
             .await
             .context("failed to list announcements")?;
 

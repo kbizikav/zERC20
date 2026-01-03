@@ -1,17 +1,18 @@
+import { DEFAULT_STORAGE_TAG } from '../constants.js';
 import { bytesToHex } from '../utils/hex.js';
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-export function invoiceMessageText(invoiceId: Uint8Array): string {
+export function invoiceMessageText(invoiceId: Uint8Array, tag: string = DEFAULT_STORAGE_TAG): string {
   if (invoiceId.length !== 32) {
     throw new Error('invoiceId must be 32 bytes');
   }
-  return `ICP Stealth Invoice Submission:\ninvoice_id: ${bytesToHex(invoiceId)}`;
+  return `ICP Stealth Invoice Submission:\ninvoice_id: ${bytesToHex(invoiceId)}\ntag: ${tag}`;
 }
 
-export function invoiceMessage(invoiceId: Uint8Array): Uint8Array {
-  const message = invoiceMessageText(invoiceId);
+export function invoiceMessage(invoiceId: Uint8Array, tag: string = DEFAULT_STORAGE_TAG): Uint8Array {
+  const message = invoiceMessageText(invoiceId, tag);
   return eip191Message(encoder.encode(message));
 }
 

@@ -2,7 +2,7 @@ import { invoiceMessageText } from '../ic/invoice.js';
 import { StealthCanisterClient } from '../ic/client.js';
 import { InvoiceSubmission } from '../ic/types.js';
 
-import { NUM_BATCH_INVOICES } from '../constants.js';
+import { DEFAULT_STORAGE_TAG, NUM_BATCH_INVOICES } from '../constants.js';
 import {
   InvoiceBatchBurnAddress,
   InvoiceIssueArtifacts,
@@ -23,6 +23,7 @@ export interface InvoiceIssueParams {
   recipientAddress: string;
   recipientChainId: number | bigint;
   isBatch: boolean;
+  tag?: string;
   randomBytes?: (length: number) => Uint8Array;
   maxRetries?: number;
 }
@@ -33,6 +34,7 @@ export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<I
     recipientAddress,
     recipientChainId,
     isBatch,
+    tag = DEFAULT_STORAGE_TAG,
     randomBytes: rng,
     maxRetries = 8,
   } = params;
@@ -41,7 +43,7 @@ export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<I
   const normalizedChainId = BigInt(recipientChainId);
 
   const recipientBytes = addressToBytes(recipientAddress);
-  const existing = await client.listInvoices(recipientBytes);
+  const existing = await client.listInvoices(recipientBytes, tag);
   const existingIds = new Set(
     existing
       .filter((bytes: Uint8Array) => extractChainIdFromInvoiceBytes(bytes) === normalizedChainId)
@@ -106,7 +108,7 @@ export async function prepareInvoiceIssue(params: InvoiceIssueParams): Promise<I
     });
   }
 
-  const signatureMessage = invoiceMessageText(invoiceBytes);
+  const signatureMessage = invoiceMessageText(invoiceBytes, tag);
 
   return {
     invoiceId: invoiceIdHex,
@@ -167,11 +169,13 @@ export async function submitInvoice(
   client: StealthCanisterClient,
   invoiceIdHex: string,
   signature: Uint8Array,
+  tag: string = DEFAULT_STORAGE_TAG,
 ): Promise<void> {
   const invoiceBytes = hexToBytes(ensureHexLength(invoiceIdHex, 32, 'invoice id'));
   const submission: InvoiceSubmission = {
     invoiceId: invoiceBytes,
     signature,
+    tag,
   };
   await client.submitInvoice(submission);
 }
@@ -180,9 +184,10 @@ export async function listInvoices(
   client: StealthCanisterClient,
   ownerAddress: string,
   chainId?: number | bigint,
+  tag: string = DEFAULT_STORAGE_TAG,
 ): Promise<string[]> {
   const ownerBytes = addressToBytes(ownerAddress);
-  const response = await client.listInvoices(ownerBytes);
+  const response = await client.listInvoices(ownerBytes, tag);
   const normalizedChainId = chainId === undefined ? undefined : BigInt(chainId);
   return response
     .filter((bytes: Uint8Array) =>

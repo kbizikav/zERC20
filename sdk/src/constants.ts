@@ -8,3 +8,4 @@ export const DEFAULT_EVENT_BLOCK_SPAN = 5_000n;
 export const DEFAULT_DECIDER_TIMEOUT_MS = 5 * 60 * 1000;
 export const DEFAULT_DECIDER_POLL_INTERVAL_MS = 1_000;
 export const NATIVE_TOKEN = '0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE';
+export const DEFAULT_STORAGE_TAG = 'v1';

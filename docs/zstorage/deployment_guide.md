@@ -137,7 +137,7 @@ This document explains how to deploy the `zstorage` Rust canisters (`key_manager
    ```bash
    dfx canister status key_manager --network local
    dfx canister status storage --network local
-   dfx canister call storage list_announcements '(null, null)' --network local
+   dfx canister call storage list_announcements '(null, null, "v1")' --network local
    ```
 
 6. **Stop the replica**

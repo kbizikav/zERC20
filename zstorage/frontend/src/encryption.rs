@@ -6,7 +6,7 @@ use rand::{CryptoRng, RngCore};
 
 use crate::error::{Result, StealthError};
 use crate::types;
-use crate::types::AnnouncementInput;
+use crate::types::{AnnouncementInput, DEFAULT_TAG};
 use ic_vetkeys::{DerivedPublicKey, IbeCiphertext, IbeIdentity, IbeSeed, VetKey};
 
 const SESSION_KEY_LEN: usize = 32; // 256-bit AES-GCM session key
@@ -45,6 +45,7 @@ pub fn encrypt_payload<R: RngCore + CryptoRng>(
         ibe_ciphertext,
         ciphertext,
         nonce: nonce_vec,
+        tag: DEFAULT_TAG.to_string(),
     };
 
     Ok(announcement)

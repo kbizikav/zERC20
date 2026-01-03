@@ -11,6 +11,7 @@ const MAX_CIPHERTEXT_BYTES: usize = 16 * 1024;
 const MAX_IBE_CIPHERTEXT_BYTES: usize = 512;
 const DEFAULT_LIST_LIMIT: u32 = 50;
 const MAX_LIST_LIMIT: u32 = 200;
+const DEFAULT_TAG: &str = "v1";
 
 #[derive(Clone, CandidType, Deserialize)]
 pub struct InitArgs {
@@ -23,6 +24,8 @@ pub struct AnnouncementInput {
     pub ibe_ciphertext: Vec<u8>,
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
+    #[serde(default = "default_tag")]
+    pub tag: String,
 }
 
 #[derive(Clone, CandidType, Deserialize)]
@@ -32,6 +35,8 @@ pub struct Announcement {
     pub ciphertext: Vec<u8>,
     pub nonce: Vec<u8>,
     pub created_at_ns: u64,
+    #[serde(default = "default_tag")]
+    pub tag: String,
 }
 
 #[derive(Clone, CandidType, Deserialize)]
@@ -44,11 +49,29 @@ pub struct AnnouncementPage {
 pub struct InvoiceSubmission {
     pub invoice_id: Vec<u8>,
     pub signature: Vec<u8>,
+    #[serde(default = "default_tag")]
+    pub tag: String,
 }
 
 #[derive(Clone, CandidType, Deserialize, Default)]
 struct State {
     announcements: Vec<Announcement>,
+    next_id: u64,
+    invoices_by_tag: BTreeMap<[u8; 20], BTreeMap<String, Vec<[u8; 32]>>>,
+}
+
+#[derive(Clone, CandidType, Deserialize)]
+struct AnnouncementV1 {
+    id: u64,
+    ibe_ciphertext: Vec<u8>,
+    ciphertext: Vec<u8>,
+    nonce: Vec<u8>,
+    created_at_ns: u64,
+}
+
+#[derive(Clone, CandidType, Deserialize)]
+struct StateV1 {
+    announcements: Vec<AnnouncementV1>,
     next_id: u64,
     invoices: BTreeMap<[u8; 20], Vec<[u8; 32]>>,
 }
@@ -65,7 +88,7 @@ fn init(args: Option<InitArgs>) {
         *state = State {
             announcements: Vec::new(),
             next_id: 0,
-            invoices: BTreeMap::new(),
+            invoices_by_tag: BTreeMap::new(),
         }
     });
 }
@@ -80,8 +103,15 @@ fn pre_upgrade() {
 
 #[post_upgrade]
 fn post_upgrade() {
-    let (state,): (State,) =
-        ic_cdk::storage::stable_restore().expect("failed to restore storage state");
+    let restored: Result<(State,), _> = ic_cdk::storage::stable_restore();
+    let state = match restored {
+        Ok((state,)) => state,
+        Err(_) => {
+            let (state,): (StateV1,) =
+                ic_cdk::storage::stable_restore().expect("failed to restore legacy storage state");
+            migrate_state(state)
+        }
+    };
     STATE.with(|cell| {
         *cell.borrow_mut() = state;
     });
@@ -90,6 +120,7 @@ fn post_upgrade() {
 #[update]
 fn submit_announcement(input: AnnouncementInput) -> Result<Announcement, String> {
     validate_announcement(&input)?;
+    let tag = normalize_tag(&input.tag);
     let announcement = STATE.with(|cell| {
         let mut state = cell.borrow_mut();
         let announcement = Announcement {
@@ -98,6 +129,7 @@ fn submit_announcement(input: AnnouncementInput) -> Result<Announcement, String>
             ciphertext: input.ciphertext.clone(),
             nonce: input.nonce.clone(),
             created_at_ns: time(),
+            tag,
         };
         state.announcements.push(announcement.clone());
         state.next_id += 1;
@@ -107,8 +139,13 @@ fn submit_announcement(input: AnnouncementInput) -> Result<Announcement, String>
 }
 
 #[query]
-fn list_announcements(start_after: Option<u64>, limit: Option<u32>) -> AnnouncementPage {
+fn list_announcements(
+    start_after: Option<u64>,
+    limit: Option<u32>,
+    tag: String,
+) -> AnnouncementPage {
     let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT).min(MAX_LIST_LIMIT) as usize;
+    let tag = normalize_tag(&tag);
     let (mut items, next_marker) = STATE.with(|cell| {
         let state = cell.borrow();
         let mut collected = Vec::with_capacity(limit);
@@ -118,6 +155,9 @@ fn list_announcements(start_after: Option<u64>, limit: Option<u32>) -> Announcem
                 if announcement.id <= start {
                     continue;
                 }
+            }
+            if announcement.tag != tag {
+                continue;
             }
             if collected.len() < limit {
                 collected.push(announcement.clone());
@@ -150,12 +190,18 @@ fn get_announcement(id: u64) -> Option<Announcement> {
 fn submit_invoice(input: InvoiceSubmission) -> Result<(), String> {
     let invoice_id = normalize_invoice_id(&input.invoice_id)?;
     let signature = parse_signature(&input.signature)?;
-    let message = invoice_signature_message(&invoice_id);
+    let tag = normalize_tag(&input.tag);
+    let message = invoice_signature_message(&invoice_id, &tag);
     let signer_bytes = recover_address_from_signature(&signature, &message)?;
 
     STATE.with(|cell| {
         let mut state = cell.borrow_mut();
-        let invoices = state.invoices.entry(signer_bytes).or_default();
+        let tags = state.invoices_by_tag.entry(signer_bytes).or_default();
+        let already_exists = tags.values().any(|items| items.contains(&invoice_id));
+        if already_exists {
+            return;
+        }
+        let invoices = tags.entry(tag).or_default();
         if !invoices.contains(&invoice_id) {
             invoices.push(invoice_id);
         }
@@ -165,13 +211,15 @@ fn submit_invoice(input: InvoiceSubmission) -> Result<(), String> {
 }
 
 #[query]
-fn list_invoices(address: Vec<u8>) -> Result<Vec<Vec<u8>>, String> {
+fn list_invoices(address: Vec<u8>, tag: String) -> Result<Vec<Vec<u8>>, String> {
     let address_bytes: [u8; 20] = normalize_address(&address)?;
+    let tag = normalize_tag(&tag);
     let invoices = STATE.with(|cell| {
         let state = cell.borrow();
         state
-            .invoices
+            .invoices_by_tag
             .get(&address_bytes)
+            .and_then(|tags| tags.get(&tag))
             .map(|items| items.iter().map(|id| id.to_vec()).collect())
             .unwrap_or_default()
     });
@@ -217,10 +265,52 @@ fn normalize_address(address: &[u8]) -> Result<[u8; 20], String> {
     Ok(normalized)
 }
 
-pub fn invoice_signature_message(invoice_id: &[u8; 32]) -> Vec<u8> {
+fn default_tag() -> String {
+    DEFAULT_TAG.to_string()
+}
+
+fn normalize_tag(tag: &str) -> String {
+    if tag.is_empty() {
+        DEFAULT_TAG.to_string()
+    } else {
+        tag.to_string()
+    }
+}
+
+fn migrate_state(state: StateV1) -> State {
+    let announcements = state
+        .announcements
+        .into_iter()
+        .map(|announcement| Announcement {
+            id: announcement.id,
+            ibe_ciphertext: announcement.ibe_ciphertext,
+            ciphertext: announcement.ciphertext,
+            nonce: announcement.nonce,
+            created_at_ns: announcement.created_at_ns,
+            tag: DEFAULT_TAG.to_string(),
+        })
+        .collect();
+    let invoices_by_tag = state
+        .invoices
+        .into_iter()
+        .map(|(address, invoices)| {
+            let mut tags = BTreeMap::new();
+            tags.insert(DEFAULT_TAG.to_string(), invoices);
+            (address, tags)
+        })
+        .collect();
+    State {
+        announcements,
+        next_id: state.next_id,
+        invoices_by_tag,
+    }
+}
+
+pub fn invoice_signature_message(invoice_id: &[u8; 32], tag: &str) -> Vec<u8> {
     let message = format!(
-        "ICP Stealth Invoice Submission:\ninvoice_id: 0x{}",
-        hex::encode(invoice_id)
+        "ICP Stealth Invoice Submission:\ninvoice_id: 0x{}\ntag: {}",
+        hex::encode(invoice_id),
+        tag
     );
     eip191_message(message.as_bytes())
 }

@@ -7,6 +7,7 @@ import type { VetKey } from '@dfinity/vetkeys';
 import { ScannedAnnouncement } from '../types.js';
 import { addressToBytes, bytesToHex } from '../utils/hex.js';
 import { decodeFullBurnAddress } from '../wasm/index.js';
+import { DEFAULT_STORAGE_TAG } from '../constants.js';
 
 export interface AuthorizationPayload {
   message: string;
@@ -67,17 +68,18 @@ export interface ScanReceivingsParams {
   vetKey: VetKey;
   pageSize?: number;
   startAfter?: bigint;
+  tag?: string;
 }
 
 export async function scanReceivings(
   params: ScanReceivingsParams,
 ): Promise<ScannedAnnouncement[]> {
-  const { client, vetKey, pageSize = 100, startAfter } = params;
+  const { client, vetKey, pageSize = 100, startAfter, tag = DEFAULT_STORAGE_TAG } = params;
   let cursor = startAfter ?? 0n;
   const collected: ScannedAnnouncement[] = [];
 
   while (true) {
-    const page = await client.listAnnouncements(cursor === 0n ? undefined : cursor, pageSize);
+    const page = await client.listAnnouncements(cursor === 0n ? undefined : cursor, pageSize, tag);
     if (page.announcements.length === 0) {
       break;
     }
