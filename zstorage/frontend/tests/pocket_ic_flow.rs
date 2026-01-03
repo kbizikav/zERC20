@@ -3,7 +3,7 @@ use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
 use key_manager::authorization::authorization_message;
 use pocket_ic::{PocketIcBuilder, PocketIcState};
-use rand::rngs::OsRng;
+use rand::{RngCore, rngs::OsRng};
 use serde::Serialize;
 use std::net::TcpListener;
 use std::path::{Path, PathBuf};
@@ -13,6 +13,7 @@ use stealth_client::authorization::{derive_address, sign_authorization, unix_tim
 use stealth_client::client::StealthCanisterClient;
 use stealth_client::encryption::{encrypt_payload, scan_announcements};
 use stealth_client::{recipient, types};
+use storage::invoice_signature_message;
 
 #[derive(Clone, CandidType, Serialize)]
 struct KeyManagerInitArgs {
@@ -148,6 +149,135 @@ fn pocket_ic_end_to_end_flow() {
     pic.stop_live();
 }
 
+#[test]
+fn pocket_ic_upgrade_preserves_storage_state() {
+    if ensure_pocket_ic_server().is_none() {
+        return;
+    }
+
+    let key_manager_wasm = load_canister_wasm("key_manager");
+    let storage_wasm = load_canister_wasm("storage");
+
+    let mut pic = PocketIcBuilder::new()
+        .with_ii_subnet()
+        .with_state(PocketIcState::new())
+        .build();
+
+    let key_manager_principal = pic.create_canister();
+    pic.add_cycles(key_manager_principal, 2_000_000_000_000);
+    let key_manager_init = Encode!(&KeyManagerInitArgs {
+        key_id_name: "test_key_1".to_string(),
+    })
+    .expect("failed to encode key manager init args");
+    pic.install_canister(
+        key_manager_principal,
+        key_manager_wasm,
+        key_manager_init,
+        None,
+    );
+
+    let storage_principal = pic.create_canister();
+    pic.add_cycles(storage_principal, 2_000_000_000_000);
+    let storage_init =
+        Encode!(&Option::<StorageInitArgs>::None).expect("failed to encode storage init args");
+    pic.install_canister(storage_principal, storage_wasm.clone(), storage_init, None);
+
+    let rt = tokio::runtime::Runtime::new().expect("failed to create Tokio runtime");
+    let replica_url = pic.make_live(None);
+    let replica_url = replica_url.to_string();
+
+    let agent = Agent::builder()
+        .with_url(replica_url)
+        .with_identity(AnonymousIdentity)
+        .build()
+        .expect("failed to build agent");
+    rt.block_on(async {
+        agent
+            .fetch_root_key()
+            .await
+            .expect("failed to fetch root key");
+    });
+
+    let client = StealthCanisterClient::new(agent, storage_principal, key_manager_principal);
+
+    let mut rng = OsRng;
+    let announcement = types::AnnouncementInput {
+        ibe_ciphertext: random_bytes(&mut rng, 32),
+        ciphertext: random_bytes(&mut rng, 64),
+        nonce: random_bytes(&mut rng, 12),
+        tag: types::DEFAULT_TAG.to_string(),
+    };
+    let signing_key = SigningKey::random(&mut rng);
+    let owner = derive_address(&signing_key);
+    let mut invoice_id = [0u8; 32];
+    rng.fill_bytes(&mut invoice_id);
+    let message = invoice_signature_message(&invoice_id);
+    let signature =
+        sign_authorization(&message, &signing_key).expect("failed to sign invoice message");
+
+    let created_id = rt.block_on(async {
+        let created = client
+            .submit_announcement(&announcement)
+            .await
+            .expect("failed to submit announcement");
+        let submission = types::InvoiceSubmission {
+            invoice_id: invoice_id.to_vec(),
+            signature: signature.to_vec(),
+            tag: types::DEFAULT_TAG.to_string(),
+        };
+        client
+            .submit_invoice(&submission)
+            .await
+            .expect("failed to submit invoice");
+
+        let before_page = client
+            .list_announcements(None, Some(50), types::DEFAULT_TAG)
+            .await
+            .expect("failed to list announcements");
+        assert!(before_page
+            .announcements
+            .iter()
+            .any(|item| item.id == created.id));
+
+        let before_invoices = client
+            .list_invoices(owner, types::DEFAULT_TAG)
+            .await
+            .expect("failed to list invoices");
+        assert!(before_invoices
+            .iter()
+            .any(|bytes| bytes.as_slice() == &invoice_id[..]));
+
+        created.id
+    });
+
+    let upgrade_arg = Encode!(&()).expect("failed to encode upgrade args");
+    pic.upgrade_canister(storage_principal, storage_wasm, upgrade_arg, None)
+        .expect("failed to upgrade storage canister");
+
+    rt.block_on(async {
+        let after_page = client
+            .list_announcements(None, Some(50), types::DEFAULT_TAG)
+            .await
+            .expect("failed to list announcements after upgrade");
+        let after = after_page
+            .announcements
+            .iter()
+            .find(|item| item.id == created_id)
+            .expect("announcement missing after upgrade");
+        assert_eq!(after.tag, types::DEFAULT_TAG);
+
+        let after_invoices = client
+            .list_invoices(owner, types::DEFAULT_TAG)
+            .await
+            .expect("failed to list invoices after upgrade");
+        assert!(after_invoices
+            .iter()
+            .any(|bytes| bytes.as_slice() == &invoice_id[..]));
+    });
+
+    pic.stop_live();
+}
+
 fn ensure_pocket_ic_server() -> Option<PathBuf> {
     let Some(path) = std::env::var_os("POCKET_IC_BIN") else {
         eprintln!("Skipping PocketIC interaction test: pocket-ic binary not found.");
@@ -171,6 +301,12 @@ fn ensure_pocket_ic_server() -> Option<PathBuf> {
     }
 
     Some(path)
+}
+
+fn random_bytes<R: RngCore>(rng: &mut R, len: usize) -> Vec<u8> {
+    let mut bytes = vec![0u8; len];
+    rng.fill_bytes(&mut bytes);
+    bytes
 }
 
 fn load_canister_wasm(name: &str) -> Vec<u8> {
