@@ -27,11 +27,11 @@ type InvoiceSubmission = record {
   tag : text;
 };
 
-type SubmitAnnouncementResult = variant { ok : Announcement; err : text };
+type SubmitAnnouncementResult = variant { Ok : Announcement; Err : text };
 
-type SubmitInvoiceResult = variant { ok : null; err : text };
+type SubmitInvoiceResult = variant { Ok : null; Err : text };
 
-type ListInvoicesResult = variant { ok : vec blob; err : text };
+type ListInvoicesResult = variant { Ok : vec blob; Err : text };
 
 service : (opt InitArgs) -> {
   submit_announcement : (AnnouncementInput) -> (SubmitAnnouncementResult);
