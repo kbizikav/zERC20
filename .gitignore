@@ -9,6 +9,7 @@ nova_artifacts/
 
 # environment files
 **/.env
+envs/
 
 # config files
 config/*
