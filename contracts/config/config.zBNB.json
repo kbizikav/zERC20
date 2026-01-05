@@ -1,0 +1,8 @@
+{
+  "chains": {
+    "97": {
+      "label": "bnb-testnet",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+    }
+  }
+}
