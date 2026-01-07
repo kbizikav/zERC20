@@ -90,7 +90,7 @@ contract LiquidityManager is
                 revert DecimalMismatch();
             }
         }
-        IncentiveLib._validateFeeParams(_feeParams);
+        IncentiveLib.validateFeeParams(_feeParams);
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -192,7 +192,7 @@ contract LiquidityManager is
     /// @notice Updates the incentive curve parameters.
     /// @param params New fee parameters.
     function setFeeParams(IncentiveLib.FeeParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
-        IncentiveLib._validateFeeParams(params);
+        IncentiveLib.validateFeeParams(params);
         _getLiquidityManagerStorage().feeParams = params;
         emit FeeParamsUpdated(params);
     }

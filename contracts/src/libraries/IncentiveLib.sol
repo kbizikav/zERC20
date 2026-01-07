@@ -180,7 +180,7 @@ library IncentiveLib {
                          INTERNAL PURE MATH HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function _validateFeeParams(FeeParams memory params) internal pure {
+    function validateFeeParams(FeeParams memory params) internal pure {
         if (params.targetLiquidity == 0) revert InvalidTarget();
         if (params.targetLiquidity > MAX_TARGET_LIQUIDITY) revert InvalidTarget();
         if (params.k > K_BPS_DENOM) revert InvalidK();
