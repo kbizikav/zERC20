@@ -189,7 +189,7 @@ library IncentiveLib {
     }
 
     function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount)
-        internal
+        private
         pure
         returns (uint256 rewardRaw)
     {
@@ -234,7 +234,7 @@ library IncentiveLib {
         rewardRaw = numerator / denominator;
     }
 
-    function _rawUnwrapFee(uint256 L, uint256 T, uint256 k_, uint256 amount) internal pure returns (uint256 feeRaw) {
+    function _rawUnwrapFee(uint256 L, uint256 T, uint256 k_, uint256 amount) private pure returns (uint256 feeRaw) {
         if (amount == 0) {
             return 0;
         }
@@ -280,7 +280,7 @@ library IncentiveLib {
         feeRaw = _ceilDiv(numerator, denominator);
     }
 
-    function _ceilDiv(uint256 a, uint256 b) internal pure returns (uint256 c) {
+    function _ceilDiv(uint256 a, uint256 b) private pure returns (uint256 c) {
         if (a == 0) return 0;
         uint256 q = a / b;
         uint256 r = a % b;
