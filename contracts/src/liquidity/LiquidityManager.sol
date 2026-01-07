@@ -6,6 +6,9 @@ pragma solidity 0.8.30; // comment リリース前なのであれば、0.8.33を
 //   slither
 //   solhint
 // でチェックして、そこを直すとより品質良くなると思います。
+// libの下のOpenZeppelin contracts upgradeableが古くないですか？
+// https://github.com/OpenZeppelin/openzeppelin-contracts/blob/master/contracts/utils/ReentrancyGuardTransient.sol
+// ReentrancyGuardTransient使うとガス代節約につながるので、そちらをどうぞ
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -260,6 +263,8 @@ contract LiquidityManager is
         uint256 feeSurplus_ = $.feeSurplus;
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
+        // comment ここもusing使って$.feeParams.quoteWrapReward が実行できるようにすれば引数減りますね
+        // IncentiveLibを使っているところ、一通り見てもらえればと思います。
         reward = IncentiveLib.quoteWrapReward($.feeParams, liquidity, feeSurplus_, amount);
     }
 

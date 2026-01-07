@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.30; // 0.8.33にしておきましょうか
 
 import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
 import {IStargate} from "../interfaces/IStargate.sol";
@@ -21,7 +21,7 @@ import {SelfCall} from "../utils/SelfCall.sol";
 /// @title Stargate adaptor for zERC20 unwrap + bridge flows.
 /// @notice Receives zERC20 (typically via OFT), unwraps through LiquidityManager, and forwards the underlying token through Stargate.
 contract Adaptor is
-    Initializable,
+    Initializable, // comment　ここもOwnableUpgradeableがInitializableを継承しているので、不要ですね
     UUPSUpgradeable,
     OwnableUpgradeable,
     ReentrancyGuardUpgradeable,
@@ -32,6 +32,7 @@ contract Adaptor is
     using SafeERC20 for IERC20;
     using SlotDerivation for string;
 
+    // comment structやerrorはinterfaceに切り離してそちらにしたほうがいいかと思います
     /// @notice Breaks down the expected fees for unwrapping and bridging.
     struct FeeQuote {
         uint256 tokenUnwrapFee;
@@ -63,6 +64,7 @@ contract Adaptor is
     error InsufficientUnderlyingBalance();
     error InsufficientNativeBalance();
 
+    // comment 継承さきで使うのでなければ、privateでいいのでは、と思います
     uint128 internal constant RETURN_LZ_RECEIVE_GAS = 500_000;
     uint8 internal constant NATIVE_DECIMALS = 18;
 
@@ -82,6 +84,7 @@ contract Adaptor is
     }
 
     function _getAdaptorStorage() private pure returns (AdaptorStorage storage $) {
+        // comment　ここもそうですね、毎回計算が走ってしまうので、定数にしたほうがよさそうです
         bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.adaptor");
         assembly {
             $.slot := slot
@@ -120,6 +123,7 @@ contract Adaptor is
         return _getAdaptorStorage().nativeBalances[user];
     }
 
+    // comment eventもinterfaceにしたほうがいいかなと思いました
     event UnwrapAndBridge(address indexed caller, uint256 amountIn, uint256 amountOut, address receiver, uint32 dstEid);
     event BridgeZerc20(address indexed to, uint32 indexed dstEid, uint256 amountReturned);
     event BridgeUnderlyingToken(
@@ -163,12 +167,14 @@ contract Adaptor is
         if (_lzEndpoint == address(0)) revert ZeroAddress();
         if (initialOwner == address(0)) revert ZeroAddress();
 
+        // comment __Ownable_initに引数がないのは、OpenZeppelinが古いからかなと。新しいものを使いましょう
         __Ownable_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
         _transferOwnership(initialOwner);
 
         AdaptorStorage storage $ = _getAdaptorStorage();
+        // comment これらの中でimmutableなものはガス代節約のため、constractで指定して、immutableにしていいと思います
         $.liquidityManager = ILiquidityManager(_liquidityManager);
         $.underlyingToken = IERC20($.liquidityManager.underlyingToken());
         $.zerc20 = IzERC20(address($.liquidityManager.zerc20()));
@@ -439,6 +445,7 @@ contract Adaptor is
 
         uint256 underlyingTokenBalanceAfter = _underlyingBalance();
         uint256 actualAmountOut = underlyingTokenBalanceAfter - underlyingTokenBalanceBefore;
+        // comment　reqired(bool, custom error)
         if (actualAmountOut == 0) revert ZeroAmount();
         if (actualAmountOut < amountMinOut) revert OutputTooLow(actualAmountOut, amountMinOut);
         // Disallow balance increases unrelated to unwrap (e.g. rebases/airdrops).
@@ -557,6 +564,7 @@ contract Adaptor is
         $.nativeBalances[user] = userNativeBalance - (amount - userUnderlyingBalance);
     }
 
+    // comment privateにできるinternalはprivateでいいのでは
     function _debitZerc20Balance(address user, uint256 amount) internal {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userBalance = $.zerc20Balances[user];
@@ -565,6 +573,7 @@ contract Adaptor is
     }
 
     function _toBytes32(address a) internal pure returns (bytes32) {
+        // AddressUtilsになかったでしたっけ。
         return bytes32(uint256(uint160(a)));
     }
 
