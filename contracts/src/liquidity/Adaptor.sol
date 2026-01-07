@@ -78,7 +78,7 @@ contract Adaptor is
         IzERC20 zerc20;
         IStargate stargate;
         address lzEndpoint;
-        mapping(address => uint256) underlingTokenBalances;
+        mapping(address => uint256) underlingTokenBalances; // comment underlyingTokenBalances？の誤字？　他にも間違ってるところあるかも
         mapping(address => uint256) zerc20Balances;
         mapping(address => uint256) nativeBalances;
     }
@@ -237,6 +237,8 @@ contract Adaptor is
     /// @param zerc20Amount Amount of zERC20 to unwrap.
     /// @param request Bridge configuration and minimum output expectations.
     function unwrapAndBridge(uint256 zerc20Amount, BridgeRequest calldata request) external payable nonReentrant {
+        // comment 他の関数でもそうですが、BridgeRequestのvalidationってやらないですか？
+        // BridgeRequest.to != address(0)とか
         if (zerc20Amount == 0) revert ZeroAmount();
         address user = msg.sender;
         AdaptorStorage storage $ = _getAdaptorStorage();
