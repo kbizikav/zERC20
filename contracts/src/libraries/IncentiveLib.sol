@@ -188,6 +188,7 @@ library IncentiveLib {
         if (params.k > maxK) revert InvalidK();
     }
 
+    // comment　このライブラリのprivateにできるinternalをprivateにしてしまってもいいともいますが、どうでしょうか。
     function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount)
         internal
         pure

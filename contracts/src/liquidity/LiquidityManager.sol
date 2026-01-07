@@ -1,5 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.30; // comment リリース前なのであれば、0.8.33を使ってもいいと思います。
+// comment このソースに限らず
+//   forge fmt
+//   forge lint
+//   slither
+//   solhint
+// でチェックして、そこを直すとより品質良くなると思います。
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
@@ -19,7 +25,7 @@ import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 /// @dev Liquidity is derived from the underlying token balance; direct transfers (donations) intentionally
 ///      affect incentive calculations and are not ignored by separate accounting.
 contract LiquidityManager is
-    Initializable,
+    Initializable, // comment AccessControlUpgradeableがInitializableを継承しているので、ここで継承する意味はないかと思います。
     UUPSUpgradeable,
     AccessControlUpgradeable,
     ReentrancyGuardUpgradeable,
@@ -34,6 +40,7 @@ contract LiquidityManager is
     /// @notice ERC7528 native token address convention
     address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
+    // comment errorはinterfaceに移動したほうがいいですね。
     error ZeroAddress();
     error ZeroAmount();
     error ZeroReceiver();
@@ -46,6 +53,7 @@ contract LiquidityManager is
     error InvalidMsgValue(uint256 expected, uint256 actual);
     error NativeTokenNotSupported();
 
+    // comment structはinterfaceに移動したほうがいいですね。
     /// @custom:storage-location erc7201:zerc20.storage.liquidityManager
     struct LiquidityManagerStorage {
         IERC20 underlyingToken;
@@ -54,6 +62,7 @@ contract LiquidityManager is
         uint256 feeSurplus; // Tracks collected fees net of distributed rewards.
     }
 
+    // comment eventはinterfaceに移動したほうがいいですね。
     /// @notice Emitted when fee parameters are updated.
     event FeeParamsUpdated(IncentiveLib.FeeParams params);
     /// @notice Emitted after a successful wrap.
@@ -90,6 +99,8 @@ contract LiquidityManager is
                 revert DecimalMismatch();
             }
         }
+        // comment 外から呼べる関数なので、アンダーバーはいらないのでは、と思います。
+        // そしてライブラリなので、usingを使って、feeParams.validate()　で実行できるようにしてもいいと思います。
         IncentiveLib._validateFeeParams(_feeParams);
 
         __AccessControl_init();
@@ -99,8 +110,8 @@ contract LiquidityManager is
         _grantRole(FEE_MANAGER_ROLE, initialOwner);
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        $.underlyingToken = IERC20(_underlyingToken);
-        $.zerc20 = IzERC20(_zerc20);
+        $.underlyingToken = IERC20(_underlyingToken); // comment 不変なので、immutableにしていいと思います 
+        $.zerc20 = IzERC20(_zerc20);// comment 不変なので、immutableにしていいと思います。
         $.feeParams = _feeParams;
     }
 
@@ -220,12 +231,14 @@ contract LiquidityManager is
 
     /// @dev Returns the storage pointer for ERC-7201 layout.
     function _getLiquidityManagerStorage() private pure returns (LiquidityManagerStorage storage $) {
+        // comment 毎回betes32にする計算を実行するのはコストがかかるので、定数にしてしまっていいと思いますが、どうでしょうか。
         bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.liquidityManager");
         assembly {
             $.slot := slot
         }
     }
 
+    // comment immutableな結果になるので、そもそもこの値をimmutableなbool変数に入れてしまってもいいのでは、と思います。どうでしょうか
     function _isNativeUnderlying(LiquidityManagerStorage storage $) private view returns (bool) {
         return address($.underlyingToken) == NATIVE_TOKEN;
     }
@@ -263,8 +276,13 @@ contract LiquidityManager is
         feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidity, amount);
     }
 
+    // comment privateでいいと思うのですが、どうでしょうか。
+    // ここだけではなく、privateにできるinternalはprivateのほうが隠匿性が高まるので、いいかと思いますが、どうでしょう。
     /// @dev Internal wrap implementation using pre-deposit liquidity for reward quotes.
     function _wrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
+        // comment require(bool, customError) の形式にするのがモダンな書き方ですね
+        // if文を使うより、Slitherなどの静的解析ツールも理解しやすいロジックになります。
+        // audit会社にもよりますが、if文の数でお金が変わることもあります。(伝聞)
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
 
@@ -288,6 +306,7 @@ contract LiquidityManager is
         uint256 feeSurplus_ = $.feeSurplus;
         // Keep reward calculation aligned with pre-deposit liquidity.
         uint256 liquidityBefore = balanceBefore >= feeSurplus_ ? balanceBefore - feeSurplus_ : 0;
+        // comment ここもusingを使って$.feeParams.quoteWrapReward(...)で実行できるようにすれば、引数減らせますね
         uint256 reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, feeSurplus_, received);
 
         if (reward > 0) $.feeSurplus -= reward;
