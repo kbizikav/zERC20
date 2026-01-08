@@ -270,7 +270,7 @@ contract LiquidityManager is
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         bool isNative = _isNativeUnderlying($);
-        /// @note: for native, msg.value is already in address(this).balance; for ERC20, balance updates after transferFrom.
+        /// @dev for native, msg.value is already in address(this).balance; for ERC20, balance updates after transferFrom.
         uint256 balanceBefore = isNative ? address(this).balance - msg.value : _underlyingBalance($);
         uint256 received;
 

@@ -213,7 +213,7 @@ impl AdaptorContract {
     pub async fn underlying_balance_of(&self, user: Address) -> ContractResult<U256> {
         let balance = self
             .contract_with_provider()
-            .underlingTokenBalances(user)
+            .underlyingTokenBalances(user)
             .call()
             .await?;
         Ok(balance)

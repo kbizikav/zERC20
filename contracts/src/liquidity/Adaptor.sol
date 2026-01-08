@@ -21,7 +21,6 @@ import {SelfCall} from "../utils/SelfCall.sol";
 /// @title Stargate adaptor for zERC20 unwrap + bridge flows.
 /// @notice Receives zERC20 (typically via OFT), unwraps through LiquidityManager, and forwards the underlying token through Stargate.
 contract Adaptor is
-    Initializable,
     UUPSUpgradeable,
     OwnableUpgradeable,
     ReentrancyGuardUpgradeable,
@@ -63,8 +62,8 @@ contract Adaptor is
     error InsufficientUnderlyingBalance();
     error InsufficientNativeBalance();
 
-    uint128 internal constant RETURN_LZ_RECEIVE_GAS = 500_000;
-    uint8 internal constant NATIVE_DECIMALS = 18;
+    uint128 private constant RETURN_LZ_RECEIVE_GAS = 500_000;
+    uint8 private constant NATIVE_DECIMALS = 18;
 
     /// @dev erc-7528 native token address convention
     address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
@@ -76,7 +75,7 @@ contract Adaptor is
         IzERC20 zerc20;
         IStargate stargate;
         address lzEndpoint;
-        mapping(address => uint256) underlingTokenBalances;
+        mapping(address => uint256) underlyingTokenBalances;
         mapping(address => uint256) zerc20Balances;
         mapping(address => uint256) nativeBalances;
     }
@@ -108,8 +107,8 @@ contract Adaptor is
         return _getAdaptorStorage().lzEndpoint;
     }
 
-    function underlingTokenBalances(address user) public view returns (uint256) {
-        return _getAdaptorStorage().underlingTokenBalances[user];
+    function underlyingTokenBalances(address user) public view returns (uint256) {
+        return _getAdaptorStorage().underlyingTokenBalances[user];
     }
 
     function zerc20Balances(address user) public view returns (uint256) {
@@ -446,7 +445,7 @@ contract Adaptor is
 
         amountOut = actualAmountOut;
         // add underlying token balance
-        _getAdaptorStorage().underlingTokenBalances[user] += amountOut;
+        _getAdaptorStorage().underlyingTokenBalances[user] += amountOut;
         emit Unwrap(user, amount, amountOut);
     }
 
@@ -539,21 +538,21 @@ contract Adaptor is
 
     function _debitUnderlyingBalance(address user, uint256 amount) internal {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        uint256 userUnderlyingBalance = $.underlingTokenBalances[user];
+        uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
         if (userUnderlyingBalance < amount) revert InsufficientUnderlyingBalance();
-        $.underlingTokenBalances[user] = userUnderlyingBalance - amount;
+        $.underlyingTokenBalances[user] = userUnderlyingBalance - amount;
     }
 
     function _debitCombinedNativeBalance(address user, uint256 amount) internal {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        uint256 userUnderlyingBalance = $.underlingTokenBalances[user];
+        uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
         uint256 userNativeBalance = $.nativeBalances[user];
         if (userUnderlyingBalance + userNativeBalance < amount) revert InsufficientNativeBalance();
         if (userUnderlyingBalance >= amount) {
-            $.underlingTokenBalances[user] = userUnderlyingBalance - amount;
+            $.underlyingTokenBalances[user] = userUnderlyingBalance - amount;
             return;
         }
-        $.underlingTokenBalances[user] = 0;
+        $.underlyingTokenBalances[user] = 0;
         $.nativeBalances[user] = userNativeBalance - (amount - userUnderlyingBalance);
     }
 
