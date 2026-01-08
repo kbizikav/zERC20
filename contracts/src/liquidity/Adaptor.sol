@@ -58,6 +58,7 @@ contract Adaptor is
     error ApproveFailed();
     error InvalidComposeCaller();
     error InvalidComposeSender();
+    error Zerc20Mismatch(address expected, address actual);
     error InsufficientZerc20Balance();
     error InsufficientUnderlyingBalance();
     error InsufficientNativeBalance();
@@ -67,6 +68,9 @@ contract Adaptor is
 
     /// @dev erc-7528 native token address convention
     address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    IERC20 public immutable UNDERLYING_TOKEN;
+    IzERC20 public immutable ZERC20_TOKEN;
 
     /// @custom:storage-location erc7201:zerc20.storage.adaptor
     struct AdaptorStorage {
@@ -89,14 +93,6 @@ contract Adaptor is
 
     function liquidityManager() public view returns (ILiquidityManager) {
         return _getAdaptorStorage().liquidityManager;
-    }
-
-    function underlyingToken() public view returns (IERC20) {
-        return _getAdaptorStorage().underlyingToken;
-    }
-
-    function zerc20() public view returns (IzERC20) {
-        return _getAdaptorStorage().zerc20;
     }
 
     function stargate() public view returns (IStargate) {
@@ -144,7 +140,12 @@ contract Adaptor is
     event NativeDeposit(address indexed sender, uint256 amount);
 
     /// @notice Locks implementation contracts on deployment.
-    constructor() {
+    constructor(address _liquidityManager) {
+        if (_liquidityManager == address(0)) revert ZeroAddress();
+        ILiquidityManager manager = ILiquidityManager(_liquidityManager);
+        UNDERLYING_TOKEN = manager.underlyingToken();
+        ZERC20_TOKEN = manager.zerc20();
+        if (address(UNDERLYING_TOKEN) == address(0) || address(ZERC20_TOKEN) == address(0)) revert ZeroAddress();
         _disableInitializers();
     }
 
@@ -169,18 +170,25 @@ contract Adaptor is
 
         AdaptorStorage storage $ = _getAdaptorStorage();
         $.liquidityManager = ILiquidityManager(_liquidityManager);
-        $.underlyingToken = IERC20($.liquidityManager.underlyingToken());
-        $.zerc20 = IzERC20(address($.liquidityManager.zerc20()));
         $.stargate = IStargate(_stargate);
         $.lzEndpoint = _lzEndpoint;
+
+        IERC20 managerUnderlying = $.liquidityManager.underlyingToken();
+        IzERC20 managerZerc20 = $.liquidityManager.zerc20();
+        if (address(managerUnderlying) != address(UNDERLYING_TOKEN)) {
+            revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), address(managerUnderlying));
+        }
+        if (address(managerZerc20) != address(ZERC20_TOKEN)) {
+            revert Zerc20Mismatch(address(ZERC20_TOKEN), address(managerZerc20));
+        }
 
         address stargateToken = $.stargate.token();
         if (_isNativeUnderlying()) {
             if (stargateToken != NATIVE_TOKEN && stargateToken != address(0)) {
-                revert UnderlyingTokenMismatch(address($.underlyingToken), stargateToken);
+                revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), stargateToken);
             }
-        } else if (stargateToken != address($.underlyingToken)) {
-            revert UnderlyingTokenMismatch(address($.underlyingToken), stargateToken);
+        } else if (stargateToken != address(UNDERLYING_TOKEN)) {
+            revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), stargateToken);
         }
     }
 
@@ -200,7 +208,7 @@ contract Adaptor is
     {
         AdaptorStorage storage $ = _getAdaptorStorage();
         if (msg.sender != $.lzEndpoint) revert InvalidComposeSender();
-        if (_from != address($.zerc20)) revert InvalidComposeCaller();
+        if (_from != address(ZERC20_TOKEN)) revert InvalidComposeCaller();
 
         bytes32 composeFromBytes = OFTComposeMsgCodec.composeFrom(_message);
         address user = OFTComposeMsgCodec.bytes32ToAddress(composeFromBytes);
@@ -235,7 +243,7 @@ contract Adaptor is
         AdaptorStorage storage $ = _getAdaptorStorage();
 
         // pull zERC20 from user
-        IERC20(address($.zerc20)).safeTransferFrom(user, address(this), zerc20Amount);
+        IERC20(address(ZERC20_TOKEN)).safeTransferFrom(user, address(this), zerc20Amount);
 
         // record zERC20 & native balance
         $.zerc20Balances[user] += zerc20Amount;
@@ -256,13 +264,13 @@ contract Adaptor is
             }
             (bool success,) = payable(msg.sender).call{value: amount}("");
             if (!success) revert TransferFailed();
-        } else if (token == address($.underlyingToken)) {
+        } else if (token == address(UNDERLYING_TOKEN)) {
             if (_isNativeUnderlying()) revert InvalidToken();
             _debitUnderlyingBalance(msg.sender, amount);
-            $.underlyingToken.safeTransfer(msg.sender, amount);
-        } else if (token == address($.zerc20)) {
+            UNDERLYING_TOKEN.safeTransfer(msg.sender, amount);
+        } else if (token == address(ZERC20_TOKEN)) {
             _debitZerc20Balance(msg.sender, amount);
-            IERC20(address($.zerc20)).safeTransfer(msg.sender, amount);
+            IERC20(address(ZERC20_TOKEN)).safeTransfer(msg.sender, amount);
         } else {
             revert InvalidToken();
         }
@@ -484,7 +492,7 @@ contract Adaptor is
             composeMsg: request.composeMsg,
             oftCmd: request.oftCmd
         });
-        _ensureAllowance($.underlyingToken, address($.stargate), amount);
+        _ensureAllowance(UNDERLYING_TOKEN, address($.stargate), amount);
         MessagingFee memory fee = MessagingFee({nativeFee: nativeBridgeFee, lzTokenFee: 0});
 
         uint256 sendValue = nativeBridgeFee;
@@ -515,7 +523,7 @@ contract Adaptor is
             composeMsg: bytes(""),
             oftCmd: bytes("")
         });
-        IzERC20 zerc20Token = _getAdaptorStorage().zerc20;
+        IzERC20 zerc20Token = ZERC20_TOKEN;
         MessagingFee memory returnFeeQuote = zerc20Token.quoteSend(sendParam, false);
         uint256 nativeFee = returnFeeQuote.nativeFee;
 
@@ -584,7 +592,7 @@ contract Adaptor is
     }
 
     function _isNativeUnderlying() internal view returns (bool) {
-        return address(_getAdaptorStorage().underlyingToken) == NATIVE_TOKEN;
+        return address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
     }
 
     function _removeStargateDust(uint256 amount) internal view returns (uint256 dustlessAmount) {
@@ -592,7 +600,7 @@ contract Adaptor is
         uint8 sharedDecimals = $.stargate.sharedDecimals();
         uint8 localDecimals = _isNativeUnderlying()
             ? NATIVE_DECIMALS
-            : IERC20Metadata(address($.underlyingToken)).decimals();
+            : IERC20Metadata(address(UNDERLYING_TOKEN)).decimals();
         if (localDecimals < sharedDecimals) {
             return 0;
         }
@@ -604,7 +612,7 @@ contract Adaptor is
         if (_isNativeUnderlying()) {
             return address(this).balance;
         }
-        return _getAdaptorStorage().underlyingToken.balanceOf(address(this));
+        return UNDERLYING_TOKEN.balanceOf(address(this));
     }
 
     /// @notice Accepts native transfers; Stargate/OFT refunds are handled via balance deltas.
