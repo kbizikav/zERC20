@@ -24,6 +24,9 @@ fs_permissions = [{ access = "read", path = "./config" }]
 [lint]
 ignore = ["src/verifiers/*"]
 
+[fmt]
+ignore = ["src/verifiers/*"]
+
 [rpc_endpoints]
 al-arb-sep = "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
 al-base-sep = "https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
