@@ -7,7 +7,6 @@ import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IER
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IzERC20} from "../interfaces/IzERC20.sol";
 import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
@@ -19,7 +18,6 @@ import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 ///      affect incentive calculations and are not ignored by separate accounting.
 contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, ILiquidityManager {
     using SafeERC20 for IERC20;
-    using SlotDerivation for string;
     using IncentiveLib for IncentiveLib.FeeParams;
 
     /// @notice Role allowed to update incentive curve parameters.
@@ -39,6 +37,10 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     error SlippageExceeded();
     error InvalidMsgValue(uint256 expected, uint256 actual);
     error NativeTokenNotSupported();
+
+    // ERC-7201 slot for namespace "zerc20.storage.liquidityManager".
+    bytes32 internal constant LIQUIDITY_MANAGER_STORAGE_SLOT =
+        0x63c90750c40e4ec3ae62a755935b126c2e8aa4b2b6c7a4a02d9adec8efbbaa00;
 
     /// @custom:storage-location erc7201:zerc20.storage.liquidityManager
     struct LiquidityManagerStorage {
@@ -214,7 +216,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
     /// @dev Returns the storage pointer for ERC-7201 layout.
     function _getLiquidityManagerStorage() private pure returns (LiquidityManagerStorage storage $) {
-        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.liquidityManager");
+        bytes32 slot = LIQUIDITY_MANAGER_STORAGE_SLOT;
         assembly {
             $.slot := slot
         }

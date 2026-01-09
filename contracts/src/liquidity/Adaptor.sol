@@ -16,7 +16,6 @@ import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/se
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {SelfCall} from "../utils/SelfCall.sol";
 
 /// @title Stargate adaptor for zERC20 unwrap + bridge flows.
@@ -25,7 +24,6 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     using OFTMsgCodec for address;
     using OptionsBuilder for bytes;
     using SafeERC20 for IERC20;
-    using SlotDerivation for string;
 
     /// @notice Breaks down the expected fees for unwrapping and bridging.
     struct FeeQuote {
@@ -69,6 +67,10 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     IERC20 public immutable UNDERLYING_TOKEN;
     IzERC20 public immutable ZERC20_TOKEN;
 
+    // ERC-7201 slot for namespace "zerc20.storage.adaptor".
+    bytes32 internal constant ADAPTOR_STORAGE_SLOT =
+        0x8822ef72de5627cbf701dd2d774295f82a1c725bfbeed7eddf4ec1e237a24400;
+
     /// @custom:storage-location erc7201:zerc20.storage.adaptor
     struct AdaptorStorage {
         ILiquidityManager liquidityManager;
@@ -82,7 +84,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
     function _getAdaptorStorage() private pure returns (AdaptorStorage storage $) {
-        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.adaptor");
+        bytes32 slot = ADAPTOR_STORAGE_SLOT;
         assembly {
             $.slot := slot
         }
