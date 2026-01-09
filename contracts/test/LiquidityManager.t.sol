@@ -51,18 +51,18 @@ contract LiquidityManagerTest is Test {
 
     function testInitializeRevertsOnDecimalMismatch() public {
         MintableERC20 usdc = new MintableERC20("USDC", "USDC", 6);
-        LiquidityManager impl = new LiquidityManager();
+        LiquidityManager impl = new LiquidityManager(address(usdc), address(token));
         bytes memory initData =
-            abi.encodeCall(LiquidityManager.initialize, (address(usdc), address(token), params, address(this)));
+            abi.encodeCall(LiquidityManager.initialize, (params, address(this)));
 
         vm.expectRevert(LiquidityManager.DecimalMismatch.selector);
         new ERC1967Proxy(address(impl), initData);
     }
 
     function testInitializeRevertsOnZeroOwner() public {
-        LiquidityManager impl = new LiquidityManager();
+        LiquidityManager impl = new LiquidityManager(address(underlying), address(token));
         bytes memory initData =
-            abi.encodeCall(LiquidityManager.initialize, (address(underlying), address(token), params, address(0)));
+            abi.encodeCall(LiquidityManager.initialize, (params, address(0)));
 
         vm.expectRevert(LiquidityManager.ZeroAddress.selector);
         new ERC1967Proxy(address(impl), initData);
@@ -261,8 +261,8 @@ contract LiquidityManagerTest is Test {
         IncentiveLib.FeeParams memory feeParams,
         address owner
     ) private returns (LiquidityManager) {
-        LiquidityManager implementation = new LiquidityManager();
-        bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (underlying_, zerc20_, feeParams, owner));
+        LiquidityManager implementation = new LiquidityManager(underlying_, zerc20_);
+        bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (feeParams, owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         return LiquidityManager(payable(address(proxy)));
     }

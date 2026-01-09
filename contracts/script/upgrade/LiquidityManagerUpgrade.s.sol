@@ -24,7 +24,10 @@ contract UpgradeLiquidityManager is Script {
         vm.startBroadcast(deployerKey);
 
         address previousImpl = _getImplementation(proxy);
-        LiquidityManager newImpl = new LiquidityManager();
+        LiquidityManager manager = LiquidityManager(payable(proxy));
+        address underlyingToken = address(manager.underlyingToken());
+        address zerc20Token = address(manager.zerc20());
+        LiquidityManager newImpl = new LiquidityManager(underlyingToken, zerc20Token);
 
         console2.log("Upgrading LiquidityManager");
         console2.log("  proxy", proxy);

@@ -37,6 +37,8 @@ contract AdaptorSlotHarness is Adaptor {
 }
 
 contract LiquidityManagerSlotHarness is LiquidityManager {
+    constructor() LiquidityManager(address(0x1111), address(0x2222)) {}
+
     function slot() external pure returns (bytes32) {
         return LIQUIDITY_MANAGER_STORAGE_SLOT;
     }

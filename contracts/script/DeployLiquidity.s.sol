@@ -56,10 +56,12 @@ contract DeployLiquidity is DeterministicDeployer {
         bytes32 baseSalt = _loadBaseSalt();
         console2.log("Deploying LiquidityManager at block", block.number);
 
-        LiquidityManager implementation = new LiquidityManager{salt: _deriveSalt(baseSalt, "LIQUIDITY_MANAGER_IMPL")}();
+        LiquidityManager implementation = new LiquidityManager{salt: _deriveSalt(baseSalt, "LIQUIDITY_MANAGER_IMPL")}(
+            cfg.underlyingToken, cfg.zerc20Token
+        );
         bytes memory initData = abi.encodeCall(
             LiquidityManager.initialize,
-            (cfg.underlyingToken, cfg.zerc20Token, cfg.fee, cfg.owner)
+            (cfg.fee, cfg.owner)
         );
         LiquidityManager manager = LiquidityManager(
             payable(_deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
