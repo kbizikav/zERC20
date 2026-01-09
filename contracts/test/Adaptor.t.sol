@@ -318,7 +318,7 @@ contract AdaptorTest is TestHelperOz5 {
     function testInitializeRevertsOnStargateTokenMismatch() public {
         MintableToken otherUnderlying = new MintableToken();
         MockStargate badStargate = new MockStargate(address(otherUnderlying));
-        Adaptor implementation = new Adaptor(address(manager));
+        Adaptor implementation = new Adaptor(address(manager), address(badStargate), address(endpoint));
         bytes memory initData = abi.encodeCall(
             Adaptor.initialize, (address(manager), address(badStargate), address(endpoint), address(this))
         );
@@ -617,7 +617,7 @@ contract AdaptorTest is TestHelperOz5 {
         private
         returns (Adaptor)
     {
-        Adaptor implementation = new Adaptor(manager_);
+        Adaptor implementation = new Adaptor(manager_, stargate_, lzEndpoint_);
         bytes memory initData = abi.encodeCall(Adaptor.initialize, (manager_, stargate_, lzEndpoint_, owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         return Adaptor(payable(address(proxy)));

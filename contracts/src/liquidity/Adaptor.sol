@@ -53,6 +53,9 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     error InvalidComposeCaller();
     error InvalidComposeSender();
     error InvalidDstEid();
+    error LiquidityManagerMismatch(address expected, address actual);
+    error StargateMismatch(address expected, address actual);
+    error LzEndpointMismatch(address expected, address actual);
     error Zerc20Mismatch(address expected, address actual);
     error InsufficientZerc20Balance();
     error InsufficientUnderlyingBalance();
@@ -64,6 +67,9 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     /// @dev erc-7528 native token address convention
     address private constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
+    ILiquidityManager private immutable LIQUIDITY_MANAGER;
+    IStargate private immutable STARGATE;
+    address private immutable LZ_ENDPOINT;
     IERC20 public immutable UNDERLYING_TOKEN;
     IzERC20 public immutable ZERC20_TOKEN;
 
@@ -73,11 +79,6 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
     /// @custom:storage-location erc7201:zerc20.storage.adaptor
     struct AdaptorStorage {
-        ILiquidityManager liquidityManager;
-        IERC20 underlyingToken;
-        IzERC20 zerc20;
-        IStargate stargate;
-        address lzEndpoint;
         mapping(address => uint256) underlyingTokenBalances;
         mapping(address => uint256) zerc20Balances;
         mapping(address => uint256) nativeBalances;
@@ -91,15 +92,23 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
     function liquidityManager() public view returns (ILiquidityManager) {
-        return _getAdaptorStorage().liquidityManager;
+        return LIQUIDITY_MANAGER;
     }
 
     function stargate() public view returns (IStargate) {
-        return _getAdaptorStorage().stargate;
+        return STARGATE;
     }
 
     function lzEndpoint() public view returns (address) {
-        return _getAdaptorStorage().lzEndpoint;
+        return LZ_ENDPOINT;
+    }
+
+    function underlyingToken() public view returns (IERC20) {
+        return UNDERLYING_TOKEN;
+    }
+
+    function zerc20() public view returns (IzERC20) {
+        return ZERC20_TOKEN;
     }
 
     function underlyingTokenBalances(address user) public view returns (uint256) {
@@ -139,9 +148,14 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     event NativeDeposit(address indexed sender, uint256 amount);
 
     /// @notice Locks implementation contracts on deployment.
-    constructor(address _liquidityManager) {
+    constructor(address _liquidityManager, address _stargate, address _lzEndpoint) {
         if (_liquidityManager == address(0)) revert ZeroAddress();
+        if (_stargate == address(0)) revert ZeroAddress();
+        if (_lzEndpoint == address(0)) revert ZeroAddress();
         ILiquidityManager manager = ILiquidityManager(_liquidityManager);
+        LIQUIDITY_MANAGER = manager;
+        STARGATE = IStargate(_stargate);
+        LZ_ENDPOINT = _lzEndpoint;
         UNDERLYING_TOKEN = manager.underlyingToken();
         ZERC20_TOKEN = manager.zerc20();
         if (address(UNDERLYING_TOKEN) == address(0) || address(ZERC20_TOKEN) == address(0)) revert ZeroAddress();
@@ -161,19 +175,23 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         if (_stargate == address(0)) revert ZeroAddress();
         if (_lzEndpoint == address(0)) revert ZeroAddress();
         if (initialOwner == address(0)) revert ZeroAddress();
+        if (_liquidityManager != address(LIQUIDITY_MANAGER)) {
+            revert LiquidityManagerMismatch(address(LIQUIDITY_MANAGER), _liquidityManager);
+        }
+        if (_stargate != address(STARGATE)) {
+            revert StargateMismatch(address(STARGATE), _stargate);
+        }
+        if (_lzEndpoint != LZ_ENDPOINT) {
+            revert LzEndpointMismatch(LZ_ENDPOINT, _lzEndpoint);
+        }
 
         __Ownable_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
         _transferOwnership(initialOwner);
 
-        AdaptorStorage storage $ = _getAdaptorStorage();
-        $.liquidityManager = ILiquidityManager(_liquidityManager);
-        $.stargate = IStargate(_stargate);
-        $.lzEndpoint = _lzEndpoint;
-
-        IERC20 managerUnderlying = $.liquidityManager.underlyingToken();
-        IzERC20 managerZerc20 = $.liquidityManager.zerc20();
+        IERC20 managerUnderlying = LIQUIDITY_MANAGER.underlyingToken();
+        IzERC20 managerZerc20 = LIQUIDITY_MANAGER.zerc20();
         if (address(managerUnderlying) != address(UNDERLYING_TOKEN)) {
             revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), address(managerUnderlying));
         }
@@ -181,7 +199,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
             revert Zerc20Mismatch(address(ZERC20_TOKEN), address(managerZerc20));
         }
 
-        address stargateToken = $.stargate.token();
+        address stargateToken = STARGATE.token();
         if (_isNativeUnderlying()) {
             if (stargateToken != NATIVE_TOKEN && stargateToken != address(0)) {
                 revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), stargateToken);
@@ -206,7 +224,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         nonReentrant
     {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        if (msg.sender != $.lzEndpoint) revert InvalidComposeSender();
+        if (msg.sender != LZ_ENDPOINT) revert InvalidComposeSender();
         if (_from != address(ZERC20_TOKEN)) revert InvalidComposeCaller();
 
         bytes32 composeFromBytes = OFTComposeMsgCodec.composeFrom(_message);
@@ -282,8 +300,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     /// @param request Bridge instructions used to derive messaging fees.
     /// @return quote Fee breakdown (unwrap fee, native bridge fee, token bridge fee).
     function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
-        AdaptorStorage storage $ = _getAdaptorStorage();
-        uint256 tokenUnwrapFee = $.liquidityManager.quoteUnwrapFee(amount);
+        uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrapFee(amount);
         if (tokenUnwrapFee >= amount) {
             // Prevent underflow and short-circuit when unwrap fee consumes the amount.
             return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
@@ -308,8 +325,8 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
             composeMsg: request.composeMsg,
             oftCmd: request.oftCmd
         });
-        MessagingFee memory feeQuote = $.stargate.quoteSend(sendParam, false);
-        (,, OFTReceipt memory receipt) = $.stargate.quoteOFT(sendParam);
+        MessagingFee memory feeQuote = STARGATE.quoteSend(sendParam, false);
+        (,, OFTReceipt memory receipt) = STARGATE.quoteOFT(sendParam);
         uint256 tokenBridgeFee = 0;
         if (receipt.amountReceivedLD < amountAfterUnwrap) {
             tokenBridgeFee = amountAfterUnwrap - receipt.amountReceivedLD;
@@ -440,7 +457,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         uint256 underlyingTokenBalanceBefore = _underlyingBalance();
 
         // unwrap
-        amountOut = _getAdaptorStorage().liquidityManager.unwrap(amount, address(this));
+        amountOut = LIQUIDITY_MANAGER.unwrap(amount, address(this));
         if (amountOut < amountMinOut) revert OutputTooLow(amountOut, amountMinOut);
 
         uint256 underlyingTokenBalanceAfter = _underlyingBalance();
@@ -481,7 +498,6 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         returns (uint256 amountOut, uint256 actualNativeFee)
     {
         bool isNative = _isNativeUnderlying();
-        AdaptorStorage storage $ = _getAdaptorStorage();
         SendParam memory sendParam = SendParam({
             dstEid: request.dstEid,
             to: request.to.addressToBytes32(),
@@ -491,7 +507,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
             composeMsg: request.composeMsg,
             oftCmd: request.oftCmd
         });
-        _ensureAllowance(UNDERLYING_TOKEN, address($.stargate), amount);
+        _ensureAllowance(UNDERLYING_TOKEN, address(STARGATE), amount);
         MessagingFee memory fee = MessagingFee({nativeFee: nativeBridgeFee, lzTokenFee: 0});
 
         uint256 sendValue = nativeBridgeFee;
@@ -499,7 +515,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
             sendValue += amount;
         }
         uint256 nativeBalanceBefore = address(this).balance;
-        (, OFTReceipt memory oftReceipt,) = $.stargate.sendToken{value: sendValue}(sendParam, fee, address(this));
+        (, OFTReceipt memory oftReceipt,) = STARGATE.sendToken{value: sendValue}(sendParam, fee, address(this));
         amountOut = oftReceipt.amountReceivedLD;
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 totalSpent = nativeBalanceBefore - nativeBalanceAfter;
@@ -591,8 +607,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
     function _removeStargateDust(uint256 amount) private view returns (uint256 dustlessAmount) {
-        AdaptorStorage storage $ = _getAdaptorStorage();
-        uint8 sharedDecimals = $.stargate.sharedDecimals();
+        uint8 sharedDecimals = STARGATE.sharedDecimals();
         uint8 localDecimals =
             _isNativeUnderlying() ? NATIVE_DECIMALS : IERC20Metadata(address(UNDERLYING_TOKEN)).decimals();
         if (localDecimals < sharedDecimals) {
@@ -613,7 +628,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     receive() external payable {
         AdaptorStorage storage $ = _getAdaptorStorage();
         if (
-            msg.sender == address($.liquidityManager) || msg.sender == $.lzEndpoint || msg.sender == address($.stargate)
+            msg.sender == address(LIQUIDITY_MANAGER) || msg.sender == LZ_ENDPOINT || msg.sender == address(STARGATE)
         ) {
             return;
         }

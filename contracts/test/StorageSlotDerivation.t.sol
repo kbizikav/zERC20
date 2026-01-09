@@ -29,7 +29,7 @@ contract MockLiquidityManager {
 }
 
 contract AdaptorSlotHarness is Adaptor {
-    constructor(address manager) Adaptor(manager) {}
+    constructor(address manager, address stargate, address lzEndpoint) Adaptor(manager, stargate, lzEndpoint) {}
 
     function slot() external pure returns (bytes32) {
         return ADAPTOR_STORAGE_SLOT;
@@ -77,7 +77,7 @@ contract SelfCallSlotHarness is SelfCall {
 contract StorageSlotDerivationTest is Test {
     function testAdaptorSlotConstantMatchesDerivation() public {
         MockLiquidityManager manager = new MockLiquidityManager(address(0x1111), address(0x2222));
-        AdaptorSlotHarness harness = new AdaptorSlotHarness(address(manager));
+        AdaptorSlotHarness harness = new AdaptorSlotHarness(address(manager), address(0x3333), address(0x4444));
         bytes32 expected = SlotDerivation.erc7201Slot("zerc20.storage.adaptor");
         assertEq(harness.slot(), expected, "adaptor slot");
     }

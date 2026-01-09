@@ -86,7 +86,7 @@ contract DeployLiquidity is DeterministicDeployer {
         if (cfg.stargate != address(0)) {
             if (cfg.lzEndpoint == address(0)) revert LzEndpointRequired();
             Adaptor adaptorImplementation =
-                new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(address(manager));
+                new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(address(manager), cfg.stargate, cfg.lzEndpoint);
             bytes memory adaptorInitData = abi.encodeCall(
                 Adaptor.initialize, (address(manager), cfg.stargate, cfg.lzEndpoint, cfg.owner)
             );
