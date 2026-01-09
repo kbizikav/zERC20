@@ -255,7 +255,6 @@ contract Adaptor is
     /// @notice Withdraws previously deposited tokens from the adaptor.
     function withdraw(address token, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        AdaptorStorage storage $ = _getAdaptorStorage();
         if (token == NATIVE_TOKEN) {
             if (_isNativeUnderlying()) {
                 _debitCombinedNativeBalance(msg.sender, amount);
