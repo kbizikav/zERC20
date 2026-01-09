@@ -67,7 +67,7 @@ contract Adaptor is
     uint8 private constant NATIVE_DECIMALS = 18;
 
     /// @dev erc-7528 native token address convention
-    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     IERC20 public immutable UNDERLYING_TOKEN;
     IzERC20 public immutable ZERC20_TOKEN;
@@ -367,10 +367,10 @@ contract Adaptor is
         _bridgeZerc20(dstEid, user, to, amount);
     }
 
-    // ---------------------- Internal functions --------------------
+    // ---------------------- Private functions --------------------
 
     function _unwrapAndBridge(address user, uint256 zerc20Amount, BridgeRequest memory request)
-        internal
+        private
         enableSelfCall
     {
         // quote fees
@@ -434,7 +434,7 @@ contract Adaptor is
         emit UnwrapAndBridge(user, zerc20Amount, amountOut, request.to, request.dstEid);
     }
 
-    function _unwrap(address user, uint256 amount, uint256 amountMinOut) internal returns (uint256 amountOut) {
+    function _unwrap(address user, uint256 amount, uint256 amountMinOut) private returns (uint256 amountOut) {
         _debitZerc20Balance(user, amount);
 
         uint256 underlyingTokenBalanceBefore = _underlyingBalance();
@@ -461,7 +461,7 @@ contract Adaptor is
         uint256 amount,
         uint256 nativeBridgeFee,
         BridgeRequest calldata request
-    ) internal returns (uint256 amountOut) {
+    ) private returns (uint256 amountOut) {
         uint256 amountToBridge = _removeStargateDust(amount);
         if (amountToBridge == 0 || amountToBridge < request.minAmountOut) {
             revert OutputTooLow(amountToBridge, request.minAmountOut);
@@ -477,7 +477,7 @@ contract Adaptor is
     }
 
     function _innerBridgeUnderlyingToken(uint256 amount, uint256 nativeBridgeFee, BridgeRequest calldata request)
-        internal
+        private
         returns (uint256 amountOut, uint256 actualNativeFee)
     {
         bool isNative = _isNativeUnderlying();
@@ -510,7 +510,7 @@ contract Adaptor is
         }
     }
 
-    function _bridgeZerc20(uint32 dstEid, address user, address to, uint256 amount) internal {
+    function _bridgeZerc20(uint32 dstEid, address user, address to, uint256 amount) private {
         _debitZerc20Balance(user, amount);
         bytes memory extraOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(RETURN_LZ_RECEIVE_GAS, 0);
         SendParam memory sendParam = SendParam({
@@ -536,21 +536,21 @@ contract Adaptor is
         emit BridgeZerc20(to, dstEid, amount);
     }
 
-    function _debitNativeBalance(address user, uint256 nativeBridgeFee) internal {
+    function _debitNativeBalance(address user, uint256 nativeBridgeFee) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userNativeBalance = $.nativeBalances[user];
         if (userNativeBalance < nativeBridgeFee) revert InsufficientNativeBalance();
         $.nativeBalances[user] = userNativeBalance - nativeBridgeFee;
     }
 
-    function _debitUnderlyingBalance(address user, uint256 amount) internal {
+    function _debitUnderlyingBalance(address user, uint256 amount) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
         if (userUnderlyingBalance < amount) revert InsufficientUnderlyingBalance();
         $.underlyingTokenBalances[user] = userUnderlyingBalance - amount;
     }
 
-    function _debitCombinedNativeBalance(address user, uint256 amount) internal {
+    function _debitCombinedNativeBalance(address user, uint256 amount) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
         uint256 userNativeBalance = $.nativeBalances[user];
@@ -563,18 +563,18 @@ contract Adaptor is
         $.nativeBalances[user] = userNativeBalance - (amount - userUnderlyingBalance);
     }
 
-    function _debitZerc20Balance(address user, uint256 amount) internal {
+    function _debitZerc20Balance(address user, uint256 amount) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userBalance = $.zerc20Balances[user];
         if (userBalance < amount) revert InsufficientZerc20Balance();
         $.zerc20Balances[user] = userBalance - amount;
     }
 
-    function _toBytes32(address a) internal pure returns (bytes32) {
+    function _toBytes32(address a) private pure returns (bytes32) {
         return bytes32(uint256(uint160(a)));
     }
 
-    function _ensureAllowance(IERC20 token, address spender, uint256 amount) internal {
+    function _ensureAllowance(IERC20 token, address spender, uint256 amount) private {
         if (amount == 0) return;
         if (_isNativeUnderlying()) return;
         uint256 currentAllowance = token.allowance(address(this), spender);
@@ -582,7 +582,7 @@ contract Adaptor is
         token.forceApprove(spender, amount);
     }
 
-    function _applyNativeFeeRefund(address user, uint256 quotedNativeFee, uint256 actualNativeFee) internal {
+    function _applyNativeFeeRefund(address user, uint256 quotedNativeFee, uint256 actualNativeFee) private {
         // Refund surplus native fee if the quote overestimates or refunds are reflected in balance deltas.
         if (quotedNativeFee <= actualNativeFee) return;
         uint256 refundDue = quotedNativeFee - actualNativeFee;
@@ -590,11 +590,11 @@ contract Adaptor is
         _getAdaptorStorage().nativeBalances[user] += refundDue;
     }
 
-    function _isNativeUnderlying() internal view returns (bool) {
+    function _isNativeUnderlying() private view returns (bool) {
         return address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
     }
 
-    function _removeStargateDust(uint256 amount) internal view returns (uint256 dustlessAmount) {
+    function _removeStargateDust(uint256 amount) private view returns (uint256 dustlessAmount) {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint8 sharedDecimals = $.stargate.sharedDecimals();
         uint8 localDecimals = _isNativeUnderlying()
@@ -607,7 +607,7 @@ contract Adaptor is
         dustlessAmount = amount - (amount % conversionRate);
     }
 
-    function _underlyingBalance() internal view returns (uint256) {
+    function _underlyingBalance() private view returns (uint256) {
         if (_isNativeUnderlying()) {
             return address(this).balance;
         }

@@ -32,7 +32,7 @@ contract LiquidityManager is
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
 
     /// @notice ERC7528 native token address convention
-    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
 
     error ZeroAddress();
     error ZeroAmount();
@@ -239,7 +239,7 @@ contract LiquidityManager is
 
     /// @dev Quotes wrapping reward using current token balance and fee surplus.
     function _quoteWrapReward(uint256 amount, LiquidityManagerStorage storage $)
-        internal
+        private
         view
         returns (uint256 reward)
     {
@@ -252,7 +252,7 @@ contract LiquidityManager is
 
     /// @dev Quotes unwrap fee using current token balance and fee surplus.
     function _quoteUnwrapFee(uint256 amount, LiquidityManagerStorage storage $)
-        internal
+        private
         view
         returns (uint256 feeAmount)
     {
@@ -264,7 +264,7 @@ contract LiquidityManager is
     }
 
     /// @dev Internal wrap implementation using pre-deposit liquidity for reward quotes.
-    function _wrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
+    function _wrap(uint256 amount, address receiver) private returns (uint256 amountOut) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
 
@@ -297,7 +297,7 @@ contract LiquidityManager is
     }
 
     /// @dev Internal unwrap implementation that burns zERC20 and transfers underlying.
-    function _unwrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
+    function _unwrap(uint256 amount, address receiver) private returns (uint256 amountOut) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
 
