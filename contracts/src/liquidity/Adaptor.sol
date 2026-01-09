@@ -9,7 +9,6 @@ import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/Option
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {OFTMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTMsgCodec.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
@@ -72,6 +71,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     address private immutable LZ_ENDPOINT;
     IERC20 public immutable UNDERLYING_TOKEN;
     IzERC20 public immutable ZERC20_TOKEN;
+    bool private immutable IS_NATIVE_UNDERLYING;
 
     // ERC-7201 slot for namespace "zerc20.storage.adaptor".
     bytes32 internal constant ADAPTOR_STORAGE_SLOT =
@@ -158,6 +158,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         LZ_ENDPOINT = _lzEndpoint;
         UNDERLYING_TOKEN = manager.underlyingToken();
         ZERC20_TOKEN = manager.zerc20();
+        IS_NATIVE_UNDERLYING = address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
         if (address(UNDERLYING_TOKEN) == address(0) || address(ZERC20_TOKEN) == address(0)) revert ZeroAddress();
         _disableInitializers();
     }
@@ -200,7 +201,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         }
 
         address stargateToken = STARGATE.token();
-        if (_isNativeUnderlying()) {
+        if (IS_NATIVE_UNDERLYING) {
             if (stargateToken != NATIVE_TOKEN && stargateToken != address(0)) {
                 revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), stargateToken);
             }
@@ -274,7 +275,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     function withdraw(address token, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
         if (token == NATIVE_TOKEN) {
-            if (_isNativeUnderlying()) {
+            if (IS_NATIVE_UNDERLYING) {
                 _debitCombinedNativeBalance(msg.sender, amount);
             } else {
                 _debitNativeBalance(msg.sender, amount);
@@ -282,7 +283,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
             (bool success,) = payable(msg.sender).call{value: amount}("");
             if (!success) revert TransferFailed();
         } else if (token == address(UNDERLYING_TOKEN)) {
-            if (_isNativeUnderlying()) revert InvalidToken();
+            if (IS_NATIVE_UNDERLYING) revert InvalidToken();
             _debitUnderlyingBalance(msg.sender, amount);
             UNDERLYING_TOKEN.safeTransfer(msg.sender, amount);
         } else if (token == address(ZERC20_TOKEN)) {
@@ -497,7 +498,6 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         private
         returns (uint256 amountOut, uint256 actualNativeFee)
     {
-        bool isNative = _isNativeUnderlying();
         SendParam memory sendParam = SendParam({
             dstEid: request.dstEid,
             to: request.to.addressToBytes32(),
@@ -511,7 +511,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         MessagingFee memory fee = MessagingFee({nativeFee: nativeBridgeFee, lzTokenFee: 0});
 
         uint256 sendValue = nativeBridgeFee;
-        if (isNative) {
+        if (IS_NATIVE_UNDERLYING) {
             sendValue += amount;
         }
         uint256 nativeBalanceBefore = address(this).balance;
@@ -520,7 +520,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 totalSpent = nativeBalanceBefore - nativeBalanceAfter;
         actualNativeFee = totalSpent;
-        if (isNative) {
+        if (IS_NATIVE_UNDERLYING) {
             if (totalSpent < amount) revert AmountMismatch(amount, totalSpent);
             actualNativeFee = totalSpent - amount;
         }
@@ -538,14 +538,13 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
             composeMsg: bytes(""),
             oftCmd: bytes("")
         });
-        IzERC20 zerc20Token = ZERC20_TOKEN;
-        MessagingFee memory returnFeeQuote = zerc20Token.quoteSend(sendParam, false);
+        MessagingFee memory returnFeeQuote = ZERC20_TOKEN.quoteSend(sendParam, false);
         uint256 nativeFee = returnFeeQuote.nativeFee;
 
         _debitNativeBalance(user, nativeFee);
 
         uint256 nativeBalanceBefore = address(this).balance;
-        zerc20Token.send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
+        ZERC20_TOKEN.send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 actualNativeFee = nativeBalanceBefore - nativeBalanceAfter;
         _applyNativeFeeRefund(user, nativeFee, actualNativeFee);
@@ -588,7 +587,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
 
     function _ensureAllowance(IERC20 token, address spender, uint256 amount) private {
         if (amount == 0) return;
-        if (_isNativeUnderlying()) return;
+        if (IS_NATIVE_UNDERLYING) return;
         uint256 currentAllowance = token.allowance(address(this), spender);
         if (currentAllowance >= amount) return;
         token.forceApprove(spender, amount);
@@ -602,14 +601,10 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
         _getAdaptorStorage().nativeBalances[user] += refundDue;
     }
 
-    function _isNativeUnderlying() private view returns (bool) {
-        return address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
-    }
-
     function _removeStargateDust(uint256 amount) private view returns (uint256 dustlessAmount) {
         uint8 sharedDecimals = STARGATE.sharedDecimals();
         uint8 localDecimals =
-            _isNativeUnderlying() ? NATIVE_DECIMALS : IERC20Metadata(address(UNDERLYING_TOKEN)).decimals();
+            IS_NATIVE_UNDERLYING ? NATIVE_DECIMALS : IERC20Metadata(address(UNDERLYING_TOKEN)).decimals();
         if (localDecimals < sharedDecimals) {
             return 0;
         }
@@ -618,7 +613,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
     function _underlyingBalance() private view returns (uint256) {
-        if (_isNativeUnderlying()) {
+        if (IS_NATIVE_UNDERLYING) {
             return address(this).balance;
         }
         return UNDERLYING_TOKEN.balanceOf(address(this));

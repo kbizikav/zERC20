@@ -28,6 +28,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
     IERC20 private immutable UNDERLYING_TOKEN;
     IzERC20 private immutable ZERC20_TOKEN;
+    bool private immutable IS_NATIVE_UNDERLYING;
 
     error ZeroAddress();
     error ZeroAmount();
@@ -65,6 +66,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         if (underlyingToken_ == address(0) || zerc20_ == address(0)) revert ZeroAddress();
         UNDERLYING_TOKEN = IERC20(underlyingToken_);
         ZERC20_TOKEN = IzERC20(zerc20_);
+        IS_NATIVE_UNDERLYING = address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
         _disableInitializers();
     }
 
@@ -73,8 +75,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     /// @param initialOwner Account receiving admin and fee-manager roles.
     function initialize(IncentiveLib.FeeParams memory _feeParams, address initialOwner) external initializer {
         if (initialOwner == address(0)) revert ZeroAddress();
-        bool isNative = address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
-        if (isNative) {
+        if (IS_NATIVE_UNDERLYING) {
             if (IERC20Metadata(address(ZERC20_TOKEN)).decimals() != 18) revert DecimalMismatch();
         } else {
             if (
@@ -198,7 +199,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         if (amount > $.feeSurplus) revert InsufficientRewards();
 
         $.feeSurplus -= amount;
-        if (_isNativeUnderlying()) {
+        if (IS_NATIVE_UNDERLYING) {
             (bool success,) = payable(to).call{value: amount}("");
             if (!success) revert UnderlyingSendFailed();
         } else {
@@ -217,12 +218,8 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         }
     }
 
-    function _isNativeUnderlying() private view returns (bool) {
-        return address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
-    }
-
     function _underlyingBalance() private view returns (uint256) {
-        if (_isNativeUnderlying()) {
+        if (IS_NATIVE_UNDERLYING) {
             return address(this).balance;
         }
         return UNDERLYING_TOKEN.balanceOf(address(this));
@@ -256,18 +253,17 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         if (receiver == address(0)) revert ZeroReceiver();
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        bool isNative = _isNativeUnderlying();
         /// @dev for native, msg.value is already in address(this).balance; for ERC20, balance updates after transferFrom.
-        uint256 balanceBefore = isNative ? address(this).balance - msg.value : _underlyingBalance();
+        uint256 balanceBefore =
+            IS_NATIVE_UNDERLYING ? address(this).balance - msg.value : _underlyingBalance();
         uint256 received;
 
-        if (isNative) {
+        if (IS_NATIVE_UNDERLYING) {
             if (msg.value != amount) revert InvalidMsgValue(amount, msg.value);
             received = msg.value;
         } else {
             if (msg.value != 0) revert InvalidMsgValue(0, msg.value);
-            IERC20 underlying = UNDERLYING_TOKEN;
-            underlying.safeTransferFrom(msg.sender, address(this), amount);
+            UNDERLYING_TOKEN.safeTransferFrom(msg.sender, address(this), amount);
             received = _underlyingBalance() - balanceBefore;
         }
         if (received == 0) revert UnderlyingPullFailed();
@@ -294,14 +290,13 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
         ZERC20_TOKEN.burn(msg.sender, amount);
         if (amountOut > 0) {
-            if (_isNativeUnderlying()) {
+            if (IS_NATIVE_UNDERLYING) {
                 if (address(this).balance < amountOut) revert InsufficientLiquidity();
                 (bool success,) = payable(receiver).call{value: amountOut}("");
                 if (!success) revert UnderlyingSendFailed();
             } else {
-                IERC20 underlying = UNDERLYING_TOKEN;
-                if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
-                underlying.safeTransfer(receiver, amountOut);
+                if (UNDERLYING_TOKEN.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
+                UNDERLYING_TOKEN.safeTransfer(receiver, amountOut);
             }
         }
         if (feeAmount > 0) $.feeSurplus += feeAmount;
@@ -313,7 +308,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     receive() external payable nonReentrant {
-        if (!_isNativeUnderlying()) revert NativeTokenNotSupported();
+        if (!IS_NATIVE_UNDERLYING) revert NativeTokenNotSupported();
         _wrap(msg.value, msg.sender);
     }
 }
