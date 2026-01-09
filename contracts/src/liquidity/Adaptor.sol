@@ -54,6 +54,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     error ApproveFailed();
     error InvalidComposeCaller();
     error InvalidComposeSender();
+    error InvalidDstEid();
     error Zerc20Mismatch(address expected, address actual);
     error InsufficientZerc20Balance();
     error InsufficientUnderlyingBalance();
@@ -235,6 +236,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     /// @param request Bridge configuration and minimum output expectations.
     function unwrapAndBridge(uint256 zerc20Amount, BridgeRequest calldata request) external payable nonReentrant {
         if (zerc20Amount == 0) revert ZeroAmount();
+        _validateBridgeRequest(request);
         address user = msg.sender;
         AdaptorStorage storage $ = _getAdaptorStorage();
 
@@ -362,6 +364,11 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     }
 
     // ---------------------- Private functions --------------------
+
+    function _validateBridgeRequest(BridgeRequest calldata request) private pure {
+        if (request.to == address(0)) revert ZeroAddress();
+        if (request.dstEid == 0) revert InvalidDstEid();
+    }
 
     function _unwrapAndBridge(address user, uint256 zerc20Amount, BridgeRequest memory request) private enableSelfCall {
         // quote fees
