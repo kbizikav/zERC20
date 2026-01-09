@@ -7,6 +7,7 @@ import {IzERC20} from "../interfaces/IzERC20.sol";
 import {SendParam, MessagingFee, OFTReceipt} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
+import {OFTMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTMsgCodec.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -20,13 +21,8 @@ import {SelfCall} from "../utils/SelfCall.sol";
 
 /// @title Stargate adaptor for zERC20 unwrap + bridge flows.
 /// @notice Receives zERC20 (typically via OFT), unwraps through LiquidityManager, and forwards the underlying token through Stargate.
-contract Adaptor is
-    UUPSUpgradeable,
-    OwnableUpgradeable,
-    ReentrancyGuardUpgradeable,
-    SelfCall,
-    ILayerZeroComposer
-{
+contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, SelfCall, ILayerZeroComposer {
+    using OFTMsgCodec for address;
     using OptionsBuilder for bytes;
     using SafeERC20 for IERC20;
     using SlotDerivation for string;
@@ -301,7 +297,7 @@ contract Adaptor is
 
         SendParam memory sendParam = SendParam({
             dstEid: request.dstEid,
-            to: _toBytes32(request.to),
+            to: request.to.addressToBytes32(),
             amountLD: amountAfterDust,
             minAmountLD: 0, // set 0 to prevent a revert of the minimum amount
             extraOptions: request.extraOptions,
@@ -315,9 +311,7 @@ contract Adaptor is
             tokenBridgeFee = amountAfterUnwrap - receipt.amountReceivedLD;
         }
         quote = FeeQuote({
-            tokenUnwrapFee: tokenUnwrapFee,
-            nativeBridgeFee: feeQuote.nativeFee,
-            tokenBridgeFee: tokenBridgeFee
+            tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: feeQuote.nativeFee, tokenBridgeFee: tokenBridgeFee
         });
     }
 
@@ -369,10 +363,7 @@ contract Adaptor is
 
     // ---------------------- Private functions --------------------
 
-    function _unwrapAndBridge(address user, uint256 zerc20Amount, BridgeRequest memory request)
-        private
-        enableSelfCall
-    {
+    function _unwrapAndBridge(address user, uint256 zerc20Amount, BridgeRequest memory request) private enableSelfCall {
         // quote fees
         FeeQuote memory quote;
         try this.quoteFee(zerc20Amount, request) returns (FeeQuote memory quote_) {
@@ -484,7 +475,7 @@ contract Adaptor is
         AdaptorStorage storage $ = _getAdaptorStorage();
         SendParam memory sendParam = SendParam({
             dstEid: request.dstEid,
-            to: _toBytes32(request.to),
+            to: request.to.addressToBytes32(),
             amountLD: amount,
             minAmountLD: request.minAmountOut,
             extraOptions: request.extraOptions,
@@ -515,7 +506,7 @@ contract Adaptor is
         bytes memory extraOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(RETURN_LZ_RECEIVE_GAS, 0);
         SendParam memory sendParam = SendParam({
             dstEid: dstEid,
-            to: _toBytes32(to),
+            to: to.addressToBytes32(),
             amountLD: amount,
             minAmountLD: 0, // to avoid a revert due to dust removal
             extraOptions: extraOptions,
@@ -570,10 +561,6 @@ contract Adaptor is
         $.zerc20Balances[user] = userBalance - amount;
     }
 
-    function _toBytes32(address a) private pure returns (bytes32) {
-        return bytes32(uint256(uint160(a)));
-    }
-
     function _ensureAllowance(IERC20 token, address spender, uint256 amount) private {
         if (amount == 0) return;
         if (_isNativeUnderlying()) return;
@@ -597,9 +584,8 @@ contract Adaptor is
     function _removeStargateDust(uint256 amount) private view returns (uint256 dustlessAmount) {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint8 sharedDecimals = $.stargate.sharedDecimals();
-        uint8 localDecimals = _isNativeUnderlying()
-            ? NATIVE_DECIMALS
-            : IERC20Metadata(address(UNDERLYING_TOKEN)).decimals();
+        uint8 localDecimals =
+            _isNativeUnderlying() ? NATIVE_DECIMALS : IERC20Metadata(address(UNDERLYING_TOKEN)).decimals();
         if (localDecimals < sharedDecimals) {
             return 0;
         }
@@ -617,7 +603,9 @@ contract Adaptor is
     /// @notice Accepts native transfers; Stargate/OFT refunds are handled via balance deltas.
     receive() external payable {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        if (msg.sender == address($.liquidityManager) || msg.sender == $.lzEndpoint || msg.sender == address($.stargate)) {
+        if (
+            msg.sender == address($.liquidityManager) || msg.sender == $.lzEndpoint || msg.sender == address($.stargate)
+        ) {
             return;
         }
         $.nativeBalances[msg.sender] += msg.value;
