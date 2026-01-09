@@ -69,8 +69,8 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     ILiquidityManager private immutable LIQUIDITY_MANAGER;
     IStargate private immutable STARGATE;
     address private immutable LZ_ENDPOINT;
-    IERC20 public immutable UNDERLYING_TOKEN;
-    IzERC20 public immutable ZERC20_TOKEN;
+    IERC20 private immutable UNDERLYING_TOKEN;
+    IzERC20 private immutable ZERC20_TOKEN;
     bool private immutable IS_NATIVE_UNDERLYING;
 
     // ERC-7201 slot for namespace "zerc20.storage.adaptor".
