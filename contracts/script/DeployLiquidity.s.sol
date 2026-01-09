@@ -132,6 +132,8 @@ contract DeployLiquidity is DeterministicDeployer {
         string memory path = vm.envOr("CHAIN_CONFIG_PATH", DEFAULT_CHAIN_CONFIG_PATH);
 
         string memory json;
+        // reading local config files is intentional in scripts
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         try vm.readFile(path) returns (string memory data) {
             json = data;
         } catch (bytes memory) {

@@ -15,15 +15,27 @@ abstract contract SelfCall {
         0xb9bf29a13c3c2e77b212ed63d4dd1d38fe904bdd58adce08407bd5715a4eaf00;
 
     modifier enableSelfCall() {
-        if (SELF_CALL_STORAGE.asBoolean().tload()) revert SelfCallAlreadyEnabled();
-        SELF_CALL_STORAGE.asBoolean().tstore(true);
+        _enableSelfCallBefore();
         _;
-        SELF_CALL_STORAGE.asBoolean().tstore(false);
+        _enableSelfCallAfter();
     }
 
     modifier onlySelfCall() {
+        _onlySelfCall();
+        _;
+    }
+
+    function _enableSelfCallBefore() internal {
+        if (SELF_CALL_STORAGE.asBoolean().tload()) revert SelfCallAlreadyEnabled();
+        SELF_CALL_STORAGE.asBoolean().tstore(true);
+    }
+
+    function _enableSelfCallAfter() internal {
+        SELF_CALL_STORAGE.asBoolean().tstore(false);
+    }
+
+    function _onlySelfCall() internal view {
         if (msg.sender != address(this)) revert OnlySelfCall();
         if (!SELF_CALL_STORAGE.asBoolean().tload()) revert SelfCallNotAllowed();
-        _;
     }
 }

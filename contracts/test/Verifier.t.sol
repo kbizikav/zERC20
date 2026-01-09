@@ -155,7 +155,7 @@ contract VerifierTest is TestHelperOz5 {
                 (uint256 loggedRoot, bytes memory lzMsgId) = abi.decode(logs[i].data, (uint256, bytes));
                 assertEq(index, 0, "index mismatch");
                 assertEq(loggedRoot, root, "root mismatch");
-                assertEq(bytes32(lzMsgId), receipt.guid, "guid mismatch");
+                assertEq(_bytesToBytes32(lzMsgId), receipt.guid, "guid mismatch");
                 foundTransferEvent = true;
             } else if (logs[i].topics[0] == PACKET_SENT_SIG) {
                 (,, address lib) = abi.decode(logs[i].data, (bytes, bytes, address));
@@ -272,6 +272,13 @@ contract VerifierTest is TestHelperOz5 {
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         return Verifier(address(proxy));
+    }
+
+    function _bytesToBytes32(bytes memory data) internal pure returns (bytes32 value) {
+        assertEq(data.length, 32, "guid length mismatch");
+        assembly {
+            value := mload(add(data, 32))
+        }
     }
 }
 

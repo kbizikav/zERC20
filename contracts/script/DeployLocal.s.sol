@@ -101,6 +101,8 @@ contract DeployLocal is DeterministicDeployer {
         uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
         require(decimals <= type(uint8).max, "tokenDecimals too large");
         require(decimals >= 6, "tokenDecimals below sharedDecimals");
+        // casting to uint8 is safe because decimals is bounds-checked above
+        // forge-lint: disable-next-line(unsafe-typecast)
         cfg.tokenDecimals = uint8(decimals);
         cfg.shareEndpoint = vm.envOr("SHARE_ENDPOINTS", uint256(0)) != 0;
         cfg.registerOnHub = vm.envOr("REGISTER_ON_HUB", uint256(1)) != 0;

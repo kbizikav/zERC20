@@ -25,6 +25,8 @@ abstract contract PeerScriptBase is Script {
         if (value > type(uint32).max) {
             revert EidOverflow(value);
         }
+        // casting to uint32 is safe because we revert on overflow above
+        // forge-lint: disable-next-line(unsafe-typecast)
         return uint32(value);
     }
 
@@ -32,6 +34,8 @@ abstract contract PeerScriptBase is Script {
         if (value > type(uint64).max) {
             revert ChainIdOverflow(value);
         }
+        // casting to uint64 is safe because we revert on overflow above
+        // forge-lint: disable-next-line(unsafe-typecast)
         return uint64(value);
     }
 
