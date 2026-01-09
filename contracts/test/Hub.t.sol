@@ -5,7 +5,11 @@ import {Vm} from "forge-std/Vm.sol";
 import {Hub} from "../src/Hub.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
-import {TestHelperOz5, EndpointV2, SimpleMessageLibMock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
+import {
+    TestHelperOz5,
+    EndpointV2,
+    SimpleMessageLibMock
+} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract HubTest is TestHelperOz5 {

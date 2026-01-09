@@ -188,11 +188,7 @@ library IncentiveLib {
         if (params.k > maxK) revert InvalidK();
     }
 
-    function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount)
-        private
-        pure
-        returns (uint256 rewardRaw)
-    {
+    function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount) private pure returns (uint256 rewardRaw) {
         if (T == 0 || amount == 0) {
             return 0;
         }

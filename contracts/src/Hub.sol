@@ -18,7 +18,6 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// -----------------------------------------------------------------------
     /// Structs / Events
     /// -----------------------------------------------------------------------
-
     struct TokenInfo {
         uint64 chainId;
         uint32 eid;
@@ -69,8 +68,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     uint256 internal constant TRANSFER_PAYLOAD_LENGTH = 64;
 
     // ERC-7201 slot for namespace "zerc20.storage.hub".
-    bytes32 internal constant HUB_STORAGE_SLOT =
-        0xacfc6fc065fbb01a310c13fd5991d94fb50bcd8a63ee4ce4897d543e9b5aed00;
+    bytes32 internal constant HUB_STORAGE_SLOT = 0xacfc6fc065fbb01a310c13fd5991d94fb50bcd8a63ee4ce4897d543e9b5aed00;
 
     /// @custom:storage-location erc7201:zerc20.storage.hub
     struct HubStorage {

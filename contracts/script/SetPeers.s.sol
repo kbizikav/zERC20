@@ -45,10 +45,7 @@ abstract contract PeerScriptBase is Script {
         }
     }
 
-    function _requireEqualLength(uint256 lhs, uint256 rhs, string memory lhsName, string memory rhsName)
-        internal
-        pure
-    {
+    function _requireEqualLength(uint256 lhs, uint256 rhs, string memory lhsName, string memory rhsName) internal pure {
         if (lhs != rhs) {
             revert LengthMismatch(lhsName, rhsName);
         }

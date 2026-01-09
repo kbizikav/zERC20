@@ -74,8 +74,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     bool private immutable IS_NATIVE_UNDERLYING;
 
     // ERC-7201 slot for namespace "zerc20.storage.adaptor".
-    bytes32 internal constant ADAPTOR_STORAGE_SLOT =
-        0x8822ef72de5627cbf701dd2d774295f82a1c725bfbeed7eddf4ec1e237a24400;
+    bytes32 internal constant ADAPTOR_STORAGE_SLOT = 0x8822ef72de5627cbf701dd2d774295f82a1c725bfbeed7eddf4ec1e237a24400;
 
     /// @custom:storage-location erc7201:zerc20.storage.adaptor
     struct AdaptorStorage {
@@ -622,9 +621,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
     /// @notice Accepts native transfers; Stargate/OFT refunds are handled via balance deltas.
     receive() external payable {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        if (
-            msg.sender == address(LIQUIDITY_MANAGER) || msg.sender == LZ_ENDPOINT || msg.sender == address(STARGATE)
-        ) {
+        if (msg.sender == address(LIQUIDITY_MANAGER) || msg.sender == LZ_ENDPOINT || msg.sender == address(STARGATE)) {
             return;
         }
         $.nativeBalances[msg.sender] += msg.value;

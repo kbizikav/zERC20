@@ -18,8 +18,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     uint8 private immutable TOKEN_DECIMALS;
 
     // ERC-7201 slot for namespace "zerc20.storage.zerc20".
-    bytes32 internal constant ZERC20_STORAGE_SLOT =
-        0xcd5e781c912e334c5bd043d02db19923b6e202919d5c40ac0cfab0473b1e3400;
+    bytes32 internal constant ZERC20_STORAGE_SLOT = 0xcd5e781c912e334c5bd043d02db19923b6e202919d5c40ac0cfab0473b1e3400;
 
     /// @custom:storage-location erc7201:zerc20.storage.zerc20
     struct Zerc20Storage {

@@ -9,7 +9,11 @@ import {
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {TestHelperOz5, EndpointV2, SimpleMessageLibMock} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
+import {
+    TestHelperOz5,
+    EndpointV2,
+    SimpleMessageLibMock
+} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 
 contract VerifierTest is TestHelperOz5 {
     Verifier internal verifier;

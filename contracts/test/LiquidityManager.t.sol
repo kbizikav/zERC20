@@ -7,7 +7,9 @@ import {IncentiveLib} from "../src/libraries/IncentiveLib.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {EndpointV2Mock as EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
+import {
+    EndpointV2Mock as EndpointV2
+} from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
 
 contract MintableERC20 is ERC20 {
     uint8 private immutable DECIMALS;
@@ -52,8 +54,7 @@ contract LiquidityManagerTest is Test {
     function testInitializeRevertsOnDecimalMismatch() public {
         MintableERC20 usdc = new MintableERC20("USDC", "USDC", 6);
         LiquidityManager impl = new LiquidityManager(address(usdc), address(token));
-        bytes memory initData =
-            abi.encodeCall(LiquidityManager.initialize, (params, address(this)));
+        bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (params, address(this)));
 
         vm.expectRevert(LiquidityManager.DecimalMismatch.selector);
         new ERC1967Proxy(address(impl), initData);
@@ -61,8 +62,7 @@ contract LiquidityManagerTest is Test {
 
     function testInitializeRevertsOnZeroOwner() public {
         LiquidityManager impl = new LiquidityManager(address(underlying), address(token));
-        bytes memory initData =
-            abi.encodeCall(LiquidityManager.initialize, (params, address(0)));
+        bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (params, address(0)));
 
         vm.expectRevert(LiquidityManager.ZeroAddress.selector);
         new ERC1967Proxy(address(impl), initData);
@@ -183,9 +183,7 @@ contract LiquidityManagerTest is Test {
 
         vm.deal(ALICE, 1 ether);
         vm.prank(ALICE);
-        vm.expectRevert(
-            abi.encodeWithSelector(LiquidityManager.InvalidMsgValue.selector, 2 ether, 1 ether)
-        );
+        vm.expectRevert(abi.encodeWithSelector(LiquidityManager.InvalidMsgValue.selector, 2 ether, 1 ether));
         nativeManager.wrap{value: 1 ether}(2 ether, ALICE);
     }
 

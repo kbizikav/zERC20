@@ -26,10 +26,12 @@ abstract contract DeterministicDeployer is Script {
 
     /// @dev Deploys a proxy and runs the initializer in a single call.
     ///      The proxy init data remains empty to keep the CREATE2 init code stable.
-    function _deployProxyAndInit(bytes32 baseSalt, string memory label, address implementation, bytes memory initCalldata)
-        internal
-        returns (address proxy)
-    {
+    function _deployProxyAndInit(
+        bytes32 baseSalt,
+        string memory label,
+        address implementation,
+        bytes memory initCalldata
+    ) internal returns (address proxy) {
         proxy = address(new ERC1967Proxy{salt: _deriveSalt(baseSalt, label)}(implementation, initCalldata));
     }
 }

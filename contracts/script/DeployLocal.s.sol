@@ -69,8 +69,7 @@ contract DeployLocal is DeterministicDeployer {
         EndpointV2Mock verifierEndpoint =
             cfg.shareEndpoint ? hubEndpoint : new EndpointV2Mock(cfg.verifierEid, deployer);
 
-        SimpleMessageLibMock hubSendLib =
-            new SimpleMessageLibMock(payable(address(verifyHelper)), address(hubEndpoint));
+        SimpleMessageLibMock hubSendLib = new SimpleMessageLibMock(payable(address(verifyHelper)), address(hubEndpoint));
         SimpleMessageLibMock verifierSendLib = cfg.shareEndpoint
             ? hubSendLib
             : new SimpleMessageLibMock(payable(address(verifyHelper)), address(verifierEndpoint));
@@ -270,10 +269,7 @@ contract DeployLocal is DeterministicDeployer {
     function _registerOnHub(Config memory cfg, Hub hub, Verifier verifier, zERC20 token) private {
         hub.registerToken(
             Hub.TokenInfo({
-                chainId: cfg.verifierChainId,
-                eid: cfg.verifierEid,
-                verifier: address(verifier),
-                token: address(token)
+                chainId: cfg.verifierChainId, eid: cfg.verifierEid, verifier: address(verifier), token: address(token)
             })
         );
         console2.log("\tToken registered on Hub");

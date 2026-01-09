@@ -56,8 +56,9 @@ contract MintApproveAndWrap is Script {
         console2.log("Wrapping and sending to", inputs.wrapReceiver);
         uint256 amountOut;
         if (isNative) {
-            amountOut =
-                ILiquidityManager(inputs.liquidityManager).wrap{value: inputs.amount}(inputs.amount, inputs.wrapReceiver);
+            amountOut = ILiquidityManager(inputs.liquidityManager).wrap{value: inputs.amount}(
+                inputs.amount, inputs.wrapReceiver
+            );
         } else {
             amountOut = ILiquidityManager(inputs.liquidityManager).wrap(inputs.amount, inputs.wrapReceiver);
         }

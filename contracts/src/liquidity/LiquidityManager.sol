@@ -254,8 +254,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         /// @dev for native, msg.value is already in address(this).balance; for ERC20, balance updates after transferFrom.
-        uint256 balanceBefore =
-            IS_NATIVE_UNDERLYING ? address(this).balance - msg.value : _underlyingBalance();
+        uint256 balanceBefore = IS_NATIVE_UNDERLYING ? address(this).balance - msg.value : _underlyingBalance();
         uint256 received;
 
         if (IS_NATIVE_UNDERLYING) {

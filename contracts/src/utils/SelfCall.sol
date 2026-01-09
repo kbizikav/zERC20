@@ -11,8 +11,7 @@ abstract contract SelfCall {
     error SelfCallNotAllowed();
 
     // ERC-7201 slot for namespace "zerc20.storage.SelfCall".
-    bytes32 internal constant SELF_CALL_STORAGE =
-        0xb9bf29a13c3c2e77b212ed63d4dd1d38fe904bdd58adce08407bd5715a4eaf00;
+    bytes32 internal constant SELF_CALL_STORAGE = 0xb9bf29a13c3c2e77b212ed63d4dd1d38fe904bdd58adce08407bd5715a4eaf00;
 
     modifier enableSelfCall() {
         _enableSelfCallBefore();

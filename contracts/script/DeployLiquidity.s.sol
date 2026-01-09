@@ -59,10 +59,7 @@ contract DeployLiquidity is DeterministicDeployer {
         LiquidityManager implementation = new LiquidityManager{salt: _deriveSalt(baseSalt, "LIQUIDITY_MANAGER_IMPL")}(
             cfg.underlyingToken, cfg.zerc20Token
         );
-        bytes memory initData = abi.encodeCall(
-            LiquidityManager.initialize,
-            (cfg.fee, cfg.owner)
-        );
+        bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (cfg.fee, cfg.owner));
         LiquidityManager manager = LiquidityManager(
             payable(_deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
         );
@@ -85,17 +82,13 @@ contract DeployLiquidity is DeterministicDeployer {
 
         if (cfg.stargate != address(0)) {
             if (cfg.lzEndpoint == address(0)) revert LzEndpointRequired();
-            Adaptor adaptorImplementation =
-                new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(address(manager), cfg.stargate, cfg.lzEndpoint);
-            bytes memory adaptorInitData = abi.encodeCall(
-                Adaptor.initialize, (address(manager), cfg.stargate, cfg.lzEndpoint, cfg.owner)
+            Adaptor adaptorImplementation = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(
+                address(manager), cfg.stargate, cfg.lzEndpoint
             );
+            bytes memory adaptorInitData =
+                abi.encodeCall(Adaptor.initialize, (address(manager), cfg.stargate, cfg.lzEndpoint, cfg.owner));
             Adaptor adaptor = Adaptor(
-                payable(
-                    _deployProxyAndInit(
-                        baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData
-                    )
-                )
+                payable(_deployProxyAndInit(baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData))
             );
             console2.log("Adaptor implementation deployed at", address(adaptorImplementation));
             console2.log("Adaptor proxy deployed at", address(adaptor));
