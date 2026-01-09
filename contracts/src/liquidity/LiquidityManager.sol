@@ -4,7 +4,6 @@ pragma solidity 0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -18,15 +17,10 @@ import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 /// Reward/fee curves follow the piecewise linear formulas described in docs/zerc20-liquidity.md.
 /// @dev Liquidity is derived from the underlying token balance; direct transfers (donations) intentionally
 ///      affect incentive calculations and are not ignored by separate accounting.
-contract LiquidityManager is
-    Initializable,
-    UUPSUpgradeable,
-    AccessControlUpgradeable,
-    ReentrancyGuardUpgradeable,
-    ILiquidityManager
-{
+contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, ILiquidityManager {
     using SafeERC20 for IERC20;
     using SlotDerivation for string;
+    using IncentiveLib for IncentiveLib.FeeParams;
 
     /// @notice Role allowed to update incentive curve parameters.
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
@@ -90,7 +84,7 @@ contract LiquidityManager is
                 revert DecimalMismatch();
             }
         }
-        IncentiveLib.validateFeeParams(_feeParams);
+        _feeParams.validateFeeParams();
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -192,7 +186,7 @@ contract LiquidityManager is
     /// @notice Updates the incentive curve parameters.
     /// @param params New fee parameters.
     function setFeeParams(IncentiveLib.FeeParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
-        IncentiveLib.validateFeeParams(params);
+        params.validateFeeParams();
         _getLiquidityManagerStorage().feeParams = params;
         emit FeeParamsUpdated(params);
     }
@@ -238,16 +232,12 @@ contract LiquidityManager is
     }
 
     /// @dev Quotes wrapping reward using current token balance and fee surplus.
-    function _quoteWrapReward(uint256 amount, LiquidityManagerStorage storage $)
-        private
-        view
-        returns (uint256 reward)
-    {
+    function _quoteWrapReward(uint256 amount, LiquidityManagerStorage storage $) private view returns (uint256 reward) {
         uint256 balance = _underlyingBalance($);
         uint256 feeSurplus_ = $.feeSurplus;
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
-        reward = IncentiveLib.quoteWrapReward($.feeParams, liquidity, feeSurplus_, amount);
+        reward = $.feeParams.quoteWrapReward(liquidity, feeSurplus_, amount);
     }
 
     /// @dev Quotes unwrap fee using current token balance and fee surplus.
@@ -260,7 +250,7 @@ contract LiquidityManager is
         uint256 feeSurplus_ = $.feeSurplus;
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
-        feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidity, amount);
+        feeAmount = $.feeParams.quoteUnwrapFee(liquidity, amount);
     }
 
     /// @dev Internal wrap implementation using pre-deposit liquidity for reward quotes.
@@ -288,7 +278,7 @@ contract LiquidityManager is
         uint256 feeSurplus_ = $.feeSurplus;
         // Keep reward calculation aligned with pre-deposit liquidity.
         uint256 liquidityBefore = balanceBefore >= feeSurplus_ ? balanceBefore - feeSurplus_ : 0;
-        uint256 reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, feeSurplus_, received);
+        uint256 reward = $.feeParams.quoteWrapReward(liquidityBefore, feeSurplus_, received);
 
         if (reward > 0) $.feeSurplus -= reward;
         amountOut = received + reward;
