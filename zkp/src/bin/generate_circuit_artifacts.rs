@@ -44,7 +44,7 @@ fn main() -> Result<()> {
         &poseidon2_config,
         &poseidon3_config,
     )?;
-    println!("Generated global withdraw nova artifacts");
+    println!("Generated global withdraw groth16 artifacts");
 
     generate_nova_artifacts::<RootCircuit<Fr>>(
         "root",
@@ -66,7 +66,7 @@ fn main() -> Result<()> {
         (poseidon2_config.clone(), poseidon3_config.clone()),
     )?;
 
-    println!("Generated global withdraw groth16 artifacts");
+    println!("Generated global withdraw nova artifacts");
 
     println!("All artifacts saved under {}", artifacts_dir.display());
 
