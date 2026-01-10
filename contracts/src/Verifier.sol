@@ -317,7 +317,8 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         require(proof_[4] == 0, InvalidInitialTotalValue(proof_[4]));
         require(proof_[5] == transferRoot, FinalTransferRootMismatch(proof_[5], transferRoot));
         require(proof_[6] == recipient, FinalRecipientMismatch(proof_[6], recipient));
-        proof_[7]; // lastLeafIndex is unused
+        // lastLeafIndex is visible in calldata; provers should pad to the maximum index to avoid leakage.
+        proof_[7];
         uint256 totalValue = proof_[8];
         VerifierStorage storage $ = _getVerifierStorage();
         address withdrawDecider = isGlobal ? $.withdrawGlobalDecider : $.withdrawLocalDecider;
