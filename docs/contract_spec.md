@@ -4,6 +4,7 @@
 
 - The system provides a privacy-preserving wrapped asset (`zERC20`) that supports private proof-of-burn redemptions via zero-knowledge proofs. On each chain, a `Verifier` contract validates per-token transfer roots and teleport proofs, while a single cross-chain `Hub` contract aggregates all transfer roots to derive global state. Liquidity is anchored and released through `LiquidityManager`, with `Adaptor` handling cross-chain exit intent and recovery.
 - Trusted actors are limited to (a) the deployer who sets immutable parameters and initial deciders/verifiers, and (b) the upgrade/owner roles on each upgradeable contract. Owner compromises enable reconfiguration of verifiers, token registries, liquidity policy, or bridge parameters.
+- The indexer used for transfer discovery and proof inputs is privacy-sensitive. It observes sender, burn address, and value from on-chain events, and learns which burn addresses belong to recipients when they query. Users who rely on a hosted indexer must trust that operator not to log or leak sender-to-recipient linkage; users who want full unlinkability should run their own indexer instance (see `indexer/` and docker compose) and point clients to it.
 
 ## Components
 
