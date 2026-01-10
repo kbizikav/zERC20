@@ -4,6 +4,7 @@
 
 - The system provides a privacy-preserving wrapped asset (`zERC20`) that supports private proof-of-burn redemptions via zero-knowledge proofs. On each chain, a `Verifier` contract validates per-token transfer roots and teleport proofs, while a single cross-chain `Hub` contract aggregates all transfer roots to derive global state. Liquidity is anchored and released through `LiquidityManager`, with `Adaptor` handling cross-chain exit intent and recovery.
 - Trusted actors are limited to (a) the deployer who sets immutable parameters and initial deciders/verifiers, and (b) the upgrade/owner roles on each upgradeable contract. Owner compromises enable reconfiguration of verifiers, token registries, liquidity policy, or bridge parameters.
+- The indexer used for transfer discovery and proof inputs is privacy-sensitive. It observes sender, burn address, and value from on-chain events, and learns which burn addresses belong to recipients when they query. Users who rely on a hosted indexer must trust that operator not to log or leak sender-to-recipient linkage; users who want full unlinkability should run their own indexer instance (see `indexer/` and docker compose) and point clients to it.
 
 ## Components
 
@@ -75,3 +76,4 @@
 - **Value range**: Both zERC20 transfer values and hash-chain limbs are limited to 248 bits to stay within the BN254 scalar field. Violations revert (`ValueTooLarge`) before any state change.
 - **Emergency handling**: Any Nova proof inconsistency pauses the Verifier, preventing further teleports or relays until the owner rotates deciders/verifiers and calls `deactivateEmergency`.
 - **LayerZero hygiene**: Verifier and Hub both inherit `OAppUpgradeable`, restricting message acceptance to known endpoints (`hubEid` on Verifier, registered EIDs on Hub). Payload lengths and tree indices are validated before state mutation. During `initialize`, the `_delegate` argument MUST be the same address that will own the contract so that LayerZero callbacks and owner-only admin functions stay aligned.
+- **Nova proof padding**: The Nova withdraw proof includes a public `lastLeafIndex` value in calldata. To avoid leaking how far into the tree a proof aggregated, provers should pad to the maximum index for the tree depth (the CLI does this with dummy steps). Alternative provers should implement the same padding convention.

@@ -2,7 +2,6 @@ use alloy::primitives::U256;
 use anyhow::{Context as _, anyhow};
 use api_types::prover::CircuitKind;
 use ark_bn254::Fr;
-use ark_ff::AdditiveGroup;
 use ark_ff::Zero;
 use ark_serialize::CanonicalSerialize;
 use client_common::{indexer::IndexedEvent, prover::DeciderClient};
@@ -63,7 +62,7 @@ pub async fn batch_teleport_proof<const DEPTH: usize>(
                 anyhow::anyhow!("invalid number of siblings in global Merkle proof")
             })?;
         external_inputs.push(WithdrawExternalInputs::<Fr, DEPTH> {
-            is_dummy: Fr::ZERO,
+            is_dummy: false,
             from_address: address_to_fr(event.from),
             value: u256_to_fr(event.value),
             secret,

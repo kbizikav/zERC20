@@ -1,7 +1,7 @@
 use alloy::primitives::U256;
 use ark_bn254::Fr;
 use ark_crypto_primitives::sponge::{Absorb, poseidon::PoseidonConfig};
-use ark_ff::{AdditiveGroup as _, Field as _, PrimeField};
+use ark_ff::{AdditiveGroup as _, PrimeField};
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
     fields::fp::FpVar,
@@ -27,7 +27,7 @@ pub struct WithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
 
 #[derive(Clone, Debug)]
 pub struct WithdrawExternalInputs<F: PrimeField, const DEPTH: usize> {
-    pub is_dummy: F,
+    pub is_dummy: bool,
     pub from_address: F,
     pub value: F,
     pub secret: F,
@@ -38,7 +38,7 @@ pub struct WithdrawExternalInputs<F: PrimeField, const DEPTH: usize> {
 impl<F: PrimeField, const DEPTH: usize> Default for WithdrawExternalInputs<F, DEPTH> {
     fn default() -> Self {
         Self {
-            is_dummy: F::zero(),
+            is_dummy: false,
             from_address: F::zero(),
             value: F::zero(),
             secret: F::zero(),
@@ -70,19 +70,7 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<WithdrawExternalInputs<F, DEPTH
         let cs = ns.cs();
         f().and_then(|value| {
             let value = value.borrow();
-            let is_dummy = Boolean::new_variable(
-                cs.clone(),
-                || {
-                    if value.is_dummy.is_zero() {
-                        Ok(false)
-                    } else if value.is_dummy.is_one() {
-                        Ok(true)
-                    } else {
-                        Err(SynthesisError::AssignmentMissing)
-                    }
-                },
-                mode,
-            )?;
+            let is_dummy = Boolean::new_variable(cs.clone(), || Ok(value.is_dummy), mode)?;
             let from_address =
                 FpVar::<F>::new_variable(cs.clone(), || Ok(value.from_address), mode)?;
             let val = FpVar::<F>::new_variable(cs.clone(), || Ok(value.value), mode)?;
@@ -185,7 +173,7 @@ pub fn dummy_withdraw_ext_input<const DEPTH: usize>(
     value: U256,
 ) -> WithdrawExternalInputs<Fr, DEPTH> {
     WithdrawExternalInputs {
-        is_dummy: Fr::ONE,
+        is_dummy: true,
         from_address: Fr::ZERO,
         value: u256_to_fr(value),
         secret: Fr::ZERO,
@@ -272,7 +260,7 @@ mod tests {
             let leaf_index = indices[i];
             let proof = tree.prove(leaf_index);
             let ext_input = WithdrawExternalInputs::<Fr, DEPTH> {
-                is_dummy: Fr::ZERO,
+                is_dummy: false,
                 from_address: Fr::ZERO,
                 value: u256_to_fr(*value),
                 secret: secrets[i],

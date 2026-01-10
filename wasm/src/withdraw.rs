@@ -212,11 +212,7 @@ fn prove_with_depth<const DEPTH: usize>(
         let secret_fr = hex_to_fr(&external.secret).map_err(anyhow_to_js_error)?;
 
         let ext_input = WithdrawExternalInputs {
-            is_dummy: if external.is_dummy {
-                Fr::from(1u64)
-            } else {
-                Fr::from(0u64)
-            },
+            is_dummy: external.is_dummy,
             from_address: from_fr,
             value: value_fr,
             secret: secret_fr,
