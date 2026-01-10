@@ -7,6 +7,7 @@ This document captures the behavior and constraints enforced by the zk circuits 
 - All token `amount` values are range-checked to fit in **31 bytes (248 bits)** so they remain strictly less than the BN254 scalar modulus and align with the Poseidon- and SHA-based gadgets (`BYTES31_BIT_LENGTH` in [`constants.rs`](../zkp/src/circuits/constants.rs)).
 - Addresses are constrained to **160 bits** to match Ethereum-style account widths (`ADDRESS_BIT_LENGTH` in [`constants.rs`](../zkp/src/circuits/constants.rs)).
 - The SHA-256 hash chain gadget truncates its output to the lower 248 bits so the digest can be embedded directly in the BN254 scalar field while staying compatible with the on-chain representation.
+以下、`docs/zkp_spec.md` の該当セクションを監査コメント #02 に合わせて **そのまま差し替えできる形**で修正案を書きました（主に「PoW 16bitsが全部セキュリティに乗るわけではない」「現状は PoW=16 固定」を明記）。
 
 ## `burn_address_var`
 
@@ -24,8 +25,9 @@ burn_address_var(
 - Computes the burn hash with a single Poseidon-3 permutation `Poseidon(domain_separator, recipient, secret)`, using the field encoding of `b"burn"` as the domain separator.
 - When `is_constrained` is true, multiplies each bit in the range `[160, 160 + POW_DIFFICULTY)` by `is_constrained` and forces the product to zero, enforcing `POW_DIFFICULTY` leading zeros immediately above the address window.
 - Truncates the hash to the lower 160 bits and returns the result as the burn address.
-- The parameter `POW_DIFFICULTY` is currently 16, so the proof-of-work condition raises the collision cost from the ~`2^(160/2)` birthday-attack baseline to roughly `2^(160/2 + 16)`.
-- Host helpers (`compute_burn_address_from_secret`, `find_pow_nonce`, `secret_from_nonce`) mirror the in-circuit behavior for witness generation, including the domain-separated 3-input Poseidon hash.
+-`POW_DIFFICULTY` is currently fixed to 16 bits in the implementation.
+- **Security note:** The PoW constraint applies only to generating *valid burn addresses* (i.e., finding `(recipient, secret)` whose hash has `POW_DIFFICULTY` leading zeros above the 160-bit window). In contrast, an attacker can generate arbitrary EOA recipients cheaply without any PoW. As a result, the PoW bits do not contribute their full bit-count to collision resistance in the best-known attack strategy: roughly speaking, only about half of the PoW bit-length translates into additional security margin. Concretely, with `POW_DIFFICULTY = 16`, rather than the symmetric estimate `~2^(160/2 + 16) = ~2^96`, an adversary can mix `n` unconstrained EOA addresses with `m` PoW-valid burn addresses and reach a collision with total effort around **~2^89** operations (e.g., `n = 2^88` EOAs and `m = 2^72` PoW-valid burn addresses, where producing each PoW-valid burn address costs ~`2^16` trials).
+- Host helpers (`compute_burn_address_from_secret`, `find_pow_nonce`, `secret_from_nonce`) mirror the in-circuit behavior for witness generation, including the domain-separated 3-input Poseidon hash and the same PoW constraint when enabled.
 
 ## `single_withdraw`
 
