@@ -7,7 +7,6 @@ This document captures the behavior and constraints enforced by the zk circuits 
 - All token `amount` values are range-checked to fit in **31 bytes (248 bits)** so they remain strictly less than the BN254 scalar modulus and align with the Poseidon- and SHA-based gadgets (`BYTES31_BIT_LENGTH` in [`constants.rs`](../zkp/src/circuits/constants.rs)).
 - Addresses are constrained to **160 bits** to match Ethereum-style account widths (`ADDRESS_BIT_LENGTH` in [`constants.rs`](../zkp/src/circuits/constants.rs)).
 - The SHA-256 hash chain gadget truncates its output to the lower 248 bits so the digest can be embedded directly in the BN254 scalar field while staying compatible with the on-chain representation.
-以下、`docs/zkp_spec.md` の該当セクションを監査コメント #02 に合わせて **そのまま差し替えできる形**で修正案を書きました（主に「PoW 16bitsが全部セキュリティに乗るわけではない」「現状は PoW=16 固定」を明記）。
 
 ## `burn_address_var`
 
