@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.33;
 
 import {IzERC20} from "./interfaces/IzERC20.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
@@ -8,6 +8,7 @@ import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/
 import {
     ERC20PermitUpgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 
 /// @title zERC20
@@ -65,10 +66,8 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         if (initialOwner == address(0)) revert ZeroAddress();
         __ERC20_init(name_, symbol_);
         __ERC20Permit_init(name_);
-        __Ownable_init();
+        __Ownable_init(initialOwner);
         __OFTCore_init(initialOwner);
-        __UUPSUpgradeable_init();
-        _transferOwnership(initialOwner);
     }
 
     /// @dev Restricts upgrade authorization to the owner.
@@ -151,12 +150,16 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
 
     /// @dev Commits every transfer (including mint/burn) to the 248-bit SHA-256 hash chain described in the spec.
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
-    function _afterTokenTransfer(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
+    function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         if (value > type(uint248).max) revert ValueTooLarge();
+        super._update(from, to, value);
         Zerc20Storage storage $ = _getZerc20Storage();
-        super._afterTokenTransfer(from, to, value);
         $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);
         emit IndexedTransfer($.index++, from, to, value);
+    }
+
+    function nonces(address owner) public view override(IERC20Permit, ERC20PermitUpgradeable) returns (uint256) {
+        return super.nonces(owner);
     }
 
     /// @notice Sets the Verifier contract that is allowed to relay teleport mints.

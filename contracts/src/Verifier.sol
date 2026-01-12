@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Unlicense
-pragma solidity 0.8.30;
+pragma solidity 0.8.33;
 
-import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {
     MessagingFee,
     MessagingReceipt
@@ -192,9 +192,8 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
             revert ZeroAddress();
         }
 
-        __Ownable_init();
+        __Ownable_init(delegate);
         __OApp_init(delegate);
-        __UUPSUpgradeable_init();
         __Verifier_init(
             token_,
             hubEid_,
@@ -204,7 +203,6 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
             singleWithdrawGlobalVerifier_,
             singleWithdrawLocalVerifier_
         );
-        _transferOwnership(delegate);
     }
 
     /// @dev Internal initializer that wires storage pointers and seeds the transfer root history with the constant from the spec.

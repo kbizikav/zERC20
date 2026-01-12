@@ -1,0 +1,13 @@
+@layerzerolabs/lz-evm-messagelib-v2/=dependencies/@layerzerolabs-lz-evm-messagelib-v2-3.0.152/
+@layerzerolabs/lz-evm-protocol-v2/=dependencies/@layerzerolabs-lz-evm-protocol-v2-3.0.152/
+@layerzerolabs/lz-evm-v1-0.7/=dependencies/@layerzerolabs-lz-evm-v1-0-7-3.0.152/
+@layerzerolabs/oapp-evm-upgradeable/=dependencies/@layerzerolabs-oapp-evm-upgradeable-0.1.3/
+@layerzerolabs/oapp-evm/=dependencies/@layerzerolabs-oapp-evm-0.4.1/
+@layerzerolabs/oft-evm-upgradeable/=dependencies/@layerzerolabs-oft-evm-upgradeable-4.0.2/
+@layerzerolabs/oft-evm/=dependencies/@layerzerolabs-oft-evm-4.0.1/
+@layerzerolabs/test-devtools-evm-foundry/=dependencies/@layerzerolabs-test-devtools-evm-foundry-8.0.1/
+@openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.6.0-rc.0/
+@openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.6.0-rc.0/
+forge-std/=dependencies/forge-std-1.14.0/src
+poseidon-solidity/contracts=dependencies/poseidon-solidity-0.0.5/
+solidity-bytes-utils/=dependencies/gnsps-solidity-bytes-utils-0.8.4/

@@ -9,6 +9,10 @@ import {zERC20} from "../src/zERC20.sol";
 import {ShaHashChainLib} from "../src/utils/ShaHashChainLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IOFT, SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
+import {
+    ERC20PermitUpgradeable
+} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 contract ZERC20Harness is zERC20 {
     constructor(address endpoint, uint8 decimals_) zERC20(endpoint, decimals_) {}
@@ -203,7 +207,7 @@ contract ZERC20Test is Test {
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", token.DOMAIN_SEPARATOR(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(ownerKey, digest);
 
-        vm.expectRevert("ERC20Permit: expired deadline");
+        vm.expectRevert(abi.encodeWithSelector(ERC20PermitUpgradeable.ERC2612ExpiredSignature.selector, deadline));
         token.permit(owner, BOB, value, deadline, v, r, s);
     }
 
@@ -265,7 +269,7 @@ contract ZERC20Test is Test {
         address newVerifier = address(0x1234);
 
         vm.prank(nonOwner);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
         token.setVerifier(newVerifier);
 
         vm.expectEmit(true, true, false, false, address(token));

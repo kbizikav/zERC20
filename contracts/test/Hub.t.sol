@@ -299,7 +299,7 @@ contract HubTest is TestHelperOz5 {
         assertEq(storedToken, info.token, "token not stored initially");
 
         HubUpgradeMock newImplementation = new HubUpgradeMock(address(endpoint));
-        proxiedHub.upgradeTo(address(newImplementation));
+        proxiedHub.upgradeToAndCall(address(newImplementation), bytes(""));
 
         HubUpgradeMock upgraded = HubUpgradeMock(address(proxiedHub));
         assertEq(upgraded.version(), "hub-v2", "upgraded implementation not in use");

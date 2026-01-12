@@ -64,18 +64,7 @@ contract DeployLocal is DeterministicDeployer {
 
         vm.startBroadcast(deployerKey);
 
-        NoopVerifyHelper verifyHelper = new NoopVerifyHelper();
-        EndpointV2Mock hubEndpoint = new EndpointV2Mock(cfg.hubEid, deployer);
-        EndpointV2Mock verifierEndpoint =
-            cfg.shareEndpoint ? hubEndpoint : new EndpointV2Mock(cfg.verifierEid, deployer);
-
-        SimpleMessageLibMock hubSendLib = new SimpleMessageLibMock(payable(address(verifyHelper)), address(hubEndpoint));
-        SimpleMessageLibMock verifierSendLib = cfg.shareEndpoint
-            ? hubSendLib
-            : new SimpleMessageLibMock(payable(address(verifyHelper)), address(verifierEndpoint));
-
-        _configureEndpoint(hubEndpoint, cfg.verifierEid, hubSendLib);
-        _configureEndpoint(verifierEndpoint, cfg.hubEid, verifierSendLib);
+        (EndpointV2Mock hubEndpoint, EndpointV2Mock verifierEndpoint) = _deployEndpoints(cfg, deployer);
 
         Hub hub = _deployHub(cfg, deployer, hubEndpoint, baseSalt);
         zERC20 token = _deployToken(cfg, deployer, verifierEndpoint, baseSalt);
@@ -89,23 +78,64 @@ contract DeployLocal is DeterministicDeployer {
     }
 
     function _loadConfig() private view returns (Config memory cfg) {
-        cfg.tokenName = vm.envOr("TOKEN_NAME", string("Local zERC20"));
-        cfg.tokenSymbol = vm.envOr("TOKEN_SYMBOL", string("LZERC"));
-        cfg.hubEid = uint32(vm.envOr("HUB_EID", uint256(101)));
-        cfg.verifierEid = uint32(vm.envOr("VERIFIER_EID", uint256(102)));
-        cfg.verifierChainId = uint64(vm.envOr("VERIFIER_CHAIN_ID", uint256(block.chainid)));
-        cfg.hubDelegate = vm.envOr("HUB_DELEGATE", address(0));
-        cfg.verifierDelegate = vm.envOr("VERIFIER_DELEGATE", address(0));
-        cfg.tokenOwner = vm.envOr("TOKEN_OWNER", address(0));
+        (cfg.tokenName, cfg.tokenSymbol, cfg.tokenDecimals, cfg.tokenOwner) = _loadTokenConfig();
+        (cfg.hubEid, cfg.verifierEid, cfg.verifierChainId) = _loadNetworkConfig();
+        (cfg.hubDelegate, cfg.verifierDelegate) = _loadDelegates();
+        (cfg.shareEndpoint, cfg.registerOnHub, cfg.wirePeers) = _loadFlags();
+    }
+
+    function _loadTokenConfig()
+        private
+        view
+        returns (string memory tokenName, string memory tokenSymbol, uint8 tokenDecimals, address tokenOwner)
+    {
+        tokenName = vm.envOr("TOKEN_NAME", string("Local zERC20"));
+        tokenSymbol = vm.envOr("TOKEN_SYMBOL", string("LZERC"));
+        tokenOwner = vm.envOr("TOKEN_OWNER", address(0));
         uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
         require(decimals <= type(uint8).max, "tokenDecimals too large");
         require(decimals >= 6, "tokenDecimals below sharedDecimals");
         // casting to uint8 is safe because decimals is bounds-checked above
         // forge-lint: disable-next-line(unsafe-typecast)
-        cfg.tokenDecimals = uint8(decimals);
-        cfg.shareEndpoint = vm.envOr("SHARE_ENDPOINTS", uint256(0)) != 0;
-        cfg.registerOnHub = vm.envOr("REGISTER_ON_HUB", uint256(1)) != 0;
-        cfg.wirePeers = vm.envOr("WIRE_PEERS", uint256(1)) != 0;
+        tokenDecimals = uint8(decimals);
+    }
+
+    function _loadNetworkConfig()
+        private
+        view
+        returns (uint32 hubEid, uint32 verifierEid, uint64 verifierChainId)
+    {
+        hubEid = uint32(vm.envOr("HUB_EID", uint256(101)));
+        verifierEid = uint32(vm.envOr("VERIFIER_EID", uint256(102)));
+        verifierChainId = uint64(vm.envOr("VERIFIER_CHAIN_ID", uint256(block.chainid)));
+    }
+
+    function _loadDelegates() private view returns (address hubDelegate, address verifierDelegate) {
+        hubDelegate = vm.envOr("HUB_DELEGATE", address(0));
+        verifierDelegate = vm.envOr("VERIFIER_DELEGATE", address(0));
+    }
+
+    function _loadFlags() private view returns (bool shareEndpoint, bool registerOnHub, bool wirePeers) {
+        shareEndpoint = vm.envOr("SHARE_ENDPOINTS", uint256(0)) != 0;
+        registerOnHub = vm.envOr("REGISTER_ON_HUB", uint256(1)) != 0;
+        wirePeers = vm.envOr("WIRE_PEERS", uint256(1)) != 0;
+    }
+
+    function _deployEndpoints(Config memory cfg, address deployer)
+        private
+        returns (EndpointV2Mock hubEndpoint, EndpointV2Mock verifierEndpoint)
+    {
+        NoopVerifyHelper verifyHelper = new NoopVerifyHelper();
+        hubEndpoint = new EndpointV2Mock(cfg.hubEid, deployer);
+        verifierEndpoint = cfg.shareEndpoint ? hubEndpoint : new EndpointV2Mock(cfg.verifierEid, deployer);
+
+        SimpleMessageLibMock hubSendLib = new SimpleMessageLibMock(payable(address(verifyHelper)), address(hubEndpoint));
+        SimpleMessageLibMock verifierSendLib = cfg.shareEndpoint
+            ? hubSendLib
+            : new SimpleMessageLibMock(payable(address(verifyHelper)), address(verifierEndpoint));
+
+        _configureEndpoint(hubEndpoint, cfg.verifierEid, hubSendLib);
+        _configureEndpoint(verifierEndpoint, cfg.hubEid, verifierSendLib);
     }
 
     function _configureEndpoint(EndpointV2Mock endpoint, uint32 dstEid, SimpleMessageLibMock lib) private {
@@ -137,11 +167,19 @@ contract DeployLocal is DeterministicDeployer {
     {
         address owner = cfg.tokenOwner == address(0) ? deployer : cfg.tokenOwner;
         zERC20 impl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}(address(endpoint), cfg.tokenDecimals);
-        bytes memory initData = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
+        bytes memory initData = _encodeTokenInit(cfg.tokenName, cfg.tokenSymbol, owner);
         token = zERC20(_deployProxyAndInit(baseSalt, "TOKEN_PROXY", address(impl), initData));
         console2.log("\tzERC20 implementation deployed at", address(impl));
         console2.log("zERC20 proxy deployed at", address(token));
         console2.log("\tToken owner set to", owner);
+    }
+
+    function _encodeTokenInit(string memory name, string memory symbol, address owner)
+        private
+        pure
+        returns (bytes memory)
+    {
+        return abi.encodeCall(zERC20.initialize, (name, symbol, owner));
     }
 
     function _deployVerifierSuite(

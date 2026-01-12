@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.33;
 
 import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
 import {IStargate} from "../interfaces/IStargate.sol";
@@ -11,7 +11,7 @@ import {OFTMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTMsgCodec.sol
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
@@ -19,7 +19,7 @@ import {SelfCall} from "../utils/SelfCall.sol";
 
 /// @title Stargate adaptor for zERC20 unwrap + bridge flows.
 /// @notice Receives zERC20 (typically via OFT), unwraps through LiquidityManager, and forwards the underlying token through Stargate.
-contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, SelfCall, ILayerZeroComposer {
+contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransient, SelfCall, ILayerZeroComposer {
     using OFTMsgCodec for address;
     using OptionsBuilder for bytes;
     using SafeERC20 for IERC20;
@@ -185,10 +185,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradea
             revert LzEndpointMismatch(LZ_ENDPOINT, _lzEndpoint);
         }
 
-        __Ownable_init();
-        __UUPSUpgradeable_init();
-        __ReentrancyGuard_init();
-        _transferOwnership(initialOwner);
+        __Ownable_init(initialOwner);
 
         IERC20 managerUnderlying = LIQUIDITY_MANAGER.underlyingToken();
         IzERC20 managerZerc20 = LIQUIDITY_MANAGER.zerc20();

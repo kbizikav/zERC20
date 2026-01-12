@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Unlicense
-pragma solidity 0.8.30;
+pragma solidity 0.8.33;
 
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
@@ -99,11 +99,9 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// @notice Initializes the Hub's LayerZero delegate pairing alongside upgrade hooks.
     /// @param delegate Address that MUST become both the contract owner and LayerZero delegate so admin controls and callbacks share the same authority.
     function initialize(address delegate) external initializer {
-        __Ownable_init();
+        __Ownable_init(delegate);
         __OApp_init(delegate);
-        __UUPSUpgradeable_init();
         __Hub_init();
-        _transferOwnership(delegate);
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}
