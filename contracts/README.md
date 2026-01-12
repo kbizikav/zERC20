@@ -6,6 +6,7 @@ This document explains how to deploy the LayerZero Hub, verifier, and `zERC20` t
 Prerequisites
 -------------
 - Foundry toolchain (`forge`, `cast`, `anvil`) installed via `foundryup`
+- Soldeer-managed dependencies installed via `forge soldeer install`
 - RPC endpoints for each network you intend to deploy to (for example Base Sepolia, Arbitrum Sepolia, Optimism Sepolia)
 - A funded deployer key with permission to manage LayerZero configuration for the selected networks
 - Endpoint IDs (EIDs) and LayerZero endpoint contract addresses for every chain you plan to connect
@@ -64,6 +65,7 @@ HUB_EID=40245
 Pre-deploy Checks
 -----------------
 ```bash
+forge soldeer install
 forge build
 forge test
 ```
