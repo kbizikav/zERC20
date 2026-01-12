@@ -56,11 +56,10 @@ contract DeployLiquidity is DeterministicDeployer {
         bytes32 baseSalt = _loadBaseSalt();
         console2.log("Deploying LiquidityManager at block", block.number);
 
-        LiquidityManager implementation = new LiquidityManager{salt: _deriveSalt(baseSalt, "LIQUIDITY_MANAGER_IMPL")}();
-        bytes memory initData = abi.encodeCall(
-            LiquidityManager.initialize,
-            (cfg.underlyingToken, cfg.zerc20Token, cfg.fee, cfg.owner)
+        LiquidityManager implementation = new LiquidityManager{salt: _deriveSalt(baseSalt, "LIQUIDITY_MANAGER_IMPL")}(
+            cfg.underlyingToken, cfg.zerc20Token
         );
+        bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (cfg.fee, cfg.owner));
         LiquidityManager manager = LiquidityManager(
             payable(_deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
         );
@@ -83,16 +82,13 @@ contract DeployLiquidity is DeterministicDeployer {
 
         if (cfg.stargate != address(0)) {
             if (cfg.lzEndpoint == address(0)) revert LzEndpointRequired();
-            Adaptor adaptorImplementation = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}();
-            bytes memory adaptorInitData = abi.encodeCall(
-                Adaptor.initialize, (address(manager), cfg.stargate, cfg.lzEndpoint, cfg.owner)
+            Adaptor adaptorImplementation = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(
+                address(manager), cfg.stargate, cfg.lzEndpoint
             );
+            bytes memory adaptorInitData =
+                abi.encodeCall(Adaptor.initialize, (address(manager), cfg.stargate, cfg.lzEndpoint, cfg.owner));
             Adaptor adaptor = Adaptor(
-                payable(
-                    _deployProxyAndInit(
-                        baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData
-                    )
-                )
+                payable(_deployProxyAndInit(baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData))
             );
             console2.log("Adaptor implementation deployed at", address(adaptorImplementation));
             console2.log("Adaptor proxy deployed at", address(adaptor));
@@ -129,6 +125,8 @@ contract DeployLiquidity is DeterministicDeployer {
         string memory path = vm.envOr("CHAIN_CONFIG_PATH", DEFAULT_CHAIN_CONFIG_PATH);
 
         string memory json;
+        // reading local config files is intentional in scripts
+        // forge-lint: disable-next-line(unsafe-cheatcode)
         try vm.readFile(path) returns (string memory data) {
             json = data;
         } catch (bytes memory) {

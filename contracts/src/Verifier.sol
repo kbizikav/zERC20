@@ -13,7 +13,6 @@ import {IWithdrawVerifier} from "./interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "./utils/GeneralRecipientLib.sol";
 import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /**
  * @title Verifier
@@ -23,7 +22,6 @@ import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
  */
 contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     using GeneralRecipientLib for GeneralRecipientLib.GeneralRecipient;
-    using SlotDerivation for string;
 
     event HashChainReserved(uint64 indexed index, uint256 hashChain);
     event TransferRootProved(uint64 indexed index, uint256 root);
@@ -72,6 +70,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     uint256 constant INITIAL_TRANSFER_ROOT =
         8687547638004116013653730449839507042090717944911454416140763808366589487233;
 
+    // ERC-7201 slot for namespace "zerc20.storage.verifier".
+    bytes32 internal constant VERIFIER_STORAGE_SLOT =
+        0xdc881cb05e4e981d28f2c49ec9604b5a0676bcc75afb8e4a2cd07140c6b7ae00;
+
     /// @custom:storage-location erc7201:zerc20.storage.verifier
     struct VerifierStorage {
         address token;
@@ -92,7 +94,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     }
 
     function _getVerifierStorage() private pure returns (VerifierStorage storage $) {
-        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.verifier");
+        bytes32 slot = VERIFIER_STORAGE_SLOT;
         assembly {
             $.slot := slot
         }

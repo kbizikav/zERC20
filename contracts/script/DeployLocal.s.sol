@@ -69,8 +69,7 @@ contract DeployLocal is DeterministicDeployer {
         EndpointV2Mock verifierEndpoint =
             cfg.shareEndpoint ? hubEndpoint : new EndpointV2Mock(cfg.verifierEid, deployer);
 
-        SimpleMessageLibMock hubSendLib =
-            new SimpleMessageLibMock(payable(address(verifyHelper)), address(hubEndpoint));
+        SimpleMessageLibMock hubSendLib = new SimpleMessageLibMock(payable(address(verifyHelper)), address(hubEndpoint));
         SimpleMessageLibMock verifierSendLib = cfg.shareEndpoint
             ? hubSendLib
             : new SimpleMessageLibMock(payable(address(verifyHelper)), address(verifierEndpoint));
@@ -101,6 +100,8 @@ contract DeployLocal is DeterministicDeployer {
         uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
         require(decimals <= type(uint8).max, "tokenDecimals too large");
         require(decimals >= 6, "tokenDecimals below sharedDecimals");
+        // casting to uint8 is safe because decimals is bounds-checked above
+        // forge-lint: disable-next-line(unsafe-typecast)
         cfg.tokenDecimals = uint8(decimals);
         cfg.shareEndpoint = vm.envOr("SHARE_ENDPOINTS", uint256(0)) != 0;
         cfg.registerOnHub = vm.envOr("REGISTER_ON_HUB", uint256(1)) != 0;
@@ -268,10 +269,7 @@ contract DeployLocal is DeterministicDeployer {
     function _registerOnHub(Config memory cfg, Hub hub, Verifier verifier, zERC20 token) private {
         hub.registerToken(
             Hub.TokenInfo({
-                chainId: cfg.verifierChainId,
-                eid: cfg.verifierEid,
-                verifier: address(verifier),
-                token: address(token)
+                chainId: cfg.verifierChainId, eid: cfg.verifierEid, verifier: address(verifier), token: address(token)
             })
         );
         console2.log("\tToken registered on Hub");

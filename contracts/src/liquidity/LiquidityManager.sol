@@ -4,11 +4,9 @@ pragma solidity 0.8.30;
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IzERC20} from "../interfaces/IzERC20.sol";
 import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
@@ -18,21 +16,19 @@ import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 /// Reward/fee curves follow the piecewise linear formulas described in docs/zerc20-liquidity.md.
 /// @dev Liquidity is derived from the underlying token balance; direct transfers (donations) intentionally
 ///      affect incentive calculations and are not ignored by separate accounting.
-contract LiquidityManager is
-    Initializable,
-    UUPSUpgradeable,
-    AccessControlUpgradeable,
-    ReentrancyGuardUpgradeable,
-    ILiquidityManager
-{
+contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, ILiquidityManager {
     using SafeERC20 for IERC20;
-    using SlotDerivation for string;
+    using IncentiveLib for IncentiveLib.FeeParams;
 
     /// @notice Role allowed to update incentive curve parameters.
     bytes32 public constant FEE_MANAGER_ROLE = keccak256("FEE_MANAGER");
 
     /// @notice ERC7528 native token address convention
-    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    IERC20 private immutable UNDERLYING_TOKEN;
+    IzERC20 private immutable ZERC20_TOKEN;
+    bool private immutable IS_NATIVE_UNDERLYING;
 
     error ZeroAddress();
     error ZeroAmount();
@@ -46,10 +42,12 @@ contract LiquidityManager is
     error InvalidMsgValue(uint256 expected, uint256 actual);
     error NativeTokenNotSupported();
 
+    // ERC-7201 slot for namespace "zerc20.storage.liquidityManager".
+    bytes32 internal constant LIQUIDITY_MANAGER_STORAGE_SLOT =
+        0x63c90750c40e4ec3ae62a755935b126c2e8aa4b2b6c7a4a02d9adec8efbbaa00;
+
     /// @custom:storage-location erc7201:zerc20.storage.liquidityManager
     struct LiquidityManagerStorage {
-        IERC20 underlyingToken;
-        IzERC20 zerc20;
         IncentiveLib.FeeParams feeParams;
         uint256 feeSurplus; // Tracks collected fees net of distributed rewards.
     }
@@ -64,33 +62,29 @@ contract LiquidityManager is
     event RewardsWithdrawn(address indexed to, uint256 amount);
 
     /// @notice Locks implementation contracts on deployment.
-    constructor() {
+    constructor(address underlyingToken_, address zerc20_) {
+        if (underlyingToken_ == address(0) || zerc20_ == address(0)) revert ZeroAddress();
+        UNDERLYING_TOKEN = IERC20(underlyingToken_);
+        ZERC20_TOKEN = IzERC20(zerc20_);
+        IS_NATIVE_UNDERLYING = address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
         _disableInitializers();
     }
 
-    /// @notice Initializes the liquidity manager with tokens, fee params, and admin roles.
-    /// @param _underlyingToken ERC20 token being wrapped.
-    /// @param _zerc20 zERC20 token minted/burned by this contract.
+    /// @notice Initializes the liquidity manager with fee params and admin roles.
     /// @param _feeParams Incentive curve parameters for rewards and fees.
     /// @param initialOwner Account receiving admin and fee-manager roles.
-    function initialize(
-        address _underlyingToken,
-        address _zerc20,
-        IncentiveLib.FeeParams memory _feeParams,
-        address initialOwner
-    ) external initializer {
-        if (_underlyingToken == address(0) || _zerc20 == address(0) || initialOwner == address(0)) {
-            revert ZeroAddress();
-        }
-        bool isNative = _underlyingToken == NATIVE_TOKEN;
-        if (isNative) {
-            if (IERC20Metadata(_zerc20).decimals() != 18) revert DecimalMismatch();
+    function initialize(IncentiveLib.FeeParams memory _feeParams, address initialOwner) external initializer {
+        if (initialOwner == address(0)) revert ZeroAddress();
+        if (IS_NATIVE_UNDERLYING) {
+            if (IERC20Metadata(address(ZERC20_TOKEN)).decimals() != 18) revert DecimalMismatch();
         } else {
-            if (IERC20Metadata(_zerc20).decimals() != IERC20Metadata(_underlyingToken).decimals()) {
+            if (
+                IERC20Metadata(address(ZERC20_TOKEN)).decimals() != IERC20Metadata(address(UNDERLYING_TOKEN)).decimals()
+            ) {
                 revert DecimalMismatch();
             }
         }
-        IncentiveLib._validateFeeParams(_feeParams);
+        _feeParams.validateFeeParams();
 
         __AccessControl_init();
         __ReentrancyGuard_init();
@@ -99,8 +93,6 @@ contract LiquidityManager is
         _grantRole(FEE_MANAGER_ROLE, initialOwner);
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        $.underlyingToken = IERC20(_underlyingToken);
-        $.zerc20 = IzERC20(_zerc20);
         $.feeParams = _feeParams;
     }
 
@@ -169,12 +161,12 @@ contract LiquidityManager is
 
     /// @notice Returns the wrapped underlying token.
     function underlyingToken() public view returns (IERC20) {
-        return _getLiquidityManagerStorage().underlyingToken;
+        return UNDERLYING_TOKEN;
     }
 
     /// @notice Returns the zERC20 token minted/burned by this contract.
     function zerc20() public view returns (IzERC20) {
-        return _getLiquidityManagerStorage().zerc20;
+        return ZERC20_TOKEN;
     }
 
     /// @notice Returns the incentive curve parameters.
@@ -192,7 +184,7 @@ contract LiquidityManager is
     /// @notice Updates the incentive curve parameters.
     /// @param params New fee parameters.
     function setFeeParams(IncentiveLib.FeeParams calldata params) external onlyRole(FEE_MANAGER_ROLE) {
-        IncentiveLib._validateFeeParams(params);
+        params.validateFeeParams();
         _getLiquidityManagerStorage().feeParams = params;
         emit FeeParamsUpdated(params);
     }
@@ -207,11 +199,11 @@ contract LiquidityManager is
         if (amount > $.feeSurplus) revert InsufficientRewards();
 
         $.feeSurplus -= amount;
-        if (_isNativeUnderlying($)) {
+        if (IS_NATIVE_UNDERLYING) {
             (bool success,) = payable(to).call{value: amount}("");
             if (!success) revert UnderlyingSendFailed();
         } else {
-            $.underlyingToken.safeTransfer(to, amount);
+            UNDERLYING_TOKEN.safeTransfer(to, amount);
         }
         emit RewardsWithdrawn(to, amount);
     }
@@ -220,84 +212,74 @@ contract LiquidityManager is
 
     /// @dev Returns the storage pointer for ERC-7201 layout.
     function _getLiquidityManagerStorage() private pure returns (LiquidityManagerStorage storage $) {
-        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.liquidityManager");
+        bytes32 slot = LIQUIDITY_MANAGER_STORAGE_SLOT;
         assembly {
             $.slot := slot
         }
     }
 
-    function _isNativeUnderlying(LiquidityManagerStorage storage $) private view returns (bool) {
-        return address($.underlyingToken) == NATIVE_TOKEN;
-    }
-
-    function _underlyingBalance(LiquidityManagerStorage storage $) private view returns (uint256) {
-        if (_isNativeUnderlying($)) {
+    function _underlyingBalance() private view returns (uint256) {
+        if (IS_NATIVE_UNDERLYING) {
             return address(this).balance;
         }
-        return $.underlyingToken.balanceOf(address(this));
+        return UNDERLYING_TOKEN.balanceOf(address(this));
     }
 
     /// @dev Quotes wrapping reward using current token balance and fee surplus.
-    function _quoteWrapReward(uint256 amount, LiquidityManagerStorage storage $)
-        internal
-        view
-        returns (uint256 reward)
-    {
-        uint256 balance = _underlyingBalance($);
+    function _quoteWrapReward(uint256 amount, LiquidityManagerStorage storage $) private view returns (uint256 reward) {
+        uint256 balance = _underlyingBalance();
         uint256 feeSurplus_ = $.feeSurplus;
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
-        reward = IncentiveLib.quoteWrapReward($.feeParams, liquidity, feeSurplus_, amount);
+        reward = $.feeParams.quoteWrapReward(liquidity, feeSurplus_, amount);
     }
 
     /// @dev Quotes unwrap fee using current token balance and fee surplus.
     function _quoteUnwrapFee(uint256 amount, LiquidityManagerStorage storage $)
-        internal
+        private
         view
         returns (uint256 feeAmount)
     {
-        uint256 balance = _underlyingBalance($);
+        uint256 balance = _underlyingBalance();
         uint256 feeSurplus_ = $.feeSurplus;
         // @note: underflow is unlikely here but possible if balance of underlying token changes externally.
         uint256 liquidity = balance >= feeSurplus_ ? balance - feeSurplus_ : 0;
-        feeAmount = IncentiveLib.quoteUnwrapFee($.feeParams, liquidity, amount);
+        feeAmount = $.feeParams.quoteUnwrapFee(liquidity, amount);
     }
 
     /// @dev Internal wrap implementation using pre-deposit liquidity for reward quotes.
-    function _wrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
+    function _wrap(uint256 amount, address receiver) private returns (uint256 amountOut) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        bool isNative = _isNativeUnderlying($);
-        /// @note: for native, msg.value is already in address(this).balance; for ERC20, balance updates after transferFrom.
-        uint256 balanceBefore = isNative ? address(this).balance - msg.value : _underlyingBalance($);
+        /// @dev for native, msg.value is already in address(this).balance; for ERC20, balance updates after transferFrom.
+        uint256 balanceBefore = IS_NATIVE_UNDERLYING ? address(this).balance - msg.value : _underlyingBalance();
         uint256 received;
 
-        if (isNative) {
+        if (IS_NATIVE_UNDERLYING) {
             if (msg.value != amount) revert InvalidMsgValue(amount, msg.value);
             received = msg.value;
         } else {
             if (msg.value != 0) revert InvalidMsgValue(0, msg.value);
-            IERC20 underlying = $.underlyingToken;
-            underlying.safeTransferFrom(msg.sender, address(this), amount);
-            received = _underlyingBalance($) - balanceBefore;
+            UNDERLYING_TOKEN.safeTransferFrom(msg.sender, address(this), amount);
+            received = _underlyingBalance() - balanceBefore;
         }
         if (received == 0) revert UnderlyingPullFailed();
 
         uint256 feeSurplus_ = $.feeSurplus;
         // Keep reward calculation aligned with pre-deposit liquidity.
         uint256 liquidityBefore = balanceBefore >= feeSurplus_ ? balanceBefore - feeSurplus_ : 0;
-        uint256 reward = IncentiveLib.quoteWrapReward($.feeParams, liquidityBefore, feeSurplus_, received);
+        uint256 reward = $.feeParams.quoteWrapReward(liquidityBefore, feeSurplus_, received);
 
         if (reward > 0) $.feeSurplus -= reward;
         amountOut = received + reward;
-        $.zerc20.mint(receiver, amountOut);
+        ZERC20_TOKEN.mint(receiver, amountOut);
         emit Wrapped(msg.sender, receiver, amountOut, reward);
     }
 
     /// @dev Internal unwrap implementation that burns zERC20 and transfers underlying.
-    function _unwrap(uint256 amount, address receiver) internal returns (uint256 amountOut) {
+    function _unwrap(uint256 amount, address receiver) private returns (uint256 amountOut) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroReceiver();
 
@@ -305,16 +287,15 @@ contract LiquidityManager is
         uint256 feeAmount = _quoteUnwrapFee(amount, $);
         amountOut = amount - feeAmount;
 
-        $.zerc20.burn(msg.sender, amount);
+        ZERC20_TOKEN.burn(msg.sender, amount);
         if (amountOut > 0) {
-            if (_isNativeUnderlying($)) {
+            if (IS_NATIVE_UNDERLYING) {
                 if (address(this).balance < amountOut) revert InsufficientLiquidity();
                 (bool success,) = payable(receiver).call{value: amountOut}("");
                 if (!success) revert UnderlyingSendFailed();
             } else {
-                IERC20 underlying = $.underlyingToken;
-                if (underlying.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
-                underlying.safeTransfer(receiver, amountOut);
+                if (UNDERLYING_TOKEN.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
+                UNDERLYING_TOKEN.safeTransfer(receiver, amountOut);
             }
         }
         if (feeAmount > 0) $.feeSurplus += feeAmount;
@@ -326,8 +307,7 @@ contract LiquidityManager is
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     receive() external payable nonReentrant {
-        LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        if (!_isNativeUnderlying($)) revert NativeTokenNotSupported();
+        if (!IS_NATIVE_UNDERLYING) revert NativeTokenNotSupported();
         _wrap(msg.value, msg.sender);
     }
 }

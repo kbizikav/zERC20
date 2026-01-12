@@ -180,7 +180,7 @@ library IncentiveLib {
                          INTERNAL PURE MATH HELPERS
     //////////////////////////////////////////////////////////////*/
 
-    function _validateFeeParams(FeeParams memory params) internal pure {
+    function validateFeeParams(FeeParams memory params) internal pure {
         if (params.targetLiquidity == 0) revert InvalidTarget();
         if (params.targetLiquidity > MAX_TARGET_LIQUIDITY) revert InvalidTarget();
         if (params.k > K_BPS_DENOM) revert InvalidK();
@@ -188,11 +188,7 @@ library IncentiveLib {
         if (params.k > maxK) revert InvalidK();
     }
 
-    function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount)
-        internal
-        pure
-        returns (uint256 rewardRaw)
-    {
+    function _rawWrapReward(uint256 L, uint256 T, uint256 k_, uint256 amount) private pure returns (uint256 rewardRaw) {
         if (T == 0 || amount == 0) {
             return 0;
         }
@@ -234,7 +230,7 @@ library IncentiveLib {
         rewardRaw = numerator / denominator;
     }
 
-    function _rawUnwrapFee(uint256 L, uint256 T, uint256 k_, uint256 amount) internal pure returns (uint256 feeRaw) {
+    function _rawUnwrapFee(uint256 L, uint256 T, uint256 k_, uint256 amount) private pure returns (uint256 feeRaw) {
         if (amount == 0) {
             return 0;
         }
@@ -280,7 +276,7 @@ library IncentiveLib {
         feeRaw = _ceilDiv(numerator, denominator);
     }
 
-    function _ceilDiv(uint256 a, uint256 b) internal pure returns (uint256 c) {
+    function _ceilDiv(uint256 a, uint256 b) private pure returns (uint256 c) {
         if (a == 0) return 0;
         uint256 q = a / b;
         uint256 r = a % b;

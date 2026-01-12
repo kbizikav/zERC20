@@ -5,19 +5,20 @@ import {IzERC20} from "./interfaces/IzERC20.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
-import {ERC20PermitUpgradeable} from
-    "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
+import {
+    ERC20PermitUpgradeable
+} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
-import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /// @title zERC20
 /// @notice Upgradeable ERC20 token that feeds the zk circuits by enforcing 248-bit transfer values,
 ///         hashing `(from, to, value)` triples into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
 ///         Also implements the LayerZero V2 OFT interface for omnichain transfers.
 contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, IzERC20 {
-    using SlotDerivation for string;
-
     uint8 private immutable TOKEN_DECIMALS;
+
+    // ERC-7201 slot for namespace "zerc20.storage.zerc20".
+    bytes32 internal constant ZERC20_STORAGE_SLOT = 0xcd5e781c912e334c5bd043d02db19923b6e202919d5c40ac0cfab0473b1e3400;
 
     /// @custom:storage-location erc7201:zerc20.storage.zerc20
     struct Zerc20Storage {
@@ -29,7 +30,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     }
 
     function _getZerc20Storage() private pure returns (Zerc20Storage storage $) {
-        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.zerc20");
+        bytes32 slot = ZERC20_STORAGE_SLOT;
         assembly {
             $.slot := slot
         }
@@ -120,7 +121,11 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         _burn(from, amountSentLd);
     }
 
-    function _credit(address to, uint256 amountLd, uint32 /*_srcEid*/ )
+    function _credit(
+        address to,
+        uint256 amountLd,
+        uint32 /*_srcEid*/
+    )
         internal
         override
         returns (uint256 amountReceivedLd)

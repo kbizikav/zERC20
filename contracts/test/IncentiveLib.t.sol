@@ -145,7 +145,8 @@ contract IncentiveLibTest is Test {
 
     function testWrapRewardGracefullyHandlesHugeParams() public view {
         uint256 tooLargeTarget = uint256(type(uint128).max) + 1;
-        IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: tooLargeTarget, k: TEN_PERCENT_K});
+        IncentiveLib.FeeParams memory params =
+            IncentiveLib.FeeParams({targetLiquidity: tooLargeTarget, k: TEN_PERCENT_K});
 
         uint256 reward = lib.quoteWrapReward(params, type(uint256).max, type(uint256).max, type(uint256).max);
 

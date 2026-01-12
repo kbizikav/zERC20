@@ -7,7 +7,6 @@ import {PoseidonAggregationLib} from "./utils/PoseidonAggregationLib.sol";
 import {POSEIDON_ZERO_HASH_COUNT, POSEIDON_MAX_LEAVES} from "./utils/PoseidonAggregationConfig.sol";
 import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 
 /**
  * @title Hub
@@ -16,12 +15,9 @@ import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
  * @dev Implements the PoseidonT3 tree (height 6 / 64 leaves) and fee semantics consumed by the verifier network.
  */
 contract Hub is OAppUpgradeable, UUPSUpgradeable {
-    using SlotDerivation for string;
-
     /// -----------------------------------------------------------------------
     /// Structs / Events
     /// -----------------------------------------------------------------------
-
     struct TokenInfo {
         uint64 chainId;
         uint32 eid;
@@ -71,6 +67,9 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     uint256 internal constant ZERO_HASH_COUNT = POSEIDON_ZERO_HASH_COUNT;
     uint256 internal constant TRANSFER_PAYLOAD_LENGTH = 64;
 
+    // ERC-7201 slot for namespace "zerc20.storage.hub".
+    bytes32 internal constant HUB_STORAGE_SLOT = 0xacfc6fc065fbb01a310c13fd5991d94fb50bcd8a63ee4ce4897d543e9b5aed00;
+
     /// @custom:storage-location erc7201:zerc20.storage.hub
     struct HubStorage {
         uint256[] transferRoots;
@@ -82,7 +81,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     }
 
     function _getHubStorage() private pure returns (HubStorage storage $) {
-        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.hub");
+        bytes32 slot = HUB_STORAGE_SLOT;
         assembly {
             $.slot := slot
         }

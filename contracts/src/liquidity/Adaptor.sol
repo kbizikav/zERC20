@@ -7,30 +7,22 @@ import {IzERC20} from "../interfaces/IzERC20.sol";
 import {SendParam, MessagingFee, OFTReceipt} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
+import {OFTMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTMsgCodec.sol";
 import {ILayerZeroComposer} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroComposer.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {SlotDerivation} from "@openzeppelin/contracts/utils/SlotDerivation.sol";
 import {SelfCall} from "../utils/SelfCall.sol";
 
 /// @title Stargate adaptor for zERC20 unwrap + bridge flows.
 /// @notice Receives zERC20 (typically via OFT), unwraps through LiquidityManager, and forwards the underlying token through Stargate.
-contract Adaptor is
-    Initializable,
-    UUPSUpgradeable,
-    OwnableUpgradeable,
-    ReentrancyGuardUpgradeable,
-    SelfCall,
-    ILayerZeroComposer
-{
+contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardUpgradeable, SelfCall, ILayerZeroComposer {
+    using OFTMsgCodec for address;
     using OptionsBuilder for bytes;
     using SafeERC20 for IERC20;
-    using SlotDerivation for string;
 
     /// @notice Breaks down the expected fees for unwrapping and bridging.
     struct FeeQuote {
@@ -59,57 +51,67 @@ contract Adaptor is
     error ApproveFailed();
     error InvalidComposeCaller();
     error InvalidComposeSender();
+    error InvalidDstEid();
+    error LiquidityManagerMismatch(address expected, address actual);
+    error StargateMismatch(address expected, address actual);
+    error LzEndpointMismatch(address expected, address actual);
+    error Zerc20Mismatch(address expected, address actual);
     error InsufficientZerc20Balance();
     error InsufficientUnderlyingBalance();
     error InsufficientNativeBalance();
 
-    uint128 internal constant RETURN_LZ_RECEIVE_GAS = 500_000;
-    uint8 internal constant NATIVE_DECIMALS = 18;
+    uint128 private constant RETURN_LZ_RECEIVE_GAS = 500_000;
+    uint8 private constant NATIVE_DECIMALS = 18;
 
     /// @dev erc-7528 native token address convention
-    address internal constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+    address private constant NATIVE_TOKEN = 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE;
+
+    ILiquidityManager private immutable LIQUIDITY_MANAGER;
+    IStargate private immutable STARGATE;
+    address private immutable LZ_ENDPOINT;
+    IERC20 private immutable UNDERLYING_TOKEN;
+    IzERC20 private immutable ZERC20_TOKEN;
+    bool private immutable IS_NATIVE_UNDERLYING;
+
+    // ERC-7201 slot for namespace "zerc20.storage.adaptor".
+    bytes32 internal constant ADAPTOR_STORAGE_SLOT = 0x8822ef72de5627cbf701dd2d774295f82a1c725bfbeed7eddf4ec1e237a24400;
 
     /// @custom:storage-location erc7201:zerc20.storage.adaptor
     struct AdaptorStorage {
-        ILiquidityManager liquidityManager;
-        IERC20 underlyingToken;
-        IzERC20 zerc20;
-        IStargate stargate;
-        address lzEndpoint;
-        mapping(address => uint256) underlingTokenBalances;
+        mapping(address => uint256) underlyingTokenBalances;
         mapping(address => uint256) zerc20Balances;
         mapping(address => uint256) nativeBalances;
     }
 
     function _getAdaptorStorage() private pure returns (AdaptorStorage storage $) {
-        bytes32 slot = SlotDerivation.erc7201Slot("zerc20.storage.adaptor");
+        bytes32 slot = ADAPTOR_STORAGE_SLOT;
         assembly {
             $.slot := slot
         }
     }
 
     function liquidityManager() public view returns (ILiquidityManager) {
-        return _getAdaptorStorage().liquidityManager;
-    }
-
-    function underlyingToken() public view returns (IERC20) {
-        return _getAdaptorStorage().underlyingToken;
-    }
-
-    function zerc20() public view returns (IzERC20) {
-        return _getAdaptorStorage().zerc20;
+        return LIQUIDITY_MANAGER;
     }
 
     function stargate() public view returns (IStargate) {
-        return _getAdaptorStorage().stargate;
+        return STARGATE;
     }
 
     function lzEndpoint() public view returns (address) {
-        return _getAdaptorStorage().lzEndpoint;
+        return LZ_ENDPOINT;
     }
 
-    function underlingTokenBalances(address user) public view returns (uint256) {
-        return _getAdaptorStorage().underlingTokenBalances[user];
+    function underlyingToken() public view returns (IERC20) {
+        return UNDERLYING_TOKEN;
+    }
+
+    function zerc20() public view returns (IzERC20) {
+        return ZERC20_TOKEN;
+    }
+
+    function underlyingTokenBalances(address user) public view returns (uint256) {
+        return _getAdaptorStorage().underlyingTokenBalances[user];
     }
 
     function zerc20Balances(address user) public view returns (uint256) {
@@ -145,7 +147,18 @@ contract Adaptor is
     event NativeDeposit(address indexed sender, uint256 amount);
 
     /// @notice Locks implementation contracts on deployment.
-    constructor() {
+    constructor(address _liquidityManager, address _stargate, address _lzEndpoint) {
+        if (_liquidityManager == address(0)) revert ZeroAddress();
+        if (_stargate == address(0)) revert ZeroAddress();
+        if (_lzEndpoint == address(0)) revert ZeroAddress();
+        ILiquidityManager manager = ILiquidityManager(_liquidityManager);
+        LIQUIDITY_MANAGER = manager;
+        STARGATE = IStargate(_stargate);
+        LZ_ENDPOINT = _lzEndpoint;
+        UNDERLYING_TOKEN = manager.underlyingToken();
+        ZERC20_TOKEN = manager.zerc20();
+        IS_NATIVE_UNDERLYING = address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
+        if (address(UNDERLYING_TOKEN) == address(0) || address(ZERC20_TOKEN) == address(0)) revert ZeroAddress();
         _disableInitializers();
     }
 
@@ -162,26 +175,37 @@ contract Adaptor is
         if (_stargate == address(0)) revert ZeroAddress();
         if (_lzEndpoint == address(0)) revert ZeroAddress();
         if (initialOwner == address(0)) revert ZeroAddress();
+        if (_liquidityManager != address(LIQUIDITY_MANAGER)) {
+            revert LiquidityManagerMismatch(address(LIQUIDITY_MANAGER), _liquidityManager);
+        }
+        if (_stargate != address(STARGATE)) {
+            revert StargateMismatch(address(STARGATE), _stargate);
+        }
+        if (_lzEndpoint != LZ_ENDPOINT) {
+            revert LzEndpointMismatch(LZ_ENDPOINT, _lzEndpoint);
+        }
 
         __Ownable_init();
         __UUPSUpgradeable_init();
         __ReentrancyGuard_init();
         _transferOwnership(initialOwner);
 
-        AdaptorStorage storage $ = _getAdaptorStorage();
-        $.liquidityManager = ILiquidityManager(_liquidityManager);
-        $.underlyingToken = IERC20($.liquidityManager.underlyingToken());
-        $.zerc20 = IzERC20(address($.liquidityManager.zerc20()));
-        $.stargate = IStargate(_stargate);
-        $.lzEndpoint = _lzEndpoint;
+        IERC20 managerUnderlying = LIQUIDITY_MANAGER.underlyingToken();
+        IzERC20 managerZerc20 = LIQUIDITY_MANAGER.zerc20();
+        if (address(managerUnderlying) != address(UNDERLYING_TOKEN)) {
+            revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), address(managerUnderlying));
+        }
+        if (address(managerZerc20) != address(ZERC20_TOKEN)) {
+            revert Zerc20Mismatch(address(ZERC20_TOKEN), address(managerZerc20));
+        }
 
-        address stargateToken = $.stargate.token();
-        if (_isNativeUnderlying()) {
+        address stargateToken = STARGATE.token();
+        if (IS_NATIVE_UNDERLYING) {
             if (stargateToken != NATIVE_TOKEN && stargateToken != address(0)) {
-                revert UnderlyingTokenMismatch(address($.underlyingToken), stargateToken);
+                revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), stargateToken);
             }
-        } else if (stargateToken != address($.underlyingToken)) {
-            revert UnderlyingTokenMismatch(address($.underlyingToken), stargateToken);
+        } else if (stargateToken != address(UNDERLYING_TOKEN)) {
+            revert UnderlyingTokenMismatch(address(UNDERLYING_TOKEN), stargateToken);
         }
     }
 
@@ -200,8 +224,8 @@ contract Adaptor is
         nonReentrant
     {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        if (msg.sender != $.lzEndpoint) revert InvalidComposeSender();
-        if (_from != address($.zerc20)) revert InvalidComposeCaller();
+        if (msg.sender != LZ_ENDPOINT) revert InvalidComposeSender();
+        if (_from != address(ZERC20_TOKEN)) revert InvalidComposeCaller();
 
         bytes32 composeFromBytes = OFTComposeMsgCodec.composeFrom(_message);
         address user = OFTComposeMsgCodec.bytes32ToAddress(composeFromBytes);
@@ -232,11 +256,12 @@ contract Adaptor is
     /// @param request Bridge configuration and minimum output expectations.
     function unwrapAndBridge(uint256 zerc20Amount, BridgeRequest calldata request) external payable nonReentrant {
         if (zerc20Amount == 0) revert ZeroAmount();
+        _validateBridgeRequest(request);
         address user = msg.sender;
         AdaptorStorage storage $ = _getAdaptorStorage();
 
         // pull zERC20 from user
-        IERC20(address($.zerc20)).safeTransferFrom(user, address(this), zerc20Amount);
+        IERC20(address(ZERC20_TOKEN)).safeTransferFrom(user, address(this), zerc20Amount);
 
         // record zERC20 & native balance
         $.zerc20Balances[user] += zerc20Amount;
@@ -248,22 +273,21 @@ contract Adaptor is
     /// @notice Withdraws previously deposited tokens from the adaptor.
     function withdraw(address token, uint256 amount) external nonReentrant {
         if (amount == 0) revert ZeroAmount();
-        AdaptorStorage storage $ = _getAdaptorStorage();
         if (token == NATIVE_TOKEN) {
-            if (_isNativeUnderlying()) {
+            if (IS_NATIVE_UNDERLYING) {
                 _debitCombinedNativeBalance(msg.sender, amount);
             } else {
                 _debitNativeBalance(msg.sender, amount);
             }
             (bool success,) = payable(msg.sender).call{value: amount}("");
             if (!success) revert TransferFailed();
-        } else if (token == address($.underlyingToken)) {
-            if (_isNativeUnderlying()) revert InvalidToken();
+        } else if (token == address(UNDERLYING_TOKEN)) {
+            if (IS_NATIVE_UNDERLYING) revert InvalidToken();
             _debitUnderlyingBalance(msg.sender, amount);
-            $.underlyingToken.safeTransfer(msg.sender, amount);
-        } else if (token == address($.zerc20)) {
+            UNDERLYING_TOKEN.safeTransfer(msg.sender, amount);
+        } else if (token == address(ZERC20_TOKEN)) {
             _debitZerc20Balance(msg.sender, amount);
-            IERC20(address($.zerc20)).safeTransfer(msg.sender, amount);
+            IERC20(address(ZERC20_TOKEN)).safeTransfer(msg.sender, amount);
         } else {
             revert InvalidToken();
         }
@@ -276,8 +300,7 @@ contract Adaptor is
     /// @param request Bridge instructions used to derive messaging fees.
     /// @return quote Fee breakdown (unwrap fee, native bridge fee, token bridge fee).
     function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
-        AdaptorStorage storage $ = _getAdaptorStorage();
-        uint256 tokenUnwrapFee = $.liquidityManager.quoteUnwrapFee(amount);
+        uint256 tokenUnwrapFee = LIQUIDITY_MANAGER.quoteUnwrapFee(amount);
         if (tokenUnwrapFee >= amount) {
             // Prevent underflow and short-circuit when unwrap fee consumes the amount.
             return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
@@ -295,23 +318,21 @@ contract Adaptor is
 
         SendParam memory sendParam = SendParam({
             dstEid: request.dstEid,
-            to: _toBytes32(request.to),
+            to: request.to.addressToBytes32(),
             amountLD: amountAfterDust,
             minAmountLD: 0, // set 0 to prevent a revert of the minimum amount
             extraOptions: request.extraOptions,
             composeMsg: request.composeMsg,
             oftCmd: request.oftCmd
         });
-        MessagingFee memory feeQuote = $.stargate.quoteSend(sendParam, false);
-        (,, OFTReceipt memory receipt) = $.stargate.quoteOFT(sendParam);
+        MessagingFee memory feeQuote = STARGATE.quoteSend(sendParam, false);
+        (,, OFTReceipt memory receipt) = STARGATE.quoteOFT(sendParam);
         uint256 tokenBridgeFee = 0;
         if (receipt.amountReceivedLD < amountAfterUnwrap) {
             tokenBridgeFee = amountAfterUnwrap - receipt.amountReceivedLD;
         }
         quote = FeeQuote({
-            tokenUnwrapFee: tokenUnwrapFee,
-            nativeBridgeFee: feeQuote.nativeFee,
-            tokenBridgeFee: tokenBridgeFee
+            tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: feeQuote.nativeFee, tokenBridgeFee: tokenBridgeFee
         });
     }
 
@@ -361,12 +382,14 @@ contract Adaptor is
         _bridgeZerc20(dstEid, user, to, amount);
     }
 
-    // ---------------------- Internal functions --------------------
+    // ---------------------- Private functions --------------------
 
-    function _unwrapAndBridge(address user, uint256 zerc20Amount, BridgeRequest memory request)
-        internal
-        enableSelfCall
-    {
+    function _validateBridgeRequest(BridgeRequest calldata request) private pure {
+        if (request.to == address(0)) revert ZeroAddress();
+        if (request.dstEid == 0) revert InvalidDstEid();
+    }
+
+    function _unwrapAndBridge(address user, uint256 zerc20Amount, BridgeRequest memory request) private enableSelfCall {
         // quote fees
         FeeQuote memory quote;
         try this.quoteFee(zerc20Amount, request) returns (FeeQuote memory quote_) {
@@ -428,13 +451,13 @@ contract Adaptor is
         emit UnwrapAndBridge(user, zerc20Amount, amountOut, request.to, request.dstEid);
     }
 
-    function _unwrap(address user, uint256 amount, uint256 amountMinOut) internal returns (uint256 amountOut) {
+    function _unwrap(address user, uint256 amount, uint256 amountMinOut) private returns (uint256 amountOut) {
         _debitZerc20Balance(user, amount);
 
         uint256 underlyingTokenBalanceBefore = _underlyingBalance();
 
         // unwrap
-        amountOut = _getAdaptorStorage().liquidityManager.unwrap(amount, address(this));
+        amountOut = LIQUIDITY_MANAGER.unwrap(amount, address(this));
         if (amountOut < amountMinOut) revert OutputTooLow(amountOut, amountMinOut);
 
         uint256 underlyingTokenBalanceAfter = _underlyingBalance();
@@ -446,7 +469,7 @@ contract Adaptor is
 
         amountOut = actualAmountOut;
         // add underlying token balance
-        _getAdaptorStorage().underlingTokenBalances[user] += amountOut;
+        _getAdaptorStorage().underlyingTokenBalances[user] += amountOut;
         emit Unwrap(user, amount, amountOut);
     }
 
@@ -455,7 +478,7 @@ contract Adaptor is
         uint256 amount,
         uint256 nativeBridgeFee,
         BridgeRequest calldata request
-    ) internal returns (uint256 amountOut) {
+    ) private returns (uint256 amountOut) {
         uint256 amountToBridge = _removeStargateDust(amount);
         if (amountToBridge == 0 || amountToBridge < request.minAmountOut) {
             revert OutputTooLow(amountToBridge, request.minAmountOut);
@@ -471,112 +494,105 @@ contract Adaptor is
     }
 
     function _innerBridgeUnderlyingToken(uint256 amount, uint256 nativeBridgeFee, BridgeRequest calldata request)
-        internal
+        private
         returns (uint256 amountOut, uint256 actualNativeFee)
     {
-        bool isNative = _isNativeUnderlying();
-        AdaptorStorage storage $ = _getAdaptorStorage();
         SendParam memory sendParam = SendParam({
             dstEid: request.dstEid,
-            to: _toBytes32(request.to),
+            to: request.to.addressToBytes32(),
             amountLD: amount,
             minAmountLD: request.minAmountOut,
             extraOptions: request.extraOptions,
             composeMsg: request.composeMsg,
             oftCmd: request.oftCmd
         });
-        _ensureAllowance($.underlyingToken, address($.stargate), amount);
+        _ensureAllowance(UNDERLYING_TOKEN, address(STARGATE), amount);
         MessagingFee memory fee = MessagingFee({nativeFee: nativeBridgeFee, lzTokenFee: 0});
 
         uint256 sendValue = nativeBridgeFee;
-        if (isNative) {
+        if (IS_NATIVE_UNDERLYING) {
             sendValue += amount;
         }
         uint256 nativeBalanceBefore = address(this).balance;
-        (, OFTReceipt memory oftReceipt,) = $.stargate.sendToken{value: sendValue}(sendParam, fee, address(this));
+        (, OFTReceipt memory oftReceipt,) = STARGATE.sendToken{value: sendValue}(sendParam, fee, address(this));
         amountOut = oftReceipt.amountReceivedLD;
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 totalSpent = nativeBalanceBefore - nativeBalanceAfter;
         actualNativeFee = totalSpent;
-        if (isNative) {
+        if (IS_NATIVE_UNDERLYING) {
             if (totalSpent < amount) revert AmountMismatch(amount, totalSpent);
             actualNativeFee = totalSpent - amount;
         }
     }
 
-    function _bridgeZerc20(uint32 dstEid, address user, address to, uint256 amount) internal {
+    function _bridgeZerc20(uint32 dstEid, address user, address to, uint256 amount) private {
         _debitZerc20Balance(user, amount);
         bytes memory extraOptions = OptionsBuilder.newOptions().addExecutorLzReceiveOption(RETURN_LZ_RECEIVE_GAS, 0);
         SendParam memory sendParam = SendParam({
             dstEid: dstEid,
-            to: _toBytes32(to),
+            to: to.addressToBytes32(),
             amountLD: amount,
             minAmountLD: 0, // to avoid a revert due to dust removal
             extraOptions: extraOptions,
             composeMsg: bytes(""),
             oftCmd: bytes("")
         });
-        IzERC20 zerc20Token = _getAdaptorStorage().zerc20;
-        MessagingFee memory returnFeeQuote = zerc20Token.quoteSend(sendParam, false);
+        MessagingFee memory returnFeeQuote = ZERC20_TOKEN.quoteSend(sendParam, false);
         uint256 nativeFee = returnFeeQuote.nativeFee;
 
         _debitNativeBalance(user, nativeFee);
 
         uint256 nativeBalanceBefore = address(this).balance;
-        zerc20Token.send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
+        ZERC20_TOKEN.send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 actualNativeFee = nativeBalanceBefore - nativeBalanceAfter;
         _applyNativeFeeRefund(user, nativeFee, actualNativeFee);
         emit BridgeZerc20(to, dstEid, amount);
     }
 
-    function _debitNativeBalance(address user, uint256 nativeBridgeFee) internal {
+    function _debitNativeBalance(address user, uint256 nativeBridgeFee) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userNativeBalance = $.nativeBalances[user];
         if (userNativeBalance < nativeBridgeFee) revert InsufficientNativeBalance();
         $.nativeBalances[user] = userNativeBalance - nativeBridgeFee;
     }
 
-    function _debitUnderlyingBalance(address user, uint256 amount) internal {
+    function _debitUnderlyingBalance(address user, uint256 amount) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        uint256 userUnderlyingBalance = $.underlingTokenBalances[user];
+        uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
         if (userUnderlyingBalance < amount) revert InsufficientUnderlyingBalance();
-        $.underlingTokenBalances[user] = userUnderlyingBalance - amount;
+        $.underlyingTokenBalances[user] = userUnderlyingBalance - amount;
     }
 
-    function _debitCombinedNativeBalance(address user, uint256 amount) internal {
+    function _debitCombinedNativeBalance(address user, uint256 amount) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        uint256 userUnderlyingBalance = $.underlingTokenBalances[user];
+        uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
         uint256 userNativeBalance = $.nativeBalances[user];
         if (userUnderlyingBalance + userNativeBalance < amount) revert InsufficientNativeBalance();
         if (userUnderlyingBalance >= amount) {
-            $.underlingTokenBalances[user] = userUnderlyingBalance - amount;
+            $.underlyingTokenBalances[user] = userUnderlyingBalance - amount;
             return;
         }
-        $.underlingTokenBalances[user] = 0;
+        $.underlyingTokenBalances[user] = 0;
         $.nativeBalances[user] = userNativeBalance - (amount - userUnderlyingBalance);
     }
 
-    function _debitZerc20Balance(address user, uint256 amount) internal {
+    function _debitZerc20Balance(address user, uint256 amount) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userBalance = $.zerc20Balances[user];
         if (userBalance < amount) revert InsufficientZerc20Balance();
         $.zerc20Balances[user] = userBalance - amount;
     }
 
-    function _toBytes32(address a) internal pure returns (bytes32) {
-        return bytes32(uint256(uint160(a)));
-    }
-
-    function _ensureAllowance(IERC20 token, address spender, uint256 amount) internal {
+    function _ensureAllowance(IERC20 token, address spender, uint256 amount) private {
         if (amount == 0) return;
-        if (_isNativeUnderlying()) return;
+        if (IS_NATIVE_UNDERLYING) return;
         uint256 currentAllowance = token.allowance(address(this), spender);
         if (currentAllowance >= amount) return;
         token.forceApprove(spender, amount);
     }
 
-    function _applyNativeFeeRefund(address user, uint256 quotedNativeFee, uint256 actualNativeFee) internal {
+    function _applyNativeFeeRefund(address user, uint256 quotedNativeFee, uint256 actualNativeFee) private {
         // Refund surplus native fee if the quote overestimates or refunds are reflected in balance deltas.
         if (quotedNativeFee <= actualNativeFee) return;
         uint256 refundDue = quotedNativeFee - actualNativeFee;
@@ -584,16 +600,10 @@ contract Adaptor is
         _getAdaptorStorage().nativeBalances[user] += refundDue;
     }
 
-    function _isNativeUnderlying() internal view returns (bool) {
-        return address(_getAdaptorStorage().underlyingToken) == NATIVE_TOKEN;
-    }
-
-    function _removeStargateDust(uint256 amount) internal view returns (uint256 dustlessAmount) {
-        AdaptorStorage storage $ = _getAdaptorStorage();
-        uint8 sharedDecimals = $.stargate.sharedDecimals();
-        uint8 localDecimals = _isNativeUnderlying()
-            ? NATIVE_DECIMALS
-            : IERC20Metadata(address($.underlyingToken)).decimals();
+    function _removeStargateDust(uint256 amount) private view returns (uint256 dustlessAmount) {
+        uint8 sharedDecimals = STARGATE.sharedDecimals();
+        uint8 localDecimals =
+            IS_NATIVE_UNDERLYING ? NATIVE_DECIMALS : IERC20Metadata(address(UNDERLYING_TOKEN)).decimals();
         if (localDecimals < sharedDecimals) {
             return 0;
         }
@@ -601,17 +611,17 @@ contract Adaptor is
         dustlessAmount = amount - (amount % conversionRate);
     }
 
-    function _underlyingBalance() internal view returns (uint256) {
-        if (_isNativeUnderlying()) {
+    function _underlyingBalance() private view returns (uint256) {
+        if (IS_NATIVE_UNDERLYING) {
             return address(this).balance;
         }
-        return _getAdaptorStorage().underlyingToken.balanceOf(address(this));
+        return UNDERLYING_TOKEN.balanceOf(address(this));
     }
 
     /// @notice Accepts native transfers; Stargate/OFT refunds are handled via balance deltas.
     receive() external payable {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        if (msg.sender == address($.liquidityManager) || msg.sender == $.lzEndpoint || msg.sender == address($.stargate)) {
+        if (msg.sender == address(LIQUIDITY_MANAGER) || msg.sender == LZ_ENDPOINT || msg.sender == address(STARGATE)) {
             return;
         }
         $.nativeBalances[msg.sender] += msg.value;

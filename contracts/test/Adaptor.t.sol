@@ -164,9 +164,12 @@ contract MockStargate is IStargate {
     }
 
     /// forge-lint: disable-next-line(mixed-case-function)
-    function quoteOFT(
-        SendParam calldata _sendParam
-    ) external view override returns (OFTLimit memory limit, OFTFeeDetail[] memory oftFeeDetails, OFTReceipt memory receipt) {
+    function quoteOFT(SendParam calldata _sendParam)
+        external
+        view
+        override
+        returns (OFTLimit memory limit, OFTFeeDetail[] memory oftFeeDetails, OFTReceipt memory receipt)
+    {
         limit = OFTLimit({minAmountLD: 0, maxAmountLD: type(uint256).max});
         oftFeeDetails = new OFTFeeDetail[](0);
         uint256 amountReceived = _sendParam.amountLD > tokenFee ? _sendParam.amountLD - tokenFee : 0;
@@ -180,11 +183,7 @@ contract MockStargate is IStargate {
         return MessagingFee({nativeFee: nativeFeeQuote, lzTokenFee: 0});
     }
 
-    function sendToken(
-        SendParam calldata _sendParam,
-        MessagingFee calldata _fee,
-        address _refundAddress
-    )
+    function sendToken(SendParam calldata _sendParam, MessagingFee calldata _fee, address _refundAddress)
         external
         payable
         override
@@ -196,21 +195,13 @@ contract MockStargate is IStargate {
         lastRefund = _refundAddress;
 
         if (IS_NATIVE) {
-            require(
-                msg.value == _sendParam.amountLD + _fee.nativeFee,
-                "native value mismatch"
-            );
+            require(msg.value == _sendParam.amountLD + _fee.nativeFee, "native value mismatch");
         } else {
-            require(
-                IERC20(UNDERLYING).transferFrom(msg.sender, address(this), _sendParam.amountLD),
-                "transfer failed"
-            );
+            require(IERC20(UNDERLYING).transferFrom(msg.sender, address(this), _sendParam.amountLD), "transfer failed");
         }
 
         msgReceipt = MessagingReceipt({
-            guid: bytes32(0),
-            nonce: 0,
-            fee: MessagingFee({nativeFee: _fee.nativeFee, lzTokenFee: _fee.lzTokenFee})
+            guid: bytes32(0), nonce: 0, fee: MessagingFee({nativeFee: _fee.nativeFee, lzTokenFee: _fee.lzTokenFee})
         });
         uint256 amountReceived = _sendParam.amountLD > tokenFee ? _sendParam.amountLD - tokenFee : 0;
         if (bonus > 0) {
@@ -220,32 +211,25 @@ contract MockStargate is IStargate {
         ticket = Ticket({ticketId: 0, passengerBytes: bytes("")});
     }
 
-    function send(
-        SendParam calldata _sendParam,
-        MessagingFee calldata _fee,
-        address _refundAddress
-    ) external payable override returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt) {
+    function send(SendParam calldata _sendParam, MessagingFee calldata _fee, address _refundAddress)
+        external
+        payable
+        override
+        returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt)
+    {
         if (revertSend) revert("sendToken reverted");
         lastSendParam = _sendParam;
         lastValue = msg.value;
         lastRefund = _refundAddress;
 
         if (IS_NATIVE) {
-            require(
-                msg.value == _sendParam.amountLD + _fee.nativeFee,
-                "native value mismatch"
-            );
+            require(msg.value == _sendParam.amountLD + _fee.nativeFee, "native value mismatch");
         } else {
-            require(
-                IERC20(UNDERLYING).transferFrom(msg.sender, address(this), _sendParam.amountLD),
-                "transfer failed"
-            );
+            require(IERC20(UNDERLYING).transferFrom(msg.sender, address(this), _sendParam.amountLD), "transfer failed");
         }
 
         msgReceipt = MessagingReceipt({
-            guid: bytes32(0),
-            nonce: 0,
-            fee: MessagingFee({nativeFee: _fee.nativeFee, lzTokenFee: _fee.lzTokenFee})
+            guid: bytes32(0), nonce: 0, fee: MessagingFee({nativeFee: _fee.nativeFee, lzTokenFee: _fee.lzTokenFee})
         });
         uint256 amountReceived = _sendParam.amountLD > tokenFee ? _sendParam.amountLD - tokenFee : 0;
         if (bonus > 0) {
@@ -275,15 +259,21 @@ contract ZERC20AdaptorHarness is zERC20 {
         return lastSendParam.amountLD;
     }
 
-    function quoteSend(SendParam calldata, bool) public view override(IOFT, OFTCoreUpgradeable) returns (MessagingFee memory) {
+    function quoteSend(SendParam calldata, bool)
+        public
+        view
+        override(IOFT, OFTCoreUpgradeable)
+        returns (MessagingFee memory)
+    {
         return MessagingFee({nativeFee: quoteNativeFee, lzTokenFee: quoteLzFee});
     }
 
-    function send(
-        SendParam calldata _sendParam,
-        MessagingFee calldata _fee,
-        address
-    ) public payable override(IOFT, OFTCoreUpgradeable) returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt) {
+    function send(SendParam calldata _sendParam, MessagingFee calldata _fee, address)
+        public
+        payable
+        override(IOFT, OFTCoreUpgradeable)
+        returns (MessagingReceipt memory msgReceipt, OFTReceipt memory oftReceipt)
+    {
         if (msg.value != _fee.nativeFee) revert("native fee mismatch");
         lastSendParam = _sendParam;
         lastSendValue = msg.value;
@@ -292,9 +282,7 @@ contract ZERC20AdaptorHarness is zERC20 {
             _debit(msg.sender, _sendParam.amountLD, _sendParam.minAmountLD, _sendParam.dstEid);
 
         msgReceipt = MessagingReceipt({
-            guid: bytes32(0),
-            nonce: 0,
-            fee: MessagingFee({nativeFee: msg.value, lzTokenFee: _fee.lzTokenFee})
+            guid: bytes32(0), nonce: 0, fee: MessagingFee({nativeFee: msg.value, lzTokenFee: _fee.lzTokenFee})
         });
         oftReceipt = OFTReceipt({amountSentLD: amountSentLd, amountReceivedLD: amountReceivedLd});
     }
@@ -330,9 +318,10 @@ contract AdaptorTest is TestHelperOz5 {
     function testInitializeRevertsOnStargateTokenMismatch() public {
         MintableToken otherUnderlying = new MintableToken();
         MockStargate badStargate = new MockStargate(address(otherUnderlying));
-        Adaptor implementation = new Adaptor();
-        bytes memory initData =
-            abi.encodeCall(Adaptor.initialize, (address(manager), address(badStargate), address(endpoint), address(this)));
+        Adaptor implementation = new Adaptor(address(manager), address(badStargate), address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Adaptor.initialize, (address(manager), address(badStargate), address(endpoint), address(this))
+        );
 
         vm.expectRevert(
             abi.encodeWithSelector(
@@ -417,7 +406,7 @@ contract AdaptorTest is TestHelperOz5 {
         adaptor.unwrapAndBridge{value: nativeFee}(amount, request);
 
         assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 balance cleared");
-        assertEq(adaptor.underlingTokenBalances(USER), 0, "underlying balance cleared");
+        assertEq(adaptor.underlyingTokenBalances(USER), 0, "underlying balance cleared");
         assertEq(adaptor.nativeBalances(USER), 0, "native balance cleared");
         assertEq(underlying.balanceOf(address(adaptor)), 0, "underlying forwarded");
         assertEq(underlying.balanceOf(address(stargate)), expectedUnderlying, "stargate received underlying");
@@ -463,7 +452,7 @@ contract AdaptorTest is TestHelperOz5 {
         nativeAdaptor.unwrapAndBridge{value: nativeFee}(amount, request);
 
         assertEq(nativeAdaptor.zerc20Balances(USER), 0, "zerc20 balance cleared");
-        assertEq(nativeAdaptor.underlingTokenBalances(USER), 0, "underlying balance cleared");
+        assertEq(nativeAdaptor.underlyingTokenBalances(USER), 0, "underlying balance cleared");
         assertEq(nativeAdaptor.nativeBalances(USER), 0, "native balance cleared");
         assertEq(nativeStargate.lastSendParamAmount(), expectedUnderlying, "bridged amount");
         assertEq(nativeStargate.lastValue(), expectedUnderlying + nativeFee, "native amount + fee forwarded");
@@ -500,7 +489,7 @@ contract AdaptorTest is TestHelperOz5 {
         adaptor.unwrapAndBridge{value: returnNativeFee}(amount, request);
 
         assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 balance cleared");
-        assertEq(adaptor.underlingTokenBalances(USER), 0, "no underlying credited");
+        assertEq(adaptor.underlyingTokenBalances(USER), 0, "no underlying credited");
         assertEq(adaptor.nativeBalances(USER), 0, "native balance cleared");
         assertEq(zerc20.balanceOf(address(adaptor)), 0, "zerc20 bridged back");
         assertEq(zerc20.lastSendParamAmount(), amount, "zerc20 bridged amount");
@@ -570,7 +559,7 @@ contract AdaptorTest is TestHelperOz5 {
         adaptor.lzCompose{value: nativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
 
         assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 debited during unwrap");
-        assertEq(adaptor.underlingTokenBalances(USER), amount, "underlying credited");
+        assertEq(adaptor.underlyingTokenBalances(USER), amount, "underlying credited");
         assertEq(adaptor.nativeBalances(USER), nativeFee, "native still held after bridge revert");
         assertEq(underlying.balanceOf(address(adaptor)), amount, "underlying retained for withdraw");
 
@@ -610,7 +599,7 @@ contract AdaptorTest is TestHelperOz5 {
         adaptor.lzCompose{value: returnNativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
 
         assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 debited for return");
-        assertEq(adaptor.underlingTokenBalances(USER), 0, "no underlying credited");
+        assertEq(adaptor.underlyingTokenBalances(USER), 0, "no underlying credited");
         assertEq(adaptor.nativeBalances(USER), 0, "native spent for return send");
         assertEq(zerc20.balanceOf(address(adaptor)), 0, "zerc20 sent back");
         assertEq(zerc20.lastSendParamAmount(), amount, "returned amount");
@@ -628,17 +617,17 @@ contract AdaptorTest is TestHelperOz5 {
         private
         returns (Adaptor)
     {
-        Adaptor implementation = new Adaptor();
+        Adaptor implementation = new Adaptor(manager_, stargate_, lzEndpoint_);
         bytes memory initData = abi.encodeCall(Adaptor.initialize, (manager_, stargate_, lzEndpoint_, owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         return Adaptor(payable(address(proxy)));
     }
 
-    function _buildComposeMessage(
-        address user,
-        uint256 amount,
-        Adaptor.BridgeRequest memory request
-    ) private pure returns (bytes memory) {
+    function _buildComposeMessage(address user, uint256 amount, Adaptor.BridgeRequest memory request)
+        private
+        pure
+        returns (bytes memory)
+    {
         bytes memory composeMsg = abi.encodePacked(OFTComposeMsgCodec.addressToBytes32(user), abi.encode(request));
         return OFTComposeMsgCodec.encode(0, DST_EID, amount, composeMsg);
     }
