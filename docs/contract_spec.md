@@ -56,6 +56,7 @@
 
 - Cross-chain exit and recovery boundary. It exists to honor user intent when converting zERC20 into underlying liquidity across chains, while providing a safe fallback when bridge conditions or fees make the exit untenable.
 - Coordinates with the LiquidityManager for unwrapping and uses Stargate as the transport, while ensuring surplus fees and refunds remain attributable to the initiating user.
+- Supports cross-chain unwraps where liquidity or unwrap fees are more favorable on another chain (e.g., Chain B). Users on Chain A send zERC20 via OFT `send` with adaptor call arguments embedded in `lzCompose`, the Adaptor unwraps into underlying on Chain B, then forwards the underlying back to Chain A via Stargate.
 
 ## Key Flows
 
@@ -66,10 +67,10 @@
 3. **Teleport (local or global)**: Users compile either a Nova (`teleport`) or Groth16 (`singleTeleport`) proof showing cumulative transfers to burn addresses represented by `GeneralRecipient`. The verifier cross-checks the claimed root (`rootHint` selects either local or global arrays), confirms the recipient hash and chain id match the caller’s environment, ensures the requested total exceeds the previously teleported amount, and mints the delta on zERC20 via `IzERC20.teleport` while emitting `Verifier.Teleport` with `{isGlobal, rootHint, transferRoot, GeneralRecipient}` so every mint is traceable to its origin.
 4. **Global aggregation**: Verifiers periodically call `relayTransferRoot` so the Hub ingests `(root, index)` through LayerZero. Once multiple verifiers have contributed, the Hub calls `broadcast`, which Poseidon-aggregates the per-token roots, increments `aggSeq`, and sends the new global root back to every verifier. These global roots enable cross-chain teleports (`isGlobal=true`) without waiting for remote relays.
 
-### Liquidity Entry / Exit Flow
+### Liquidity Entry / Exit Flow (Local + Cross-Chain)
 
 1. Users enter the system by wrapping underlying through `LiquidityManager`, which exists to anchor zERC20 supply to available liquidity while applying incentive policy around the target liquidity band.
-2. Users exit either locally by unwrapping via `LiquidityManager` (paying the curve fee into `feeSurplus`) or cross-chain through `Adaptor`, which exists to preserve exit intent (slippage limits, refunds) when bridging the underlying to another chain.
+2. Users exit either locally by unwrapping via `LiquidityManager` (paying the curve fee into `feeSurplus`) or cross-chain when liquidity or fees are more favorable elsewhere. In the cross-chain case, a user on Chain A calls OFT `send`, transfers zERC20 to Chain B, and passes Adaptor call arguments via `lzCompose` options. On Chain B, the Adaptor receives the zERC20, unwraps it into underlying via the local `LiquidityManager`, then sends the underlying back to Chain A using Stargate so the user exits with underlying on their origin chain while tapping Chain B liquidity.
 
 ## Security & Operational Notes
 
