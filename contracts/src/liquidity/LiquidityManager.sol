@@ -148,34 +148,34 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     /// @notice Quotes reward paid for wrapping `amount` at current liquidity.
     /// @param amount Amount of underlying to wrap.
     /// @return reward Reward amount paid from fee surplus.
-    function quoteWrapReward(uint256 amount) public view returns (uint256 reward) {
+    function quoteWrapReward(uint256 amount) external view returns (uint256 reward) {
         return _quoteWrapReward(amount, _getLiquidityManagerStorage());
     }
 
     /// @notice Quotes fee charged for unwrapping `amount` at current liquidity.
     /// @param amount Amount of zERC20 to unwrap.
     /// @return feeAmount Fee charged in underlying units.
-    function quoteUnwrapFee(uint256 amount) public view returns (uint256 feeAmount) {
+    function quoteUnwrapFee(uint256 amount) external view returns (uint256 feeAmount) {
         return _quoteUnwrapFee(amount, _getLiquidityManagerStorage());
     }
 
     /// @notice Returns the wrapped underlying token.
-    function underlyingToken() public view returns (IERC20) {
+    function underlyingToken() external view returns (IERC20) {
         return UNDERLYING_TOKEN;
     }
 
     /// @notice Returns the zERC20 token minted/burned by this contract.
-    function zerc20() public view returns (IzERC20) {
+    function zerc20() external view returns (IzERC20) {
         return ZERC20_TOKEN;
     }
 
     /// @notice Returns the incentive curve parameters.
-    function feeParams() public view returns (IncentiveLib.FeeParams memory params) {
+    function feeParams() external view returns (IncentiveLib.FeeParams memory params) {
         params = _getLiquidityManagerStorage().feeParams;
     }
 
     /// @notice Returns the fee surplus available for rewards and admin withdrawals.
-    function feeSurplus() public view returns (uint256) {
+    function feeSurplus() external view returns (uint256) {
         return _getLiquidityManagerStorage().feeSurplus;
     }
 

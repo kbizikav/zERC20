@@ -216,11 +216,29 @@ contract LiquidityManagerTest is Test {
         assertEq(stored.targetLiquidity, newParams.targetLiquidity, "target stored");
         assertEq(stored.k, newParams.k, "k stored");
 
-        vm.expectRevert(IncentiveLib.InvalidTarget.selector);
-        manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 0, k: 1}));
-
         vm.expectRevert(IncentiveLib.InvalidK.selector);
         manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 1, k: 10_001}));
+    }
+
+    function testZeroTargetLiquidityDisablesFeesAndRewards() public {
+        uint256 surplus = _accrueFeeSurplus();
+
+        manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 0, k: 1_000}));
+
+        assertEq(manager.quoteWrapReward(100 ether), 0, "wrap reward quote zero");
+        assertEq(manager.quoteUnwrapFee(100 ether), 0, "unwrap fee quote zero");
+
+        vm.startPrank(ALICE);
+        underlying.approve(address(manager), type(uint256).max);
+
+        uint256 minted = manager.wrap(100 ether, ALICE);
+        assertEq(minted, 100 ether, "wrap mints only principal");
+        assertEq(manager.feeSurplus(), surplus, "surplus unchanged after wrap");
+
+        uint256 received = manager.unwrap(50 ether, ALICE);
+        assertEq(received, 50 ether, "unwrap returns only principal");
+        assertEq(manager.feeSurplus(), surplus, "surplus unchanged after unwrap");
+        vm.stopPrank();
     }
 
     function testSetFeeParamsRejectsOversizedTarget() public {

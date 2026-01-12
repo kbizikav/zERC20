@@ -181,9 +181,11 @@ library IncentiveLib {
     //////////////////////////////////////////////////////////////*/
 
     function validateFeeParams(FeeParams memory params) internal pure {
-        if (params.targetLiquidity == 0) revert InvalidTarget();
         if (params.targetLiquidity > MAX_TARGET_LIQUIDITY) revert InvalidTarget();
         if (params.k > K_BPS_DENOM) revert InvalidK();
+        if (params.targetLiquidity == 0) {
+            return;
+        }
         uint256 maxK = type(uint256).max / params.targetLiquidity / params.targetLiquidity;
         if (params.k > maxK) revert InvalidK();
     }
