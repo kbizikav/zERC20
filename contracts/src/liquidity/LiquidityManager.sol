@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: MIT
-pragma solidity 0.8.30;
+pragma solidity 0.8.33;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 
 import {AccessControlUpgradeable} from "@openzeppelin/contracts-upgradeable/access/AccessControlUpgradeable.sol";
-import {ReentrancyGuardUpgradeable} from "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {IzERC20} from "../interfaces/IzERC20.sol";
@@ -16,7 +16,7 @@ import {IncentiveLib} from "../libraries/IncentiveLib.sol";
 /// Reward/fee curves follow the piecewise linear formulas described in docs/zerc20-liquidity.md.
 /// @dev Liquidity is derived from the underlying token balance; direct transfers (donations) intentionally
 ///      affect incentive calculations and are not ignored by separate accounting.
-contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, ReentrancyGuardUpgradeable, ILiquidityManager {
+contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, ReentrancyGuardTransient, ILiquidityManager {
     using SafeERC20 for IERC20;
     using IncentiveLib for IncentiveLib.FeeParams;
 
@@ -87,8 +87,6 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         _feeParams.validateFeeParams();
 
         __AccessControl_init();
-        __ReentrancyGuard_init();
-        __UUPSUpgradeable_init();
         _grantRole(DEFAULT_ADMIN_ROLE, initialOwner);
         _grantRole(FEE_MANAGER_ROLE, initialOwner);
 

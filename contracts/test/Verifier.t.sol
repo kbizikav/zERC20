@@ -9,6 +9,8 @@ import {
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {
     TestHelperOz5,
     EndpointV2,
@@ -127,13 +129,13 @@ contract VerifierTest is TestHelperOz5 {
     function testActivateEmergencyOnlyOwner() public {
         address nonOwner = address(0xBEEF);
         vm.prank(nonOwner);
-        vm.expectRevert("Ownable: caller is not the owner");
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
         verifier.activateEmergency();
     }
 
     function testActivateEmergencyCannotRunTwice() public {
         verifier.activateEmergency();
-        vm.expectRevert("Pausable: paused");
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
         verifier.activateEmergency();
     }
 
@@ -236,7 +238,7 @@ contract VerifierTest is TestHelperOz5 {
         );
 
         VerifierUpgradeMock newImplementation = new VerifierUpgradeMock(address(endpoint));
-        proxiedVerifier.upgradeTo(address(newImplementation));
+        proxiedVerifier.upgradeToAndCall(address(newImplementation), bytes(""));
 
         VerifierUpgradeMock upgraded = VerifierUpgradeMock(address(proxiedVerifier));
         assertEq(upgraded.version(), "verifier-v2", "upgraded implementation not active");

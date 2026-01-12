@@ -2,14 +2,12 @@
 pragma solidity ^0.8.20;
 
 import {IOFT} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
-import {IERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/IERC20Upgradeable.sol";
-import {
-    IERC20PermitUpgradeable
-} from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/IERC20PermitUpgradeable.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 
 /// @title IzERC20
 /// @notice zERC20 interface that extends ERC20 + OFT with teleport semantics and indexed transfer hashing.
-interface IzERC20 is IOFT, IERC20Upgradeable, IERC20PermitUpgradeable {
+interface IzERC20 is IOFT, IERC20, IERC20Permit {
     /// @notice Emitted after every transfer, capturing the leaf index and transfer tuple.
     event IndexedTransfer(uint256 indexed index, address from, address to, uint256 value);
 

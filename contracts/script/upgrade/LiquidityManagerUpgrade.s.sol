@@ -34,7 +34,7 @@ contract UpgradeLiquidityManager is Script {
         console2.log("  previous impl", previousImpl);
         console2.log("  new impl", address(newImpl));
 
-        LiquidityManager(payable(proxy)).upgradeTo(address(newImpl));
+        LiquidityManager(payable(proxy)).upgradeToAndCall(address(newImpl), bytes(""));
 
         console2.log("Upgrade complete");
         console2.log("  active impl", _getImplementation(proxy));
