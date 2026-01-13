@@ -36,10 +36,6 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
     error InvalidComposeCaller();
     error InvalidComposeSender();
     error InvalidDstEid();
-    error LiquidityManagerMismatch(address expected, address actual);
-    error StargateMismatch(address expected, address actual);
-    error LzEndpointMismatch(address expected, address actual);
-    error Zerc20Mismatch(address expected, address actual);
     error InsufficientZerc20Balance();
     error InsufficientUnderlyingBalance();
     error InsufficientNativeBalance();
@@ -116,50 +112,13 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         if (_stargate == address(0)) revert ZeroAddress();
         if (_lzEndpoint == address(0)) revert ZeroAddress();
         ILiquidityManager manager = ILiquidityManager(_liquidityManager);
-        LIQUIDITY_MANAGER = address(manager);
+        LIQUIDITY_MANAGER = _liquidityManager;
         STARGATE = _stargate;
         LZ_ENDPOINT = _lzEndpoint;
         UNDERLYING_TOKEN = address(manager.underlyingToken());
         ZERC20_TOKEN = address(manager.zerc20());
         IS_NATIVE_UNDERLYING = UNDERLYING_TOKEN == NATIVE_TOKEN;
         if (UNDERLYING_TOKEN == address(0) || ZERC20_TOKEN == address(0)) revert ZeroAddress();
-        _disableInitializers();
-    }
-
-    /// @notice Initializes the adaptor with its dependencies and owner.
-    /// @param _liquidityManager LiquidityManager that wraps/unwraps the zERC20.
-    /// @param _stargate Stargate endpoint used for bridging the underlying token.
-    /// @param _lzEndpoint LayerZero endpoint that invokes lzCompose.
-    /// @param initialOwner Account receiving upgrade authority.
-    function initialize(address _liquidityManager, address _stargate, address _lzEndpoint, address initialOwner)
-        external
-        initializer
-    {
-        if (_liquidityManager == address(0)) revert ZeroAddress();
-        if (_stargate == address(0)) revert ZeroAddress();
-        if (_lzEndpoint == address(0)) revert ZeroAddress();
-        if (initialOwner == address(0)) revert ZeroAddress();
-        if (_liquidityManager != LIQUIDITY_MANAGER) {
-            revert LiquidityManagerMismatch(LIQUIDITY_MANAGER, _liquidityManager);
-        }
-        if (_stargate != address(STARGATE)) {
-            revert StargateMismatch(address(STARGATE), _stargate);
-        }
-        if (_lzEndpoint != LZ_ENDPOINT) {
-            revert LzEndpointMismatch(LZ_ENDPOINT, _lzEndpoint);
-        }
-
-        __Ownable_init(initialOwner);
-
-        IERC20 managerUnderlying = ILiquidityManager(LIQUIDITY_MANAGER).underlyingToken();
-        IzERC20 managerZerc20 = ILiquidityManager(LIQUIDITY_MANAGER).zerc20();
-        if (address(managerUnderlying) != UNDERLYING_TOKEN) {
-            revert UnderlyingTokenMismatch(UNDERLYING_TOKEN, address(managerUnderlying));
-        }
-        if (address(managerZerc20) != ZERC20_TOKEN) {
-            revert Zerc20Mismatch(ZERC20_TOKEN, address(managerZerc20));
-        }
-
         address stargateToken = IStargate(STARGATE).token();
         if (IS_NATIVE_UNDERLYING) {
             if (stargateToken != NATIVE_TOKEN && stargateToken != address(0)) {
@@ -168,6 +127,17 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         } else if (stargateToken != UNDERLYING_TOKEN) {
             revert UnderlyingTokenMismatch(UNDERLYING_TOKEN, stargateToken);
         }
+        _disableInitializers();
+    }
+
+    /// @notice Initializes the adaptor with its dependencies and owner.
+    /// @param initialOwner Account receiving upgrade authority.
+    function initialize(address initialOwner)
+        external
+        initializer
+    {
+        if (initialOwner == address(0)) revert ZeroAddress();
+        __Ownable_init(initialOwner);
     }
 
     function _authorizeUpgrade(address) internal override onlyOwner {}

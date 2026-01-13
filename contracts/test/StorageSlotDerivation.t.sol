@@ -28,6 +28,22 @@ contract MockLiquidityManager {
     }
 }
 
+contract MockStargate {
+    address private immutable TOKEN;
+
+    constructor(address token_) {
+        TOKEN = token_;
+    }
+
+    function token() external view returns (address) {
+        return TOKEN;
+    }
+
+    function sharedDecimals() external pure returns (uint8) {
+        return 6;
+    }
+}
+
 contract AdaptorSlotHarness is Adaptor {
     constructor(address manager, address stargate, address lzEndpoint) Adaptor(manager, stargate, lzEndpoint) {}
 
@@ -77,7 +93,8 @@ contract SelfCallSlotHarness is SelfCall {
 contract StorageSlotDerivationTest is Test {
     function testAdaptorSlotConstantMatchesDerivation() public {
         MockLiquidityManager manager = new MockLiquidityManager(address(0x1111), address(0x2222));
-        AdaptorSlotHarness harness = new AdaptorSlotHarness(address(manager), address(0x3333), address(0x4444));
+        MockStargate stargate = new MockStargate(address(0x1111)); // token must match underlying
+        AdaptorSlotHarness harness = new AdaptorSlotHarness(address(manager), address(stargate), address(0x4444));
         bytes32 expected = SlotDerivation.erc7201Slot("zerc20.storage.adaptor");
         assertEq(harness.slot(), expected, "adaptor slot");
     }

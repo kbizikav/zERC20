@@ -347,23 +347,63 @@ contract AdaptorTest is TestHelperOz5 {
         assertEq(nativeAdaptor.UNDERLYING_TOKEN(), NATIVE_TOKEN, "native UNDERLYING_TOKEN mismatch");
     }
 
-    // ==================== Initialize Tests ====================
+    // ==================== Constructor Tests ====================
 
-    function testInitializeRevertsOnStargateTokenMismatch() public {
+    function testConstructorRevertsOnZeroLiquidityManager() public {
+        vm.expectRevert(Adaptor.ZeroAddress.selector);
+        new Adaptor(address(0), address(stargate), address(endpoint));
+    }
+
+    function testConstructorRevertsOnZeroStargate() public {
+        vm.expectRevert(Adaptor.ZeroAddress.selector);
+        new Adaptor(address(manager), address(0), address(endpoint));
+    }
+
+    function testConstructorRevertsOnZeroLzEndpoint() public {
+        vm.expectRevert(Adaptor.ZeroAddress.selector);
+        new Adaptor(address(manager), address(stargate), address(0));
+    }
+
+    function testConstructorRevertsOnStargateTokenMismatch() public {
         MintableToken otherUnderlying = new MintableToken();
         MockStargate badStargate = new MockStargate(address(otherUnderlying));
-        Adaptor implementation = new Adaptor(address(manager), address(badStargate), address(endpoint));
-        bytes memory initData = abi.encodeCall(
-            Adaptor.initialize, (address(manager), address(badStargate), address(endpoint), address(this))
-        );
 
         vm.expectRevert(
             abi.encodeWithSelector(
                 Adaptor.UnderlyingTokenMismatch.selector, address(underlying), address(otherUnderlying)
             )
         );
+        new Adaptor(address(manager), address(badStargate), address(endpoint));
+    }
+
+    function testConstructorAllowsNativeStargateWithZeroToken() public {
+        // Native underlying should accept Stargate with token() == address(0)
+        MockLiquidityManager nativeManager = new MockLiquidityManager(IERC20(NATIVE_TOKEN), address(zerc20));
+        MockStargate nativeStargateZeroToken = new MockStargate(address(0));
+
+        // Should not revert
+        Adaptor nativeAdaptor = new Adaptor(address(nativeManager), address(nativeStargateZeroToken), address(endpoint));
+        assertEq(nativeAdaptor.UNDERLYING_TOKEN(), NATIVE_TOKEN);
+    }
+
+    // ==================== Initialize Tests ====================
+
+    function testInitializeRevertsOnZeroOwner() public {
+        Adaptor implementation = new Adaptor(address(manager), address(stargate), address(endpoint));
+        bytes memory initData = abi.encodeCall(Adaptor.initialize, (address(0)));
+
+        vm.expectRevert(Adaptor.ZeroAddress.selector);
         new ERC1967Proxy(address(implementation), initData);
     }
+
+    function testInitializeSetsOwnerCorrectly() public {
+        address owner = address(0x1234);
+        Adaptor newAdaptor = _deployAdaptor(address(manager), address(stargate), address(endpoint), owner);
+
+        assertEq(newAdaptor.owner(), owner);
+    }
+
+    // ==================== Quote Tests ====================
 
     function testQuoteFeeSaturatesBridgeFee() public {
         uint256 amount = 10 ether;
@@ -652,7 +692,7 @@ contract AdaptorTest is TestHelperOz5 {
         returns (Adaptor)
     {
         Adaptor implementation = new Adaptor(manager_, stargate_, lzEndpoint_);
-        bytes memory initData = abi.encodeCall(Adaptor.initialize, (manager_, stargate_, lzEndpoint_, owner));
+        bytes memory initData = abi.encodeCall(Adaptor.initialize, (owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         return Adaptor(payable(address(proxy)));
     }
