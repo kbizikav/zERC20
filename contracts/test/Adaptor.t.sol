@@ -577,6 +577,27 @@ contract AdaptorTest is TestHelperOz5 {
         adaptor.lzCompose(address(zerc20), bytes32(0), message, address(0), bytes(""));
     }
 
+    function testLzComposeRevertsOnZeroUserAddress() public {
+        uint256 amount = 25 ether;
+        zerc20.mint(address(adaptor), amount);
+
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        // Build compose message with zero address as user
+        bytes memory message = _buildComposeMessage(address(0), amount, request);
+
+        vm.expectRevert(Adaptor.ZeroAddress.selector);
+        vm.prank(address(endpoint));
+        adaptor.lzCompose(address(zerc20), bytes32(0), message, address(0), bytes(""));
+    }
+
     function testLzComposeEmitsDecodeFailureAndAllowsWithdraw() public {
         uint256 amount = 25 ether;
         uint256 nativeFee = 0.01 ether;
