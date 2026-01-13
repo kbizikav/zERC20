@@ -306,6 +306,9 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
     receive() external payable nonReentrant {
         if (!IS_NATIVE_UNDERLYING) revert NativeTokenNotSupported();
+        // comment
+        // wrapWithMinOutと違ってスリッページ保護がない気がします
+        // 流動性が低い状態でETHを送ると、予想より少ないzERC20しかもらえない可能性あると思うんですけど、どうでしょうか
         _wrap(msg.value, msg.sender);
     }
 }

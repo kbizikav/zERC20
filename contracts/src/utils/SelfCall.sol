@@ -4,6 +4,8 @@ pragma solidity 0.8.33;
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
 abstract contract SelfCall {
+    // comment 
+    // ここ、*よりもbytes32とかboolとかにして限定した方が安全かな、と思うのですが、どうでしょうか
     using TransientSlot for *;
 
     error OnlySelfCall();

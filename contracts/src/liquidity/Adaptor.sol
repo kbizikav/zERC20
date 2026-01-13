@@ -90,22 +90,33 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         }
     }
 
+    // comment 
+    // LIQUIDITY_MANAGERをpublic addressにしてLIQUIDITY_MANAGER()でアクセスできるようにしてもいいのでは、と思いました。どうでしょう
+    // この関数が不要になるかと
     function liquidityManager() public view returns (ILiquidityManager) {
         return LIQUIDITY_MANAGER;
     }
 
+    // comment 
+    // ここもそうですね、publicにすれば関数が不要になるかなと
     function stargate() public view returns (IStargate) {
         return STARGATE;
     }
 
+    // comment 
+    // ここもそうですね、publicにすれば関数が不要になるかなと
     function lzEndpoint() public view returns (address) {
         return LZ_ENDPOINT;
     }
 
+    // comment 
+    // ここもそうですね、publicにすれば関数が不要になるかなと
     function underlyingToken() public view returns (IERC20) {
         return UNDERLYING_TOKEN;
     }
 
+    // comment 
+    // ここもそうですね、publicにすれば関数が不要になるかなと
     function zerc20() public view returns (IzERC20) {
         return ZERC20_TOKEN;
     }
@@ -162,6 +173,9 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         _disableInitializers();
     }
 
+    // comment 
+    // _liquidityManager、_stargate、_lzEndpointは不要じゃないですかね、なぜここで指定するのでしょうか
+
     /// @notice Initializes the adaptor with its dependencies and owner.
     /// @param _liquidityManager LiquidityManager that wraps/unwraps the zERC20.
     /// @param _stargate Stargate endpoint used for bridging the underlying token.
@@ -187,6 +201,9 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
 
         __Ownable_init(initialOwner);
 
+        // comment
+        // これらのvalidateもコンストラクタでやってしまっていいのでは？
+        // initializeで実行する理由はなんでしょうか、もしかして初期化タイミングの問題でこっちでやってる、とかですかね。
         IERC20 managerUnderlying = LIQUIDITY_MANAGER.underlyingToken();
         IzERC20 managerZerc20 = LIQUIDITY_MANAGER.zerc20();
         if (address(managerUnderlying) != address(UNDERLYING_TOKEN)) {
@@ -225,6 +242,8 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         if (_from != address(ZERC20_TOKEN)) revert InvalidComposeCaller();
 
         bytes32 composeFromBytes = OFTComposeMsgCodec.composeFrom(_message);
+        // comment
+        // このuserが0アドレスだった時にrevertしてもいいかもしれません
         address user = OFTComposeMsgCodec.bytes32ToAddress(composeFromBytes);
         uint256 zerc20Amount = OFTComposeMsgCodec.amountLD(_message);
 
@@ -254,6 +273,10 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
     function unwrapAndBridge(uint256 zerc20Amount, BridgeRequest calldata request) external payable nonReentrant {
         if (zerc20Amount == 0) revert ZeroAmount();
         _validateBridgeRequest(request);
+        // comment
+        // 趣味の領域かもしれませんが、OwnableUpgradeableがContextUpgradeableを継承しているので、
+        // せっかくなので _msgSender()使ってもいいのかなと思いました。
+        // まぁメタトラ使ってないので、意味はあまりないです、
         address user = msg.sender;
         AdaptorStorage storage $ = _getAdaptorStorage();
 
@@ -303,6 +326,9 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
             return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
         }
         uint256 amountAfterUnwrap = amount - tokenUnwrapFee;
+        // comment
+        //  tokenUnwrapFee >= amountの場合にreturnしているので、その後のamountAfterUnwrap == 0チェックはtokenUnwrapFee == amountの場合のみ到達します。
+        // ロジック的には冗長だと思いますが、どうでしょうか。
         if (amountAfterUnwrap == 0) {
             // Early return to avoid Stargate quote revert on zero amount
             return FeeQuote({tokenUnwrapFee: tokenUnwrapFee, nativeBridgeFee: 0, tokenBridgeFee: 0});
@@ -565,6 +591,9 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
         uint256 userNativeBalance = $.nativeBalances[user];
+        // comment 
+        // userUnderlyingBalance + userNativeBalanceがオーバーフローするリスクがありますね。
+        // コンパイルバージョンが0.8を超えているので、エラーになるだけなので、問題ないといえば問題ないですが
         if (userUnderlyingBalance + userNativeBalance < amount) revert InsufficientNativeBalance();
         if (userUnderlyingBalance >= amount) {
             $.underlyingTokenBalances[user] = userUnderlyingBalance - amount;
