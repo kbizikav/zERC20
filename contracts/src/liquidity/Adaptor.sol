@@ -190,6 +190,8 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
 
         bytes32 composeFromBytes = OFTComposeMsgCodec.composeFrom(_message);
         address user = OFTComposeMsgCodec.bytes32ToAddress(composeFromBytes);
+        if (user == address(0)) revert ZeroAddress();
+        
         uint256 zerc20Amount = OFTComposeMsgCodec.amountLD(_message);
 
         // record zERC20 & native balance
