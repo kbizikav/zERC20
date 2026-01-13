@@ -4,6 +4,7 @@ pragma solidity ^0.8.20;
 import {TestHelperOz5, EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {Adaptor} from "../src/liquidity/Adaptor.sol";
 import {ILiquidityManager} from "../src/interfaces/ILiquidityManager.sol";
+import {IAdaptor} from "../src/interfaces/IAdaptor.sol";
 import {IStargate, Ticket, StargateType} from "../src/interfaces/IStargate.sol";
 import {IzERC20} from "../src/interfaces/IzERC20.sol";
 import {
@@ -315,6 +316,39 @@ contract AdaptorTest is TestHelperOz5 {
         zerc20.setMinter(address(this));
     }
 
+    // ==================== Public Immutable Getter Tests ====================
+
+    function testLiquidityManagerReturnsCorrectAddress() public view {
+        assertEq(adaptor.LIQUIDITY_MANAGER(), address(manager), "LIQUIDITY_MANAGER mismatch");
+    }
+
+    function testStargateReturnsCorrectAddress() public view {
+        assertEq(adaptor.STARGATE(), address(stargate), "STARGATE mismatch");
+    }
+
+    function testLzEndpointReturnsCorrectAddress() public view {
+        assertEq(adaptor.LZ_ENDPOINT(), address(endpoint), "LZ_ENDPOINT mismatch");
+    }
+
+    function testUnderlyingTokenReturnsCorrectAddress() public view {
+        assertEq(adaptor.UNDERLYING_TOKEN(), address(underlying), "UNDERLYING_TOKEN mismatch");
+    }
+
+    function testZerc20TokenReturnsCorrectAddress() public view {
+        assertEq(adaptor.ZERC20_TOKEN(), address(zerc20), "ZERC20_TOKEN mismatch");
+    }
+
+    function testNativeUnderlyingAdaptorReturnsNativeToken() public {
+        MockLiquidityManager nativeManager = new MockLiquidityManager(IERC20(NATIVE_TOKEN), address(zerc20));
+        MockStargate nativeStargate = new MockStargate(NATIVE_TOKEN);
+        Adaptor nativeAdaptor =
+            _deployAdaptor(address(nativeManager), address(nativeStargate), address(endpoint), address(this));
+
+        assertEq(nativeAdaptor.UNDERLYING_TOKEN(), NATIVE_TOKEN, "native UNDERLYING_TOKEN mismatch");
+    }
+
+    // ==================== Initialize Tests ====================
+
     function testInitializeRevertsOnStargateTokenMismatch() public {
         MintableToken otherUnderlying = new MintableToken();
         MockStargate badStargate = new MockStargate(address(otherUnderlying));
@@ -338,7 +372,7 @@ contract AdaptorTest is TestHelperOz5 {
         stargate.setQuote(0, 0);
         stargate.setBonus(1 ether);
 
-        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
             dstEid: DST_EID,
             to: DESTINATION,
             minAmountOut: 0,
@@ -383,7 +417,7 @@ contract AdaptorTest is TestHelperOz5 {
 
         vm.deal(USER, nativeFee);
 
-        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
             dstEid: DST_EID,
             to: DESTINATION,
             minAmountOut: amount - unwrapFee - bridgeTokenFee - 1,
@@ -439,7 +473,7 @@ contract AdaptorTest is TestHelperOz5 {
 
         vm.deal(USER, nativeFee);
 
-        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
             dstEid: DST_EID,
             to: DESTINATION,
             minAmountOut: expectedBridged - 1,
@@ -473,7 +507,7 @@ contract AdaptorTest is TestHelperOz5 {
 
         vm.deal(USER, returnNativeFee);
 
-        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
             dstEid: DST_EID,
             to: DESTINATION,
             minAmountOut: amount + 1, // force slippage fail
@@ -541,7 +575,7 @@ contract AdaptorTest is TestHelperOz5 {
         stargate.setRevertSend(true);
         zerc20.mint(address(adaptor), amount);
 
-        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
             dstEid: DST_EID,
             to: DESTINATION,
             minAmountOut: amount,
@@ -581,7 +615,7 @@ contract AdaptorTest is TestHelperOz5 {
         zerc20.setQuoteSendFee(returnNativeFee);
         zerc20.mint(address(adaptor), amount);
 
-        Adaptor.BridgeRequest memory request = Adaptor.BridgeRequest({
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
             dstEid: DST_EID,
             to: DESTINATION,
             minAmountOut: amount + 1, // force slippage fail inside lzCompose
