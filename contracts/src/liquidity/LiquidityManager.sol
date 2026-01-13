@@ -63,7 +63,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
     /// @notice Locks implementation contracts on deployment.
     constructor(address underlyingToken_, address zerc20_) {
-        if (underlyingToken_ == address(0) || zerc20_ == address(0)) revert ZeroAddress();
+        require(underlyingToken_ != address(0) && zerc20_ != address(0), ZeroAddress());
         UNDERLYING_TOKEN = IERC20(underlyingToken_);
         ZERC20_TOKEN = IzERC20(zerc20_);
         IS_NATIVE_UNDERLYING = address(UNDERLYING_TOKEN) == NATIVE_TOKEN;
@@ -74,15 +74,14 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     /// @param _feeParams Incentive curve parameters for rewards and fees.
     /// @param initialOwner Account receiving admin and fee-manager roles.
     function initialize(IncentiveLib.FeeParams memory _feeParams, address initialOwner) external initializer {
-        if (initialOwner == address(0)) revert ZeroAddress();
+        require(initialOwner != address(0), ZeroAddress());
         if (IS_NATIVE_UNDERLYING) {
-            if (IERC20Metadata(address(ZERC20_TOKEN)).decimals() != 18) revert DecimalMismatch();
+            require(IERC20Metadata(address(ZERC20_TOKEN)).decimals() == 18, DecimalMismatch());
         } else {
-            if (
-                IERC20Metadata(address(ZERC20_TOKEN)).decimals() != IERC20Metadata(address(UNDERLYING_TOKEN)).decimals()
-            ) {
-                revert DecimalMismatch();
-            }
+            require(
+                IERC20Metadata(address(ZERC20_TOKEN)).decimals() == IERC20Metadata(address(UNDERLYING_TOKEN)).decimals(),
+                DecimalMismatch()
+            );
         }
         _feeParams.validateFeeParams();
 
@@ -116,7 +115,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         returns (uint256 amountOut)
     {
         amountOut = _wrap(amount, receiver);
-        if (amountOut < minOut) revert SlippageExceeded();
+        require(amountOut >= minOut, SlippageExceeded());
     }
 
     /// @notice Burns zERC20 from the caller and releases underlying to `receiver`.
@@ -138,7 +137,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         returns (uint256 amountOut)
     {
         amountOut = _unwrap(amount, receiver);
-        if (amountOut < minOut) revert SlippageExceeded();
+        require(amountOut >= minOut, SlippageExceeded());
     }
 
     // ---------------------------- Views ----------------------------------
@@ -192,14 +191,14 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     /// @param amount Amount of underlying to withdraw.
     function withdrawRewards(address to, uint256 amount) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
-        if (to == address(0)) revert ZeroReceiver();
-        if (amount == 0) revert ZeroAmount();
-        if (amount > $.feeSurplus) revert InsufficientRewards();
+        require(to != address(0), ZeroReceiver());
+        require(amount != 0, ZeroAmount());
+        require(amount <= $.feeSurplus, InsufficientRewards());
 
         $.feeSurplus -= amount;
         if (IS_NATIVE_UNDERLYING) {
             (bool success,) = payable(to).call{value: amount}("");
-            if (!success) revert UnderlyingSendFailed();
+            require(success, UnderlyingSendFailed());
         } else {
             UNDERLYING_TOKEN.safeTransfer(to, amount);
         }
@@ -247,8 +246,8 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
     /// @dev Internal wrap implementation using pre-deposit liquidity for reward quotes.
     function _wrap(uint256 amount, address receiver) private returns (uint256 amountOut) {
-        if (amount == 0) revert ZeroAmount();
-        if (receiver == address(0)) revert ZeroReceiver();
+        require(amount != 0, ZeroAmount());
+        require(receiver != address(0), ZeroReceiver());
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         /// @dev for native, msg.value is already in address(this).balance; for ERC20, balance updates after transferFrom.
@@ -256,14 +255,14 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         uint256 received;
 
         if (IS_NATIVE_UNDERLYING) {
-            if (msg.value != amount) revert InvalidMsgValue(amount, msg.value);
+            require(msg.value == amount, InvalidMsgValue(amount, msg.value));
             received = msg.value;
         } else {
-            if (msg.value != 0) revert InvalidMsgValue(0, msg.value);
+            require(msg.value == 0, InvalidMsgValue(0, msg.value));
             UNDERLYING_TOKEN.safeTransferFrom(msg.sender, address(this), amount);
             received = _underlyingBalance() - balanceBefore;
         }
-        if (received == 0) revert UnderlyingPullFailed();
+        require(received != 0, UnderlyingPullFailed());
 
         uint256 feeSurplus_ = $.feeSurplus;
         // Keep reward calculation aligned with pre-deposit liquidity.
@@ -278,8 +277,8 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
     /// @dev Internal unwrap implementation that burns zERC20 and transfers underlying.
     function _unwrap(uint256 amount, address receiver) private returns (uint256 amountOut) {
-        if (amount == 0) revert ZeroAmount();
-        if (receiver == address(0)) revert ZeroReceiver();
+        require(amount != 0, ZeroAmount());
+        require(receiver != address(0), ZeroReceiver());
 
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         uint256 feeAmount = _quoteUnwrapFee(amount, $);
@@ -288,11 +287,11 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         ZERC20_TOKEN.burn(msg.sender, amount);
         if (amountOut > 0) {
             if (IS_NATIVE_UNDERLYING) {
-                if (address(this).balance < amountOut) revert InsufficientLiquidity();
+                require(address(this).balance >= amountOut, InsufficientLiquidity());
                 (bool success,) = payable(receiver).call{value: amountOut}("");
-                if (!success) revert UnderlyingSendFailed();
+                require(success, UnderlyingSendFailed());
             } else {
-                if (UNDERLYING_TOKEN.balanceOf(address(this)) < amountOut) revert InsufficientLiquidity();
+                require(UNDERLYING_TOKEN.balanceOf(address(this)) >= amountOut, InsufficientLiquidity());
                 UNDERLYING_TOKEN.safeTransfer(receiver, amountOut);
             }
         }
@@ -305,7 +304,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
     receive() external payable nonReentrant {
-        if (!IS_NATIVE_UNDERLYING) revert NativeTokenNotSupported();
+        require(IS_NATIVE_UNDERLYING, NativeTokenNotSupported());
         _wrap(msg.value, msg.sender);
     }
 }

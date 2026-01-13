@@ -161,7 +161,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     }
 
     constructor(address endpoint) OAppUpgradeable(endpoint) {
-        if (endpoint == address(0)) revert InvalidEndpointCall();
+        require(endpoint != address(0), InvalidEndpointCall());
         _disableInitializers();
     }
 
@@ -184,13 +184,12 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         address singleWithdrawGlobalVerifier_,
         address singleWithdrawLocalVerifier_
     ) external initializer {
-        if (token_ == address(0)) revert ZeroToken();
-        if (
-            rootDecider_ == address(0) || withdrawGlobalDecider_ == address(0) || withdrawLocalDecider_ == address(0)
-                || singleWithdrawGlobalVerifier_ == address(0) || singleWithdrawLocalVerifier_ == address(0)
-        ) {
-            revert ZeroAddress();
-        }
+        require(token_ != address(0), ZeroToken());
+        require(
+            rootDecider_ != address(0) && withdrawGlobalDecider_ != address(0) && withdrawLocalDecider_ != address(0)
+                && singleWithdrawGlobalVerifier_ != address(0) && singleWithdrawLocalVerifier_ != address(0),
+            ZeroAddress()
+        );
 
         __Ownable_init(delegate);
         __OApp_init(delegate);
@@ -398,13 +397,11 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         VerifierStorage storage $ = _getVerifierStorage();
         uint64 index = $.latestProvedIndex;
         uint256 root = $.provedTransferRoots[index];
-        if (root == 0) revert NoProvedRoot();
+        require(root != 0, NoProvedRoot());
 
         bytes memory payload = abi.encode(root, index);
         MessagingFee memory quotedFee = _quote($.hubEid, payload, options, false);
-        if (msg.value < quotedFee.nativeFee) {
-            revert InsufficientMsgValue(quotedFee.nativeFee, msg.value);
-        }
+        require(msg.value >= quotedFee.nativeFee, InsufficientMsgValue(quotedFee.nativeFee, msg.value));
 
         MessagingFee memory fee = MessagingFee({nativeFee: msg.value, lzTokenFee: quotedFee.lzTokenFee});
         receipt = _lzSend($.hubEid, payload, options, fee, msg.sender);
@@ -479,13 +476,12 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         address newSingleWithdrawGlobalVerifier,
         address newSingleWithdrawLocalVerifier
     ) external onlyOwner {
-        if (
-            newRootDecider == address(0) || newWithdrawGlobalDecider == address(0)
-                || newWithdrawLocalDecider == address(0) || newSingleWithdrawGlobalVerifier == address(0)
-                || newSingleWithdrawLocalVerifier == address(0)
-        ) {
-            revert ZeroAddress();
-        }
+        require(
+            newRootDecider != address(0) && newWithdrawGlobalDecider != address(0)
+                && newWithdrawLocalDecider != address(0) && newSingleWithdrawGlobalVerifier != address(0)
+                && newSingleWithdrawLocalVerifier != address(0),
+            ZeroAddress()
+        );
         VerifierStorage storage $ = _getVerifierStorage();
         $.rootDecider = newRootDecider;
         $.withdrawGlobalDecider = newWithdrawGlobalDecider;

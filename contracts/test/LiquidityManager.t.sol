@@ -51,6 +51,16 @@ contract LiquidityManagerTest is Test {
         underlying.mint(ALICE, START_BALANCE);
     }
 
+    function testConstructorRevertsOnZeroUnderlyingToken() public {
+        vm.expectRevert(LiquidityManager.ZeroAddress.selector);
+        new LiquidityManager(address(0), address(token));
+    }
+
+    function testConstructorRevertsOnZeroZerc20() public {
+        vm.expectRevert(LiquidityManager.ZeroAddress.selector);
+        new LiquidityManager(address(underlying), address(0));
+    }
+
     function testInitializeRevertsOnDecimalMismatch() public {
         MintableERC20 usdc = new MintableERC20("USDC", "USDC", 6);
         LiquidityManager impl = new LiquidityManager(address(usdc), address(token));

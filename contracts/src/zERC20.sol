@@ -53,7 +53,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
 
     /// @notice Locks implementation contracts on deployment.
     constructor(address endpoint, uint8 decimals_) OFTCoreUpgradeable(decimals_, endpoint) {
-        if (endpoint == address(0)) revert InvalidEndpointCall();
+        require(endpoint != address(0), InvalidEndpointCall());
         TOKEN_DECIMALS = decimals_;
         _disableInitializers();
     }
@@ -63,7 +63,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @param symbol_ ERC20 symbol.
     /// @param initialOwner Account receiving ownership, LayerZero delegate permissions, and upgrade authority.
     function initialize(string memory name_, string memory symbol_, address initialOwner) external initializer {
-        if (initialOwner == address(0)) revert ZeroAddress();
+        require(initialOwner != address(0), ZeroAddress());
         __ERC20_init(name_, symbol_);
         __ERC20Permit_init(name_);
         __Ownable_init(initialOwner);
@@ -141,7 +141,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @param to Recipient mandated by the zero-knowledge proof (already hashed into the public inputs).
     /// @param value Mint amount corresponding to the delta proven in Verifier.teleport.
     function teleport(address to, uint256 value) external {
-        if (msg.sender != verifier()) revert OnlyVerifier();
+        require(msg.sender == verifier(), OnlyVerifier());
         Zerc20Storage storage $ = _getZerc20Storage();
         _mint(to, value);
         $.totalTeleported += value;
@@ -151,7 +151,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @dev Commits every transfer (including mint/burn) to the 248-bit SHA-256 hash chain described in the spec.
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
-        if (value > type(uint248).max) revert ValueTooLarge();
+        require(value <= type(uint248).max, ValueTooLarge());
         super._update(from, to, value);
         Zerc20Storage storage $ = _getZerc20Storage();
         $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);
@@ -166,7 +166,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @dev Prevents the zero address because the Verifier role is mandatory for teleport mints.
     /// @param newVerifier LayerZero-aware Verifier contract.
     function setVerifier(address newVerifier) external onlyOwner {
-        if (newVerifier == address(0)) revert ZeroAddress();
+        require(newVerifier != address(0), ZeroAddress());
         _getZerc20Storage().verifier = newVerifier;
         emit VerifierUpdated(newVerifier);
     }
@@ -183,7 +183,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @param to Recipient of the freshly minted zERC20.
     /// @param value Amount minted 1:1 with deposited liquidity.
     function mint(address to, uint256 value) external {
-        if (msg.sender != minter()) revert OnlyMinter();
+        require(msg.sender == minter(), OnlyMinter());
         _mint(to, value);
     }
 
@@ -191,7 +191,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @param from Holder whose balance is reduced to release the underlying asset.
     /// @param value Amount burned 1:1 with withdrawn liquidity.
     function burn(address from, uint256 value) external {
-        if (msg.sender != minter()) revert OnlyMinter();
+        require(msg.sender == minter(), OnlyMinter());
         _burn(from, value);
     }
 }

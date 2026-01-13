@@ -108,9 +108,9 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
 
     /// @notice Locks implementation contracts on deployment.
     constructor(address _liquidityManager, address _stargate, address _lzEndpoint) {
-        if (_liquidityManager == address(0)) revert ZeroAddress();
-        if (_stargate == address(0)) revert ZeroAddress();
-        if (_lzEndpoint == address(0)) revert ZeroAddress();
+        require(_liquidityManager != address(0), ZeroAddress());
+        require(_stargate != address(0), ZeroAddress());
+        require(_lzEndpoint != address(0), ZeroAddress());
         ILiquidityManager manager = ILiquidityManager(_liquidityManager);
         LIQUIDITY_MANAGER = _liquidityManager;
         STARGATE = _stargate;
@@ -118,7 +118,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         UNDERLYING_TOKEN = address(manager.underlyingToken());
         ZERC20_TOKEN = address(manager.zerc20());
         IS_NATIVE_UNDERLYING = UNDERLYING_TOKEN == NATIVE_TOKEN;
-        if (UNDERLYING_TOKEN == address(0) || ZERC20_TOKEN == address(0)) revert ZeroAddress();
+        require(UNDERLYING_TOKEN != address(0) && ZERC20_TOKEN != address(0), ZeroAddress());
         address stargateToken = IStargate(STARGATE).token();
         if (IS_NATIVE_UNDERLYING) {
             if (stargateToken != NATIVE_TOKEN && stargateToken != address(0)) {
@@ -136,7 +136,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         external
         initializer
     {
-        if (initialOwner == address(0)) revert ZeroAddress();
+        require(initialOwner != address(0), ZeroAddress());
         __Ownable_init(initialOwner);
     }
 
@@ -155,12 +155,12 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         nonReentrant
     {
         AdaptorStorage storage $ = _getAdaptorStorage();
-        if (msg.sender != LZ_ENDPOINT) revert InvalidComposeSender();
-        if (_from != ZERC20_TOKEN) revert InvalidComposeCaller();
+        require(msg.sender == LZ_ENDPOINT, InvalidComposeSender());
+        require(_from == ZERC20_TOKEN, InvalidComposeCaller());
 
         bytes32 composeFromBytes = OFTComposeMsgCodec.composeFrom(_message);
         address user = OFTComposeMsgCodec.bytes32ToAddress(composeFromBytes);
-        if (user == address(0)) revert ZeroAddress();
+        require(user != address(0), ZeroAddress());
         
         uint256 zerc20Amount = OFTComposeMsgCodec.amountLD(_message);
 
@@ -188,7 +188,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
     /// @param zerc20Amount Amount of zERC20 to unwrap.
     /// @param request Bridge configuration and minimum output expectations.
     function unwrapAndBridge(uint256 zerc20Amount, BridgeRequest calldata request) external payable nonReentrant {
-        if (zerc20Amount == 0) revert ZeroAmount();
+        require(zerc20Amount != 0, ZeroAmount());
         _validateBridgeRequest(request);
         address user = msg.sender;
         AdaptorStorage storage $ = _getAdaptorStorage();
@@ -205,7 +205,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
 
     /// @notice Withdraws previously deposited tokens from the adaptor.
     function withdraw(address token, uint256 amount) external nonReentrant {
-        if (amount == 0) revert ZeroAmount();
+        require(amount != 0, ZeroAmount());
         if (token == NATIVE_TOKEN) {
             if (IS_NATIVE_UNDERLYING) {
                 _debitCombinedNativeBalance(msg.sender, amount);
@@ -213,9 +213,9 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
                 _debitNativeBalance(msg.sender, amount);
             }
             (bool success,) = payable(msg.sender).call{value: amount}("");
-            if (!success) revert TransferFailed();
+            require(success, TransferFailed());
         } else if (token == UNDERLYING_TOKEN) {
-            if (IS_NATIVE_UNDERLYING) revert InvalidToken();
+            require(!IS_NATIVE_UNDERLYING, InvalidToken());
             _debitUnderlyingBalance(msg.sender, amount);
             IERC20(UNDERLYING_TOKEN).safeTransfer(msg.sender, amount);
         } else if (token == ZERC20_TOKEN) {
@@ -318,8 +318,8 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
     // ---------------------- Private functions --------------------
 
     function _validateBridgeRequest(BridgeRequest calldata request) private pure {
-        if (request.to == address(0)) revert ZeroAddress();
-        if (request.dstEid == 0) revert InvalidDstEid();
+        require(request.to != address(0), ZeroAddress());
+        require(request.dstEid != 0, InvalidDstEid());
     }
 
     function _unwrapAndBridge(address user, uint256 zerc20Amount, BridgeRequest memory request) private enableSelfCall {
@@ -391,14 +391,14 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
 
         // unwrap
         amountOut = ILiquidityManager(LIQUIDITY_MANAGER).unwrap(amount, address(this));
-        if (amountOut < amountMinOut) revert OutputTooLow(amountOut, amountMinOut);
+        require(amountOut >= amountMinOut, OutputTooLow(amountOut, amountMinOut));
 
         uint256 underlyingTokenBalanceAfter = _underlyingBalance();
         uint256 actualAmountOut = underlyingTokenBalanceAfter - underlyingTokenBalanceBefore;
-        if (actualAmountOut == 0) revert ZeroAmount();
-        if (actualAmountOut < amountMinOut) revert OutputTooLow(actualAmountOut, amountMinOut);
+        require(actualAmountOut != 0, ZeroAmount());
+        require(actualAmountOut >= amountMinOut, OutputTooLow(actualAmountOut, amountMinOut));
         // Disallow balance increases unrelated to unwrap (e.g. rebases/airdrops).
-        if (actualAmountOut > amountOut) revert AmountMismatch(amountOut, actualAmountOut);
+        require(actualAmountOut <= amountOut, AmountMismatch(amountOut, actualAmountOut));
 
         amountOut = actualAmountOut;
         // add underlying token balance
@@ -453,7 +453,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         uint256 totalSpent = nativeBalanceBefore - nativeBalanceAfter;
         actualNativeFee = totalSpent;
         if (IS_NATIVE_UNDERLYING) {
-            if (totalSpent < amount) revert AmountMismatch(amount, totalSpent);
+            require(totalSpent >= amount, AmountMismatch(amount, totalSpent));
             actualNativeFee = totalSpent - amount;
         }
     }
@@ -486,14 +486,14 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
     function _debitNativeBalance(address user, uint256 nativeBridgeFee) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userNativeBalance = $.nativeBalances[user];
-        if (userNativeBalance < nativeBridgeFee) revert InsufficientNativeBalance();
+        require(userNativeBalance >= nativeBridgeFee, InsufficientNativeBalance());
         $.nativeBalances[user] = userNativeBalance - nativeBridgeFee;
     }
 
     function _debitUnderlyingBalance(address user, uint256 amount) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
-        if (userUnderlyingBalance < amount) revert InsufficientUnderlyingBalance();
+        require(userUnderlyingBalance >= amount, InsufficientUnderlyingBalance());
         $.underlyingTokenBalances[user] = userUnderlyingBalance - amount;
     }
 
@@ -501,7 +501,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userUnderlyingBalance = $.underlyingTokenBalances[user];
         uint256 userNativeBalance = $.nativeBalances[user];
-        if (userUnderlyingBalance + userNativeBalance < amount) revert InsufficientNativeBalance();
+        require(userUnderlyingBalance + userNativeBalance >= amount, InsufficientNativeBalance());
         if (userUnderlyingBalance >= amount) {
             $.underlyingTokenBalances[user] = userUnderlyingBalance - amount;
             return;
@@ -513,7 +513,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
     function _debitZerc20Balance(address user, uint256 amount) private {
         AdaptorStorage storage $ = _getAdaptorStorage();
         uint256 userBalance = $.zerc20Balances[user];
-        if (userBalance < amount) revert InsufficientZerc20Balance();
+        require(userBalance >= amount, InsufficientZerc20Balance());
         $.zerc20Balances[user] = userBalance - amount;
     }
 
