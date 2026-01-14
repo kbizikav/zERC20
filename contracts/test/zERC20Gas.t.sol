@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.33;
 
 import {TestHelperOz5, EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {zERC20} from "../src/zERC20.sol";
@@ -7,7 +7,7 @@ import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /// @notice Compares transfer gas costs between the custom zERC20 and a baseline ERC20.
-contract zERC20GasTest is TestHelperOz5 {
+contract ZERC20GasTest is TestHelperOz5 {
     zERC20 internal zToken;
     SimpleERC20 internal standardToken;
     EndpointV2 internal endpoint;

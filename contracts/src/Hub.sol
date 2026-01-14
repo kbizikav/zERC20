@@ -82,6 +82,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
 
     function _getHubStorage() private pure returns (HubStorage storage $) {
         bytes32 slot = HUB_STORAGE_SLOT;
+        // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := slot
         }

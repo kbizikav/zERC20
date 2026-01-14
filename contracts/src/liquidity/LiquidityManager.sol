@@ -73,7 +73,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     /// @notice Initializes the liquidity manager with fee params and admin roles.
     /// @param _feeParams Incentive curve parameters for rewards and fees.
     /// @param initialOwner Account receiving admin and fee-manager roles.
-    function initialize(IncentiveLib.FeeParams memory _feeParams, address initialOwner) external initializer {
+    function initialize(IncentiveLib.FeeParams calldata _feeParams, address initialOwner) external initializer {
         require(initialOwner != address(0), ZeroAddress());
         if (IS_NATIVE_UNDERLYING) {
             require(IERC20Metadata(address(ZERC20_TOKEN)).decimals() == 18, DecimalMismatch());
@@ -211,6 +211,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     /// @dev Returns the storage pointer for ERC-7201 layout.
     function _getLiquidityManagerStorage() private pure returns (LiquidityManagerStorage storage $) {
         bytes32 slot = LIQUIDITY_MANAGER_STORAGE_SLOT;
+        // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := slot
         }
@@ -304,6 +305,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     /// @dev Restricts upgrade authorization to admins.
     function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
 
+    // solhint-disable-next-line no-complex-fallback
     receive() external payable nonReentrant {
         require(IS_NATIVE_UNDERLYING, NativeTokenNotSupported());
         _wrap(msg.value, msg.sender);

@@ -1,0 +1,16 @@
+{
+  "extends": "solhint:recommended",
+  "rules": {
+    "import-path-check": "off",
+    "use-natspec": "off",
+    "func-visibility": ["warn", {"ignoreConstructors": true}],
+    "gas-strict-inequalities": "off",
+    "gas-indexed-events": "off",
+    "no-console": "off",
+    "one-contract-per-file": "off",
+    "no-empty-blocks": "off",
+    "var-name-mixedcase": "off",
+    "func-name-mixedcase": "off",
+    "gas-small-strings": "off"
+  }
+}

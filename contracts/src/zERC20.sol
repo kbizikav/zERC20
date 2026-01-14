@@ -15,6 +15,7 @@ import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/o
 /// @notice Upgradeable ERC20 token that feeds the zk circuits by enforcing 248-bit transfer values,
 ///         hashing `(from, to, value)` triples into a SHA-256 chain, and gating mint/burn roles for the Verifier and Minter flows.
 ///         Also implements the LayerZero V2 OFT interface for omnichain transfers.
+// solhint-disable-next-line contract-name-capwords
 contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, IzERC20 {
     uint8 private immutable TOKEN_DECIMALS;
 
@@ -32,6 +33,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
 
     function _getZerc20Storage() private pure returns (Zerc20Storage storage $) {
         bytes32 slot = ZERC20_STORAGE_SLOT;
+        // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := slot
         }
@@ -62,7 +64,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     /// @param name_ ERC20 name.
     /// @param symbol_ ERC20 symbol.
     /// @param initialOwner Account receiving ownership, LayerZero delegate permissions, and upgrade authority.
-    function initialize(string memory name_, string memory symbol_, address initialOwner) external initializer {
+    function initialize(string calldata name_, string calldata symbol_, address initialOwner) external initializer {
         require(initialOwner != address(0), ZeroAddress());
         __ERC20_init(name_, symbol_);
         __ERC20Permit_init(name_);
@@ -155,7 +157,8 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         super._update(from, to, value);
         Zerc20Storage storage $ = _getZerc20Storage();
         $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);
-        emit IndexedTransfer($.index++, from, to, value);
+        emit IndexedTransfer($.index, from, to, value);
+        ++$.index;
     }
 
     function nonces(address owner) public view override(IERC20Permit, ERC20PermitUpgradeable) returns (uint256) {

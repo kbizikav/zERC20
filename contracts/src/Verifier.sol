@@ -67,7 +67,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     error InsufficientMsgValue(uint256 required, uint256 provided);
 
     // Root of an empty IncrementalMerkleTree at TRANSFER_TREE_HEIGHT (see zkp test).
-    uint256 constant INITIAL_TRANSFER_ROOT =
+    uint256 private constant INITIAL_TRANSFER_ROOT =
         8687547638004116013653730449839507042090717944911454416140763808366589487233;
 
     // ERC-7201 slot for namespace "zerc20.storage.verifier".
@@ -95,6 +95,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
 
     function _getVerifierStorage() private pure returns (VerifierStorage storage $) {
         bytes32 slot = VERIFIER_STORAGE_SLOT;
+        // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := slot
         }

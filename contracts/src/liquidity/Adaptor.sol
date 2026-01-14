@@ -46,6 +46,8 @@ contract Adaptor is
     error InsufficientZerc20Balance();
     error InsufficientUnderlyingBalance();
     error InsufficientNativeBalance();
+    error UnexpectedAmountSent();
+    error ZeroAmountSent();
 
     uint128 private constant RETURN_LZ_RECEIVE_GAS = 500_000;
     uint8 private constant NATIVE_DECIMALS = 18;
@@ -72,6 +74,7 @@ contract Adaptor is
 
     function _getAdaptorStorage() private pure returns (AdaptorStorage storage $) {
         bytes32 slot = ADAPTOR_STORAGE_SLOT;
+        // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := slot
         }
@@ -236,7 +239,7 @@ contract Adaptor is
     /// @param amount zERC20 amount to unwrap.
     /// @param request Bridge instructions used to derive messaging fees.
     /// @return quote Fee breakdown (unwrap fee, native bridge fee, token bridge fee).
-    function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote) {
+    function quoteFee(uint256 amount, BridgeRequest calldata request) external view returns (FeeQuote memory quote) {
         uint256 tokenUnwrapFee = ILiquidityManager(LIQUIDITY_MANAGER).quoteUnwrapFee(amount);
         if (tokenUnwrapFee >= amount) {
             // Prevent underflow and short-circuit when unwrap fee consumes the amount.
@@ -336,18 +339,9 @@ contract Adaptor is
             return;
         }
 
-        // check min output
-        if (zerc20Amount <= quote.tokenUnwrapFee + quote.tokenBridgeFee) {
-            try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {}
-            catch (bytes memory revertData) {
-                emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount, revertData);
-            }
-            return;
-        }
-
-        uint256 amountOutput = zerc20Amount - quote.tokenUnwrapFee - quote.tokenBridgeFee;
-        if (amountOutput < request.minAmountOut) {
-            // send back zERC20 to user on slippage exceed
+        bool shouldReturnZerc20 = _shouldReturnZerc20ToUser(zerc20Amount, quote, request);
+        // If output is too low or fees exceed amount, return zERC20 to user
+        if (shouldReturnZerc20) {
             try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {}
             catch (bytes memory revertData) {
                 emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount, revertData);
@@ -481,7 +475,14 @@ contract Adaptor is
         _debitNativeBalance(user, nativeFee);
 
         uint256 nativeBalanceBefore = address(this).balance;
-        IzERC20(ZERC20_TOKEN).send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
+        /* solhint-disable check-send-result */
+        (, OFTReceipt memory oftReceipt) =
+            IzERC20(ZERC20_TOKEN).send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
+        /* solhint-enable check-send-result */
+        // Defensive check: ensure OFT send returned a valid amount.
+        // Allow for dust removal but prevent zero or excessive amounts.
+        require(oftReceipt.amountSentLD > 0, ZeroAmountSent());
+        require(oftReceipt.amountSentLD <= amount, UnexpectedAmountSent());
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 actualNativeFee = nativeBalanceBefore - nativeBalanceAfter;
         _applyNativeFeeRefund(user, nativeFee, actualNativeFee);
@@ -548,6 +549,21 @@ contract Adaptor is
         dustlessAmount = amount - (amount % conversionRate);
     }
 
+    function _shouldReturnZerc20ToUser(uint256 zerc20Amount, FeeQuote memory quote, BridgeRequest memory request)
+        private
+        pure
+        returns (bool)
+    {
+        if (zerc20Amount <= quote.tokenUnwrapFee + quote.tokenBridgeFee) {
+            return true;
+        }
+        uint256 amountOutput = zerc20Amount - quote.tokenUnwrapFee - quote.tokenBridgeFee;
+        if (amountOutput < request.minAmountOut) {
+            return true;
+        }
+        return false;
+    }
+
     function _underlyingBalance() private view returns (uint256) {
         if (IS_NATIVE_UNDERLYING) {
             return address(this).balance;
@@ -556,7 +572,9 @@ contract Adaptor is
     }
 
     /// @notice Accepts native transfers; Stargate/OFT refunds are handled via balance deltas.
+    // solhint-disable-next-line no-complex-fallback
     receive() external payable {
+        // Track user native deposits while allowing refunds from protocol contracts
         AdaptorStorage storage $ = _getAdaptorStorage();
         if (msg.sender == LIQUIDITY_MANAGER || msg.sender == LZ_ENDPOINT || msg.sender == address(STARGATE)) {
             return;

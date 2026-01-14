@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.33;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Hub} from "../src/Hub.sol";
@@ -103,7 +103,7 @@ contract HubTest is TestHelperOz5 {
         uint256 packetCount;
         for (uint256 i = 0; i < logs.length; ++i) {
             if (logs[i].topics[0] == PACKET_SENT_SIG) {
-                packetCount++;
+                ++packetCount;
                 (bytes memory encodedPacket, bytes memory emittedOptions, address sendLibrary) =
                     abi.decode(logs[i].data, (bytes, bytes, address));
                 assertEq(sendLibrary, address(sendLib), "send library");

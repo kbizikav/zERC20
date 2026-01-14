@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.33;
+
+/* solhint-disable gas-custom-errors */
 
 import {Test} from "forge-std/Test.sol";
 import {PoseidonAggregationLib} from "../../src/utils/PoseidonAggregationLib.sol";
@@ -11,9 +13,9 @@ import {
 } from "../../src/utils/PoseidonAggregationConfig.sol";
 
 contract PoseidonAggregationLibTest is Test {
-    uint256 constant TREE_HEIGHT = POSEIDON_TREE_HEIGHT;
-    uint256 constant ZERO_HASH_COUNT = POSEIDON_ZERO_HASH_COUNT;
-    uint256 constant MAX_LEAVES = POSEIDON_MAX_LEAVES;
+    uint256 private constant TREE_HEIGHT = POSEIDON_TREE_HEIGHT;
+    uint256 private constant ZERO_HASH_COUNT = POSEIDON_ZERO_HASH_COUNT;
+    uint256 private constant MAX_LEAVES = POSEIDON_MAX_LEAVES;
 
     function testComputeAggregationRootMatchesManual() public pure {
         uint256[ZERO_HASH_COUNT] memory zeroHash = PoseidonAggregationLib.generateZeroHashes();

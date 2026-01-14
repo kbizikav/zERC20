@@ -60,3 +60,13 @@ jobs:
           forge test -vvv
         working-directory: contracts
         id: test
+
+      - name: Install npm dependencies
+        run: npm ci
+        working-directory: contracts
+
+      - name: Run solhint
+        run: |
+          yes | npm run lint
+        id: solhint
+        working-directory: contracts

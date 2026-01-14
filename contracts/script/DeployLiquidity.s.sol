@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.33;
 
 import {console2} from "forge-std/console2.sol";
 import {Adaptor} from "../src/liquidity/Adaptor.sol";
@@ -44,6 +44,7 @@ contract DeployLiquidity is DeterministicDeployer {
     error LiquidityTargetRequired();
     error LzEndpointRequired();
 
+    // solhint-disable-next-line function-max-lines
     function run() external {
         Config memory cfg = _loadConfig();
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
@@ -154,13 +155,13 @@ contract DeployLiquidity is DeterministicDeployer {
         uint256 digits;
 
         while (temp != 0) {
-            digits++;
+            ++digits;
             temp /= 10;
         }
 
         bytes memory buffer = new bytes(digits);
         while (value != 0) {
-            digits -= 1;
+            --digits;
             buffer[digits] = bytes1(uint8(48 + (value % 10)));
             value /= 10;
         }
