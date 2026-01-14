@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.33;
 
 import {Test} from "forge-std/Test.sol";
 import {IncentiveLib} from "../src/libraries/IncentiveLib.sol";
 
 contract IncentiveLibHarness {
     function quoteWrapReward(
-        IncentiveLib.FeeParams memory params,
+        IncentiveLib.FeeParams calldata params,
         uint256 liquidity,
         uint256 feeSurplus,
         uint256 amount
@@ -14,7 +14,7 @@ contract IncentiveLibHarness {
         return IncentiveLib.quoteWrapReward(params, liquidity, feeSurplus, amount);
     }
 
-    function quoteUnwrapFee(IncentiveLib.FeeParams memory params, uint256 liquidity, uint256 amount)
+    function quoteUnwrapFee(IncentiveLib.FeeParams calldata params, uint256 liquidity, uint256 amount)
         external
         pure
         returns (uint256)

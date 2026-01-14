@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.33;
 
 import {Test} from "forge-std/Test.sol";
 import {SelfCall} from "../../src/utils/SelfCall.sol";
@@ -11,7 +11,7 @@ contract SelfCallHarness is SelfCall {
 
     /// @notice Function with enableSelfCall that calls an onlySelfCall function
     function executeWithSelfCall() external enableSelfCall {
-        counter++;
+        ++counter;
         this.protectedFunction();
     }
 

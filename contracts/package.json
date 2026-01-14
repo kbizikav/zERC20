@@ -1,0 +1,29 @@
+{
+  "name": "zerc20-contract",
+  "version": "1.0.0",
+  "description": "Upgradeable ERC20 token with zero-knowledge proof verification, SHA-256 hash chain commitment, and LayerZero V2 OFT integration for omnichain transfers",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "lint": "solhint 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol'",
+    "lint:fix": "solhint 'src/**/*.sol' 'script/**/*.sol' 'test/**/*.sol' --fix"
+  },
+  "keywords": [
+    "solidity",
+    "ethereum",
+    "erc20",
+    "zero-knowledge",
+    "zk-proof",
+    "layerzero",
+    "oft",
+    "omnichain",
+    "upgradeable",
+    "foundry"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "solhint": "6.0.1"
+  }
+}

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.33;
 
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";

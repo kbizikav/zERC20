@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Unlicense
-pragma solidity ^0.8.20;
+pragma solidity ^0.8.24;
 
 import {PoseidonT3} from "poseidon-solidity/contracts/PoseidonT3.sol";
 import {POSEIDON_TREE_HEIGHT, POSEIDON_ZERO_HASH_COUNT, POSEIDON_MAX_LEAVES} from "./PoseidonAggregationConfig.sol";
@@ -9,9 +9,9 @@ import {POSEIDON_TREE_HEIGHT, POSEIDON_ZERO_HASH_COUNT, POSEIDON_MAX_LEAVES} fro
  * @notice Utility helpers for building Poseidon-based binary aggregation trees.
  */
 library PoseidonAggregationLib {
-    uint256 constant TREE_HEIGHT = POSEIDON_TREE_HEIGHT;
-    uint256 constant ZERO_HASH_COUNT = POSEIDON_ZERO_HASH_COUNT;
-    uint256 constant MAX_LEAVES = POSEIDON_MAX_LEAVES;
+    uint256 private constant TREE_HEIGHT = POSEIDON_TREE_HEIGHT;
+    uint256 private constant ZERO_HASH_COUNT = POSEIDON_ZERO_HASH_COUNT;
+    uint256 private constant MAX_LEAVES = POSEIDON_MAX_LEAVES;
 
     /**
      * @notice Computes the aggregation root for the provided leaves, padding with zeros up to TREE_HEIGHT.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.20;
+pragma solidity 0.8.33;
 
 import {Test} from "forge-std/Test.sol";
 import {
@@ -214,7 +214,7 @@ contract ZERC20Test is Test {
         uint256 value = 1 ether;
         uint256 deadline = block.timestamp;
         if (deadline > 0) {
-            deadline -= 1;
+            --deadline;
         }
 
         bytes32 structHash = keccak256(abi.encode(PERMIT_TYPEHASH, owner, BOB, value, token.nonces(owner), deadline));
