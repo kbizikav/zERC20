@@ -9,6 +9,6 @@
 @openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.6.0-rc.0/
 @openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.6.0-rc.0/
 forge-std/=dependencies/forge-std-1.14.0/src
-@layerzerolabs/lz-address-book/=dependencies/lz-address-book-1.0.0/
+lz-address-book/=dependencies/lz-address-book-1.0.0/src
 poseidon-solidity/contracts=dependencies/poseidon-solidity-0.0.5/
 solidity-bytes-utils/=dependencies/gnsps-solidity-bytes-utils-0.8.4/
