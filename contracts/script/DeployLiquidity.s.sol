@@ -44,6 +44,7 @@ contract DeployLiquidity is DeterministicDeployer {
     error LiquidityTargetRequired();
     error LzEndpointRequired();
 
+    // solhint-disable-next-line function-max-lines
     function run() external {
         Config memory cfg = _loadConfig();
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");

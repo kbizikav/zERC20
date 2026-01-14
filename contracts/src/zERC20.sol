@@ -158,7 +158,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         Zerc20Storage storage $ = _getZerc20Storage();
         $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);
         emit IndexedTransfer($.index, from, to, value);
-        $.index++;
+        ++$.index;
     }
 
     function nonces(address owner) public view override(IERC20Permit, ERC20PermitUpgradeable) returns (uint256) {

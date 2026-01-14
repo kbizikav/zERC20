@@ -328,6 +328,7 @@ contract VerifierTest is TestHelperOz5 {
 
     function _bytesToBytes32(bytes memory data) internal pure returns (bytes32 value) {
         assertEq(data.length, 32, "guid length mismatch");
+        // solhint-disable-next-line no-inline-assembly
         assembly {
             value := mload(add(data, 32))
         }

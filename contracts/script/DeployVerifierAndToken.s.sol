@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.33;
 
+/* solhint-disable gas-custom-errors */
+
 import {console2} from "forge-std/console2.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {Verifier} from "../src/Verifier.sol";
@@ -60,7 +62,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         cfg.owner = vm.envOr("TOKEN_OWNER", address(0));
         uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
         require(decimals <= type(uint8).max, "tokenDecimals too large");
-        require(decimals >= 6, "tokenDecimals below sharedDecimals");
+        require(decimals >= 6, "decimals must be >= 6");
         // casting to uint8 is safe because decimals is bounds-checked above
         // forge-lint: disable-next-line(unsafe-typecast)
         cfg.tokenDecimals = uint8(decimals);

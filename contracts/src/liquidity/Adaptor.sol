@@ -545,12 +545,16 @@ contract Adaptor is
         dustlessAmount = amount - (amount % conversionRate);
     }
 
-    function _isMinoutput(uint256 zerc20Amount, FeeQuote memory quote, BridgeRequest memory request) private pure returns(bool) {
-        if(zerc20Amount <= quote.tokenUnwrapFee + quote.tokenBridgeFee){
+    function _isMinoutput(uint256 zerc20Amount, FeeQuote memory quote, BridgeRequest memory request)
+        private
+        pure
+        returns (bool)
+    {
+        if (zerc20Amount <= quote.tokenUnwrapFee + quote.tokenBridgeFee) {
             return true;
         }
         uint256 amountOutput = zerc20Amount - quote.tokenUnwrapFee - quote.tokenBridgeFee;
-        if(amountOutput < request.minAmountOut){
+        if (amountOutput < request.minAmountOut) {
             return true;
         }
         return false;

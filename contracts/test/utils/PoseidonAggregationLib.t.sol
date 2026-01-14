@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.33;
 
+/* solhint-disable gas-custom-errors */
+
 import {Test} from "forge-std/Test.sol";
 import {PoseidonAggregationLib} from "../../src/utils/PoseidonAggregationLib.sol";
 import {PoseidonT3} from "poseidon-solidity/contracts/PoseidonT3.sol";
