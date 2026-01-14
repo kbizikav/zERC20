@@ -9,7 +9,7 @@ Prerequisites
 - Soldeer-managed dependencies installed via `forge soldeer install`
 - RPC endpoints for each network you intend to deploy to (for example Base Sepolia, Arbitrum Sepolia, Optimism Sepolia)
 - A funded deployer key with permission to manage LayerZero configuration for the selected networks
-- Endpoint IDs (EIDs) and LayerZero endpoint contract addresses for every chain you plan to connect
+- Endpoint IDs (EIDs) for every chain you plan to connect
 
 Environment Variables
 ---------------------
@@ -23,17 +23,17 @@ The scripts consume environment variables through `vm.env*` helpers. Place the v
 
 ### Hub deployment (`DeployHub`)
 - `HUB_EID` (uint32): LayerZero endpoint ID for the chain hosting the Hub (for reference/logging)
-- `LZ_ENDPOINT` (address): LayerZero endpoint contract on that chain
 - `HUB_DELEGATE` (address, optional): Account that will own the Hub and manage LayerZero config; defaults to the broadcaster wallet if omitted
+  - The LayerZero endpoint address is resolved automatically from `lz-address-book` using `block.chainid` (ensure the chain ID is supported there).
 
 ### Verifier and token deployment (`DeployVerifierAndToken`)
 - `TOKEN_NAME` (string): ERC20 token name
 - `TOKEN_SYMBOL` (string): ERC20 token symbol
 - `HUB_EID` (uint32): Hub endpoint identifier the verifier should target
-- `LZ_ENDPOINT` (address): LayerZero endpoint contract on the verifier chain
 - `VERIFIER_DELEGATE` (address, optional): Account that can update verifier LayerZero config; defaults to the broadcaster wallet if omitted
 - `TOKEN_OWNER` (address, optional): Account that will own the token; defaults to the broadcaster wallet if omitted
 - `TOKEN_DECIMALS` (uint, optional): Token decimals; defaults to `18` and must be at least `6`
+  - The LayerZero endpoint address is resolved automatically from `lz-address-book` using `block.chainid` (ensure the chain ID is supported there).
 
 ### Sample `.env`
 ```bash
@@ -43,13 +43,11 @@ VERIFIER_RPC=https://optimism-sepolia.example
 DEPLOY_SALT=my-optional-salt
 
 HUB_EID=40245
-LZ_ENDPOINT=0x6EDCE65403992e310A62460808c4b910D972f10f
 # HUB_DELEGATE=0xYourDelegate # optional; defaults to PRIVATE_KEY holder
 
 TOKEN_NAME=zUSD
 TOKEN_SYMBOL=zUSD
 HUB_EID=40245
-# LZ_ENDPOINT already set above
 # VERIFIER_DELEGATE=0xYourVerifierDelegate # optional; defaults to PRIVATE_KEY holder
 # LIQUIDITY_MANAGER=0x0000000000000000000000000000000000000000
 
@@ -114,8 +112,8 @@ Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
 - `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `0`, which disables curve-based incentives.
 - `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
 - `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
-- `LZ_ENDPOINT` (address): LayerZero endpoint used to validate `lzCompose` callers (set explicitly when deploying the Adaptor).
-- Defaults can also be sourced from `config/chain-config.json` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence.
+- Defaults can also be sourced from `config/chain-config.json` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence for those values.
+  - The LayerZero endpoint address is resolved automatically from `lz-address-book` using `block.chainid` (ensure the chain ID is supported there).
 
 Example:
 ```bash
