@@ -83,6 +83,12 @@ checksum = "6ea735f8169866fc99a3f4caf6ac17b910caed3b521713c75fc4c3c2b3db5bec"
 integrity = "6172bc8002602c9cca3e14416d2f4e158ea76021101c45ee414e6524e9e4f445"
 
 [[dependencies]]
+name = "lz-address-book"
+version = "1.0.0"
+git = "https://github.com/LayerZero-Labs/lz-address-book.git"
+rev = "ea3e016155d678fa3e14f1af67f13447c927a5b3"
+
+[[dependencies]]
 name = "poseidon-solidity"
 version = "0.0.5"
 url = "https://soldeer-revisions.s3.amazonaws.com/poseidon-solidity/0_0_5_04-07-2024_06:57:44_contracts.zip"
