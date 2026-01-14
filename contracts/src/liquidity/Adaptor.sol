@@ -47,6 +47,7 @@ contract Adaptor is
     error InsufficientUnderlyingBalance();
     error InsufficientNativeBalance();
     error UnexpectedAmountSent();
+    error ZeroAmountSent();
 
     uint128 private constant RETURN_LZ_RECEIVE_GAS = 500_000;
     uint8 private constant NATIVE_DECIMALS = 18;
@@ -338,9 +339,9 @@ contract Adaptor is
             return;
         }
 
-        bool isMIn = _isMinoutput(zerc20Amount, quote, request);
-        // check min output
-        if (isMIn) {
+        bool shouldReturnZerc20 = _shouldReturnZerc20ToUser(zerc20Amount, quote, request);
+        // If output is too low or fees exceed amount, return zERC20 to user
+        if (shouldReturnZerc20) {
             try this.bridgeZerc20Self(request.dstEid, user, request.to, zerc20Amount) {}
             catch (bytes memory revertData) {
                 emit BridgeZerc20Failed(user, request.to, request.dstEid, zerc20Amount, revertData);
@@ -478,10 +479,10 @@ contract Adaptor is
         (, OFTReceipt memory oftReceipt) =
             IzERC20(ZERC20_TOKEN).send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
         /* solhint-enable check-send-result */
-        // Defensive check: ensure OFT send returned expected amount.
-        // In normal operation, amountSentLD should equal the requested amount.
-        // This protects against future LayerZero/OFT implementation changes.
-        require(oftReceipt.amountSentLD == amount, UnexpectedAmountSent());
+        // Defensive check: ensure OFT send returned a valid amount.
+        // Allow for dust removal but prevent zero or excessive amounts.
+        require(oftReceipt.amountSentLD > 0, ZeroAmountSent());
+        require(oftReceipt.amountSentLD <= amount, UnexpectedAmountSent());
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 actualNativeFee = nativeBalanceBefore - nativeBalanceAfter;
         _applyNativeFeeRefund(user, nativeFee, actualNativeFee);
@@ -548,7 +549,7 @@ contract Adaptor is
         dustlessAmount = amount - (amount % conversionRate);
     }
 
-    function _isMinoutput(uint256 zerc20Amount, FeeQuote memory quote, BridgeRequest memory request)
+    function _shouldReturnZerc20ToUser(uint256 zerc20Amount, FeeQuote memory quote, BridgeRequest memory request)
         private
         pure
         returns (bool)
