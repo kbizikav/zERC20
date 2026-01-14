@@ -69,3 +69,4 @@ jobs:
         run: |
           yes | npm run lint:fix
         id: solhint
+        working-directory: contracts
