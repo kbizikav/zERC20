@@ -4,7 +4,10 @@ pragma solidity 0.8.33;
 import {Script} from "forge-std/Script.sol";
 import {console2} from "forge-std/console2.sol";
 import {LZAddressContext} from "lz-address-book/helpers/LZAddressContext.sol";
-import {IMessageLibManager, SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
+import {
+    IMessageLibManager,
+    SetConfigParam
+} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
 import {UlnConfig} from "@layerzerolabs/lz-evm-messagelib-v2/contracts/uln/UlnBase.sol";
 
 /// @notice Sets LayerZero ULN config (confirmations + DVNs) for a single oapp + remote EID.
@@ -29,29 +32,86 @@ contract SetDvnConfig is Script {
     uint32 internal constant CONFIG_TYPE_ULN = 2;
 
     function run() external {
-        address oapp = vm.envAddress("OAPP_ADDRESS");
-        uint32 remoteEid = _toUint32(vm.envUint("REMOTE_EID"));
-        uint64 confirmations = _toUint64(vm.envUint("CONFIRMATIONS"));
-        string[] memory requiredNames = vm.envOr("REQUIRED_DVN_NAMES", ",", new string[](0));
-        string[] memory optionalNames = vm.envOr("OPTIONAL_DVN_NAMES", ",", new string[](0));
-        uint256 optionalThresholdRaw = vm.envOr("OPTIONAL_DVN_THRESHOLD", uint256(0));
+        (
+            address oapp,
+            uint32 remoteEid,
+            uint64 confirmations,
+            string[] memory requiredNames,
+            string[] memory optionalNames,
+            uint256 optionalThresholdRaw
+        ) = _loadEnv();
 
         if (oapp == address(0)) revert EmptyOApp();
 
-        LZAddressContext ctx = new LZAddressContext();
-        ctx.setChainByChainId(block.chainid);
-        address endpoint = ctx.getEndpointV2();
-        address sendLib = ctx.getSendUln302();
-        address receiveLib = ctx.getReceiveUln302();
+        (LZAddressContext ctx, address endpoint, address sendLib, address receiveLib) = _initContext();
+        (address[] memory requiredDvns, address[] memory optionalDvns) =
+            _resolveAndSortDvns(ctx, requiredNames, optionalNames);
+        (uint8 requiredCount, uint8 optionalCount, uint8 optionalThreshold) =
+            _validateDvns(requiredDvns.length, optionalDvns.length, optionalThresholdRaw);
 
-        address[] memory requiredDvns = _resolveDvns(ctx, requiredNames);
-        address[] memory optionalDvns = _resolveDvns(ctx, optionalNames);
+        UlnConfig memory config = _buildUlnConfig(
+            confirmations,
+            requiredCount,
+            optionalCount,
+            optionalThreshold,
+            requiredDvns,
+            optionalDvns
+        );
+
+        _setConfig(oapp, remoteEid, endpoint, sendLib, receiveLib, config);
+        _logConfig(oapp, remoteEid, confirmations, sendLib, receiveLib, requiredDvns, optionalDvns, optionalThreshold);
+    }
+
+    function _loadEnv()
+        private
+        view
+        returns (
+            address oapp,
+            uint32 remoteEid,
+            uint64 confirmations,
+            string[] memory requiredNames,
+            string[] memory optionalNames,
+            uint256 optionalThresholdRaw
+        )
+    {
+        oapp = vm.envAddress("OAPP_ADDRESS");
+        remoteEid = _toUint32(vm.envUint("REMOTE_EID"));
+        confirmations = _toUint64(vm.envUint("CONFIRMATIONS"));
+        requiredNames = vm.envOr("REQUIRED_DVN_NAMES", ",", new string[](0));
+        optionalNames = vm.envOr("OPTIONAL_DVN_NAMES", ",", new string[](0));
+        optionalThresholdRaw = vm.envOr("OPTIONAL_DVN_THRESHOLD", uint256(0));
+    }
+
+    function _initContext()
+        private
+        returns (LZAddressContext ctx, address endpoint, address sendLib, address receiveLib)
+    {
+        ctx = new LZAddressContext();
+        ctx.setChainByChainId(block.chainid);
+        endpoint = ctx.getEndpointV2();
+        sendLib = ctx.getSendUln302();
+        receiveLib = ctx.getReceiveUln302();
+    }
+
+    function _resolveAndSortDvns(LZAddressContext ctx, string[] memory requiredNames, string[] memory optionalNames)
+        private
+        view
+        returns (address[] memory requiredDvns, address[] memory optionalDvns)
+    {
+        requiredDvns = _resolveDvns(ctx, requiredNames);
+        optionalDvns = _resolveDvns(ctx, optionalNames);
         _sortAddresses(requiredDvns);
         _sortAddresses(optionalDvns);
+    }
 
-        uint8 requiredCount = _toUint8(requiredDvns.length);
-        uint8 optionalCount = _toUint8(optionalDvns.length);
-        uint8 optionalThreshold = _toUint8(optionalThresholdRaw);
+    function _validateDvns(uint256 requiredLen, uint256 optionalLen, uint256 optionalThresholdRaw)
+        private
+        pure
+        returns (uint8 requiredCount, uint8 optionalCount, uint8 optionalThreshold)
+    {
+        requiredCount = _toUint8(requiredLen);
+        optionalCount = _toUint8(optionalLen);
+        optionalThreshold = _toUint8(optionalThresholdRaw);
 
         if (requiredCount == 0 && optionalThreshold == 0) {
             revert DVNConfigEmpty();
@@ -65,8 +125,17 @@ contract SetDvnConfig is Script {
         if (optionalThreshold > optionalCount) {
             revert OptionalDVNThresholdTooHigh(optionalThreshold, optionalCount);
         }
+    }
 
-        UlnConfig memory config = UlnConfig({
+    function _buildUlnConfig(
+        uint64 confirmations,
+        uint8 requiredCount,
+        uint8 optionalCount,
+        uint8 optionalThreshold,
+        address[] memory requiredDvns,
+        address[] memory optionalDvns
+    ) private pure returns (UlnConfig memory) {
+        return UlnConfig({
             confirmations: confirmations,
             requiredDVNCount: requiredCount,
             optionalDVNCount: optionalCount,
@@ -74,7 +143,16 @@ contract SetDvnConfig is Script {
             requiredDVNs: requiredDvns,
             optionalDVNs: optionalDvns
         });
+    }
 
+    function _setConfig(
+        address oapp,
+        uint32 remoteEid,
+        address endpoint,
+        address sendLib,
+        address receiveLib,
+        UlnConfig memory config
+    ) private {
         SetConfigParam[] memory params = new SetConfigParam[](1);
         params[0] = SetConfigParam({eid: remoteEid, configType: CONFIG_TYPE_ULN, config: abi.encode(config)});
 
@@ -83,7 +161,18 @@ contract SetDvnConfig is Script {
         IMessageLibManager(endpoint).setConfig(oapp, sendLib, params);
         IMessageLibManager(endpoint).setConfig(oapp, receiveLib, params);
         vm.stopBroadcast();
+    }
 
+    function _logConfig(
+        address oapp,
+        uint32 remoteEid,
+        uint64 confirmations,
+        address sendLib,
+        address receiveLib,
+        address[] memory requiredDvns,
+        address[] memory optionalDvns,
+        uint8 optionalThreshold
+    ) private pure {
         console2.log("Set ULN config for oapp", oapp);
         console2.log("  remote eid", uint256(remoteEid));
         console2.log("  confirmations", uint256(confirmations));
@@ -91,7 +180,7 @@ contract SetDvnConfig is Script {
         console2.log("  receive lib", receiveLib);
         _logDvns("required dvns", requiredDvns);
         _logDvns("optional dvns", optionalDvns);
-        if (optionalCount > 0) {
+        if (optionalDvns.length > 0) {
             console2.log("  optional threshold", uint256(optionalThreshold));
         }
     }
@@ -121,7 +210,7 @@ contract SetDvnConfig is Script {
         }
     }
 
-    function _logDvns(string memory label, address[] memory dvns) private {
+    function _logDvns(string memory label, address[] memory dvns) private pure {
         console2.log(" ", label, dvns.length);
         for (uint256 i = 0; i < dvns.length; ++i) {
             console2.log("   -", dvns[i]);
@@ -132,6 +221,8 @@ contract SetDvnConfig is Script {
         if (value > type(uint8).max) {
             revert Uint8Overflow(value);
         }
+        // casting to uint8 is safe because we check the upper bound above
+        // forge-lint: disable-next-line(unsafe-typecast)
         return uint8(value);
     }
 
@@ -139,6 +230,8 @@ contract SetDvnConfig is Script {
         if (value > type(uint32).max) {
             revert Uint32Overflow(value);
         }
+        // casting to uint32 is safe because we check the upper bound above
+        // forge-lint: disable-next-line(unsafe-typecast)
         return uint32(value);
     }
 
@@ -146,6 +239,8 @@ contract SetDvnConfig is Script {
         if (value > type(uint64).max) {
             revert Uint64Overflow(value);
         }
+        // casting to uint64 is safe because we check the upper bound above
+        // forge-lint: disable-next-line(unsafe-typecast)
         return uint64(value);
     }
 }
