@@ -22,6 +22,7 @@ import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/o
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SelfCall} from "../src/utils/SelfCall.sol";
 
 contract MintableToken is ERC20 {
     constructor() ERC20("Underlying", "UND") {}
@@ -596,6 +597,38 @@ contract AdaptorTest is TestHelperOz5 {
         vm.expectRevert(Adaptor.ZeroAddress.selector);
         vm.prank(address(endpoint));
         adaptor.lzCompose(address(zerc20), bytes32(0), message, address(0), bytes(""));
+    }
+
+    // ==================== SelfCall Tests ====================
+
+    function testUnwrapSelfRevertsWhenCalledExternally() public {
+        uint256 amount = 10 ether;
+
+        vm.expectRevert(SelfCall.OnlySelfCall.selector);
+        adaptor.unwrapSelf(USER, amount, amount - 1);
+    }
+
+    function testBridgeUnderlyingTokenSelfRevertsWhenCalledExternally() public {
+        uint256 amount = 10 ether;
+
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.expectRevert(SelfCall.OnlySelfCall.selector);
+        adaptor.bridgeUnderlyingTokenSelf(USER, amount, 0, request);
+    }
+
+    function testBridgeZerc20SelfRevertsWhenCalledExternally() public {
+        uint256 amount = 10 ether;
+
+        vm.expectRevert(SelfCall.OnlySelfCall.selector);
+        adaptor.bridgeZerc20Self(DST_EID, USER, DESTINATION, amount);
     }
 
     function testLzComposeEmitsDecodeFailureAndAllowsWithdraw() public {
