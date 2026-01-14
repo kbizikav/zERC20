@@ -79,7 +79,8 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
             require(IERC20Metadata(address(ZERC20_TOKEN)).decimals() == 18, DecimalMismatch());
         } else {
             require(
-                IERC20Metadata(address(ZERC20_TOKEN)).decimals() == IERC20Metadata(address(UNDERLYING_TOKEN)).decimals(),
+                IERC20Metadata(address(ZERC20_TOKEN)).decimals()
+                    == IERC20Metadata(address(UNDERLYING_TOKEN)).decimals(),
                 DecimalMismatch()
             );
         }

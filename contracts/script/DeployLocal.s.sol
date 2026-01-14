@@ -100,11 +100,7 @@ contract DeployLocal is DeterministicDeployer {
         tokenDecimals = uint8(decimals);
     }
 
-    function _loadNetworkConfig()
-        private
-        view
-        returns (uint32 hubEid, uint32 verifierEid, uint64 verifierChainId)
-    {
+    function _loadNetworkConfig() private view returns (uint32 hubEid, uint32 verifierEid, uint64 verifierChainId) {
         hubEid = uint32(vm.envOr("HUB_EID", uint256(101)));
         verifierEid = uint32(vm.envOr("VERIFIER_EID", uint256(102)));
         verifierChainId = uint64(vm.envOr("VERIFIER_CHAIN_ID", uint256(block.chainid)));

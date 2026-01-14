@@ -1,0 +1,59 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+env:
+  FOUNDRY_PROFILE: ci
+
+jobs:
+  check:
+    name: Foundry project
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
+      - name: Show Forge version
+        run: |
+          forge --version
+
+      - name: Run Forge fmt
+        run: |
+          forge fmt --check
+        working-directory: contracts
+        id: fmt
+
+      - name: Run Forge build
+        run: |
+          forge build --sizes
+        working-directory: contracts
+        id: build
+
+      - name: Run Forge lint
+        run: |
+          forge lint src test script
+        working-directory: contracts
+        id: lint
+
+      - name: Run Forge tests
+        run: |
+          forge test -vvv
+        working-directory: contracts
+        id: test
