@@ -478,6 +478,9 @@ contract Adaptor is
         (, OFTReceipt memory oftReceipt) =
             IzERC20(ZERC20_TOKEN).send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
         /* solhint-enable check-send-result */
+        // Defensive check: ensure OFT send returned expected amount.
+        // In normal operation, amountSentLD should equal the requested amount.
+        // This protects against future LayerZero/OFT implementation changes.
         require(oftReceipt.amountSentLD == amount, UnexpectedAmountSent());
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 actualNativeFee = nativeBalanceBefore - nativeBalanceAfter;
