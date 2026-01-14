@@ -85,8 +85,7 @@ contract DeployLiquidity is DeterministicDeployer {
             Adaptor adaptorImplementation = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(
                 address(manager), cfg.stargate, cfg.lzEndpoint
             );
-            bytes memory adaptorInitData =
-                abi.encodeCall(Adaptor.initialize, (cfg.owner));
+            bytes memory adaptorInitData = abi.encodeCall(Adaptor.initialize, (cfg.owner));
             Adaptor adaptor = Adaptor(
                 payable(_deployProxyAndInit(baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData))
             );

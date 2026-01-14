@@ -8,6 +8,7 @@ interface IAdaptor {
         uint256 nativeBridgeFee;
         uint256 tokenBridgeFee;
     }
+
     /// @notice Parameters for forwarding unwrapped tokens through Stargate.
     struct BridgeRequest {
         uint32 dstEid;
@@ -35,14 +36,12 @@ interface IAdaptor {
     function withdraw(address token, uint256 amount) external;
     function quoteFee(uint256 amount, BridgeRequest memory request) external view returns (FeeQuote memory quote);
     function decodeBridgeRequest(bytes calldata _message) external pure returns (BridgeRequest memory request);
-    function unwrapSelf(address user, uint256 amount, uint256 amountMinOut)
-        external
-        returns (uint256 amountOut);
+    function unwrapSelf(address user, uint256 amount, uint256 amountMinOut) external returns (uint256 amountOut);
     function bridgeUnderlyingTokenSelf(
         address user,
         uint256 amount,
         uint256 nativeBridgeFee,
         BridgeRequest calldata request
     ) external returns (uint256 amountOut);
-    function bridgeZerc20Self(uint32 dstEid, address user, address to, uint256 amount) external ;
+    function bridgeZerc20Self(uint32 dstEid, address user, address to, uint256 amount) external;
 }

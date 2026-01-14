@@ -20,7 +20,14 @@ import {SelfCall} from "../utils/SelfCall.sol";
 
 /// @title Stargate adaptor for zERC20 unwrap + bridge flows.
 /// @notice Receives zERC20 (typically via OFT), unwraps through LiquidityManager, and forwards the underlying token through Stargate.
-contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransient, SelfCall, IAdaptor, ILayerZeroComposer {
+contract Adaptor is
+    UUPSUpgradeable,
+    OwnableUpgradeable,
+    ReentrancyGuardTransient,
+    SelfCall,
+    IAdaptor,
+    ILayerZeroComposer
+{
     using OFTMsgCodec for address;
     using OptionsBuilder for bytes;
     using SafeERC20 for IERC20;
@@ -132,10 +139,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
 
     /// @notice Initializes the adaptor with its dependencies and owner.
     /// @param initialOwner Account receiving upgrade authority.
-    function initialize(address initialOwner)
-        external
-        initializer
-    {
+    function initialize(address initialOwner) external initializer {
         require(initialOwner != address(0), ZeroAddress());
         __Ownable_init(initialOwner);
     }
@@ -161,7 +165,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
         bytes32 composeFromBytes = OFTComposeMsgCodec.composeFrom(_message);
         address user = OFTComposeMsgCodec.bytes32ToAddress(composeFromBytes);
         require(user != address(0), ZeroAddress());
-        
+
         uint256 zerc20Amount = OFTComposeMsgCodec.amountLD(_message);
 
         // record zERC20 & native balance
@@ -447,7 +451,8 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
             sendValue += amount;
         }
         uint256 nativeBalanceBefore = address(this).balance;
-        (, OFTReceipt memory oftReceipt,) = IStargate(STARGATE).sendToken{value: sendValue}(sendParam, fee, address(this));
+        (, OFTReceipt memory oftReceipt,) =
+            IStargate(STARGATE).sendToken{value: sendValue}(sendParam, fee, address(this));
         amountOut = oftReceipt.amountReceivedLD;
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 totalSpent = nativeBalanceBefore - nativeBalanceAfter;
@@ -535,8 +540,7 @@ contract Adaptor is UUPSUpgradeable, OwnableUpgradeable, ReentrancyGuardTransien
 
     function _removeStargateDust(uint256 amount) private view returns (uint256 dustlessAmount) {
         uint8 sharedDecimals = IStargate(STARGATE).sharedDecimals();
-        uint8 localDecimals =
-            IS_NATIVE_UNDERLYING ? NATIVE_DECIMALS : IERC20Metadata(UNDERLYING_TOKEN).decimals();
+        uint8 localDecimals = IS_NATIVE_UNDERLYING ? NATIVE_DECIMALS : IERC20Metadata(UNDERLYING_TOKEN).decimals();
         if (localDecimals < sharedDecimals) {
             return 0;
         }
