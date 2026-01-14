@@ -172,6 +172,23 @@ The helper contracts convert the hub address into the required 32-byte format au
 
 `SetHubPeers` registers new EIDs and calls `updateToken` for existing ones, so you can re-run the script safely as deployments change. Ensure each comma-separated list (`VERIFIER_ADDRESSES`, `VERIFIER_EIDS`, `TOKEN_ADDRESSES`, `TOKEN_CHAIN_IDS`) uses the same ordering so the data lines up per verifier.
 
+Configuring LayerZero DVN / ULN Config
+--------------------------------------
+Use `script/SetDvnConfig.s.sol` to set ULN confirmations + DVN lists per OApp/remote EID. The helper `run_set_dvn_config.py` reads a per-chain JSON file plus `tokens.json` and derives all routes automatically (verifier<->hub + token<->token).
+
+```bash
+# Copy and edit the template
+cp config/dvn-config.example.json config/dvn-config.json
+
+# Run derived routes (defaults to --broadcast)
+./run_set_dvn_config.py -- --broadcast -vv
+```
+
+The config file points at the `tokens.json` you already use (via `tokens_file`) and supplies two policies per token chain:
+`verifier_hub` and `token`. The runner applies `verifier_hub` to both directions between hub and each verifier, and applies `token` to every outgoing token->token route from that chain.
+
+DVN names must match the lz-address-book registry (see `getAvailableDVNs()` in `LZAddressContext` for discovery).
+
 Troubleshooting Tips
 --------------------
 - Add `--resume` when rerunning a script that previously failed due to gas or fee settings
