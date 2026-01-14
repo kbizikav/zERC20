@@ -70,3 +70,19 @@ jobs:
           yes | npm run lint
         id: solhint
         working-directory: contracts
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Slither
+        run: |
+          pip install slither-analyzer
+        working-directory: contracts
+
+      - name: Run Slither
+        run: |
+          slither src/ --filter-paths "verifiers|dependencies" --exclude msg-value-loop,assembly,low-level-calls,naming-convention
+        id: slither
+        working-directory: contracts
