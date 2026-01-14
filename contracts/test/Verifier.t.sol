@@ -7,6 +7,7 @@ import {
     MessagingReceipt
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
@@ -44,6 +45,51 @@ contract VerifierTest is TestHelperOz5 {
 
         verifier = _deployVerifier(address(this));
         verifier.setPeer(HUB_EID, _toBytes32(address(this)));
+    }
+
+    function testConstructorRevertsOnZeroEndpoint() public {
+        vm.expectRevert(IOAppCore.InvalidEndpointCall.selector);
+        new Verifier(address(0));
+    }
+
+    function testInitializeRevertsOnZeroToken() public {
+        Verifier impl = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                address(0), // zero token
+                HUB_EID,
+                address(this),
+                ROOT_DECIDER,
+                WITHDRAW_GLOBAL_DECIDER,
+                WITHDRAW_LOCAL_DECIDER,
+                SINGLE_WITHDRAW_GLOBAL_VERIFIER,
+                SINGLE_WITHDRAW_LOCAL_VERIFIER
+            )
+        );
+
+        vm.expectRevert(Verifier.ZeroToken.selector);
+        new ERC1967Proxy(address(impl), initData);
+    }
+
+    function testInitializeRevertsOnZeroDeciders() public {
+        Verifier impl = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                TOKEN,
+                HUB_EID,
+                address(this),
+                address(0), // zero root decider
+                WITHDRAW_GLOBAL_DECIDER,
+                WITHDRAW_LOCAL_DECIDER,
+                SINGLE_WITHDRAW_GLOBAL_VERIFIER,
+                SINGLE_WITHDRAW_LOCAL_VERIFIER
+            )
+        );
+
+        vm.expectRevert(Verifier.ZeroAddress.selector);
+        new ERC1967Proxy(address(impl), initData);
     }
 
     function testConstructorInitializes() public view {

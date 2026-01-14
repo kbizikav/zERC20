@@ -5,6 +5,7 @@ import {Vm} from "forge-std/Vm.sol";
 import {Hub} from "../src/Hub.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
+import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {
     TestHelperOz5,
     EndpointV2,
@@ -43,6 +44,11 @@ contract HubTest is TestHelperOz5 {
 
         hub.registerToken(Hub.TokenInfo({chainId: 101, eid: REMOTE_EID_A, verifier: address(0x1), token: address(0x2)}));
         hub.registerToken(Hub.TokenInfo({chainId: 202, eid: REMOTE_EID_B, verifier: address(0x3), token: address(0x4)}));
+    }
+
+    function testConstructorRevertsOnZeroEndpoint() public {
+        vm.expectRevert(IOAppCore.InvalidEndpointCall.selector);
+        new Hub(address(0));
     }
 
     function testQuoteBroadcastAggregatesFees() public view {

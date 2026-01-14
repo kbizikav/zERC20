@@ -26,7 +26,7 @@ abstract contract SelfCall {
     }
 
     function _enableSelfCallBefore() internal {
-        if (SELF_CALL_STORAGE.asBoolean().tload()) revert SelfCallAlreadyEnabled();
+        require(!SELF_CALL_STORAGE.asBoolean().tload(), SelfCallAlreadyEnabled());
         SELF_CALL_STORAGE.asBoolean().tstore(true);
     }
 
@@ -35,7 +35,7 @@ abstract contract SelfCall {
     }
 
     function _onlySelfCall() internal view {
-        if (msg.sender != address(this)) revert OnlySelfCall();
-        if (!SELF_CALL_STORAGE.asBoolean().tload()) revert SelfCallNotAllowed();
+        require(msg.sender == address(this), OnlySelfCall());
+        require(SELF_CALL_STORAGE.asBoolean().tload(), SelfCallNotAllowed());
     }
 }

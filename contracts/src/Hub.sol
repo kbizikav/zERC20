@@ -92,7 +92,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// -----------------------------------------------------------------------
 
     constructor(address endpoint) OAppUpgradeable(endpoint) {
-        if (endpoint == address(0)) revert InvalidEndpointCall();
+        require(endpoint != address(0), InvalidEndpointCall());
         _disableInitializers();
     }
 
@@ -152,12 +152,12 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// @dev Mirrors the owner-gated registration flow defined for the aggregation hub.
     /// @param info Struct containing chainId, endpoint ID, verifier, and token metadata.
     function registerToken(TokenInfo calldata info) external onlyOwner {
-        if (info.verifier == address(0)) revert ZeroVerifier();
-        if (info.token == address(0)) revert ZeroToken();
-        if (info.chainId == 0) revert InvalidChainId();
+        require(info.verifier != address(0), ZeroVerifier());
+        require(info.token != address(0), ZeroToken());
+        require(info.chainId != 0, InvalidChainId());
         HubStorage storage $ = _getHubStorage();
-        if ($.eidToPosition[info.eid] != 0) revert TokenAlreadyRegistered(info.eid);
-        if ($.transferRoots.length >= MAX_LEAVES) revert HubCapacityReached();
+        require($.eidToPosition[info.eid] == 0, TokenAlreadyRegistered(info.eid));
+        require($.transferRoots.length < MAX_LEAVES, HubCapacityReached());
 
         uint256 index = $.transferRoots.length;
         $.transferRoots.push(0);
@@ -171,13 +171,13 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// @notice Refreshes the verifier/token metadata for an already-registered endpoint without reordering leaves.
     /// @param info Updated metadata sharing the same `eid` slot.
     function updateToken(TokenInfo calldata info) external onlyOwner {
-        if (info.verifier == address(0)) revert ZeroVerifier();
-        if (info.token == address(0)) revert ZeroToken();
-        if (info.chainId == 0) revert InvalidChainId();
+        require(info.verifier != address(0), ZeroVerifier());
+        require(info.token != address(0), ZeroToken());
+        require(info.chainId != 0, InvalidChainId());
 
         HubStorage storage $ = _getHubStorage();
         uint256 pos = $.eidToPosition[info.eid];
-        if (pos == 0) revert TokenNotRegistered(info.eid);
+        require(pos != 0, TokenNotRegistered(info.eid));
 
         uint256 index = pos - 1;
         $.tokenInfos[index] = info;
@@ -190,13 +190,13 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// @param targetEids LayerZero endpoint IDs that must receive the global root.
     /// @param lzOptions LayerZero execution parameters (gas, native drop, etc.).
     function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
-        if (targetEids.length == 0) revert EmptyTargetEids();
+        require(targetEids.length != 0, EmptyTargetEids());
         BroadcastContext memory ctx = _computeBroadcastContext();
         bytes memory options = lzOptions;
         MessagingFee[] memory fees = new MessagingFee[](targetEids.length);
         uint256 totalNativeFee = _quoteBroadcast(targetEids, ctx.payload, options, fees);
 
-        if (msg.value < totalNativeFee) revert NativeFeeMismatch(msg.value, totalNativeFee);
+        require(msg.value >= totalNativeFee, NativeFeeMismatch(msg.value, totalNativeFee));
         uint256 refund = msg.value - totalNativeFee;
 
         _getHubStorage().aggSeq = ctx.nextAggSeq;
@@ -207,7 +207,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
 
         if (refund != 0) {
             (bool success,) = msg.sender.call{value: refund}("");
-            if (!success) revert FeeRefundFailed(refund);
+            require(success, FeeRefundFailed(refund));
         }
 
         emit AggregationRootUpdated(ctx.aggregationRoot, ctx.nextAggSeq, ctx.snapshot, ctx.transferTreeIndicesSnapshot);
@@ -222,7 +222,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         view
         returns (uint256 totalNativeFee)
     {
-        if (targetEids.length == 0) revert EmptyTargetEids();
+        require(targetEids.length != 0, EmptyTargetEids());
         bytes memory options = lzOptions;
         bytes memory dummyPayload = abi.encode(uint256(0), 1);
         totalNativeFee = _quoteBroadcast(targetEids, dummyPayload, options, new MessagingFee[](targetEids.length));
@@ -296,9 +296,9 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         uint256 len = targetEids.length;
         for (uint256 i = 0; i < len; ++i) {
             uint32 eid = targetEids[i];
-            if ($.eidToPosition[eid] == 0) revert TokenNotRegistered(eid);
+            require($.eidToPosition[eid] != 0, TokenNotRegistered(eid));
             MessagingFee memory fee = _quote(eid, payload, options, false);
-            if (fee.lzTokenFee != 0) revert LayerZeroTokenFeeUnsupported(eid, fee.lzTokenFee);
+            require(fee.lzTokenFee == 0, LayerZeroTokenFeeUnsupported(eid, fee.lzTokenFee));
             fees[i] = fee;
             totalNativeFee += fee.nativeFee;
         }
@@ -315,9 +315,9 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     {
         HubStorage storage $ = _getHubStorage();
         uint256 pos = $.eidToPosition[origin.srcEid];
-        if (pos == 0) revert TokenNotRegistered(origin.srcEid);
+        require(pos != 0, TokenNotRegistered(origin.srcEid));
 
-        if (payload.length != TRANSFER_PAYLOAD_LENGTH) revert InvalidPayloadLength(payload.length);
+        require(payload.length == TRANSFER_PAYLOAD_LENGTH, InvalidPayloadLength(payload.length));
 
         (uint256 transferRoot, uint64 transferTreeIndex) = abi.decode(payload, (uint256, uint64));
         uint256 index = pos - 1;
@@ -331,7 +331,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     }
 
     function _payNative(uint256 _nativeFee) internal override returns (uint256 nativeFee) {
-        if (msg.value < _nativeFee) revert NotEnoughNative(msg.value);
+        require(msg.value >= _nativeFee, NotEnoughNative(msg.value));
         return _nativeFee;
     }
 }

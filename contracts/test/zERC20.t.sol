@@ -5,6 +5,7 @@ import {Test} from "forge-std/Test.sol";
 import {
     EndpointV2Mock as EndpointV2
 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
+import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {ShaHashChainLib} from "../src/utils/ShaHashChainLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -82,6 +83,19 @@ contract ZERC20Test is Test {
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return ZERC20Harness(address(proxy));
+    }
+
+    function testConstructorRevertsOnZeroEndpoint() public {
+        vm.expectRevert(IOAppCore.InvalidEndpointCall.selector);
+        new zERC20(address(0), 18);
+    }
+
+    function testInitializeRevertsOnZeroOwner() public {
+        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18);
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(0)));
+
+        vm.expectRevert(zERC20.ZeroAddress.selector);
+        new ERC1967Proxy(address(impl), initData);
     }
 
     function testHashChainMatchesZkpVector() public pure {
