@@ -31,66 +31,91 @@ contract SetDvnConfig is Script {
 
     uint32 internal constant CONFIG_TYPE_ULN = 2;
 
+    struct EnvConfig {
+        address oapp;
+        uint32 remoteEid;
+        uint64 confirmations;
+        string[] requiredNames;
+        string[] optionalNames;
+        uint256 optionalThresholdRaw;
+    }
+
+    struct LzContext {
+        LZAddressContext ctx;
+        address endpoint;
+        address sendLib;
+        address receiveLib;
+    }
+
+    struct DvnConfig {
+        address[] requiredDvns;
+        address[] optionalDvns;
+        uint8 requiredCount;
+        uint8 optionalCount;
+        uint8 optionalThreshold;
+    }
+
     function run() external {
-        (
-            address oapp,
-            uint32 remoteEid,
-            uint64 confirmations,
-            string[] memory requiredNames,
-            string[] memory optionalNames,
-            uint256 optionalThresholdRaw
-        ) = _loadEnv();
+        EnvConfig memory env = _loadEnv();
 
-        if (oapp == address(0)) revert EmptyOApp();
+        if (env.oapp == address(0)) revert EmptyOApp();
 
-        (LZAddressContext ctx, address endpoint, address sendLib, address receiveLib) = _initContext();
-        (address[] memory requiredDvns, address[] memory optionalDvns) =
-            _resolveAndSortDvns(ctx, requiredNames, optionalNames);
-        (uint8 requiredCount, uint8 optionalCount, uint8 optionalThreshold) =
-            _validateDvns(requiredDvns.length, optionalDvns.length, optionalThresholdRaw);
+        LzContext memory lz = _initContext();
+        DvnConfig memory dvn =
+            _resolveAndValidateDvns(lz.ctx, env.requiredNames, env.optionalNames, env.optionalThresholdRaw);
 
+        _applyConfig(env, lz, dvn);
+    }
+
+    function _loadEnv() private view returns (EnvConfig memory env) {
+        env.oapp = vm.envAddress("OAPP_ADDRESS");
+        env.remoteEid = _toUint32(vm.envUint("REMOTE_EID"));
+        env.confirmations = _toUint64(vm.envUint("CONFIRMATIONS"));
+        env.requiredNames = vm.envOr("REQUIRED_DVN_NAMES", ",", new string[](0));
+        env.optionalNames = vm.envOr("OPTIONAL_DVN_NAMES", ",", new string[](0));
+        env.optionalThresholdRaw = vm.envOr("OPTIONAL_DVN_THRESHOLD", uint256(0));
+    }
+
+    function _initContext() private returns (LzContext memory lz) {
+        lz.ctx = new LZAddressContext();
+        lz.ctx.setChainByChainId(block.chainid);
+        lz.endpoint = lz.ctx.getEndpointV2();
+        lz.sendLib = lz.ctx.getSendUln302();
+        lz.receiveLib = lz.ctx.getReceiveUln302();
+    }
+
+    function _resolveAndValidateDvns(
+        LZAddressContext ctx,
+        string[] memory requiredNames,
+        string[] memory optionalNames,
+        uint256 optionalThresholdRaw
+    ) private view returns (DvnConfig memory dvn) {
+        (dvn.requiredDvns, dvn.optionalDvns) = _resolveAndSortDvns(ctx, requiredNames, optionalNames);
+        (dvn.requiredCount, dvn.optionalCount, dvn.optionalThreshold) =
+            _validateDvns(dvn.requiredDvns.length, dvn.optionalDvns.length, optionalThresholdRaw);
+    }
+
+    function _applyConfig(EnvConfig memory env, LzContext memory lz, DvnConfig memory dvn) private {
         UlnConfig memory config = _buildUlnConfig(
-            confirmations,
-            requiredCount,
-            optionalCount,
-            optionalThreshold,
-            requiredDvns,
-            optionalDvns
+            env.confirmations,
+            dvn.requiredCount,
+            dvn.optionalCount,
+            dvn.optionalThreshold,
+            dvn.requiredDvns,
+            dvn.optionalDvns
         );
 
-        _setConfig(oapp, remoteEid, endpoint, sendLib, receiveLib, config);
-        _logConfig(oapp, remoteEid, confirmations, sendLib, receiveLib, requiredDvns, optionalDvns, optionalThreshold);
-    }
-
-    function _loadEnv()
-        private
-        view
-        returns (
-            address oapp,
-            uint32 remoteEid,
-            uint64 confirmations,
-            string[] memory requiredNames,
-            string[] memory optionalNames,
-            uint256 optionalThresholdRaw
-        )
-    {
-        oapp = vm.envAddress("OAPP_ADDRESS");
-        remoteEid = _toUint32(vm.envUint("REMOTE_EID"));
-        confirmations = _toUint64(vm.envUint("CONFIRMATIONS"));
-        requiredNames = vm.envOr("REQUIRED_DVN_NAMES", ",", new string[](0));
-        optionalNames = vm.envOr("OPTIONAL_DVN_NAMES", ",", new string[](0));
-        optionalThresholdRaw = vm.envOr("OPTIONAL_DVN_THRESHOLD", uint256(0));
-    }
-
-    function _initContext()
-        private
-        returns (LZAddressContext ctx, address endpoint, address sendLib, address receiveLib)
-    {
-        ctx = new LZAddressContext();
-        ctx.setChainByChainId(block.chainid);
-        endpoint = ctx.getEndpointV2();
-        sendLib = ctx.getSendUln302();
-        receiveLib = ctx.getReceiveUln302();
+        _setConfig(env.oapp, env.remoteEid, lz.endpoint, lz.sendLib, lz.receiveLib, config);
+        _logConfig(
+            env.oapp,
+            env.remoteEid,
+            env.confirmations,
+            lz.sendLib,
+            lz.receiveLib,
+            dvn.requiredDvns,
+            dvn.optionalDvns,
+            dvn.optionalThreshold
+        );
     }
 
     function _resolveAndSortDvns(LZAddressContext ctx, string[] memory requiredNames, string[] memory optionalNames)
