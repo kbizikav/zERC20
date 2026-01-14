@@ -646,7 +646,8 @@ async fn main() -> Result<()> {
         Some(hub) => {
             let provider = build_provider(&hub.rpc_urls)
                 .with_context(|| "failed to construct provider for hub".to_string())?;
-            let contract = HubContract::new(provider, hub.hub_address);
+            let contract =
+                HubContract::new(provider, hub.hub_address).with_legacy_tx(hub.legacy_tx);
 
             let (mut target_eids, layout) = resolve_target_eids(&contract, &tokens).await?;
             target_eids.sort_unstable();

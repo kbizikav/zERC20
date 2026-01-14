@@ -141,7 +141,7 @@ pub fn build_verifier(entry: &TokenEntry) -> Result<VerifierContract> {
 
 pub fn build_hub(entry: &HubEntry) -> Result<HubContract> {
     let provider = entry.provider()?;
-    Ok(HubContract::new(provider, entry.hub_address))
+    Ok(HubContract::new(provider, entry.hub_address).with_legacy_tx(entry.legacy_tx))
 }
 
 pub fn build_liquidity_manager(entry: &TokenEntry) -> Result<LiquidityManagerContract> {

@@ -20,6 +20,7 @@ export interface HubEntry {
   hubAddress: string;
   chainId: bigint;
   rpcUrls: string[];
+  legacyTx: boolean;
 }
 
 export interface TokensFile {
@@ -189,6 +190,7 @@ export function normalizeTokensFile(file: TokensFile): TokensFile {
       hubAddress: toHexAddress(getStringField(record, ['hubAddress', 'hub_address'], 'hub.hubAddress')),
       chainId: parseBigInt(getValueField<MaybeString>(record, ['chainId', 'chain_id'], 'hub.chainId'), 'hub.chainId'),
       rpcUrls: normalizeRpcUrls(getValueField<unknown>(record, ['rpcUrls', 'rpc_urls'], 'hub.rpcUrls'), 'hub'),
+      legacyTx: getOptionalBooleanField(record, ['legacyTx', 'legacy_tx'], 'hub.legacyTx') ?? false,
     };
   }
 

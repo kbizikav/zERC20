@@ -50,6 +50,8 @@ pub struct HubEntry {
     pub layerzero_endpoint: Option<Address>,
     #[serde(default)]
     pub rpc_urls: Vec<String>,
+    #[serde(default, alias = "legacyTx")]
+    pub legacy_tx: bool,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]

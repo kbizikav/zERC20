@@ -551,6 +551,7 @@ interface RawHubEntry {
   hub_address: string;
   chain_id: NumericValue;
   rpc_urls: string[];
+  legacy_tx: boolean;
 }
 
 interface RawTokenEntry {
@@ -630,6 +631,7 @@ function serializeHubEntry(entry: HubEntryConfig): RawHubEntry {
     hub_address: normalizeHex(entry.hubAddress),
     chain_id: entry.chainId,
     rpc_urls: copyRpcUrls(entry.rpcUrls, 'hub.rpcUrls'),
+    legacy_tx: entry.legacyTx ?? false,
   };
 }
 
