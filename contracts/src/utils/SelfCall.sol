@@ -4,7 +4,8 @@ pragma solidity 0.8.33;
 import {TransientSlot} from "@openzeppelin/contracts/utils/TransientSlot.sol";
 
 abstract contract SelfCall {
-    using TransientSlot for *;
+    using TransientSlot for bytes32;
+    using TransientSlot for TransientSlot.BooleanSlot;
 
     error OnlySelfCall();
     error SelfCallAlreadyEnabled();
