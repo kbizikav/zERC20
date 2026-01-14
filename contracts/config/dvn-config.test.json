@@ -43,5 +43,13 @@
         "optional_threshold": 0
       }
     }
+  },
+  "hub": {
+    "verifier_hub": {
+      "confirmations": 10,
+      "required_dvns": ["LayerZero Labs", "Nethermind"],
+      "optional_dvns": [],
+      "optional_threshold": 0
+    }
   }
 }

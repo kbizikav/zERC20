@@ -191,7 +191,7 @@ def parse_policy(entry: Any, label: str) -> DvnPolicy:
     )
 
 
-def parse_dvn_config(config_path: Path) -> tuple[Path, dict[str, ChainPolicies]]:
+def parse_dvn_config(config_path: Path) -> tuple[Path, dict[str, ChainPolicies], DvnPolicy | None]:
     try:
         raw = json.loads(config_path.read_text())
     except FileNotFoundError as exc:
@@ -234,7 +234,19 @@ def parse_dvn_config(config_path: Path) -> tuple[Path, dict[str, ChainPolicies]]
 
         chains[label] = ChainPolicies(label=label, verifier_hub=verifier_policy, token=token_policy)
 
-    return tokens_path, chains
+    hub_policy = None
+    hub_raw = raw.get("hub")
+    if hub_raw is not None:
+        if not isinstance(hub_raw, dict):
+            raise ConfigError("hub must be an object")
+        hub_entry = hub_raw.get("verifier_hub")
+        if hub_entry is None:
+            hub_entry = hub_raw.get("verifierHub")
+        if hub_entry is None:
+            raise ConfigError("hub missing verifier_hub config")
+        hub_policy = parse_policy(hub_entry, "hub verifier_hub")
+
+    return tokens_path, chains, hub_policy
 
 
 def parse_tokens(tokens_path: Path) -> tuple[HubConfig, list[TokenConfig]]:
@@ -345,17 +357,21 @@ def apply_config(
     oapp: str,
     remote_eid: str,
     policy: DvnPolicy,
+    target_lib: str | None = None,
 ) -> None:
     print(f"Setting DVN config for {label} via {rpc_url}")
+    env_overrides = {
+        "OAPP_ADDRESS": oapp,
+        "REMOTE_EID": remote_eid,
+        **policy_env(policy),
+    }
+    if target_lib:
+        env_overrides["TARGET_LIB"] = target_lib
     run_forge(
         target="SetDvnConfig",
         rpc_url=rpc_url,
         forge_args=forge_args,
-        env_overrides={
-            "OAPP_ADDRESS": oapp,
-            "REMOTE_EID": remote_eid,
-            **policy_env(policy),
-        },
+        env_overrides=env_overrides,
     )
 
 
@@ -367,7 +383,7 @@ def main() -> None:
     ensure_command_available("forge")
     ensure_private_key()
 
-    tokens_path, chain_policies = parse_dvn_config(config_path)
+    tokens_path, chain_policies, hub_policy = parse_dvn_config(config_path)
     hub, tokens = parse_tokens(tokens_path)
 
     token_labels = {token.label for token in tokens}
@@ -384,31 +400,56 @@ def main() -> None:
     base_forge_args = forge_args if forge_args else ["--broadcast"]
 
     print(f"Running verifier<->hub config for {len(tokens)} chain(s)")
+    if hub_policy is None:
+        print("Warning: hub.verifier_hub not configured; using per-chain verifier_hub policy for hub -> verifier")
     for token in tokens:
         policy = chain_policies[token.label].verifier_hub
+        hub_direction_policy = hub_policy or policy
 
         hub_args = list(base_forge_args)
         if hub.legacy_tx:
             hub_args.append("--legacy")
-        apply_config(
-            label=f"hub -> verifier ({token.label})",
-            rpc_url=hub.rpc_url,
-            forge_args=hub_args,
-            oapp=hub.address,
-            remote_eid=token.eid,
-            policy=policy,
-        )
 
         verifier_args = list(base_forge_args)
         if token.legacy_tx:
             verifier_args.append("--legacy")
+
         apply_config(
-            label=f"verifier -> hub ({token.label})",
+            label=f"hub -> verifier ({token.label}) send",
+            rpc_url=hub.rpc_url,
+            forge_args=hub_args,
+            oapp=hub.address,
+            remote_eid=token.eid,
+            policy=hub_direction_policy,
+            target_lib="send",
+        )
+        apply_config(
+            label=f"hub -> verifier ({token.label}) receive",
+            rpc_url=token.rpc_url,
+            forge_args=verifier_args,
+            oapp=token.verifier_address,
+            remote_eid=hub.eid,
+            policy=hub_direction_policy,
+            target_lib="receive",
+        )
+
+        apply_config(
+            label=f"verifier -> hub ({token.label}) send",
             rpc_url=token.rpc_url,
             forge_args=verifier_args,
             oapp=token.verifier_address,
             remote_eid=hub.eid,
             policy=policy,
+            target_lib="send",
+        )
+        apply_config(
+            label=f"verifier -> hub ({token.label}) receive",
+            rpc_url=hub.rpc_url,
+            forge_args=hub_args,
+            oapp=hub.address,
+            remote_eid=token.eid,
+            policy=policy,
+            target_lib="receive",
         )
 
     if len(tokens) > 1:
@@ -423,12 +464,25 @@ def main() -> None:
                 if dst.label == src.label:
                     continue
                 apply_config(
-                    label=f"token {src.label} -> {dst.label}",
+                    label=f"token {src.label} -> {dst.label} send",
                     rpc_url=src.rpc_url,
                     forge_args=src_args,
                     oapp=src.token_address,
                     remote_eid=dst.eid,
                     policy=policy,
+                    target_lib="send",
+                )
+                dst_args = list(base_forge_args)
+                if dst.legacy_tx:
+                    dst_args.append("--legacy")
+                apply_config(
+                    label=f"token {src.label} -> {dst.label} receive",
+                    rpc_url=dst.rpc_url,
+                    forge_args=dst_args,
+                    oapp=dst.token_address,
+                    remote_eid=src.eid,
+                    policy=policy,
+                    target_lib="receive",
                 )
     else:
         print("Skipping token<->token config: only one token chain")

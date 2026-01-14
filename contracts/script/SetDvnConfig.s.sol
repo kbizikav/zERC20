@@ -17,6 +17,7 @@ import {UlnConfig} from "@layerzerolabs/lz-evm-messagelib-v2/contracts/uln/UlnBa
 /// - CONFIRMATIONS (uint): ULN confirmation count (uint64).
 /// - PRIVATE_KEY (uint256): Broadcaster private key.
 /// Optional env:
+/// - TARGET_LIB (string): "send", "receive", or "both" (default "both").
 /// - REQUIRED_DVN_NAMES (string[]): Comma-separated DVN names (resolved via lz-address-book).
 /// - OPTIONAL_DVN_NAMES (string[]): Comma-separated DVN names (resolved via lz-address-book).
 /// - OPTIONAL_DVN_THRESHOLD (uint): Threshold for OPTIONAL_DVN_NAMES (required when optional dvns are set).
@@ -28,6 +29,7 @@ contract SetDvnConfig is Script {
     error OptionalDVNThresholdMissing();
     error OptionalDVNThresholdTooHigh(uint256 threshold, uint256 count);
     error DVNConfigEmpty();
+    error InvalidTargetLib(string value);
 
     uint32 internal constant CONFIG_TYPE_ULN = 2;
 
@@ -35,6 +37,8 @@ contract SetDvnConfig is Script {
         address oapp;
         uint32 remoteEid;
         uint64 confirmations;
+        bool setSendLib;
+        bool setReceiveLib;
         string[] requiredNames;
         string[] optionalNames;
         uint256 optionalThresholdRaw;
@@ -71,6 +75,7 @@ contract SetDvnConfig is Script {
         env.oapp = vm.envAddress("OAPP_ADDRESS");
         env.remoteEid = _toUint32(vm.envUint("REMOTE_EID"));
         env.confirmations = _toUint64(vm.envUint("CONFIRMATIONS"));
+        (env.setSendLib, env.setReceiveLib) = _parseTargetLib(vm.envOr("TARGET_LIB", string("both")));
         env.requiredNames = vm.envOr("REQUIRED_DVN_NAMES", ",", new string[](0));
         env.optionalNames = vm.envOr("OPTIONAL_DVN_NAMES", ",", new string[](0));
         env.optionalThresholdRaw = vm.envOr("OPTIONAL_DVN_THRESHOLD", uint256(0));
@@ -105,13 +110,15 @@ contract SetDvnConfig is Script {
             dvn.optionalDvns
         );
 
-        _setConfig(env.oapp, env.remoteEid, lz.endpoint, lz.sendLib, lz.receiveLib, config);
+        _setConfig(env.oapp, env.remoteEid, lz.endpoint, lz.sendLib, lz.receiveLib, config, env.setSendLib, env.setReceiveLib);
         _logConfig(
             env.oapp,
             env.remoteEid,
             env.confirmations,
             lz.sendLib,
             lz.receiveLib,
+            env.setSendLib,
+            env.setReceiveLib,
             dvn.requiredDvns,
             dvn.optionalDvns,
             dvn.optionalThreshold
@@ -176,15 +183,24 @@ contract SetDvnConfig is Script {
         address endpoint,
         address sendLib,
         address receiveLib,
-        UlnConfig memory config
+        UlnConfig memory config,
+        bool setSendLib,
+        bool setReceiveLib
     ) private {
+        if (!setSendLib && !setReceiveLib) {
+            revert InvalidTargetLib("none");
+        }
         SetConfigParam[] memory params = new SetConfigParam[](1);
         params[0] = SetConfigParam({eid: remoteEid, configType: CONFIG_TYPE_ULN, config: abi.encode(config)});
 
         uint256 broadcasterKey = vm.envUint("PRIVATE_KEY");
         vm.startBroadcast(broadcasterKey);
-        IMessageLibManager(endpoint).setConfig(oapp, sendLib, params);
-        IMessageLibManager(endpoint).setConfig(oapp, receiveLib, params);
+        if (setSendLib) {
+            IMessageLibManager(endpoint).setConfig(oapp, sendLib, params);
+        }
+        if (setReceiveLib) {
+            IMessageLibManager(endpoint).setConfig(oapp, receiveLib, params);
+        }
         vm.stopBroadcast();
     }
 
@@ -194,6 +210,8 @@ contract SetDvnConfig is Script {
         uint64 confirmations,
         address sendLib,
         address receiveLib,
+        bool setSendLib,
+        bool setReceiveLib,
         address[] memory requiredDvns,
         address[] memory optionalDvns,
         uint8 optionalThreshold
@@ -201,8 +219,12 @@ contract SetDvnConfig is Script {
         console2.log("Set ULN config for oapp", oapp);
         console2.log("  remote eid", uint256(remoteEid));
         console2.log("  confirmations", uint256(confirmations));
-        console2.log("  send lib", sendLib);
-        console2.log("  receive lib", receiveLib);
+        if (setSendLib) {
+            console2.log("  send lib", sendLib);
+        }
+        if (setReceiveLib) {
+            console2.log("  receive lib", receiveLib);
+        }
         _logDvns("required dvns", requiredDvns);
         _logDvns("optional dvns", optionalDvns);
         if (optionalDvns.length > 0) {
@@ -240,6 +262,20 @@ contract SetDvnConfig is Script {
         for (uint256 i = 0; i < dvns.length; ++i) {
             console2.log("   -", dvns[i]);
         }
+    }
+
+    function _parseTargetLib(string memory value) private pure returns (bool setSend, bool setReceive) {
+        bytes32 hashed = keccak256(bytes(value));
+        if (hashed == keccak256(bytes("send"))) {
+            return (true, false);
+        }
+        if (hashed == keccak256(bytes("receive"))) {
+            return (false, true);
+        }
+        if (hashed == keccak256(bytes("both"))) {
+            return (true, true);
+        }
+        revert InvalidTargetLib(value);
     }
 
     function _toUint8(uint256 value) private pure returns (uint8) {
