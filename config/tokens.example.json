@@ -20,6 +20,7 @@
     "chain_id": 31337,
     "eid": 100,
     "layerzero_endpoint": "0x0000000000000000000000000000000000000002",
+    "legacy_tx": false,
     "rpc_urls": [
       "http://127.0.0.1:8545"
     ]

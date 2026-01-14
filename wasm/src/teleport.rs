@@ -292,7 +292,7 @@ fn generate_global_teleport_merkle_proofs_impl(
 
 fn build_hub(entry: &HubEntry) -> Result<HubContract> {
     let provider = entry.provider()?;
-    Ok(HubContract::new(provider, entry.hub_address))
+    Ok(HubContract::new(provider, entry.hub_address).with_legacy_tx(entry.legacy_tx))
 }
 
 fn build_verifier(entry: &TokenEntry) -> Result<VerifierContract> {
