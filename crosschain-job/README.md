@@ -41,7 +41,8 @@ The key variables are:
 Tokens are loaded through `client-common::tokens::TokensFile`, so each entry
 needs an RPC URL list, verifier address, and chain identifier. The optional
 `hub` section enables the broadcast job. When omitted, broadcast is
-automatically disabled.
+automatically disabled. Set `hub.legacy_tx=true` when the hub chain requires
+legacy transactions (e.g., BNB).
 
 You can skip the JSON file entirely by exporting `TOKENS_COMPRESSED`, which
 accepts the same Base64+gzip payload produced by `scripts/encode_tokens.sh`

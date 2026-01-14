@@ -135,6 +135,7 @@ export interface HubEntryConfig {
   hubAddress: string;
   chainId: bigint;
   rpcUrls: readonly string[];
+  legacyTx?: boolean;
 }
 
 export interface ChainEvents {
