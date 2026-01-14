@@ -1,5 +1,5 @@
 {
-  "tokens_file": "../config/tokens.example.json",
+  "tokens_file": "../../config/tokens.example.json",
   "chains": {
     "localnet": {
       "verifier_hub": {
