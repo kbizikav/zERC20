@@ -37,6 +37,12 @@ jobs:
         working-directory: contracts
         id: fmt
 
+      - name: Run Forge soldeer install
+        run: |
+          forge soldeer install
+        working-directory: contracts
+        id: install
+
       - name: Run Forge build
         run: |
           forge build --sizes
