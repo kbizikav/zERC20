@@ -204,7 +204,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     // Minter
     // -----------------------------------------------------------------------
 
-    /// @notice Mints tokens under the Minter role defined by the deposit / withdrawal flow.
+    /// @notice Mints tokens under the Minter role defined by the deposit flow.
     /// @dev Reverts if minter is not set (address(0)). This allows chains without
     ///      deposit functionality to disable minting by leaving minter unset.
     /// @param to Recipient of the freshly minted zERC20.
