@@ -165,7 +165,10 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         emit Teleport(to, value);
     }
 
-    /// @dev Commits every transfer (including mint/burn) to the 248-bit SHA-256 hash chain described in the spec.
+    /// @dev Commits every balance-changing operation to the 248-bit SHA-256 hash chain described in the spec.
+    ///      Off-chain/ZKP consumers MUST treat `IndexedTransfer` as the canonical leaf stream (not ERC20 `Transfer`).
+    ///      The leaf stream advances on every `_update` invocation (mint/burn/transfer/OFT credit+debit/teleport).
+    ///      Note: OFT `_credit` normalizes `to == address(0)` to `address(0xdead)`, and the normalized address is used here.
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         require(value <= type(uint248).max, ValueTooLarge());
@@ -201,7 +204,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     // Minter
     // -----------------------------------------------------------------------
 
-    /// @notice Mints tokens under the Minter role defined by the deposit / redemption flow.
+    /// @notice Mints tokens under the Minter role defined by the deposit / withdrawal flow.
     /// @dev Reverts if minter is not set (address(0)). This allows chains without
     ///      deposit functionality to disable minting by leaving minter unset.
     /// @param to Recipient of the freshly minted zERC20.
