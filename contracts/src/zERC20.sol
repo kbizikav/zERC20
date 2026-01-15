@@ -216,7 +216,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
 
     /// @notice Burns tokens under the Minter role prior to native/ERC20 withdrawals.
     /// @dev Reverts if minter is not set (address(0)). This allows chains without
-    ///      deposit functionality to disable burning by leaving minter unset.
+    ///      withdrawal functionality to disable burning by leaving minter unset.
     /// @param from Holder whose balance is reduced to release the underlying asset.
     /// @param value Amount burned 1:1 with withdrawn liquidity.
     function burn(address from, uint256 value) external {
