@@ -245,6 +245,12 @@ contract VerifierTest is TestHelperOz5 {
         verifier.relayTransferRoot{value: FEE_PER_MESSAGE}(bytes(""));
     }
 
+    function testReserveHashChainRevertsWhenPaused() public {
+        verifier.activateEmergency();
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        verifier.reserveHashChain();
+    }
+
     function testRelayTransferRootRevertsOnInsufficientFee() public {
         uint256 insufficientFee = FEE_PER_MESSAGE - 1;
         vm.deal(address(this), insufficientFee);
@@ -381,6 +387,13 @@ contract VerifierTest is TestHelperOz5 {
 
         assertTrue(verifier.isUpToDate(), "should be up to date after relay");
         assertEq(verifier.latestRelayedIndex(), 0, "latestRelayedIndex should be 0");
+    }
+
+    function testRelayTransferRootRevertsOnExcessMsgValue() public {
+        uint256 excessiveFee = FEE_PER_MESSAGE + 1;
+        vm.deal(address(this), excessiveFee);
+        vm.expectRevert(abi.encodeWithSelector(Verifier.InsufficientMsgValue.selector, FEE_PER_MESSAGE, excessiveFee));
+        verifier.relayTransferRoot{value: excessiveFee}(bytes(""));
     }
 
     function testVerifierUpgradePreservesState() public {

@@ -260,7 +260,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     /// @dev Mirrors the first step of the private proof-of-burn lifecycle.
     /// @return index Reserved transfer index copied from zERC20.
     /// @return hashChain SHA-256 hash chain committed up to `index - 1`.
-    function reserveHashChain() external returns (uint64 index, uint256 hashChain) {
+    function reserveHashChain() external whenNotPaused returns (uint64 index, uint256 hashChain) {
         VerifierStorage storage $ = _getVerifierStorage();
         IzERC20 tokenContract = IzERC20($.token);
         uint64 index_ = uint64(tokenContract.index());
@@ -414,9 +414,9 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
 
         bytes memory payload = abi.encode(root, index);
         MessagingFee memory quotedFee = _quote($.hubEid, payload, options, false);
-        require(msg.value >= quotedFee.nativeFee, InsufficientMsgValue(quotedFee.nativeFee, msg.value));
+        require(msg.value == quotedFee.nativeFee, InsufficientMsgValue(quotedFee.nativeFee, msg.value));
 
-        MessagingFee memory fee = MessagingFee({nativeFee: msg.value, lzTokenFee: quotedFee.lzTokenFee});
+        MessagingFee memory fee = MessagingFee({nativeFee: quotedFee.nativeFee, lzTokenFee: quotedFee.lzTokenFee});
         receipt = _lzSend($.hubEid, payload, options, fee, msg.sender);
         emit TransferRootRelayed(index, root, abi.encodePacked(receipt.guid));
 
