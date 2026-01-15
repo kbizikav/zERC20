@@ -1,0 +1,41 @@
+{
+  "tokens_file": "../../config/tokens.mainnet-test.json",
+  "chains": {
+    "arb-mainnet": {
+      "verifier_hub": {
+        "confirmations": 3072,
+        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 3072,
+        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
+    },
+    "op-mainnet": {
+      "verifier_hub": {
+        "confirmations": 384,
+        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 384,
+        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
+    }
+  },
+  "hub": {
+    "verifier_hub": {
+      "confirmations": 10,
+      "required_dvns": ["LayerZero Labs", "Polyhedra"],
+      "optional_dvns": [],
+      "optional_threshold": 0
+    }
+  }
+}

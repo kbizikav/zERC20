@@ -1,5 +1,5 @@
 {
-  "tokens_file": "../../config/tokens.test-test.json",
+  "tokens_file": "../../config/tokens.-test.json",
   "chains": {
     "arb-sepolia": {
       "verifier_hub": {
