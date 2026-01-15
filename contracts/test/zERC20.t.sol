@@ -71,6 +71,7 @@ contract ZERC20Test is Test {
     event IndexedTransfer(uint256 indexed index, address from, address to, uint256 value);
     event Teleport(address indexed to, uint256 value);
     event VerifierUpdated(address indexed newVerifier);
+    event MinterUpdated(address indexed newMinter);
 
     function setUp() public {
         endpoint = new EndpointV2(1, address(this));
@@ -290,5 +291,119 @@ contract ZERC20Test is Test {
         emit VerifierUpdated(newVerifier);
         token.setVerifier(newVerifier);
         assertEq(token.verifier(), newVerifier, "verifier stored");
+    }
+
+    function testSetVerifierRejectsZeroAddress() public {
+        vm.expectRevert(zERC20.ZeroAddress.selector);
+        token.setVerifier(address(0));
+    }
+
+    function testSetMinterRestrictedToOwner() public {
+        address nonOwner = address(0xBEEF);
+        address newMinter = address(0x1234);
+
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        token.setMinter(newMinter);
+
+        vm.expectEmit(true, false, false, false, address(token));
+        emit MinterUpdated(newMinter);
+        token.setMinter(newMinter);
+        assertEq(token.minter(), newMinter, "minter stored");
+    }
+
+    function testSetMinterAllowsZeroAddress() public {
+        // First set a non-zero minter
+        token.setMinter(ALICE);
+        assertEq(token.minter(), ALICE, "minter set to alice");
+
+        // Then disable by setting to zero
+        vm.expectEmit(true, false, false, false, address(token));
+        emit MinterUpdated(address(0));
+        token.setMinter(address(0));
+        assertEq(token.minter(), address(0), "minter disabled");
+    }
+
+    function testMintFailsWhenMinterNotSet() public {
+        // Deploy fresh token without setting minter
+        ZERC20Harness freshToken = _deployToken(address(this), endpoint, 18);
+        // minter is address(0) by default
+
+        vm.expectRevert(zERC20.OnlyMinter.selector);
+        freshToken.mint(ALICE, 1 ether);
+    }
+
+    function testBurnFailsWhenMinterNotSet() public {
+        // Deploy fresh token, set minter, mint, then disable minter
+        ZERC20Harness freshToken = _deployToken(address(this), endpoint, 18);
+        freshToken.setMinter(address(this));
+        freshToken.mint(ALICE, 10 ether);
+
+        // Disable minter
+        freshToken.setMinter(address(0));
+
+        vm.expectRevert(zERC20.OnlyMinter.selector);
+        freshToken.burn(ALICE, 1 ether);
+    }
+
+    function testValueTooLargeReverts() public {
+        uint256 tooLarge = uint256(type(uint248).max) + 1;
+
+        vm.expectRevert(zERC20.ValueTooLarge.selector);
+        token.mint(ALICE, tooLarge);
+    }
+
+    function testCreditRedirectsZeroAddressToDeadAddress() public {
+        uint256 amount = 5 ether;
+        address deadAddress = address(0xdead);
+
+        // Credit to address(0) should redirect to 0xdead
+        uint256 received = token.credit(address(0), amount, 1);
+
+        assertEq(received, amount, "amount received");
+        assertEq(token.balanceOf(deadAddress), amount, "balance at 0xdead");
+        assertEq(token.balanceOf(address(0)), 0, "balance at 0x0 should be 0");
+
+        // Verify hash chain includes 0xdead, not address(0)
+        uint256 expectedHash = ShaHashChainLib.compute(0, address(0), deadAddress, amount);
+        assertEq(token.hashChain(), expectedHash, "hash chain should use 0xdead as recipient");
+    }
+
+    function testCreditNormalAddressWorks() public {
+        uint256 amount = 3 ether;
+
+        uint256 received = token.credit(ALICE, amount, 1);
+
+        assertEq(received, amount, "amount received");
+        assertEq(token.balanceOf(ALICE), amount, "balance at alice");
+    }
+
+    function testTokenReturnsItself() public view {
+        assertEq(token.token(), address(token), "token() should return self");
+    }
+
+    function testApprovalRequiredReturnsFalse() public view {
+        assertFalse(token.approvalRequired(), "approvalRequired should be false");
+    }
+
+    function testDebitBurnsTokens() public {
+        uint256 mintAmount = 10 ether;
+        uint256 debitAmount = 3 ether;
+
+        token.mint(ALICE, mintAmount);
+        uint256 hashAfterMint = token.hashChain();
+        uint256 indexAfterMint = token.index();
+
+        vm.prank(ALICE);
+        (uint256 amountDebited, uint256 amountToCredit) = token.debit(debitAmount, 0, 1);
+
+        assertEq(amountDebited, debitAmount, "amount debited");
+        assertEq(amountToCredit, debitAmount, "amount to credit");
+        assertEq(token.balanceOf(ALICE), mintAmount - debitAmount, "balance after debit");
+        assertEq(token.index(), indexAfterMint + 1, "index incremented");
+
+        // Hash chain should include burn (to = address(0))
+        uint256 expectedHash = ShaHashChainLib.compute(hashAfterMint, ALICE, address(0), debitAmount);
+        assertEq(token.hashChain(), expectedHash, "hash chain after debit");
     }
 }

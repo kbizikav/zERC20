@@ -105,6 +105,14 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         return TOKEN_DECIMALS;
     }
 
+    function nonces(address owner) public view override(IERC20Permit, ERC20PermitUpgradeable) returns (uint256) {
+        return super.nonces(owner);
+    }
+
+    // -----------------------------------------------------------------------
+    // OFT Overrides
+    // -----------------------------------------------------------------------
+
     function token() public view override returns (address) {
         return address(this);
     }
@@ -131,12 +139,19 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         override
         returns (uint256 amountReceivedLd)
     {
+        // Follow LayerZero OFT convention: redirect address(0) to 0xdead
+        // to avoid ERC20 revert while effectively burning the tokens.
+        // See: https://github.com/LayerZero-Labs/devtools/.../OFTUpgradeable.sol
         if (to == address(0)) {
             to = address(0xdead);
         }
         _mint(to, amountLd);
         return amountLd;
     }
+
+    // -----------------------------------------------------------------------
+    // Teleport / HashChain
+    // -----------------------------------------------------------------------
 
     /// @inheritdoc IzERC20
     /// @dev Called exclusively by the Verifier once a teleport proof succeeds.
@@ -161,9 +176,9 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         ++$.index;
     }
 
-    function nonces(address owner) public view override(IERC20Permit, ERC20PermitUpgradeable) returns (uint256) {
-        return super.nonces(owner);
-    }
+    // -----------------------------------------------------------------------
+    // Admin
+    // -----------------------------------------------------------------------
 
     /// @notice Sets the Verifier contract that is allowed to relay teleport mints.
     /// @dev Prevents the zero address because the Verifier role is mandatory for teleport mints.
@@ -182,7 +197,13 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         emit MinterUpdated(newMinter);
     }
 
+    // -----------------------------------------------------------------------
+    // Minter
+    // -----------------------------------------------------------------------
+
     /// @notice Mints tokens under the Minter role defined by the deposit / redemption flow.
+    /// @dev Reverts if minter is not set (address(0)). This allows chains without
+    ///      deposit functionality to disable minting by leaving minter unset.
     /// @param to Recipient of the freshly minted zERC20.
     /// @param value Amount minted 1:1 with deposited liquidity.
     function mint(address to, uint256 value) external {
@@ -191,6 +212,8 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     }
 
     /// @notice Burns tokens under the Minter role prior to native/ERC20 withdrawals.
+    /// @dev Reverts if minter is not set (address(0)). This allows chains without
+    ///      deposit functionality to disable burning by leaving minter unset.
     /// @param from Holder whose balance is reduced to release the underlying asset.
     /// @param value Amount burned 1:1 with withdrawn liquidity.
     function burn(address from, uint256 value) external {
