@@ -12,9 +12,10 @@ import {WithdrawLocalNovaDecider} from "../src/verifiers/WithdrawLocalNovaDecide
 import {WithdrawGlobalGroth16Verifier} from "../src/verifiers/WithdrawGlobalGroth16Verifier.sol";
 import {WithdrawLocalGroth16Verifier} from "../src/verifiers/WithdrawLocalGroth16Verifier.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
+import {LZAddressContext} from "lz-address-book/helpers/LZAddressContext.sol";
 
 /// @notice Deploys the zERC20 token and Verifier contracts to an L2.
-/// - Loads deployment parameters from environment variables.
+/// - Loads deployment parameters from environment variables and resolves the LayerZero endpoint via lz-address-book.
 /// - Root/withdraw verifiers are deployed within this script, so no external addresses are required.
 contract DeployVerifierAndToken is DeterministicDeployer {
     struct ChainConfig {
@@ -46,18 +47,18 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         address withdrawLocalGroth16;
     }
 
-    /// @notice Environment-driven deployment. Reads all parameters from `vm.env*` calls.
+    /// @notice Environment-driven deployment with LayerZero endpoint auto-resolved via lz-address-book.
     function run() external {
         ChainConfig memory cfg = _loadConfigFromEnv();
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         _deploy(cfg, deployerKey);
     }
 
-    function _loadConfigFromEnv() private view returns (ChainConfig memory cfg) {
+    function _loadConfigFromEnv() private returns (ChainConfig memory cfg) {
         cfg.tokenName = vm.envString("TOKEN_NAME");
         cfg.tokenSymbol = vm.envString("TOKEN_SYMBOL");
         cfg.hubEid = uint32(vm.envUint("HUB_EID"));
-        cfg.endpoint = vm.envAddress("LZ_ENDPOINT");
+        cfg.endpoint = _resolveLzEndpoint();
         cfg.delegate = vm.envOr("VERIFIER_DELEGATE", address(0));
         cfg.owner = vm.envOr("TOKEN_OWNER", address(0));
         uint256 decimals = vm.envOr("TOKEN_DECIMALS", uint256(18));
@@ -71,6 +72,12 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         require(bytes(cfg.tokenSymbol).length != 0, "tokenSymbol missing");
         require(cfg.hubEid != 0, "hubEid missing");
         require(cfg.endpoint != address(0), "endpoint missing");
+    }
+
+    function _resolveLzEndpoint() private returns (address endpoint) {
+        LZAddressContext ctx = new LZAddressContext();
+        ctx.setChainByChainId(block.chainid);
+        endpoint = ctx.getEndpointV2();
     }
 
     function _deploy(ChainConfig memory cfg, uint256 deployerKey) private {
