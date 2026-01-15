@@ -97,40 +97,49 @@ contract SetHubPeers is PeerScriptBase {
                 verifier: verifierAddresses[i],
                 token: tokenAddresses[i]
             });
-
-            uint256 pos = hub.eidToPosition(verifierEids[i]);
-            if (pos == 0) {
-                console2.log("Registering token for eid", uint256(verifierEids[i]));
-                console2.log("  chainId", uint256(info.chainId));
-                console2.log("  token address", tokenAddresses[i]);
-                hub.registerToken(info);
-            } else {
-                (uint64 chainId, uint32 eid, address verifier, address token) = hub.tokenInfos(pos - 1);
-                bool needsUpdate =
-                    chainId != info.chainId || eid != info.eid || verifier != info.verifier || token != info.token;
-                if (needsUpdate) {
-                    console2.log("Updating token for eid", uint256(verifierEids[i]));
-                    console2.log("  chainId", uint256(info.chainId));
-                    console2.log("  token address", tokenAddresses[i]);
-                    hub.updateToken(info);
-                } else {
-                    console2.log("Skipping token update for eid", uint256(verifierEids[i]));
-                    console2.log("  token info already up to date");
-                }
-            }
-
-            bytes32 peer = _addressToBytes32(verifierAddresses[i]);
-            bytes32 currentPeer = hub.peers(verifierEids[i]);
-            if (currentPeer != peer) {
-                console2.log("Setting hub peer for eid", uint256(verifierEids[i]));
-                console2.log("  peer address", verifierAddresses[i]);
-                hub.setPeer(verifierEids[i], peer);
-            } else {
-                console2.log("Skipping hub peer for eid", uint256(verifierEids[i]));
-                console2.log("  peer already set", verifierAddresses[i]);
-            }
+            _registerOrUpdateToken(hub, info, tokenAddresses[i]);
+            _setHubPeer(hub, verifierEids[i], verifierAddresses[i]);
         }
         vm.stopBroadcast();
+    }
+
+    function _registerOrUpdateToken(Hub hub, Hub.TokenInfo memory info, address tokenAddress) internal {
+        uint256 pos = hub.eidToPosition(info.eid);
+        if (pos == 0) {
+            console2.log("Registering token for eid", uint256(info.eid));
+            console2.log("  chainId", uint256(info.chainId));
+            console2.log("  token address", tokenAddress);
+            hub.registerToken(info);
+        } else {
+            _updateTokenIfNeeded(hub, info, tokenAddress, pos);
+        }
+    }
+
+    function _updateTokenIfNeeded(Hub hub, Hub.TokenInfo memory info, address tokenAddress, uint256 pos) internal {
+        (uint64 chainId, uint32 eid, address verifier, address token) = hub.tokenInfos(pos - 1);
+        bool needsUpdate = chainId != info.chainId || eid != info.eid || verifier != info.verifier || token != info.token;
+        if (needsUpdate) {
+            console2.log("Updating token for eid", uint256(info.eid));
+            console2.log("  chainId", uint256(info.chainId));
+            console2.log("  token address", tokenAddress);
+            hub.updateToken(info);
+        } else {
+            console2.log("Skipping token update for eid", uint256(info.eid));
+            console2.log("  token info already up to date");
+        }
+    }
+
+    function _setHubPeer(Hub hub, uint32 eid, address verifierAddress) internal {
+        bytes32 peer = _addressToBytes32(verifierAddress);
+        bytes32 currentPeer = hub.peers(eid);
+        if (currentPeer != peer) {
+            console2.log("Setting hub peer for eid", uint256(eid));
+            console2.log("  peer address", verifierAddress);
+            hub.setPeer(eid, peer);
+        } else {
+            console2.log("Skipping hub peer for eid", uint256(eid));
+            console2.log("  peer already set", verifierAddress);
+        }
     }
 }
 
