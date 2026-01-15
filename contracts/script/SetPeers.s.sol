@@ -98,22 +98,37 @@ contract SetHubPeers is PeerScriptBase {
                 token: tokenAddresses[i]
             });
 
-            if (hub.eidToPosition(verifierEids[i]) == 0) {
+            uint256 pos = hub.eidToPosition(verifierEids[i]);
+            if (pos == 0) {
                 console2.log("Registering token for eid", uint256(verifierEids[i]));
                 console2.log("  chainId", uint256(info.chainId));
                 console2.log("  token address", tokenAddresses[i]);
                 hub.registerToken(info);
             } else {
-                console2.log("Updating token for eid", uint256(verifierEids[i]));
-                console2.log("  chainId", uint256(info.chainId));
-                console2.log("  token address", tokenAddresses[i]);
-                hub.updateToken(info);
+                (uint64 chainId, uint32 eid, address verifier, address token) = hub.tokenInfos(pos - 1);
+                bool needsUpdate =
+                    chainId != info.chainId || eid != info.eid || verifier != info.verifier || token != info.token;
+                if (needsUpdate) {
+                    console2.log("Updating token for eid", uint256(verifierEids[i]));
+                    console2.log("  chainId", uint256(info.chainId));
+                    console2.log("  token address", tokenAddresses[i]);
+                    hub.updateToken(info);
+                } else {
+                    console2.log("Skipping token update for eid", uint256(verifierEids[i]));
+                    console2.log("  token info already up to date");
+                }
             }
 
             bytes32 peer = _addressToBytes32(verifierAddresses[i]);
-            console2.log("Setting hub peer for eid", uint256(verifierEids[i]));
-            console2.log("  peer address", verifierAddresses[i]);
-            hub.setPeer(verifierEids[i], peer);
+            bytes32 currentPeer = hub.peers(verifierEids[i]);
+            if (currentPeer != peer) {
+                console2.log("Setting hub peer for eid", uint256(verifierEids[i]));
+                console2.log("  peer address", verifierAddresses[i]);
+                hub.setPeer(verifierEids[i], peer);
+            } else {
+                console2.log("Skipping hub peer for eid", uint256(verifierEids[i]));
+                console2.log("  peer already set", verifierAddresses[i]);
+            }
         }
         vm.stopBroadcast();
     }
@@ -138,11 +153,18 @@ contract SetVerifierPeers is PeerScriptBase {
         bytes32 hubPeer = _addressToBytes32(hubAddress);
         uint256 broadcasterKey = vm.envUint("PRIVATE_KEY");
 
+        Verifier verifier = Verifier(verifierAddress);
         vm.startBroadcast(broadcasterKey);
-        console2.log("Setting verifier peer", verifierAddress);
-        console2.log("  hub address", hubAddress);
-        console2.log("  hub eid", uint256(hubEid));
-        Verifier(verifierAddress).setPeer(hubEid, hubPeer);
+        bytes32 currentPeer = verifier.peers(hubEid);
+        if (currentPeer == hubPeer) {
+            console2.log("Skipping verifier peer", verifierAddress);
+            console2.log("  hub peer already set", hubAddress);
+        } else {
+            console2.log("Setting verifier peer", verifierAddress);
+            console2.log("  hub address", hubAddress);
+            console2.log("  hub eid", uint256(hubEid));
+            verifier.setPeer(hubEid, hubPeer);
+        }
         vm.stopBroadcast();
     }
 }
@@ -177,9 +199,15 @@ contract SetTokenPeers is PeerScriptBase {
         zERC20 token = zERC20(tokenAddress);
         for (uint256 i = 0; i < peerAddresses.length; ++i) {
             bytes32 peer = _addressToBytes32(peerAddresses[i]);
-            console2.log("Setting token peer", peerAddresses[i]);
-            console2.log("  eid", uint256(peerEids[i]));
-            token.setPeer(peerEids[i], peer);
+            bytes32 currentPeer = token.peers(peerEids[i]);
+            if (currentPeer != peer) {
+                console2.log("Setting token peer", peerAddresses[i]);
+                console2.log("  eid", uint256(peerEids[i]));
+                token.setPeer(peerEids[i], peer);
+            } else {
+                console2.log("Skipping token peer", peerAddresses[i]);
+                console2.log("  eid already set", uint256(peerEids[i]));
+            }
         }
         vm.stopBroadcast();
     }
