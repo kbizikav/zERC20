@@ -669,7 +669,9 @@ contract VerifierReentrancyTest is TestHelperOz5 {
         proof[5] = providedHashChain;
         proof[6] = newRoot;
         vm.expectRevert(
-            abi.encodeWithSelector(Verifier.NewHashChainMismatch.selector, newIndex, reservedHashChain, providedHashChain)
+            abi.encodeWithSelector(
+                Verifier.NewHashChainMismatch.selector, newIndex, reservedHashChain, providedHashChain
+            )
         );
         verifier.proveTransferRoot(abi.encode(proof));
     }
