@@ -268,6 +268,8 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         aggregationRoot = _computeAggregationRoot(leaves, zeroHashCache);
     }
 
+    /// @dev Separated into a `virtual` hook to allow alternative aggregation implementations and to enable
+    ///      deterministic testing of the zero-root guard without relying on rare Poseidon preimages.
     function _computeAggregationRoot(uint256[] memory leaves, uint256[ZERO_HASH_COUNT] memory zeroHashCache)
         internal
         pure

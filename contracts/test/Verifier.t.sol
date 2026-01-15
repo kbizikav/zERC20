@@ -385,11 +385,23 @@ contract VerifierTest is TestHelperOz5 {
         assertEq(verifier.latestRelayedIndex(), 0, "latestRelayedIndex should be 0");
     }
 
-    function testRelayTransferRootRevertsOnExcessMsgValue() public {
+    function testRelayTransferRootRefundsExcessMsgValueToRefundAddress() public {
+        address refundAddress = address(0xCAFE);
         uint256 excessiveFee = FEE_PER_MESSAGE + 1;
         vm.deal(address(this), excessiveFee);
-        vm.expectRevert(abi.encodeWithSelector(Verifier.InsufficientMsgValue.selector, FEE_PER_MESSAGE, excessiveFee));
-        verifier.relayTransferRoot{value: excessiveFee}(bytes(""));
+        vm.deal(refundAddress, 0);
+
+        uint256 refundBefore = refundAddress.balance;
+        MessagingReceipt memory receipt =
+            verifier.relayTransferRoot{value: excessiveFee}(bytes(""), refundAddress);
+        assertEq(receipt.fee.nativeFee, FEE_PER_MESSAGE, "native fee mismatch");
+        assertEq(refundAddress.balance, refundBefore + 1, "refund not received");
+    }
+
+    function testRelayTransferRootRevertsOnZeroRefundAddress() public {
+        vm.deal(address(this), FEE_PER_MESSAGE);
+        vm.expectRevert(Verifier.ZeroRefundAddress.selector);
+        verifier.relayTransferRoot{value: FEE_PER_MESSAGE}(bytes(""), address(0));
     }
 
     function testVerifierUpgradePreservesState() public {

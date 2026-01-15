@@ -12,7 +12,6 @@ import {IzERC20} from "./interfaces/IzERC20.sol";
 import {IRootDecider, IWithdrawDecider} from "./interfaces/IDecider.sol";
 import {IWithdrawVerifier} from "./interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "./utils/GeneralRecipientLib.sol";
-import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
@@ -69,6 +68,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     error NothingToWithdraw(uint256 currentTotal, uint256 totalValue);
     error InsufficientMsgValue(uint256 required, uint256 provided);
     error EndpointMismatch(address expected, address actual);
+    error ZeroRefundAddress();
 
     // Root of an empty IncrementalMerkleTree at TRANSFER_TREE_HEIGHT (see zkp test).
     uint256 private constant INITIAL_TRANSFER_ROOT =
@@ -395,9 +395,13 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         require(value > currentTotal, NothingToWithdraw(currentTotal, value));
         uint256 diff = value - currentTotal;
         $.totalTeleported[recipient] = value;
-        address recipientAddr = OFTComposeMsgCodec.bytes32ToAddress(gr.recipient);
+        address recipientAddr = _bytes32ToAddress(gr.recipient);
         IzERC20($.token).teleport(recipientAddr, diff);
         emit Teleport(recipientAddr, diff, isGlobal, rootHint, transferRoot, gr);
+    }
+
+    function _bytes32ToAddress(bytes32 value) private pure returns (address) {
+        return address(uint160(uint256(value)));
     }
 
     /// -----------------------------------------------------------------------
@@ -405,7 +409,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     /// -----------------------------------------------------------------------
 
     /// @notice Sends the latest proved transfer root to the Hub over LayerZero so it can join the global aggregation tree.
-    /// @dev Requires `latestProvedIndex` to have a non-zero root; excess msg.value is kept as the LZ native fee.
+    /// @dev Requires `latestProvedIndex` to have a non-zero root; excess msg.value (if any) is refunded by the endpoint.
     /// @param options LayerZero execution parameters forwarded to `_lzSend`.
     function relayTransferRoot(bytes calldata options)
         external
@@ -413,6 +417,23 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         whenNotPaused
         returns (MessagingReceipt memory receipt)
     {
+        receipt = _relayTransferRoot(options, msg.sender);
+    }
+
+    function relayTransferRoot(bytes calldata options, address refundAddress)
+        external
+        payable
+        whenNotPaused
+        returns (MessagingReceipt memory receipt)
+    {
+        receipt = _relayTransferRoot(options, refundAddress);
+    }
+
+    function _relayTransferRoot(bytes calldata options, address refundAddress)
+        internal
+        returns (MessagingReceipt memory receipt)
+    {
+        require(refundAddress != address(0), ZeroRefundAddress());
         VerifierStorage storage $ = _getVerifierStorage();
         uint64 index = $.latestProvedIndex;
         uint256 root = $.provedTransferRoots[index];
@@ -420,10 +441,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
 
         bytes memory payload = abi.encode(root, index);
         MessagingFee memory quotedFee = _quote($.hubEid, payload, options, false);
-        require(msg.value == quotedFee.nativeFee, InsufficientMsgValue(quotedFee.nativeFee, msg.value));
+        require(msg.value >= quotedFee.nativeFee, InsufficientMsgValue(quotedFee.nativeFee, msg.value));
 
-        MessagingFee memory fee = MessagingFee({nativeFee: quotedFee.nativeFee, lzTokenFee: quotedFee.lzTokenFee});
-        receipt = _lzSend($.hubEid, payload, options, fee, msg.sender);
+        MessagingFee memory fee = MessagingFee({nativeFee: msg.value, lzTokenFee: quotedFee.lzTokenFee});
+        receipt = _lzSend($.hubEid, payload, options, fee, refundAddress);
         emit TransferRootRelayed(index, root, abi.encodePacked(receipt.guid));
 
         $.latestRelayedIndex = index;
