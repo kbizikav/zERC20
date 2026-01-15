@@ -67,6 +67,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     error InvalidRecipientChainId(uint64 provided, uint64 expected);
     error NothingToWithdraw(uint256 currentTotal, uint256 totalValue);
     error InsufficientMsgValue(uint256 required, uint256 provided);
+    error EndpointMismatch(address expected, address actual);
 
     // Root of an empty IncrementalMerkleTree at TRANSFER_TREE_HEIGHT (see zkp test).
     uint256 private constant INITIAL_TRANSFER_ROOT =
@@ -245,7 +246,11 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         $.latestRelayedIndex = 0;
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+        address expected = address(endpoint);
+        address actual = address(Verifier(newImplementation).endpoint());
+        if (actual != expected) revert EndpointMismatch(expected, actual);
+    }
 
     /// -----------------------------------------------------------------------
     /// Transfer Root Functions

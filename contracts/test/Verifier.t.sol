@@ -435,6 +435,32 @@ contract VerifierTest is TestHelperOz5 {
         );
     }
 
+    function testVerifierUpgradeRevertsOnEndpointMismatch() public {
+        Verifier implementation = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                TOKEN,
+                HUB_EID,
+                address(this),
+                ROOT_DECIDER,
+                WITHDRAW_GLOBAL_DECIDER,
+                WITHDRAW_LOCAL_DECIDER,
+                SINGLE_WITHDRAW_GLOBAL_VERIFIER,
+                SINGLE_WITHDRAW_LOCAL_VERIFIER
+            )
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        Verifier proxiedVerifier = Verifier(address(proxy));
+
+        EndpointV2 otherEndpoint = endpointSetup.endpointList[1];
+        VerifierUpgradeMock newImplementation = new VerifierUpgradeMock(address(otherEndpoint));
+        vm.expectRevert(
+            abi.encodeWithSelector(Verifier.EndpointMismatch.selector, address(endpoint), address(otherEndpoint))
+        );
+        proxiedVerifier.upgradeToAndCall(address(newImplementation), bytes(""));
+    }
+
     function _toBytes32(address addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(addr)));
     }
