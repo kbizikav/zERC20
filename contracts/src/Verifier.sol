@@ -12,6 +12,7 @@ import {IzERC20} from "./interfaces/IzERC20.sol";
 import {IRootDecider, IWithdrawDecider} from "./interfaces/IDecider.sol";
 import {IWithdrawVerifier} from "./interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "./utils/GeneralRecipientLib.sol";
+import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
@@ -102,6 +103,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         }
     }
 
+    /// -----------------------------------------------------------------------
+    /// View Functions
+    /// -----------------------------------------------------------------------
+
     function token() public view returns (address) {
         return _getVerifierStorage().token;
     }
@@ -187,6 +192,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         address singleWithdrawLocalVerifier_
     ) external initializer {
         require(token_ != address(0), ZeroToken());
+        require(delegate != address(0), ZeroAddress());
         require(
             rootDecider_ != address(0) && withdrawGlobalDecider_ != address(0) && withdrawLocalDecider_ != address(0)
                 && singleWithdrawGlobalVerifier_ != address(0) && singleWithdrawLocalVerifier_ != address(0),
@@ -266,7 +272,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     function proveTransferRoot(bytes calldata proof) external whenNotPaused {
         uint256[32] memory proof_ = abi.decode(proof, (uint256[32]));
         uint64 oldIndex = uint64(proof_[1]);
-        proof_[2]; // oldHashChain is unused
+        // proof_[2] is oldHashChain, intentionally unused in on-chain verification
         uint256 oldRoot = proof_[3];
         uint64 newIndex = uint64(proof_[4]);
         uint256 newHashChain = proof_[5];
@@ -377,8 +383,8 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         uint256 currentTotal = $.totalTeleported[recipient];
         require(value > currentTotal, NothingToWithdraw(currentTotal, value));
         uint256 diff = value - currentTotal;
-        $.totalTeleported[recipient] += diff;
-        address recipientAddr = address(uint160(uint256(gr.recipient)));
+        $.totalTeleported[recipient] = value;
+        address recipientAddr = OFTComposeMsgCodec.bytes32ToAddress(gr.recipient);
         IzERC20($.token).teleport(recipientAddr, diff);
         emit Teleport(recipientAddr, diff, isGlobal, rootHint, transferRoot, gr);
     }
