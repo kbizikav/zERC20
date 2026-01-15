@@ -117,7 +117,8 @@ contract SetHubPeers is PeerScriptBase {
 
     function _updateTokenIfNeeded(Hub hub, Hub.TokenInfo memory info, address tokenAddress, uint256 pos) internal {
         (uint64 chainId, uint32 eid, address verifier, address token) = hub.tokenInfos(pos - 1);
-        bool needsUpdate = chainId != info.chainId || eid != info.eid || verifier != info.verifier || token != info.token;
+        bool needsUpdate =
+            chainId != info.chainId || eid != info.eid || verifier != info.verifier || token != info.token;
         if (needsUpdate) {
             console2.log("Updating token for eid", uint256(info.eid));
             console2.log("  chainId", uint256(info.chainId));
