@@ -14,6 +14,7 @@ import {
     ERC20PermitUpgradeable
 } from "@openzeppelin/contracts-upgradeable/token/ERC20/extensions/ERC20PermitUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract ZERC20Harness is zERC20 {
     constructor(address endpoint, uint8 decimals_) zERC20(endpoint, decimals_) {}
@@ -99,6 +100,17 @@ contract ZERC20Test is Test {
         new ERC1967Proxy(address(impl), initData);
     }
 
+    function testInitializeCannotBeCalledTwice() public {
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        token.initialize("Again", "AGAIN", address(this));
+    }
+
+    function testImplementationInitializeIsDisabled() public {
+        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18);
+        vm.expectRevert(Initializable.InvalidInitialization.selector);
+        impl.initialize("Impl", "IMPL", address(this));
+    }
+
     function testHashChainMatchesZkpVector() public pure {
         address from = address(0x1111111111111111111111111111111111111111);
         address to = address(0x2222222222222222222222222222222222222222);
@@ -148,7 +160,7 @@ contract ZERC20Test is Test {
     function testTeleportRequiresVerifierAndMints() public {
         uint256 value = 2 ether;
 
-        vm.expectRevert();
+        vm.expectRevert(zERC20.OnlyVerifier.selector);
         token.teleport(ALICE, value);
 
         token.setVerifier(address(this));
@@ -351,6 +363,35 @@ contract ZERC20Test is Test {
 
         vm.expectRevert(zERC20.ValueTooLarge.selector);
         token.mint(ALICE, tooLarge);
+    }
+
+    function testRemoveDustRoundsDownToConversionRate() public view {
+        uint256 conversionRate = token.decimalConversionRate();
+        assertEq(token.removeDust(conversionRate - 1), 0, "dust below conversion rate");
+        assertEq(token.removeDust(conversionRate + 123), conversionRate, "dust rounded down");
+    }
+
+    function testToSdToLdRoundTripTruncatesDust() public view {
+        uint256 conversionRate = token.decimalConversionRate();
+        uint256 amountWithDust = conversionRate * 5 + 1;
+        uint64 amountSd = token.toSd(amountWithDust);
+        assertEq(amountSd, 5, "toSd truncates dust");
+        assertEq(token.toLd(amountSd), conversionRate * 5, "toLd restores dustless amount");
+    }
+
+    function testToSdRevertsOnOverflow() public {
+        uint256 conversionRate = token.decimalConversionRate();
+        uint256 amountSdOverflow = uint256(type(uint64).max) + 1;
+        uint256 amountLdOverflow = amountSdOverflow * conversionRate;
+        vm.expectRevert(abi.encodeWithSelector(IOFT.AmountSDOverflowed.selector, amountSdOverflow));
+        token.toSd(amountLdOverflow);
+    }
+
+    function testDebitViewRevertsWhenMinAmountExceedsDustlessAmount() public {
+        uint256 conversionRate = token.decimalConversionRate();
+        uint256 amountWithDust = conversionRate + 1;
+        vm.expectRevert(abi.encodeWithSelector(IOFT.SlippageExceeded.selector, conversionRate, amountWithDust));
+        token.debitView(amountWithDust, amountWithDust, 1);
     }
 
     function testCreditRedirectsZeroAddressToDeadAddress() public {
