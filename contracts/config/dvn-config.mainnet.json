@@ -28,6 +28,20 @@
         "optional_dvns": [],
         "optional_threshold": 0
       }
+    },
+    "bnb-mainnet": {
+      "verifier_hub": {
+        "confirmations": 3,
+        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 3,
+        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
     }
   },
   "hub": {

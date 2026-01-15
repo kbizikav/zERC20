@@ -101,6 +101,9 @@ contract SetDvnConfig is Script {
     }
 
     function _applyConfig(EnvConfig memory env, LzContext memory lz, DvnConfig memory dvn) private {
+        if (!env.setSendLib && !env.setReceiveLib) {
+            revert InvalidTargetLib("none");
+        }
         UlnConfig memory config = _buildUlnConfig(
             env.confirmations,
             dvn.requiredCount,
@@ -110,15 +113,23 @@ contract SetDvnConfig is Script {
             dvn.optionalDvns
         );
 
-        _setConfig(env.oapp, env.remoteEid, lz.endpoint, lz.sendLib, lz.receiveLib, config, env.setSendLib, env.setReceiveLib);
+        (bool updateSendLib, bool updateReceiveLib) =
+            _getConfigUpdates(env, lz.endpoint, lz.sendLib, lz.receiveLib, config);
+
+        if (!updateSendLib && !updateReceiveLib) {
+            console2.log("ULN config already up to date; skipping broadcast");
+            return;
+        }
+
+        _setConfig(env.oapp, env.remoteEid, lz.endpoint, lz.sendLib, lz.receiveLib, config, updateSendLib, updateReceiveLib);
         _logConfig(
             env.oapp,
             env.remoteEid,
             env.confirmations,
             lz.sendLib,
             lz.receiveLib,
-            env.setSendLib,
-            env.setReceiveLib,
+            updateSendLib,
+            updateReceiveLib,
             dvn.requiredDvns,
             dvn.optionalDvns,
             dvn.optionalThreshold
@@ -177,6 +188,48 @@ contract SetDvnConfig is Script {
         });
     }
 
+    function _getConfigUpdates(
+        EnvConfig memory env,
+        address endpoint,
+        address sendLib,
+        address receiveLib,
+        UlnConfig memory config
+    ) private view returns (bool updateSendLib, bool updateReceiveLib) {
+        if (env.setSendLib) {
+            updateSendLib = _needsConfigUpdate(env.oapp, endpoint, sendLib, env.remoteEid, config);
+            if (!updateSendLib) {
+                console2.log("Send lib config already up to date; skipping");
+            }
+        }
+        if (env.setReceiveLib) {
+            updateReceiveLib = _needsConfigUpdate(env.oapp, endpoint, receiveLib, env.remoteEid, config);
+            if (!updateReceiveLib) {
+                console2.log("Receive lib config already up to date; skipping");
+            }
+        }
+    }
+
+    function _needsConfigUpdate(
+        address oapp,
+        address endpoint,
+        address lib,
+        uint32 remoteEid,
+        UlnConfig memory desired
+    ) private view returns (bool) {
+        bytes memory current;
+        // getConfig can revert when the lib is not registered or the EID has no default ULN config.
+        // Treat that as "needs update" so we can apply the desired config instead of failing.
+        try IMessageLibManager(endpoint).getConfig(oapp, lib, remoteEid, CONFIG_TYPE_ULN) returns (bytes memory value) {
+            current = value;
+        } catch {
+            return true;
+        }
+        if (current.length == 0) {
+            return true;
+        }
+        return keccak256(current) != keccak256(abi.encode(desired));
+    }
+
     function _setConfig(
         address oapp,
         uint32 remoteEid,
@@ -187,9 +240,6 @@ contract SetDvnConfig is Script {
         bool setSendLib,
         bool setReceiveLib
     ) private {
-        if (!setSendLib && !setReceiveLib) {
-            revert InvalidTargetLib("none");
-        }
         SetConfigParam[] memory params = new SetConfigParam[](1);
         params[0] = SetConfigParam({eid: remoteEid, configType: CONFIG_TYPE_ULN, config: abi.encode(config)});
 
