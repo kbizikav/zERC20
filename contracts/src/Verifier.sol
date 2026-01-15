@@ -56,6 +56,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     error OldRootZero(uint64 index);
     error OldRootMismatch(uint64 index, uint256 expected, uint256 actual);
     error ReserveHashChainNotFound(uint64 index);
+    error ZeroHashChain(uint64 index);
     error NewHashChainMismatch(uint64 index, uint256 expected, uint256 actual);
     error InvalidInitialLastLeafIndex(uint256 value);
     error InvalidInitialTotalValue(uint256 value);
@@ -246,7 +247,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         $.latestRelayedIndex = 0;
     }
 
-    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         address expected = address(endpoint);
         address actual = address(Verifier(newImplementation).endpoint());
         if (actual != expected) revert EndpointMismatch(expected, actual);
@@ -258,13 +259,18 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
 
     /// @notice Snapshots the latest `(index, hashChain)` tuple from zERC20 so Nova proofs can reference stable inputs.
     /// @dev Mirrors the first step of the private proof-of-burn lifecycle.
+    /// @dev This function is intentionally NOT gated by `whenNotPaused`.
+    ///      Emergency pause is meant to halt ZKP verification and any ZKP-derived actions (prove/teleport/relay),
+    ///      while still allowing non-ZKP flows (e.g., transfers/OFT bridge activity) to continue and reservations
+    ///      to be prepared for later proof submission.
     /// @return index Reserved transfer index copied from zERC20.
     /// @return hashChain SHA-256 hash chain committed up to `index - 1`.
-    function reserveHashChain() external whenNotPaused returns (uint64 index, uint256 hashChain) {
+    function reserveHashChain() external returns (uint64 index, uint256 hashChain) {
         VerifierStorage storage $ = _getVerifierStorage();
         IzERC20 tokenContract = IzERC20($.token);
         uint64 index_ = uint64(tokenContract.index());
         uint256 hashChain_ = tokenContract.hashChain();
+        require(hashChain_ != 0, ZeroHashChain(index_));
         $.reservedHashChains[index_] = hashChain_;
         $.latestReservedIndex = index_;
         emit HashChainReserved(index_, hashChain_);

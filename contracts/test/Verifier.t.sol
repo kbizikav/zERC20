@@ -245,17 +245,13 @@ contract VerifierTest is TestHelperOz5 {
         verifier.relayTransferRoot{value: FEE_PER_MESSAGE}(bytes(""));
     }
 
-    function testReserveHashChainRevertsWhenPaused() public {
-        verifier.activateEmergency();
-        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
-        verifier.reserveHashChain();
-    }
-
     function testRelayTransferRootRevertsOnInsufficientFee() public {
         uint256 insufficientFee = FEE_PER_MESSAGE - 1;
         vm.deal(address(this), insufficientFee);
 
-        vm.expectRevert(abi.encodeWithSelector(Verifier.InsufficientMsgValue.selector, FEE_PER_MESSAGE, insufficientFee));
+        vm.expectRevert(
+            abi.encodeWithSelector(Verifier.InsufficientMsgValue.selector, FEE_PER_MESSAGE, insufficientFee)
+        );
         verifier.relayTransferRoot{value: insufficientFee}(bytes(""));
     }
 
@@ -522,10 +518,17 @@ contract VerifierUpgradeMock is Verifier {
 contract MockZERC20WithCallback {
     address public callbackTarget;
     bytes public callbackData;
+    uint256 public index;
+    uint256 public hashChain;
 
     function setCallback(address target, bytes calldata data) external {
         callbackTarget = target;
         callbackData = data;
+    }
+
+    function setIndexAndHashChain(uint256 index_, uint256 hashChain_) external {
+        index = index_;
+        hashChain = hashChain_;
     }
 
     function teleport(address, uint256) external {
@@ -588,6 +591,7 @@ contract VerifierReentrancyTest is TestHelperOz5 {
 
         mockToken = new MockZERC20WithCallback();
         mockDecider = new MockWithdrawDecider();
+        mockToken.setIndexAndHashChain(42, 123);
 
         // Deploy verifier with mock token and decider
         Verifier implementation = new Verifier(address(endpoint));
@@ -609,6 +613,21 @@ contract VerifierReentrancyTest is TestHelperOz5 {
         verifier.setPeer(HUB_EID, _toBytes32(address(this)));
 
         attacker = new ReentrancyAttacker(verifier);
+    }
+
+    function testReserveHashChainWorksWhenPaused() public {
+        verifier.activateEmergency();
+        (uint64 index_, uint256 hashChain_) = verifier.reserveHashChain();
+        assertEq(index_, 42, "reserved index");
+        assertEq(hashChain_, 123, "reserved hashChain");
+        assertEq(verifier.latestReservedIndex(), 42, "latestReservedIndex");
+        assertEq(verifier.reservedHashChains(42), 123, "reservedHashChains stored");
+    }
+
+    function testReserveHashChainRevertsWhenHashChainIsZero() public {
+        mockToken.setIndexAndHashChain(7, 0);
+        vm.expectRevert(abi.encodeWithSelector(Verifier.ZeroHashChain.selector, uint64(7)));
+        verifier.reserveHashChain();
     }
 
     function testTeleportRevertsOnReentrancy() public {
