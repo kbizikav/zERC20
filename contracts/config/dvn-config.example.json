@@ -1,0 +1,19 @@
+{
+  "tokens_file": "../../config/tokens.example.json",
+  "chains": {
+    "localnet": {
+      "verifier_hub": {
+        "confirmations": 1,
+        "required_dvns": ["LayerZero Labs"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 1,
+        "required_dvns": ["LayerZero Labs"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
+    }
+  }
+}

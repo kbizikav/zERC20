@@ -7,6 +7,7 @@ import {LiquidityManager} from "../src/liquidity/LiquidityManager.sol";
 import {IncentiveLib} from "../src/libraries/IncentiveLib.sol";
 import {zERC20} from "../src/zERC20.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
+import {LZAddressContext} from "lz-address-book/helpers/LZAddressContext.sol";
 
 /// @notice Deploys LiquidityManager (upgradeable proxy) and optionally the Adaptor that unwraps + bridges through Stargate.
 /// Required env:
@@ -19,7 +20,6 @@ import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 /// - LIQUIDITY_OWNER (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
 /// - SET_LIQUIDITY_AS_MINTER (uint256): When non-zero, attempts to set the manager as zERC20 minter (defaults to 1).
 /// - ADAPTOR_STARGATE (address): Stargate endpoint; when set, deploys the Adaptor wired to the manager (or set in chain-config).
-/// - LZ_ENDPOINT (address): LayerZero endpoint used to validate lzCompose callers.
 /// - CHAIN_CONFIG_PATH (string): Optional path to per-chain defaults (underlyingToken/stargate); falls back to `config/chain-config.json`.
 contract DeployLiquidity is DeterministicDeployer {
     string internal constant DEFAULT_CHAIN_CONFIG_PATH = "config/chain-config.json";
@@ -102,7 +102,7 @@ contract DeployLiquidity is DeterministicDeployer {
         vm.stopBroadcast();
     }
 
-    function _loadConfig() internal view returns (Config memory cfg) {
+    function _loadConfig() internal returns (Config memory cfg) {
         ChainConfig memory chainCfg = _loadChainConfig();
 
         cfg.zerc20Token = vm.envAddress("ZERC20");
@@ -112,13 +112,19 @@ contract DeployLiquidity is DeterministicDeployer {
         cfg.owner = vm.envOr("LIQUIDITY_OWNER", address(0));
         cfg.stargate = vm.envOr("ADAPTOR_STARGATE", chainCfg.stargate);
         if (cfg.stargate != address(0)) {
-            cfg.lzEndpoint = vm.envAddress("LZ_ENDPOINT");
+            cfg.lzEndpoint = _resolveLzEndpoint();
         }
         cfg.setMinter = vm.envOr("SET_LIQUIDITY_AS_MINTER", uint256(1)) != 0;
 
         if (cfg.zerc20Token == address(0)) revert Zerc20TokenRequired();
         if (cfg.underlyingToken == address(0)) revert UnderlyingTokenRequired();
         if (cfg.fee.targetLiquidity == 0) revert LiquidityTargetRequired();
+    }
+
+    function _resolveLzEndpoint() private returns (address endpoint) {
+        LZAddressContext ctx = new LZAddressContext();
+        ctx.setChainByChainId(block.chainid);
+        endpoint = ctx.getEndpointV2();
     }
 
     function _loadChainConfig() internal view returns (ChainConfig memory chainCfg) {
