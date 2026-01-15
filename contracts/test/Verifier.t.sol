@@ -392,8 +392,7 @@ contract VerifierTest is TestHelperOz5 {
         vm.deal(refundAddress, 0);
 
         uint256 refundBefore = refundAddress.balance;
-        MessagingReceipt memory receipt =
-            verifier.relayTransferRoot{value: excessiveFee}(bytes(""), refundAddress);
+        MessagingReceipt memory receipt = verifier.relayTransferRoot{value: excessiveFee}(bytes(""), refundAddress);
         assertEq(receipt.fee.nativeFee, FEE_PER_MESSAGE, "native fee mismatch");
         assertEq(refundAddress.balance, refundBefore + 1, "refund not received");
     }
