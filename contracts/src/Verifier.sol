@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {
     MessagingFee,
     MessagingReceipt
@@ -20,7 +21,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
  *         acting as the bridge between on-chain hash-chain checkpoints, cross-chain aggregation roots, and zERC20 mints.
  * @dev Tracks reserved hash chains, proved transfer roots, global aggregation roots, and cumulative teleported totals.
  */
-contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
+contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     using GeneralRecipientLib for GeneralRecipientLib.GeneralRecipient;
 
     event HashChainReserved(uint64 indexed index, uint256 hashChain);
@@ -308,7 +309,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         uint64 rootHint,
         GeneralRecipientLib.GeneralRecipient calldata gr,
         bytes calldata proof
-    ) external whenNotPaused {
+    ) external whenNotPaused nonReentrant {
         // decode and verify proof
         uint256[34] memory proof_ = abi.decode(proof, (uint256[34]));
         uint256 transferRoot = proof_[1];
@@ -338,7 +339,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         uint64 rootHint,
         GeneralRecipientLib.GeneralRecipient calldata gr,
         bytes calldata proof
-    ) external whenNotPaused {
+    ) external whenNotPaused nonReentrant {
         // decode and verify proof
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC, uint256[3] memory pubSignals) =
             abi.decode(proof, (uint256[2], uint256[2][2], uint256[2], uint256[3]));

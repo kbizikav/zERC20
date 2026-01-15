@@ -17,6 +17,8 @@ import {
     EndpointV2,
     SimpleMessageLibMock
 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
+import {GeneralRecipientLib} from "../src/utils/GeneralRecipientLib.sol";
+import {IWithdrawDecider} from "../src/interfaces/IDecider.sol";
 
 contract VerifierTest is TestHelperOz5 {
     Verifier internal verifier;
@@ -340,5 +342,147 @@ contract VerifierUpgradeMock is Verifier {
 
     function version() external pure returns (string memory) {
         return "verifier-v2";
+    }
+}
+
+// ============================================================================
+// Reentrancy Test
+// ============================================================================
+
+/// @dev Mock zERC20 that triggers a callback during teleport
+contract MockZERC20WithCallback {
+    address public callbackTarget;
+    bytes public callbackData;
+
+    function setCallback(address target, bytes calldata data) external {
+        callbackTarget = target;
+        callbackData = data;
+    }
+
+    function teleport(address, uint256) external {
+        if (callbackTarget != address(0)) {
+            // Trigger callback before completing teleport
+            /* solhint-disable-next-line avoid-low-level-calls */
+            (bool success,) = callbackTarget.call(callbackData);
+            // We don't care if it succeeds - we just want to attempt reentrancy
+            success;
+        }
+    }
+}
+
+/// @dev Mock decider that always returns true
+contract MockWithdrawDecider is IWithdrawDecider {
+    function verifyOpaqueNovaProof(uint256[34] calldata) external pure returns (bool) {
+        return true;
+    }
+}
+
+/// @dev Attacker contract that attempts reentrancy
+contract ReentrancyAttacker {
+    Verifier public verifier;
+    bool public attackAttempted;
+    bool public attackSucceeded;
+
+    constructor(Verifier _verifier) {
+        verifier = _verifier;
+    }
+
+    function attack(
+        bool isGlobal,
+        uint64 rootHint,
+        GeneralRecipientLib.GeneralRecipient calldata gr,
+        bytes calldata proof
+    ) external {
+        attackAttempted = true;
+        try verifier.teleport(isGlobal, rootHint, gr, proof) {
+            attackSucceeded = true;
+        } catch {
+            attackSucceeded = false;
+        }
+    }
+}
+
+contract VerifierReentrancyTest is TestHelperOz5 {
+    Verifier internal verifier;
+    EndpointV2 internal endpoint;
+    MockZERC20WithCallback internal mockToken;
+    MockWithdrawDecider internal mockDecider;
+    ReentrancyAttacker internal attacker;
+
+    uint32 internal constant LOCAL_EID = 1;
+    uint32 internal constant HUB_EID = 2;
+
+    function setUp() public override {
+        super.setUp();
+        setUpEndpoints(2, LibraryType.SimpleMessageLib);
+        endpoint = endpointSetup.endpointList[0];
+
+        mockToken = new MockZERC20WithCallback();
+        mockDecider = new MockWithdrawDecider();
+
+        // Deploy verifier with mock token and decider
+        Verifier implementation = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                address(mockToken),
+                HUB_EID,
+                address(this),
+                address(mockDecider), // rootDecider
+                address(mockDecider), // withdrawGlobalDecider
+                address(mockDecider), // withdrawLocalDecider
+                address(0x400), // singleWithdrawGlobalVerifier (not used in this test)
+                address(0x500) // singleWithdrawLocalVerifier (not used in this test)
+            )
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        verifier = Verifier(address(proxy));
+        verifier.setPeer(HUB_EID, _toBytes32(address(this)));
+
+        attacker = new ReentrancyAttacker(verifier);
+    }
+
+    function testTeleportRevertsOnReentrancy() public {
+        // Setup: store a global root so the teleport can proceed
+        Origin memory origin = Origin({srcEid: HUB_EID, sender: _toBytes32(address(this)), nonce: 1});
+        uint256 transferRoot = 12345;
+        uint64 rootHint = 1;
+        bytes memory payload = abi.encode(transferRoot, rootHint);
+        vm.prank(address(endpoint));
+        verifier.lzReceive(origin, bytes32(uint256(1)), payload, address(0), bytes(""));
+
+        // Create valid GeneralRecipient for this chain
+        GeneralRecipientLib.GeneralRecipient memory gr = GeneralRecipientLib.GeneralRecipient({
+            chainId: uint64(block.chainid), recipient: bytes32(uint256(uint160(address(attacker)))), tweak: bytes32(0)
+        });
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+
+        // Build proof array that will pass mock verification
+        uint256[34] memory proofArray;
+        proofArray[1] = transferRoot; // transferRoot
+        proofArray[2] = recipientHash; // recipient hash
+        proofArray[3] = 0; // initialLastLeafIndex must be 0
+        proofArray[4] = 0; // initialTotalValue must be 0
+        proofArray[5] = transferRoot; // finalTransferRoot must match
+        proofArray[6] = recipientHash; // finalRecipient must match
+        proofArray[7] = 0; // lastLeafIndex
+        proofArray[8] = 100; // totalValue to mint
+        bytes memory proof = abi.encode(proofArray);
+
+        // Setup callback: when mockToken.teleport is called, it will call attacker.attack
+        // which attempts to call verifier.teleport again (reentrancy)
+        bytes memory attackCalldata = abi.encodeCall(ReentrancyAttacker.attack, (true, rootHint, gr, proof));
+        mockToken.setCallback(address(attacker), attackCalldata);
+
+        // Execute teleport - this should succeed but the reentrant call should fail
+        verifier.teleport(true, rootHint, gr, proof);
+
+        // Verify the reentrant attack was attempted but failed
+        assertTrue(attacker.attackAttempted(), "Attack should have been attempted");
+        assertFalse(attacker.attackSucceeded(), "Reentrant attack should have failed");
+    }
+
+    function _toBytes32(address addr) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(addr)));
     }
 }

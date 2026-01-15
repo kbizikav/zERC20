@@ -176,7 +176,14 @@ contract Adaptor is
         $.nativeBalances[user] += msg.value;
 
         // Decode BridgeRequest using try-catch to avoid revert on malformed message
-        BridgeRequest memory request;
+        BridgeRequest memory request = BridgeRequest({
+            dstEid: 0,
+            to: address(0),
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
         try this.decodeBridgeRequest(_message) returns (BridgeRequest memory request_) {
             request = request_;
         } catch (bytes memory revertData) {
@@ -266,6 +273,7 @@ contract Adaptor is
             oftCmd: request.oftCmd
         });
         MessagingFee memory feeQuote = IStargate(STARGATE).quoteSend(sendParam, false);
+        // slither-disable-next-line unused-return
         (,, OFTReceipt memory receipt) = IStargate(STARGATE).quoteOFT(sendParam);
         uint256 tokenBridgeFee = 0;
         if (receipt.amountReceivedLD < amountAfterUnwrap) {
@@ -331,7 +339,7 @@ contract Adaptor is
 
     function _unwrapAndBridge(address user, uint256 zerc20Amount, BridgeRequest memory request) private enableSelfCall {
         // quote fees
-        FeeQuote memory quote;
+        FeeQuote memory quote = FeeQuote({tokenUnwrapFee: 0, nativeBridgeFee: 0, tokenBridgeFee: 0});
         try this.quoteFee(zerc20Amount, request) returns (FeeQuote memory quote_) {
             quote = quote_;
         } catch (bytes memory revertData) {
@@ -350,7 +358,7 @@ contract Adaptor is
         }
 
         // unwrap
-        uint256 underlyingTokenAmount;
+        uint256 underlyingTokenAmount = 0;
         try this.unwrapSelf(user, zerc20Amount, request.minAmountOut) returns (uint256 amountOut_) {
             underlyingTokenAmount = amountOut_;
         } catch (bytes memory revertData) {
@@ -360,7 +368,7 @@ contract Adaptor is
         }
 
         // bridge
-        uint256 amountOut;
+        uint256 amountOut = 0;
         try this.bridgeUnderlyingTokenSelf(user, underlyingTokenAmount, quote.nativeBridgeFee, request) returns (
             uint256 amountOut_
         ) {
@@ -401,6 +409,7 @@ contract Adaptor is
         amountOut = actualAmountOut;
         // add underlying token balance
         _getAdaptorStorage().underlyingTokenBalances[user] += amountOut;
+        // slither-disable-next-line reentrancy-events
         emit Unwrap(user, amount, amountOut);
     }
 
@@ -421,6 +430,7 @@ contract Adaptor is
         uint256 actualNativeFee;
         (amountOut, actualNativeFee) = _innerBridgeUnderlyingToken(amountToBridge, nativeBridgeFee, request);
         _applyNativeFeeRefund(user, nativeBridgeFee, actualNativeFee);
+        // slither-disable-next-line reentrancy-events
         emit BridgeUnderlyingToken(user, request.to, request.dstEid, amountOut, actualNativeFee);
     }
 
@@ -445,6 +455,7 @@ contract Adaptor is
             sendValue += amount;
         }
         uint256 nativeBalanceBefore = address(this).balance;
+        // slither-disable-next-line unused-return
         (, OFTReceipt memory oftReceipt,) =
             IStargate(STARGATE).sendToken{value: sendValue}(sendParam, fee, address(this));
         amountOut = oftReceipt.amountReceivedLD;
@@ -476,6 +487,7 @@ contract Adaptor is
 
         uint256 nativeBalanceBefore = address(this).balance;
         /* solhint-disable check-send-result */
+        // slither-disable-next-line unused-return
         (, OFTReceipt memory oftReceipt) =
             IzERC20(ZERC20_TOKEN).send{value: nativeFee}(sendParam, returnFeeQuote, address(this));
         /* solhint-enable check-send-result */
@@ -486,6 +498,7 @@ contract Adaptor is
         uint256 nativeBalanceAfter = address(this).balance;
         uint256 actualNativeFee = nativeBalanceBefore - nativeBalanceAfter;
         _applyNativeFeeRefund(user, nativeFee, actualNativeFee);
+        // slither-disable-next-line reentrancy-events
         emit BridgeZerc20(to, dstEid, amount);
     }
 
@@ -535,7 +548,7 @@ contract Adaptor is
         // Refund surplus native fee if the quote overestimates or refunds are reflected in balance deltas.
         if (quotedNativeFee <= actualNativeFee) return;
         uint256 refundDue = quotedNativeFee - actualNativeFee;
-        if (refundDue == 0) return;
+        // refundDue is guaranteed > 0 here
         _getAdaptorStorage().nativeBalances[user] += refundDue;
     }
 

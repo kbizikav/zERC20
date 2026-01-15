@@ -187,9 +187,10 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         emit FeeParamsUpdated(params);
     }
 
-    /// @notice Withdraws accumulated fee surplus to the provided address.
-    /// @param to Recipient of the withdrawal.
-    /// @param amount Amount of underlying to withdraw.
+    /// @notice Withdraws accumulated fees to a specified address
+    /// @dev Only callable by admin. Uses low-level call for native token transfers.
+    /// @param to Recipient address (validated non-zero)
+    /// @param amount Amount to withdraw (validated <= feeSurplus)
     function withdrawRewards(address to, uint256 amount) external nonReentrant onlyRole(DEFAULT_ADMIN_ROLE) {
         LiquidityManagerStorage storage $ = _getLiquidityManagerStorage();
         require(to != address(0), ZeroReceiver());
@@ -198,6 +199,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
 
         $.feeSurplus -= amount;
         if (IS_NATIVE_UNDERLYING) {
+            // slither-disable-next-line arbitrary-send-eth
             (bool success,) = payable(to).call{value: amount}("");
             require(success, UnderlyingSendFailed());
         } else {
@@ -290,6 +292,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         if (amountOut > 0) {
             if (IS_NATIVE_UNDERLYING) {
                 require(address(this).balance >= amountOut, InsufficientLiquidity());
+                // slither-disable-next-line arbitrary-send-eth
                 (bool success,) = payable(receiver).call{value: amountOut}("");
                 require(success, UnderlyingSendFailed());
             } else {
