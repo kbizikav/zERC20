@@ -58,6 +58,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     error LayerZeroTokenFeeUnsupported(uint32 eid, uint256 lzTokenFee);
     error FeeRefundFailed(uint256 amount);
     error EmptyTargetEids();
+    error AggregationRootZero();
 
     /// -----------------------------------------------------------------------
     /// Constants & Storage
@@ -193,6 +194,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
         require(targetEids.length != 0, EmptyTargetEids());
         BroadcastContext memory ctx = _computeBroadcastContext();
+        require(ctx.aggregationRoot != 0, AggregationRootZero());
         bytes memory options = lzOptions;
         MessagingFee[] memory fees = new MessagingFee[](targetEids.length);
         uint256 totalNativeFee = _quoteBroadcast(targetEids, ctx.payload, options, fees);
@@ -263,7 +265,18 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         }
 
         uint256[ZERO_HASH_COUNT] memory zeroHashCache = $.zeroHash;
-        aggregationRoot = PoseidonAggregationLib.computeAggregationRoot(leaves, zeroHashCache);
+        aggregationRoot = _computeAggregationRoot(leaves, zeroHashCache);
+    }
+
+    /// @dev Separated into a `virtual` hook to allow alternative aggregation implementations and to enable
+    ///      deterministic testing of the zero-root guard without relying on rare Poseidon preimages.
+    function _computeAggregationRoot(uint256[] memory leaves, uint256[ZERO_HASH_COUNT] memory zeroHashCache)
+        internal
+        pure
+        virtual
+        returns (uint256)
+    {
+        return PoseidonAggregationLib.computeAggregationRoot(leaves, zeroHashCache);
     }
 
     /// @dev Copies current leaves, computes the Poseidon aggregation root, and prepares the outbound payload/seq.
@@ -281,7 +294,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         }
 
         uint256[ZERO_HASH_COUNT] memory zeroHashCache = $.zeroHash;
-        ctx.aggregationRoot = PoseidonAggregationLib.computeAggregationRoot(leaves, zeroHashCache);
+        ctx.aggregationRoot = _computeAggregationRoot(leaves, zeroHashCache);
         ctx.nextAggSeq = $.aggSeq + 1;
         ctx.payload = abi.encode(ctx.aggregationRoot, ctx.nextAggSeq);
     }
