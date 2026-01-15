@@ -18,7 +18,7 @@ import {
     SimpleMessageLibMock
 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {GeneralRecipientLib} from "../src/utils/GeneralRecipientLib.sol";
-import {IWithdrawDecider} from "../src/interfaces/IDecider.sol";
+import {IRootDecider, IWithdrawDecider} from "../src/interfaces/IDecider.sol";
 
 contract VerifierTest is TestHelperOz5 {
     Verifier internal verifier;
@@ -543,7 +543,11 @@ contract MockZERC20WithCallback {
 }
 
 /// @dev Mock decider that always returns true
-contract MockWithdrawDecider is IWithdrawDecider {
+contract MockWithdrawDecider is IRootDecider, IWithdrawDecider {
+    function verifyOpaqueNovaProof(uint256[32] calldata) external pure returns (bool) {
+        return true;
+    }
+
     function verifyOpaqueNovaProof(uint256[34] calldata) external pure returns (bool) {
         return true;
     }
@@ -583,6 +587,9 @@ contract VerifierReentrancyTest is TestHelperOz5 {
 
     uint32 internal constant LOCAL_EID = 1;
     uint32 internal constant HUB_EID = 2;
+
+    event TransferRootProved(uint64 indexed index, uint256 root);
+    event EmergencyTriggered(uint64 indexed index, uint256 root1, uint256 root2);
 
     function setUp() public override {
         super.setUp();
@@ -628,6 +635,94 @@ contract VerifierReentrancyTest is TestHelperOz5 {
         mockToken.setIndexAndHashChain(7, 0);
         vm.expectRevert(abi.encodeWithSelector(Verifier.ZeroHashChain.selector, uint64(7)));
         verifier.reserveHashChain();
+    }
+
+    function testProveTransferRootRevertsWhenHashChainNotReserved() public {
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 oldIndex = 0;
+        uint64 newIndex = 42;
+        uint256 newHashChain = 123;
+        uint256 newRoot = 777;
+        uint256[32] memory proof;
+        proof[1] = oldIndex;
+        proof[3] = oldRoot;
+        proof[4] = newIndex;
+        proof[5] = newHashChain;
+        proof[6] = newRoot;
+        vm.expectRevert(abi.encodeWithSelector(Verifier.ReserveHashChainNotFound.selector, newIndex));
+        verifier.proveTransferRoot(abi.encode(proof));
+    }
+
+    function testProveTransferRootRevertsOnHashChainMismatch() public {
+        verifier.reserveHashChain();
+
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 oldIndex = 0;
+        uint64 newIndex = 42;
+        uint256 reservedHashChain = 123;
+        uint256 providedHashChain = 999;
+        uint256 newRoot = 777;
+        uint256[32] memory proof;
+        proof[1] = oldIndex;
+        proof[3] = oldRoot;
+        proof[4] = newIndex;
+        proof[5] = providedHashChain;
+        proof[6] = newRoot;
+        vm.expectRevert(
+            abi.encodeWithSelector(Verifier.NewHashChainMismatch.selector, newIndex, reservedHashChain, providedHashChain)
+        );
+        verifier.proveTransferRoot(abi.encode(proof));
+    }
+
+    function testProveTransferRootStoresNewRootAndUpdatesLatestProvedIndex() public {
+        verifier.reserveHashChain();
+
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 oldIndex = 0;
+        uint64 newIndex = 42;
+        uint256 newHashChain = 123;
+        uint256 newRoot = 777;
+        uint256[32] memory proof;
+        proof[1] = oldIndex;
+        proof[3] = oldRoot;
+        proof[4] = newIndex;
+        proof[5] = newHashChain;
+        proof[6] = newRoot;
+
+        vm.expectEmit(true, true, false, true, address(verifier));
+        emit TransferRootProved(newIndex, newRoot);
+        verifier.proveTransferRoot(abi.encode(proof));
+
+        assertEq(verifier.provedTransferRoots(newIndex), newRoot, "proved root stored");
+        assertEq(verifier.latestProvedIndex(), newIndex, "latestProvedIndex updated");
+    }
+
+    function testProveTransferRootPausesOnConflictingRoot() public {
+        verifier.reserveHashChain();
+
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 oldIndex = 0;
+        uint64 newIndex = 42;
+        uint256 newHashChain = 123;
+        uint256 firstRoot = 777;
+        uint256 secondRoot = 888;
+
+        uint256[32] memory proof;
+        proof[1] = oldIndex;
+        proof[3] = oldRoot;
+        proof[4] = newIndex;
+        proof[5] = newHashChain;
+        proof[6] = firstRoot;
+        verifier.proveTransferRoot(abi.encode(proof));
+        assertFalse(verifier.paused(), "should not pause on first proof");
+
+        proof[6] = secondRoot;
+        vm.expectEmit(true, false, false, true, address(verifier));
+        emit EmergencyTriggered(newIndex, firstRoot, secondRoot);
+        verifier.proveTransferRoot(abi.encode(proof));
+
+        assertTrue(verifier.paused(), "should pause on conflict");
+        assertEq(verifier.provedTransferRoots(newIndex), firstRoot, "conflicting proof should not overwrite root");
     }
 
     function testTeleportRevertsOnReentrancy() public {
