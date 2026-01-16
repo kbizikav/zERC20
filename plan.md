@@ -11,7 +11,8 @@
 
 ## Constraints and risks
 - folding-schemes `DeciderEth` uses `Groth16::circuit_specific_setup` internally with
-  no hook for external SRS; if "all Groth16 uses ptau" is required, we need a patch/fork.
+  no hook for external SRS; we will mirror that preprocess logic in trusted-setup-cli
+  to inject Groth16 keys without modifying Sonobe.
 - ptau size must cover the max constraint count for:
   - SingleWithdraw circuits (local/global)
   - Nova and CycleFold R1CS (for KZG SRS length)
@@ -41,8 +42,8 @@
 3. Extend zkp Nova setup to accept external KZG params (cs_pp/cs_vp) from ptau.
 4. Replace Groth16 `setup` in artifact generation with arkworks-phase2 `Transcript`
    (no contribution) and serialize pk/vk.
-5. If decider Groth16 must use ptau, patch folding-schemes to accept injected
-   Groth16 keys (or add a custom decider wrapper).
+5. For decider Groth16, mirror `DeciderEth::preprocess` in trusted-setup-cli and
+   inject Groth16 keys (no Sonobe API changes).
 6. Validate by generating proofs and verifying with existing contracts.
 
 ## Open questions
@@ -50,3 +51,66 @@
 - ptau source decided: `ppot_0080_24.ptau` (power=24) from
   `https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_24.ptau`.
 - File size is ~18GB, so it will be downloaded on demand and not committed.
+
+## Design overview (trusted-setup-cli)
+- Scope: new CLI under `<repo-root>/trusted-setup-cli` responsible for ptau handling,
+  phase2 Groth16 contributions, and generating Nova/KZG/Decider artifacts.
+- No Sonobe API changes: the CLI constructs Nova params with injected KZG SRS and
+  mirrors `DeciderEth::preprocess` to build decider params externally.
+- Deterministic RNG for Pedersen params (seeded `StdRng`) is acceptable.
+
+## Arkworks-phase2 usage (detailed)
+- Load ptau: `Accumulator::<Bn254>::from_ptau_file(ptau_path)`.
+- Groth16 phase2 (circuit-specific) key generation:
+  1) Build the circuit (single-withdraw or decider).
+  2) `Transcript::new_from_accumulator(&accum, circuit)` to derive initial key.
+  3) Optional: `transcript.verify_from_accumulator(&accum, circuit)` before use.
+  4) Output `ProvingKey`/`VerifyingKey` from `transcript.key` for artifacts.
+- Groth16 phase2 contribution flow:
+  - Load transcript bytes, verify against accumulator/circuit.
+  - `transcript.contribute_seed(...)` or `contribute_rng(...)`.
+  - `transcript.verify()` and emit updated transcript bytes plus public contribution data.
+
+## KZG SRS derivation from ptau (detailed)
+- Use ptau tau powers as KZG powers (non-hiding):
+  - `powers_of_g[i] = tau_powers_g1[i]` for i = 0..=len.
+  - `h = tau_powers_g2[0]`, `beta_h = tau_powers_g2[1]` (tau is the KZG beta).
+  - `gamma_g = alpha_tau_powers_g1[0]` and `powers_of_gamma_g[i] = alpha_tau_powers_g1[i]`
+    to keep KZG10 `VerifierKey` consistent (gamma_g is unused in non-hiding checks).
+- Build `KZG` ProverParams/VerifierParams for folding-schemes:
+  - ProverParams = `ProverKey { powers_of_g }`.
+  - VerifierParams = `VerifierKey { g, gamma_g, h, beta_h, prepared_h, prepared_beta_h }`.
+- Slice length based on `max(r1cs.n_constraints(), r1cs.n_witnesses())` for each circuit.
+
+## Nova params injection (no Sonobe changes)
+- Construct `PreprocessorParam` with `cs_pp/cs_vp` set to KZG params derived above.
+- Run `Nova::preprocess` to get `nova_pp/nova_vp`.
+- Pedersen params for CycleFold: deterministic `StdRng::seed_from_u64(...)`.
+
+## Decider params construction (mirror DeciderEth::preprocess)
+- Build `DeciderEthCircuit::dummy` with:
+  - `nova_vp.r1cs`, `nova_vp.cf_r1cs`, `nova_pp.cf_cs_pp`, `nova_pp.poseidon_config`,
+    `state_len`, `num_commitments=2`.
+- Generate Groth16 keys for the decider circuit via arkworks-phase2 `Transcript`.
+- Assemble decider params:
+  - `decider_pp = (g16_pk, nova_pp.cs_pp)`
+  - `decider_vp = { pp_hash: nova_vp.pp_hash(), snark_vp: g16_vk, cs_vp: nova_vp.cs_vp }`
+- Serialize to the existing artifact layout so decider-prover can load without changes.
+
+## CLI design (rough)
+- Commands (subject to change):
+  - `ptau download` (cache to a local path, no commit)
+  - `groth16 init` / `groth16 contribute` / `groth16 export`
+  - `nova build` (KZG injection + pedersen params)
+  - `decider build` (mirror preprocess + Groth16 from ptau)
+  - `artifacts build` (orchestrate all outputs to `nova_artifacts/`)
+- Config: ptau path (default to cached file), output dir, circuit selection.
+
+## Outputs / compatibility
+- Keep existing artifact names so downstream code works:
+  - `*_groth16_pk.bin`, `*_groth16_vk.bin`
+  - `*_nova_pp.bin`, `*_nova_vp.bin`
+  - `*_decider_pp.bin`, `*_decider_vp.bin`
+- Also emit Solidity verifier contracts for Groth16 and Nova decider:
+  - `{Prefix}Groth16Verifier.sol`
+  - `{Prefix}NovaDecider.sol`
