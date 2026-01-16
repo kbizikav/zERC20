@@ -18,7 +18,8 @@ import {
     SimpleMessageLibMock
 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {GeneralRecipientLib} from "../src/utils/GeneralRecipientLib.sol";
-import {IRootDecider, IWithdrawDecider} from "../src/interfaces/IDecider.sol";
+import {IWithdrawDecider} from "../src/interfaces/IWithdrawDecider.sol";
+import {IRootDecider} from "../src/interfaces/IRootDecider.sol";
 
 contract VerifierTest is TestHelperOz5 {
     Verifier internal verifier;
