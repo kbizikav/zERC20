@@ -5,24 +5,22 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{bail, Context, Result};
 use ark_bn254::{Bn254, Fr, G1Projective as G1};
 use ark_ec::pairing::Pairing;
 use ark_grumpkin::Projective as G2;
 use ark_poly_commit::kzg10::VerifierKey as KzgVerifierKey;
 use ark_serialize::CanonicalDeserialize;
 use arkworks_phase2::{
-    accumulator::Accumulator,
-    transcript::Transcript,
-    utils::serialize_uncompressed,
+    accumulator::Accumulator, transcript::Transcript, utils::serialize_uncompressed,
 };
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use folding_schemes::{
     arith::Arith,
     commitment::{
-        CommitmentScheme,
-        kzg::{KZG, ProverKey as KzgProverKey},
+        kzg::{ProverKey as KzgProverKey, KZG},
         pedersen::Pedersen,
+        CommitmentScheme,
     },
     folding::nova::{decider_eth::DeciderEthCircuit, get_r1cs, PreprocessorParam},
     folding::traits::Dummy,
@@ -31,7 +29,10 @@ use folding_schemes::{
     FoldingScheme,
 };
 use futures::StreamExt;
-use rand::{SeedableRng, rngs::{OsRng, StdRng}};
+use rand::{
+    rngs::{OsRng, StdRng},
+    SeedableRng,
+};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use url::Url as ParsedUrl;
@@ -45,7 +46,8 @@ use zkp::nova::{
 };
 use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
-const DEFAULT_PTAU_URL: &str = "https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_24.ptau";
+const DEFAULT_PTAU_URL: &str =
+    "https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_24.ptau";
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "trusted setup CLI")]
@@ -116,16 +118,6 @@ enum CircuitPrefix {
     WithdrawLocal,
     #[value(name = "withdraw_global")]
     WithdrawGlobal,
-}
-
-impl CircuitPrefix {
-    fn as_str(&self) -> &'static str {
-        match self {
-            CircuitPrefix::Root => "root",
-            CircuitPrefix::WithdrawLocal => "withdraw_local",
-            CircuitPrefix::WithdrawGlobal => "withdraw_global",
-        }
-    }
 }
 
 #[derive(Args, Debug)]
@@ -204,7 +196,6 @@ struct ParticipateResponse {
     lease_id: String,
     participant_id: String,
     step: u64,
-    expires_at: u64,
     input_url: String,
     output_url: String,
     contribution_url: String,
@@ -246,7 +237,10 @@ async fn main() -> Result<()> {
 async fn download_ptau(args: PtauDownloadArgs) -> Result<()> {
     let output = args.output.unwrap_or_else(default_ptau_path);
     if output.exists() && !args.force {
-        bail!("ptau already exists at {} (use --force to overwrite)", output.display());
+        bail!(
+            "ptau already exists at {} (use --force to overwrite)",
+            output.display()
+        );
     }
 
     if let Some(parent) = output.parent() {
@@ -293,9 +287,8 @@ async fn contribute(args: ContributeArgs) -> Result<()> {
     let ptau_path = args.ptau_path.unwrap_or_else(default_ptau_path);
     let accum = load_accumulator(&ptau_path)?;
 
-    let base_url = Url::parse(&args.coordinator_url).with_context(|| {
-        format!("invalid coordinator url {}", args.coordinator_url)
-    })?;
+    let base_url = Url::parse(&args.coordinator_url)
+        .with_context(|| format!("invalid coordinator url {}", args.coordinator_url))?;
 
     let participate_url = base_url
         .join(&format!("/api/ceremonies/{}/participate", args.ceremony_id))
@@ -351,15 +344,15 @@ async fn contribute(args: ContributeArgs) -> Result<()> {
         .verify()
         .context("transcript verification after contribution failed")?;
 
-    let updated_bytes = serialize_uncompressed(&transcript)
-        .context("failed to serialize updated transcript")?;
+    let updated_bytes =
+        serialize_uncompressed(&transcript).context("failed to serialize updated transcript")?;
 
     let contribution = transcript
         .contributions
         .last()
         .context("missing contribution data")?;
-    let contribution_bytes = serialize_uncompressed(contribution)
-        .context("failed to serialize contribution")?;
+    let contribution_bytes =
+        serialize_uncompressed(contribution).context("failed to serialize contribution")?;
 
     upload_bytes(&client, &participate.output_url, updated_bytes)
         .await
@@ -434,7 +427,10 @@ async fn finalize(args: FinalizeArgs) -> Result<()> {
             .await?;
         }
         CircuitPrefix::WithdrawGlobal => {
-            finalize_withdraw::<GLOBAL_TRANSFER_TREE_HEIGHT, WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
+            finalize_withdraw::<
+                GLOBAL_TRANSFER_TREE_HEIGHT,
+                WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>,
+            >(
                 "withdraw_global",
                 &accum,
                 &output_dir,
@@ -648,8 +644,8 @@ where
     prep.cf_cs_vp = Some(cf_cs_vp);
 
     let mut rng = StdRng::seed_from_u64(0);
-    let (pp, vp) = N::<C>::preprocess(&mut rng, &prep)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let (pp, vp) =
+        N::<C>::preprocess(&mut rng, &prep).map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
     let params = NovaParams { f_params, pp, vp };
 
@@ -724,11 +720,17 @@ where
 
     let decider_pp = (groth16_params.pk.clone(), nova_params.pp.cs_pp.clone());
     let decider_vp = folding_schemes::folding::nova::decider_eth::VerifierParam {
-        pp_hash: nova_params.vp.pp_hash().map_err(|e| anyhow::anyhow!(e.to_string()))?,
+        pp_hash: nova_params
+            .vp
+            .pp_hash()
+            .map_err(|e| anyhow::anyhow!(e.to_string()))?,
         snark_vp: groth16_params.vk.clone(),
         cs_vp: nova_params.vp.cs_vp.clone(),
     };
-    let decider_params = DeciderParams::<C> { pp: decider_pp, vp: decider_vp };
+    let decider_params = DeciderParams::<C> {
+        pp: decider_pp,
+        vp: decider_vp,
+    };
 
     let (decider_pp_bytes, decider_vp_bytes) = decider_params
         .to_bytes()
@@ -829,9 +831,9 @@ fn verify_transcript(
                 .context("decider_withdraw_local verification failed")?;
         }
         CeremonyCircuit::DeciderWithdrawGlobal => {
-            let circuit = build_decider_circuit::<
-                WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>,
-            >(pedersen_seed)?;
+            let circuit = build_decider_circuit::<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
+                pedersen_seed,
+            )?;
             transcript
                 .verify_from_accumulator(accum, circuit)
                 .context("decider_withdraw_global verification failed")?;
@@ -852,8 +854,7 @@ where
     FParams<C>: Clone,
 {
     let poseidon_config = poseidon_canonical_config::<Fr>();
-    let circuit =
-        C::new(default_f_params::<C>()?).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let circuit = C::new(default_f_params::<C>()?).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let state_len = circuit.state_len();
     let (r1cs, cf_r1cs) = get_r1cs::<G1, G2, C>(&poseidon_config, circuit)
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
@@ -874,9 +875,18 @@ where
     )))
 }
 
-fn default_f_params<C>() -> Result<(ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>, ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>)>
+fn default_f_params<C>() -> Result<(
+    ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
+    ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
+)>
 where
-    C: FCircuit<Fr, Params = (ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>, ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>)>,
+    C: FCircuit<
+        Fr,
+        Params = (
+            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
+            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
+        ),
+    >,
 {
     let poseidon2_config = circom_poseidon2_config::<Fr>();
     let poseidon3_config = circom_poseidon3_config();
@@ -897,8 +907,8 @@ async fn resolve_transcript_source(
         return parse_transcript_source(&value);
     }
 
-    let ceremony_id = ceremony_id
-        .context("ceremony id is required when transcript path is not provided")?;
+    let ceremony_id =
+        ceremony_id.context("ceremony id is required when transcript path is not provided")?;
     let public_base_url = public_base_url
         .context("public base url is required when transcript path is not provided")?;
 
@@ -907,15 +917,18 @@ async fn resolve_transcript_source(
         .await
         .context("failed to fetch latest metadata")?;
     if !latest_resp.status().is_success() {
-        bail!("latest metadata fetch failed with status {}", latest_resp.status());
+        bail!(
+            "latest metadata fetch failed with status {}",
+            latest_resp.status()
+        );
     }
     let latest_bytes = latest_resp
         .bytes()
         .await
         .context("failed to read latest metadata")?;
 
-    let latest: LatestMetadata = serde_json::from_slice(&latest_bytes)
-        .context("failed to parse latest metadata")?;
+    let latest: LatestMetadata =
+        serde_json::from_slice(&latest_bytes).context("failed to parse latest metadata")?;
     let transcript_url = build_object_url(public_base_url, &latest.transcript_key)?;
     Ok(TranscriptSource::Url(transcript_url))
 }
@@ -966,11 +979,9 @@ async fn load_transcript(source: TranscriptSource) -> Result<Transcript<Bn254>> 
                 .context("failed to read transcript bytes")?
                 .to_vec()
         }
-        TranscriptSource::Path(path) => {
-            tokio::fs::read(&path)
-                .await
-                .with_context(|| format!("failed to read {}", path.display()))?
-        }
+        TranscriptSource::Path(path) => tokio::fs::read(&path)
+            .await
+            .with_context(|| format!("failed to read {}", path.display()))?,
     };
 
     Transcript::<Bn254>::deserialize_uncompressed(&bytes[..])

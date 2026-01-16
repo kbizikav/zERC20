@@ -18,8 +18,8 @@ use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{presigning::PresigningConfig, primitives::ByteStream, Client as S3Client};
 use folding_schemes::{
     arith::Arith,
-    commitment::CommitmentScheme,
     commitment::pedersen::Pedersen,
+    commitment::CommitmentScheme,
     folding::nova::{decider_eth::DeciderEthCircuit, get_r1cs},
     folding::traits::Dummy,
     frontend::FCircuit,
@@ -957,8 +957,7 @@ where
     FParams<C>: Clone,
 {
     let poseidon_config = poseidon_canonical_config::<Fr>();
-    let circuit =
-        C::new(default_f_params::<C>()?).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let circuit = C::new(default_f_params::<C>()?).map_err(|e| anyhow::anyhow!(e.to_string()))?;
     let state_len = circuit.state_len();
     let (r1cs, cf_r1cs) = get_r1cs::<G1, G2, C>(&poseidon_config, circuit)
         .map_err(|e| anyhow::anyhow!(e.to_string()))?;
