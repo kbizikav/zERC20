@@ -6,6 +6,7 @@ import {Hub} from "../src/Hub.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {
     TestHelperOz5,
     EndpointV2,
@@ -323,6 +324,172 @@ contract HubTest is TestHelperOz5 {
         assertEq(chainId, info.chainId, "chain id not preserved");
         assertEq(verifierAddr, info.verifier, "verifier not preserved");
         assertEq(tokenAddr, info.token, "token not preserved");
+    }
+
+    function testHubUpgradeRevertsOnEndpointMismatch() public {
+        Hub implementation = new Hub(address(endpoint));
+        bytes memory initData = abi.encodeCall(Hub.initialize, (address(this)));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        Hub proxiedHub = Hub(address(proxy));
+
+        EndpointV2 otherEndpoint = endpointSetup.endpointList[1];
+        HubUpgradeMock newImplementation = new HubUpgradeMock(address(otherEndpoint));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Hub.EndpointMismatch.selector, address(endpoint), address(otherEndpoint))
+        );
+        proxiedHub.upgradeToAndCall(address(newImplementation), bytes(""));
+    }
+
+    function testRegisterTokenOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 999, eid: 999, verifier: address(0x1), token: address(0x2)});
+
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        hub.registerToken(info);
+    }
+
+    function testUpdateTokenOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        Hub.TokenInfo memory info =
+            Hub.TokenInfo({chainId: 999, eid: REMOTE_EID_A, verifier: address(0x1), token: address(0x2)});
+
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        hub.updateToken(info);
+    }
+
+    function testUpdateTokenValidationReverts() public {
+        vm.expectRevert(Hub.ZeroVerifier.selector);
+        hub.updateToken(Hub.TokenInfo({chainId: 1, eid: REMOTE_EID_A, verifier: address(0), token: address(0x1)}));
+
+        vm.expectRevert(Hub.ZeroToken.selector);
+        hub.updateToken(Hub.TokenInfo({chainId: 1, eid: REMOTE_EID_A, verifier: address(0x1), token: address(0)}));
+
+        vm.expectRevert(Hub.InvalidChainId.selector);
+        hub.updateToken(Hub.TokenInfo({chainId: 0, eid: REMOTE_EID_A, verifier: address(0x1), token: address(0x2)}));
+    }
+
+    function testRegisterTokenRevertsOnMaxCapacity() public {
+        Hub localHub = _deployInitializedHub();
+        uint256 maxLeaves = localHub.MAX_LEAVES();
+
+        for (uint256 i = 0; i < maxLeaves; ++i) {
+            // Casts are safe because i < maxLeaves (64) fits in uint64/uint32/uint160
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint64 chainId = uint64(i + 1);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint32 eid = uint32(i + 100);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            address verifier = address(uint160(i + 1));
+            // forge-lint: disable-next-line(unsafe-typecast)
+            address token = address(uint160(i + 1000));
+            localHub.registerToken(Hub.TokenInfo({chainId: chainId, eid: eid, verifier: verifier, token: token}));
+        }
+
+        vm.expectRevert(Hub.HubCapacityReached.selector);
+        localHub.registerToken(Hub.TokenInfo({chainId: 999, eid: 9999, verifier: address(0x1), token: address(0x2)}));
+    }
+
+    function testZeroHashReturnsInitializedValues() public view {
+        // zeroHash[0] is 0 by design (Poseidon zero leaf)
+        // zeroHash[1] = hash(0, 0) which should be non-zero
+        uint256 secondZeroHash = hub.zeroHash(1);
+        assertGt(secondZeroHash, 0, "zero hash[1] should be non-zero");
+    }
+
+    function testGetTransferRootsAndIndicesReturnsSnapshot() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info1 = Hub.TokenInfo({chainId: 1, eid: 10, verifier: address(0x1), token: address(0x2)});
+        Hub.TokenInfo memory info2 = Hub.TokenInfo({chainId: 2, eid: 20, verifier: address(0x3), token: address(0x4)});
+        localHub.registerToken(info1);
+        localHub.registerToken(info2);
+        localHub.setPeer(info1.eid, _toBytes32(address(this)));
+        localHub.setPeer(info2.eid, _toBytes32(address(this)));
+
+        Origin memory origin1 = Origin({srcEid: info1.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin1, bytes32(0), abi.encode(uint256(111), uint64(5)), address(0), bytes(""));
+
+        Origin memory origin2 = Origin({srcEid: info2.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin2, bytes32(0), abi.encode(uint256(222), uint64(10)), address(0), bytes(""));
+
+        (uint256[] memory roots, uint64[] memory indices) = localHub.getTransferRootsAndIndices();
+
+        assertEq(roots.length, 2, "roots length");
+        assertEq(indices.length, 2, "indices length");
+        assertEq(roots[0], 111, "first root");
+        assertEq(roots[1], 222, "second root");
+        assertEq(indices[0], 5, "first index");
+        assertEq(indices[1], 10, "second index");
+    }
+
+    function testCurrentAggregationRootMatchesBroadcast() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 1, eid: 10, verifier: address(0x1), token: address(0x2)});
+        localHub.registerToken(info);
+        localHub.setPeer(info.eid, _toBytes32(address(this)));
+
+        Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), abi.encode(uint256(12345), uint64(1)), address(0), bytes(""));
+
+        uint256 computedRoot = localHub.currentAggregationRoot();
+        assertGt(computedRoot, 0, "aggregation root should be non-zero");
+    }
+
+    function testLzReceiveIgnoresSameTransferTreeIndex() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 1, eid: 10, verifier: address(0x1), token: address(0x2)});
+        localHub.registerToken(info);
+        localHub.setPeer(info.eid, _toBytes32(address(this)));
+
+        Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), abi.encode(uint256(111), uint64(5)), address(0), bytes(""));
+
+        assertEq(localHub.transferRoots(0), 111, "initial root stored");
+
+        vm.recordLogs();
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), abi.encode(uint256(222), uint64(5)), address(0), bytes(""));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        assertEq(logs.length, 0, "no events for same index");
+        assertEq(localHub.transferRoots(0), 111, "root unchanged for same index");
+    }
+
+    function testBroadcastEmitsAggregationRootUpdated() public {
+        // Use existing hub which has sendLib configured
+        // First update a transfer root via lzReceive
+        Origin memory origin = Origin({srcEid: REMOTE_EID_A, sender: _toBytes32(REMOTE_PEER_A), nonce: 1});
+        vm.prank(address(endpoint));
+        hub.lzReceive(origin, bytes32(0), abi.encode(uint256(12345), uint64(1)), address(0), bytes(""));
+
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 fee = hub.quoteBroadcast(targetEids, options);
+        vm.deal(address(this), fee);
+
+        vm.recordLogs();
+        hub.broadcast{value: fee}(targetEids, options);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        bool foundEvent = false;
+        bytes32 eventSig = keccak256("AggregationRootUpdated(uint256,uint64,uint256[],uint64[])");
+        for (uint256 i = 0; i < logs.length; ++i) {
+            if (logs[i].topics[0] == eventSig) {
+                foundEvent = true;
+                uint256 emittedRoot = uint256(logs[i].topics[1]);
+                uint64 emittedSeq = uint64(uint256(logs[i].topics[2]));
+                assertGt(emittedRoot, 0, "emitted root non-zero");
+                assertEq(emittedSeq, 1, "emitted seq");
+            }
+        }
+        assertTrue(foundEvent, "AggregationRootUpdated event emitted");
     }
 
     function _targetEids() internal pure returns (uint32[] memory targetEids) {

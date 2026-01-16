@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Unlicense
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.33;
 
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
@@ -59,6 +59,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     error FeeRefundFailed(uint256 amount);
     error EmptyTargetEids();
     error AggregationRootZero();
+    error EndpointMismatch(address expected, address actual);
 
     /// -----------------------------------------------------------------------
     /// Constants & Storage
@@ -106,7 +107,11 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         __Hub_init();
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        address expected = address(endpoint);
+        address actual = address(Hub(newImplementation).endpoint());
+        if (actual != expected) revert EndpointMismatch(expected, actual);
+    }
 
     function transferRoots(uint256 index_) public view returns (uint256) {
         return _getHubStorage().transferRoots[index_];
