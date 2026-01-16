@@ -4,13 +4,13 @@
     "arb-mainnet": {
       "verifier_hub": {
         "confirmations": 3072,
-        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
         "optional_dvns": [],
         "optional_threshold": 0
       },
       "token": {
         "confirmations": 3072,
-        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
         "optional_dvns": [],
         "optional_threshold": 0
       }
@@ -18,13 +18,13 @@
     "op-mainnet": {
       "verifier_hub": {
         "confirmations": 384,
-        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
         "optional_dvns": [],
         "optional_threshold": 0
       },
       "token": {
         "confirmations": 384,
-        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
         "optional_dvns": [],
         "optional_threshold": 0
       }
@@ -32,13 +32,13 @@
     "bnb-mainnet": {
       "verifier_hub": {
         "confirmations": 3,
-        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
         "optional_dvns": [],
         "optional_threshold": 0
       },
       "token": {
         "confirmations": 3,
-        "required_dvns": ["LayerZero Labs", "Polyhedra"],
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
         "optional_dvns": [],
         "optional_threshold": 0
       }
@@ -47,7 +47,7 @@
   "hub": {
     "verifier_hub": {
       "confirmations": 10,
-      "required_dvns": ["LayerZero Labs", "Polyhedra"],
+      "required_dvns": ["LayerZero Labs", "Nethermind"],
       "optional_dvns": [],
       "optional_threshold": 0
     }

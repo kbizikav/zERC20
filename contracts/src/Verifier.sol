@@ -55,6 +55,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     error OldRootZero(uint64 index);
     error OldRootMismatch(uint64 index, uint256 expected, uint256 actual);
     error ReserveHashChainNotFound(uint64 index);
+    error ZeroHashChain(uint64 index);
     error NewHashChainMismatch(uint64 index, uint256 expected, uint256 actual);
     error InvalidInitialLastLeafIndex(uint256 value);
     error InvalidInitialTotalValue(uint256 value);
@@ -66,6 +67,8 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     error InvalidRecipientChainId(uint64 provided, uint64 expected);
     error NothingToWithdraw(uint256 currentTotal, uint256 totalValue);
     error InsufficientMsgValue(uint256 required, uint256 provided);
+    error EndpointMismatch(address expected, address actual);
+    error ZeroRefundAddress();
 
     // Root of an empty IncrementalMerkleTree at TRANSFER_TREE_HEIGHT (see zkp test).
     uint256 private constant INITIAL_TRANSFER_ROOT =
@@ -101,6 +104,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
             $.slot := slot
         }
     }
+
+    /// -----------------------------------------------------------------------
+    /// View Functions
+    /// -----------------------------------------------------------------------
 
     function token() public view returns (address) {
         return _getVerifierStorage().token;
@@ -187,6 +194,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         address singleWithdrawLocalVerifier_
     ) external initializer {
         require(token_ != address(0), ZeroToken());
+        require(delegate != address(0), ZeroAddress());
         require(
             rootDecider_ != address(0) && withdrawGlobalDecider_ != address(0) && withdrawLocalDecider_ != address(0)
                 && singleWithdrawGlobalVerifier_ != address(0) && singleWithdrawLocalVerifier_ != address(0),
@@ -239,7 +247,11 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         $.latestRelayedIndex = 0;
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        address expected = address(endpoint);
+        address actual = address(Verifier(newImplementation).endpoint());
+        if (actual != expected) revert EndpointMismatch(expected, actual);
+    }
 
     /// -----------------------------------------------------------------------
     /// Transfer Root Functions
@@ -247,6 +259,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
 
     /// @notice Snapshots the latest `(index, hashChain)` tuple from zERC20 so Nova proofs can reference stable inputs.
     /// @dev Mirrors the first step of the private proof-of-burn lifecycle.
+    /// @dev This function is intentionally NOT gated by `whenNotPaused`.
+    ///      Emergency pause is meant to halt ZKP verification and any ZKP-derived actions (prove/teleport/relay),
+    ///      while still allowing non-ZKP flows (e.g., transfers/OFT bridge activity) to continue and reservations
+    ///      to be prepared for later proof submission.
     /// @return index Reserved transfer index copied from zERC20.
     /// @return hashChain SHA-256 hash chain committed up to `index - 1`.
     function reserveHashChain() external returns (uint64 index, uint256 hashChain) {
@@ -254,6 +270,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         IzERC20 tokenContract = IzERC20($.token);
         uint64 index_ = uint64(tokenContract.index());
         uint256 hashChain_ = tokenContract.hashChain();
+        require(hashChain_ != 0, ZeroHashChain(index_));
         $.reservedHashChains[index_] = hashChain_;
         $.latestReservedIndex = index_;
         emit HashChainReserved(index_, hashChain_);
@@ -266,7 +283,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     function proveTransferRoot(bytes calldata proof) external whenNotPaused {
         uint256[32] memory proof_ = abi.decode(proof, (uint256[32]));
         uint64 oldIndex = uint64(proof_[1]);
-        proof_[2]; // oldHashChain is unused
+        // proof_[2] is oldHashChain, intentionally unused in on-chain verification
         uint256 oldRoot = proof_[3];
         uint64 newIndex = uint64(proof_[4]);
         uint256 newHashChain = proof_[5];
@@ -377,10 +394,14 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         uint256 currentTotal = $.totalTeleported[recipient];
         require(value > currentTotal, NothingToWithdraw(currentTotal, value));
         uint256 diff = value - currentTotal;
-        $.totalTeleported[recipient] += diff;
-        address recipientAddr = address(uint160(uint256(gr.recipient)));
+        $.totalTeleported[recipient] = value;
+        address recipientAddr = _bytes32ToAddress(gr.recipient);
         IzERC20($.token).teleport(recipientAddr, diff);
         emit Teleport(recipientAddr, diff, isGlobal, rootHint, transferRoot, gr);
+    }
+
+    function _bytes32ToAddress(bytes32 value) private pure returns (address) {
+        return address(uint160(uint256(value)));
     }
 
     /// -----------------------------------------------------------------------
@@ -388,7 +409,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     /// -----------------------------------------------------------------------
 
     /// @notice Sends the latest proved transfer root to the Hub over LayerZero so it can join the global aggregation tree.
-    /// @dev Requires `latestProvedIndex` to have a non-zero root; excess msg.value is kept as the LZ native fee.
+    /// @dev Requires `latestProvedIndex` to have a non-zero root; excess msg.value (if any) is refunded by the endpoint.
     /// @param options LayerZero execution parameters forwarded to `_lzSend`.
     function relayTransferRoot(bytes calldata options)
         external
@@ -396,6 +417,23 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         whenNotPaused
         returns (MessagingReceipt memory receipt)
     {
+        receipt = _relayTransferRoot(options, msg.sender);
+    }
+
+    function relayTransferRoot(bytes calldata options, address refundAddress)
+        external
+        payable
+        whenNotPaused
+        returns (MessagingReceipt memory receipt)
+    {
+        receipt = _relayTransferRoot(options, refundAddress);
+    }
+
+    function _relayTransferRoot(bytes calldata options, address refundAddress)
+        internal
+        returns (MessagingReceipt memory receipt)
+    {
+        require(refundAddress != address(0), ZeroRefundAddress());
         VerifierStorage storage $ = _getVerifierStorage();
         uint64 index = $.latestProvedIndex;
         uint256 root = $.provedTransferRoots[index];
@@ -406,7 +444,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         require(msg.value >= quotedFee.nativeFee, InsufficientMsgValue(quotedFee.nativeFee, msg.value));
 
         MessagingFee memory fee = MessagingFee({nativeFee: msg.value, lzTokenFee: quotedFee.lzTokenFee});
-        receipt = _lzSend($.hubEid, payload, options, fee, msg.sender);
+        receipt = _lzSend($.hubEid, payload, options, fee, refundAddress);
         emit TransferRootRelayed(index, root, abi.encodePacked(receipt.guid));
 
         $.latestRelayedIndex = index;

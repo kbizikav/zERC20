@@ -18,7 +18,7 @@ import {
     SimpleMessageLibMock
 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {GeneralRecipientLib} from "../src/utils/GeneralRecipientLib.sol";
-import {IWithdrawDecider} from "../src/interfaces/IDecider.sol";
+import {IRootDecider, IWithdrawDecider} from "../src/interfaces/IDecider.sol";
 
 contract VerifierTest is TestHelperOz5 {
     Verifier internal verifier;
@@ -83,6 +83,26 @@ contract VerifierTest is TestHelperOz5 {
                 HUB_EID,
                 address(this),
                 address(0), // zero root decider
+                WITHDRAW_GLOBAL_DECIDER,
+                WITHDRAW_LOCAL_DECIDER,
+                SINGLE_WITHDRAW_GLOBAL_VERIFIER,
+                SINGLE_WITHDRAW_LOCAL_VERIFIER
+            )
+        );
+
+        vm.expectRevert(Verifier.ZeroAddress.selector);
+        new ERC1967Proxy(address(impl), initData);
+    }
+
+    function testInitializeRevertsOnZeroDelegate() public {
+        Verifier impl = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                TOKEN,
+                HUB_EID,
+                address(0), // zero delegate
+                ROOT_DECIDER,
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 SINGLE_WITHDRAW_GLOBAL_VERIFIER,
@@ -187,6 +207,54 @@ contract VerifierTest is TestHelperOz5 {
         verifier.activateEmergency();
     }
 
+    function testDeactivateEmergencyUnpauses() public {
+        verifier.activateEmergency();
+        assertTrue(verifier.paused(), "verifier should be paused");
+
+        verifier.deactivateEmergency();
+        assertFalse(verifier.paused(), "verifier should be unpaused");
+    }
+
+    function testDeactivateEmergencyOnlyOwner() public {
+        verifier.activateEmergency();
+
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        verifier.deactivateEmergency();
+    }
+
+    function testSetVerifiersOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        verifier.setVerifiers(
+            ROOT_DECIDER,
+            WITHDRAW_GLOBAL_DECIDER,
+            WITHDRAW_LOCAL_DECIDER,
+            SINGLE_WITHDRAW_GLOBAL_VERIFIER,
+            SINGLE_WITHDRAW_LOCAL_VERIFIER
+        );
+    }
+
+    function testRelayTransferRootRevertsWhenPaused() public {
+        verifier.activateEmergency();
+
+        vm.deal(address(this), FEE_PER_MESSAGE);
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        verifier.relayTransferRoot{value: FEE_PER_MESSAGE}(bytes(""));
+    }
+
+    function testRelayTransferRootRevertsOnInsufficientFee() public {
+        uint256 insufficientFee = FEE_PER_MESSAGE - 1;
+        vm.deal(address(this), insufficientFee);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Verifier.InsufficientMsgValue.selector, FEE_PER_MESSAGE, insufficientFee)
+        );
+        verifier.relayTransferRoot{value: insufficientFee}(bytes(""));
+    }
+
     function testRelayTransferRootSendsToEndpoint() public {
         uint256 root = verifier.provedTransferRoots(0);
 
@@ -253,6 +321,88 @@ contract VerifierTest is TestHelperOz5 {
         assertTrue(found, "GlobalRootSaved not emitted");
     }
 
+    function testLzReceiveIgnoresDuplicateRoot() public {
+        Origin memory origin = Origin({srcEid: HUB_EID, sender: _toBytes32(address(this)), nonce: 1});
+        uint64 aggSeq = 5;
+
+        // First receive
+        bytes memory payload1 = abi.encode(uint256(777), aggSeq);
+        vm.prank(address(endpoint));
+        verifier.lzReceive(origin, bytes32(uint256(1)), payload1, address(0), bytes(""));
+        assertEq(verifier.globalTransferRoots(aggSeq), 777, "first root should be stored");
+
+        // Second receive with different root - should be ignored
+        bytes memory payload2 = abi.encode(uint256(999), aggSeq);
+        vm.prank(address(endpoint));
+        verifier.lzReceive(origin, bytes32(uint256(2)), payload2, address(0), bytes(""));
+        assertEq(verifier.globalTransferRoots(aggSeq), 777, "root should not be overwritten");
+    }
+
+    function testLzReceiveRejectsInvalidSource() public {
+        // Set peer for invalid EID so OApp's NoPeer check passes,
+        // then InvalidHubSource should be triggered
+        uint32 invalidEid = 999;
+        verifier.setPeer(invalidEid, _toBytes32(address(this)));
+
+        Origin memory origin = Origin({srcEid: invalidEid, sender: _toBytes32(address(this)), nonce: 1});
+        bytes memory payload = abi.encode(uint256(777), uint64(5));
+
+        vm.prank(address(endpoint));
+        vm.expectRevert(abi.encodeWithSelector(Verifier.InvalidHubSource.selector, invalidEid));
+        verifier.lzReceive(origin, bytes32(uint256(1)), payload, address(0), bytes(""));
+    }
+
+    function testLzReceiveUpdatesLatestAggSeq() public {
+        Origin memory origin = Origin({srcEid: HUB_EID, sender: _toBytes32(address(this)), nonce: 1});
+
+        // Receive seq 5
+        vm.prank(address(endpoint));
+        verifier.lzReceive(origin, bytes32(uint256(1)), abi.encode(uint256(100), uint64(5)), address(0), bytes(""));
+        assertEq(verifier.latestAggSeq(), 5, "latestAggSeq should be 5");
+
+        // Receive seq 3 (lower) - latestAggSeq should not decrease
+        vm.prank(address(endpoint));
+        verifier.lzReceive(origin, bytes32(uint256(2)), abi.encode(uint256(200), uint64(3)), address(0), bytes(""));
+        assertEq(verifier.latestAggSeq(), 5, "latestAggSeq should still be 5");
+
+        // Receive seq 10 (higher) - latestAggSeq should update
+        vm.prank(address(endpoint));
+        verifier.lzReceive(origin, bytes32(uint256(3)), abi.encode(uint256(300), uint64(10)), address(0), bytes(""));
+        assertEq(verifier.latestAggSeq(), 10, "latestAggSeq should be 10");
+    }
+
+    function testIsUpToDateInitiallyTrue() public view {
+        // Initially, latestProvedIndex = 0 and latestRelayedIndex = 0
+        assertTrue(verifier.isUpToDate(), "should be up to date initially");
+    }
+
+    function testIsUpToDateAfterRelay() public {
+        // Relay the initial root
+        vm.deal(address(this), FEE_PER_MESSAGE);
+        verifier.relayTransferRoot{value: FEE_PER_MESSAGE}(bytes(""));
+
+        assertTrue(verifier.isUpToDate(), "should be up to date after relay");
+        assertEq(verifier.latestRelayedIndex(), 0, "latestRelayedIndex should be 0");
+    }
+
+    function testRelayTransferRootRefundsExcessMsgValueToRefundAddress() public {
+        address refundAddress = address(0xCAFE);
+        uint256 excessiveFee = FEE_PER_MESSAGE + 1;
+        vm.deal(address(this), excessiveFee);
+        vm.deal(refundAddress, 0);
+
+        uint256 refundBefore = refundAddress.balance;
+        MessagingReceipt memory receipt = verifier.relayTransferRoot{value: excessiveFee}(bytes(""), refundAddress);
+        assertEq(receipt.fee.nativeFee, FEE_PER_MESSAGE, "native fee mismatch");
+        assertEq(refundAddress.balance, refundBefore + 1, "refund not received");
+    }
+
+    function testRelayTransferRootRevertsOnZeroRefundAddress() public {
+        vm.deal(address(this), FEE_PER_MESSAGE);
+        vm.expectRevert(Verifier.ZeroRefundAddress.selector);
+        verifier.relayTransferRoot{value: FEE_PER_MESSAGE}(bytes(""), address(0));
+    }
+
     function testVerifierUpgradePreservesState() public {
         Verifier implementation = new Verifier(address(endpoint));
         bytes memory initData = abi.encodeCall(
@@ -305,6 +455,32 @@ contract VerifierTest is TestHelperOz5 {
         );
     }
 
+    function testVerifierUpgradeRevertsOnEndpointMismatch() public {
+        Verifier implementation = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                TOKEN,
+                HUB_EID,
+                address(this),
+                ROOT_DECIDER,
+                WITHDRAW_GLOBAL_DECIDER,
+                WITHDRAW_LOCAL_DECIDER,
+                SINGLE_WITHDRAW_GLOBAL_VERIFIER,
+                SINGLE_WITHDRAW_LOCAL_VERIFIER
+            )
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        Verifier proxiedVerifier = Verifier(address(proxy));
+
+        EndpointV2 otherEndpoint = endpointSetup.endpointList[1];
+        VerifierUpgradeMock newImplementation = new VerifierUpgradeMock(address(otherEndpoint));
+        vm.expectRevert(
+            abi.encodeWithSelector(Verifier.EndpointMismatch.selector, address(endpoint), address(otherEndpoint))
+        );
+        proxiedVerifier.upgradeToAndCall(address(newImplementation), bytes(""));
+    }
+
     function _toBytes32(address addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(addr)));
     }
@@ -353,10 +529,17 @@ contract VerifierUpgradeMock is Verifier {
 contract MockZERC20WithCallback {
     address public callbackTarget;
     bytes public callbackData;
+    uint256 public index;
+    uint256 public hashChain;
 
     function setCallback(address target, bytes calldata data) external {
         callbackTarget = target;
         callbackData = data;
+    }
+
+    function setIndexAndHashChain(uint256 index_, uint256 hashChain_) external {
+        index = index_;
+        hashChain = hashChain_;
     }
 
     function teleport(address, uint256) external {
@@ -371,7 +554,11 @@ contract MockZERC20WithCallback {
 }
 
 /// @dev Mock decider that always returns true
-contract MockWithdrawDecider is IWithdrawDecider {
+contract MockWithdrawDecider is IRootDecider, IWithdrawDecider {
+    function verifyOpaqueNovaProof(uint256[32] calldata) external pure returns (bool) {
+        return true;
+    }
+
     function verifyOpaqueNovaProof(uint256[34] calldata) external pure returns (bool) {
         return true;
     }
@@ -412,6 +599,9 @@ contract VerifierReentrancyTest is TestHelperOz5 {
     uint32 internal constant LOCAL_EID = 1;
     uint32 internal constant HUB_EID = 2;
 
+    event TransferRootProved(uint64 indexed index, uint256 root);
+    event EmergencyTriggered(uint64 indexed index, uint256 root1, uint256 root2);
+
     function setUp() public override {
         super.setUp();
         setUpEndpoints(2, LibraryType.SimpleMessageLib);
@@ -419,6 +609,7 @@ contract VerifierReentrancyTest is TestHelperOz5 {
 
         mockToken = new MockZERC20WithCallback();
         mockDecider = new MockWithdrawDecider();
+        mockToken.setIndexAndHashChain(42, 123);
 
         // Deploy verifier with mock token and decider
         Verifier implementation = new Verifier(address(endpoint));
@@ -440,6 +631,111 @@ contract VerifierReentrancyTest is TestHelperOz5 {
         verifier.setPeer(HUB_EID, _toBytes32(address(this)));
 
         attacker = new ReentrancyAttacker(verifier);
+    }
+
+    function testReserveHashChainWorksWhenPaused() public {
+        verifier.activateEmergency();
+        (uint64 index_, uint256 hashChain_) = verifier.reserveHashChain();
+        assertEq(index_, 42, "reserved index");
+        assertEq(hashChain_, 123, "reserved hashChain");
+        assertEq(verifier.latestReservedIndex(), 42, "latestReservedIndex");
+        assertEq(verifier.reservedHashChains(42), 123, "reservedHashChains stored");
+    }
+
+    function testReserveHashChainRevertsWhenHashChainIsZero() public {
+        mockToken.setIndexAndHashChain(7, 0);
+        vm.expectRevert(abi.encodeWithSelector(Verifier.ZeroHashChain.selector, uint64(7)));
+        verifier.reserveHashChain();
+    }
+
+    function testProveTransferRootRevertsWhenHashChainNotReserved() public {
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 oldIndex = 0;
+        uint64 newIndex = 42;
+        uint256 newHashChain = 123;
+        uint256 newRoot = 777;
+        uint256[32] memory proof;
+        proof[1] = oldIndex;
+        proof[3] = oldRoot;
+        proof[4] = newIndex;
+        proof[5] = newHashChain;
+        proof[6] = newRoot;
+        vm.expectRevert(abi.encodeWithSelector(Verifier.ReserveHashChainNotFound.selector, newIndex));
+        verifier.proveTransferRoot(abi.encode(proof));
+    }
+
+    function testProveTransferRootRevertsOnHashChainMismatch() public {
+        verifier.reserveHashChain();
+
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 oldIndex = 0;
+        uint64 newIndex = 42;
+        uint256 reservedHashChain = 123;
+        uint256 providedHashChain = 999;
+        uint256 newRoot = 777;
+        uint256[32] memory proof;
+        proof[1] = oldIndex;
+        proof[3] = oldRoot;
+        proof[4] = newIndex;
+        proof[5] = providedHashChain;
+        proof[6] = newRoot;
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                Verifier.NewHashChainMismatch.selector, newIndex, reservedHashChain, providedHashChain
+            )
+        );
+        verifier.proveTransferRoot(abi.encode(proof));
+    }
+
+    function testProveTransferRootStoresNewRootAndUpdatesLatestProvedIndex() public {
+        verifier.reserveHashChain();
+
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 oldIndex = 0;
+        uint64 newIndex = 42;
+        uint256 newHashChain = 123;
+        uint256 newRoot = 777;
+        uint256[32] memory proof;
+        proof[1] = oldIndex;
+        proof[3] = oldRoot;
+        proof[4] = newIndex;
+        proof[5] = newHashChain;
+        proof[6] = newRoot;
+
+        vm.expectEmit(true, true, false, true, address(verifier));
+        emit TransferRootProved(newIndex, newRoot);
+        verifier.proveTransferRoot(abi.encode(proof));
+
+        assertEq(verifier.provedTransferRoots(newIndex), newRoot, "proved root stored");
+        assertEq(verifier.latestProvedIndex(), newIndex, "latestProvedIndex updated");
+    }
+
+    function testProveTransferRootPausesOnConflictingRoot() public {
+        verifier.reserveHashChain();
+
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 oldIndex = 0;
+        uint64 newIndex = 42;
+        uint256 newHashChain = 123;
+        uint256 firstRoot = 777;
+        uint256 secondRoot = 888;
+
+        uint256[32] memory proof;
+        proof[1] = oldIndex;
+        proof[3] = oldRoot;
+        proof[4] = newIndex;
+        proof[5] = newHashChain;
+        proof[6] = firstRoot;
+        verifier.proveTransferRoot(abi.encode(proof));
+        assertFalse(verifier.paused(), "should not pause on first proof");
+
+        proof[6] = secondRoot;
+        vm.expectEmit(true, false, false, true, address(verifier));
+        emit EmergencyTriggered(newIndex, firstRoot, secondRoot);
+        verifier.proveTransferRoot(abi.encode(proof));
+
+        assertTrue(verifier.paused(), "should pause on conflict");
+        assertEq(verifier.provedTransferRoots(newIndex), firstRoot, "conflicting proof should not overwrite root");
     }
 
     function testTeleportRevertsOnReentrancy() public {

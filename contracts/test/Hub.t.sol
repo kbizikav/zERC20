@@ -78,6 +78,15 @@ contract HubTest is TestHelperOz5 {
         hub.broadcast(targetEids, options);
     }
 
+    function testBroadcastRevertsWhenAggregationRootIsZero() public {
+        Hub localHub = _deployInitializedZeroRootHub();
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        vm.expectRevert(Hub.AggregationRootZero.selector);
+        localHub.broadcast(targetEids, options);
+    }
+
     function testQuoteBroadcastRevertsWhenNoTargetsProvided() public {
         uint32[] memory targetEids = new uint32[](0);
         bytes memory options = _options();
@@ -329,6 +338,13 @@ contract HubTest is TestHelperOz5 {
         deployedHub = Hub(address(proxy));
     }
 
+    function _deployInitializedZeroRootHub() internal returns (Hub deployedHub) {
+        Hub implementation = new HubZeroRootMock(address(endpoint));
+        bytes memory initData = abi.encodeCall(Hub.initialize, (address(this)));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        deployedHub = Hub(address(proxy));
+    }
+
     function _options() internal pure returns (bytes memory options) {
         options = OptionsBuilder.newOptions();
         options = options.addExecutorLzReceiveOption(200_000, 0);
@@ -344,5 +360,18 @@ contract HubUpgradeMock is Hub {
 
     function version() external pure returns (string memory) {
         return "hub-v2";
+    }
+}
+
+contract HubZeroRootMock is Hub {
+    constructor(address endpoint) Hub(endpoint) {}
+
+    function _computeAggregationRoot(uint256[] memory, uint256[ZERO_HASH_COUNT] memory)
+        internal
+        pure
+        override
+        returns (uint256)
+    {
+        return 0;
     }
 }
