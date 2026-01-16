@@ -42,19 +42,21 @@
 3. Extend zkp Nova setup to accept external KZG params (cs_pp/cs_vp) from ptau.
 4. Replace Groth16 `setup` in artifact generation with arkworks-phase2 `Transcript`
    (no contribution) and serialize pk/vk.
-5. For decider Groth16, mirror `DeciderEth::preprocess` in trusted-setup-cli and
+5. For decider Groth16, mirror `DeciderEth::preprocess` in `trusted-setup/cli` and
    inject Groth16 keys (no Sonobe API changes).
 6. Validate by generating proofs and verifying with existing contracts.
 
-## Open questions
-- Select the ptau source with >= 2^24 power (largest requirement comes from decider Groth16).
-- ptau source decided: `ppot_0080_24.ptau` (power=24) from
+## Resolved decisions
+- ptau power: 2^24 (largest requirement comes from decider Groth16).
+- ptau source: `ppot_0080_24.ptau` from
   `https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_24.ptau`.
 - File size is ~18GB, so it will be downloaded on demand and not committed.
 
-## Design overview (trusted-setup-cli)
-- Scope: new CLI under `<repo-root>/trusted-setup-cli` responsible for ptau handling,
-  phase2 Groth16 contributions, and generating Nova/KZG/Decider artifacts.
+## Design overview (trusted-setup)
+- Layout under `<repo-root>/trusted-setup/`:
+  - `trusted-setup/cli`: participant tool (ptau fetch + contribute + finalize).
+  - `trusted-setup/coordinator`: actix-web server that coordinates contributions,
+    verifies transitions, manages time locks, and issues presigned URLs.
 - No Sonobe API changes: the CLI constructs Nova params with injected KZG SRS and
   mirrors `DeciderEth::preprocess` to build decider params externally.
 - Deterministic RNG for Pedersen params (seeded `StdRng`) is acceptable.
@@ -98,13 +100,56 @@
 - Serialize to the existing artifact layout so decider-prover can load without changes.
 
 ## CLI design (rough)
-- Commands (subject to change):
-  - `ptau download` (cache to a local path, no commit)
-  - `groth16 init` / `groth16 contribute` / `groth16 export`
-  - `nova build` (KZG injection + pedersen params)
-  - `decider build` (mirror preprocess + Groth16 from ptau)
-  - `artifacts build` (orchestrate all outputs to `nova_artifacts/`)
-- Config: ptau path (default to cached file), output dir, circuit selection.
+### Contribution flow (coordinator-led, p0tion-like)
+- Storage: S3 for `transcript` and `contribution` artifacts; S3 reads are public
+  (or otherwise accessible without coordinator). Coordinator issues presigned PUTs
+  for uploads and updates head metadata.
+- Coordinator steps:
+  1) Participant requests a slot; coordinator creates a time lock (lease) in SQLite.
+  2) Coordinator returns presigned GET for current transcript, presigned PUTs for
+     updated transcript + contribution data, and lease expiry time.
+  3) Participant uploads and calls `submit`.
+  4) Coordinator downloads the new transcript, verifies it using
+     `Transcript::verify_from_accumulator` (ptau + circuit), then optionally checks
+     `Transcript::verify_key_transform` against the previous transcript, updates head
+     metadata, and releases the lock.
+- Participant steps:
+  1) `trusted-setup-cli contribute` asks coordinator for a slot.
+  2) CLI downloads ptau (if missing), verifies from accumulator + input transcript,
+     applies the contribution, uploads transcript + public data, then submits.
+- Finalization (anyone, no coordinator required for download):
+  1) `trusted-setup-cli finalize` reads `latest.json` (or a user-specified transcript)
+     directly from S3.
+  2) CLI verifies from accumulator + transcript, then emits all `*.bin` and `*.sol` outputs.
+
+### Commands (subject to change)
+- `ptau download` (cache to a local path, no commit)
+- `contribute` (verify from accumulator + transcript, apply contribution, emit updated transcript)
+- `finalize` (verify from accumulator + transcript, emit all artifacts)
+
+### Config (rough)
+- Configuration via environment variables (preferred over CLI args):
+  - ptau path (default to cached file)
+  - coordinator URL and ceremony ID
+  - output dir
+  - circuit selection (root/withdraw_local/withdraw_global)
+  - deterministic seed or entropy source
+  - S3 public read base URL (for latest.json/transcripts)
+
+## Coordinator server design (rough)
+- Server: actix-web with SQLite state.
+- State model (SQLite):
+  - ceremony (id, status, current_head_key, lease_ttl)
+  - lease (participant_id, started_at, expires_at, status)
+  - contribution (step, participant_id, input_key, output_key, proof_key, status)
+- Time lock: only one active lease per ceremony; expiry unlocks the slot.
+- Verification:
+  - Load previous and new transcript from S3.
+  - Run `Transcript::verify_from_accumulator(&accum, circuit)` on the new transcript.
+  - On success, update head metadata and mark contribution complete.
+- Server config (env-driven):
+  - S3 bucket/prefix, presign TTL, AWS credentials or role, SQLite path, listen address.
+  - Public read policy for transcript objects and `latest.json`.
 
 ## Outputs / compatibility
 - Keep existing artifact names so downstream code works:
