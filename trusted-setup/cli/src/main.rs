@@ -3,6 +3,7 @@ use std::{
     cmp::max,
     fs,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 use anyhow::{bail, Context, Result};
@@ -28,12 +29,14 @@ use folding_schemes::{
     transcript::poseidon::poseidon_canonical_config,
     FoldingScheme,
 };
-use futures::StreamExt;
+use bytes::Bytes;
+use futures::{stream, StreamExt};
+use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rand::{
     rngs::{OsRng, StdRng},
     SeedableRng,
 };
-use reqwest::Url;
+use reqwest::{header::CONTENT_LENGTH, Url};
 use serde::{Deserialize, Serialize};
 use url::Url as ParsedUrl;
 
@@ -48,6 +51,7 @@ use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_conf
 
 const DEFAULT_PTAU_URL: &str =
     "https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_24.ptau";
+const UPLOAD_CHUNK_SIZE: usize = 64 * 1024;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "trusted setup CLI")]
@@ -260,6 +264,7 @@ async fn download_ptau(args: PtauDownloadArgs) -> Result<()> {
     }
 
     let tmp_path = output.with_extension("part");
+    let progress = build_progress("downloading ptau", resp.content_length());
     let mut file = tokio::fs::File::create(&tmp_path)
         .await
         .with_context(|| format!("failed to create {}", tmp_path.display()))?;
@@ -269,6 +274,7 @@ async fn download_ptau(args: PtauDownloadArgs) -> Result<()> {
         tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
             .await
             .context("failed to write ptau chunk")?;
+        progress.inc(chunk.len() as u64);
     }
     tokio::io::AsyncWriteExt::flush(&mut file)
         .await
@@ -279,6 +285,7 @@ async fn download_ptau(args: PtauDownloadArgs) -> Result<()> {
         .await
         .with_context(|| format!("failed to move ptau to {}", output.display()))?;
 
+    progress.finish_and_clear();
     println!("ptau downloaded to {}", output.display());
     Ok(())
 }
@@ -313,14 +320,8 @@ async fn contribute(args: ContributeArgs) -> Result<()> {
         .await
         .context("failed to parse participate response")?;
 
-    let input_bytes = client
-        .get(&participate.input_url)
-        .send()
-        .await
-        .context("failed to download transcript")?
-        .bytes()
-        .await
-        .context("failed to read transcript bytes")?;
+    let input_bytes =
+        download_bytes_with_progress(&client, &participate.input_url, "transcript").await?;
 
     let mut transcript = Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..])
         .context("failed to deserialize transcript")?;
@@ -354,10 +355,15 @@ async fn contribute(args: ContributeArgs) -> Result<()> {
     let contribution_bytes =
         serialize_uncompressed(contribution).context("failed to serialize contribution")?;
 
-    upload_bytes(&client, &participate.output_url, updated_bytes)
+    upload_bytes(&client, &participate.output_url, updated_bytes, "transcript")
         .await
         .context("failed to upload updated transcript")?;
-    upload_bytes(&client, &participate.contribution_url, contribution_bytes)
+    upload_bytes(
+        &client,
+        &participate.contribution_url,
+        contribution_bytes,
+        "contribution",
+    )
         .await
         .context("failed to upload contribution")?;
 
@@ -965,19 +971,41 @@ fn normalize_base_url(base: &str) -> Result<ParsedUrl> {
     Ok(url)
 }
 
+async fn download_bytes_with_progress(
+    client: &reqwest::Client,
+    url: &str,
+    label: &str,
+) -> Result<Vec<u8>> {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("failed to download {}", label))?;
+    if !resp.status().is_success() {
+        bail!("{} download failed with status {}", label, resp.status());
+    }
+
+    let total = resp.content_length();
+    let progress = build_progress(&format!("downloading {}", label), total);
+    let mut stream = resp.bytes_stream();
+    let mut bytes = match total.and_then(|len| usize::try_from(len).ok()) {
+        Some(capacity) => Vec::with_capacity(capacity),
+        None => Vec::new(),
+    };
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.with_context(|| format!("failed to read {} bytes", label))?;
+        bytes.extend_from_slice(&chunk);
+        progress.inc(chunk.len() as u64);
+    }
+    progress.finish_and_clear();
+    Ok(bytes)
+}
+
 async fn load_transcript(source: TranscriptSource) -> Result<Transcript<Bn254>> {
     let bytes = match source {
         TranscriptSource::Url(url) => {
-            let resp = reqwest::get(url)
-                .await
-                .context("failed to fetch transcript")?;
-            if !resp.status().is_success() {
-                bail!("transcript fetch failed with status {}", resp.status());
-            }
-            resp.bytes()
-                .await
-                .context("failed to read transcript bytes")?
-                .to_vec()
+            let client = reqwest::Client::new();
+            download_bytes_with_progress(&client, url.as_str(), "transcript").await?
         }
         TranscriptSource::Path(path) => tokio::fs::read(&path)
             .await
@@ -988,8 +1016,36 @@ async fn load_transcript(source: TranscriptSource) -> Result<Transcript<Bn254>> 
         .context("failed to deserialize transcript")
 }
 
-async fn upload_bytes(client: &reqwest::Client, url: &str, body: Vec<u8>) -> Result<()> {
-    let resp = client.put(url).body(body).send().await?;
+async fn upload_bytes(
+    client: &reqwest::Client,
+    url: &str,
+    body: Vec<u8>,
+    label: &str,
+) -> Result<()> {
+    let total = body.len() as u64;
+    let progress = build_progress(&format!("uploading {}", label), Some(total));
+    let progress_handle = progress.clone();
+    let stream = stream::unfold(
+        (body, 0usize, progress_handle),
+        |(body, offset, progress)| async move {
+            if offset >= body.len() {
+                None
+            } else {
+                let end = std::cmp::min(offset + UPLOAD_CHUNK_SIZE, body.len());
+                let chunk = Bytes::copy_from_slice(&body[offset..end]);
+                progress.inc((end - offset) as u64);
+                Some((Ok::<Bytes, std::io::Error>(chunk), (body, end, progress)))
+            }
+        },
+    );
+    let resp = client
+        .put(url)
+        .header(CONTENT_LENGTH, total)
+        .body(reqwest::Body::wrap_stream(stream))
+        .send()
+        .await;
+    progress.finish_and_clear();
+    let resp = resp?;
     if !resp.status().is_success() {
         bail!("upload failed with status {}", resp.status());
     }
@@ -1037,4 +1093,30 @@ fn workspace_root() -> PathBuf {
         .and_then(|p| p.parent())
         .map(|p| p.to_path_buf())
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+fn build_progress(message: &str, total_bytes: Option<u64>) -> ProgressBar {
+    let progress = match total_bytes {
+        Some(total) => ProgressBar::new(total),
+        None => ProgressBar::new_spinner(),
+    };
+    progress.set_draw_target(ProgressDrawTarget::stderr());
+    progress.enable_steady_tick(Duration::from_millis(120));
+    if total_bytes.is_some() {
+        let style = ProgressStyle::with_template(
+            "{spinner:.green} {msg} [{bar:40}] {bytes}/{total_bytes} ({eta})",
+        )
+        .unwrap()
+        .progress_chars("=>-")
+        .tick_chars("|/-\\");
+        progress.set_style(style);
+    } else {
+        let style =
+            ProgressStyle::with_template("{spinner:.green} {msg} {bytes} downloaded")
+                .unwrap()
+                .tick_chars("|/-\\");
+        progress.set_style(style);
+    }
+    progress.set_message(message.to_string());
+    progress
 }
