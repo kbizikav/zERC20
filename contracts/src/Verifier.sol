@@ -40,10 +40,11 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         uint256 transferRoot,
         GeneralRecipientLib.GeneralRecipient gr
     );
+    // slither-disable-next-line unindexed-event
     event VerifiersSet(
-        address indexed rootDecider,
-        address indexed withdrawGlobalDecider,
-        address indexed withdrawLocalDecider,
+        address rootDecider,
+        address withdrawGlobalDecider,
+        address withdrawLocalDecider,
         address singleWithdrawGlobalVerifier,
         address singleWithdrawLocalVerifier
     );
