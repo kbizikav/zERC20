@@ -40,9 +40,9 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         GeneralRecipientLib.GeneralRecipient gr
     );
     event VerifiersSet(
-        address rootDecider,
-        address withdrawGlobalDecider,
-        address withdrawLocalDecider,
+        address indexed rootDecider,
+        address indexed withdrawGlobalDecider,
+        address indexed withdrawLocalDecider,
         address singleWithdrawGlobalVerifier,
         address singleWithdrawLocalVerifier
     );
