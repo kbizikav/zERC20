@@ -1,0 +1,4 @@
+{
+  "filter_paths": "verifiers,dependencies,node_modules",
+  "detectors_to_exclude": "msg-value-loop,assembly,low-level-calls,naming-convention,unindexed-event-address"
+}

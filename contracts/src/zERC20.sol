@@ -52,6 +52,8 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     error ZeroAddress();
     /// @notice Reverts when a value exceeds the supported 248-bit range.
     error ValueTooLarge();
+    /// @notice Reverts when upgrading to an implementation with a different LayerZero endpoint.
+    error EndpointMismatch(address expected, address actual);
 
     /// @notice Locks implementation contracts on deployment.
     constructor(address endpoint, uint8 decimals_) OFTCoreUpgradeable(decimals_, endpoint) {
@@ -72,8 +74,12 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         __OFTCore_init(initialOwner);
     }
 
-    /// @dev Restricts upgrade authorization to the owner.
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    /// @dev Restricts upgrade authorization to the owner and validates endpoint consistency.
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        address expected = address(endpoint);
+        address actual = address(zERC20(newImplementation).endpoint());
+        if (actual != expected) revert EndpointMismatch(expected, actual);
+    }
 
     /// @notice Hash chain committing every transfer's destination and value pair.
     function hashChain() public view returns (uint256) {
