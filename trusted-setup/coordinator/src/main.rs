@@ -1,43 +1,75 @@
 use std::{
-    cmp::max,
     path::PathBuf,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use actix_web::{web, App, HttpResponse, HttpServer};
-use anyhow::{bail, Context, Result};
-use ark_bn254::{Bn254, Fr, G1Projective as G1};
-use ark_grumpkin::Projective as G2;
+use actix_governor::{Governor, GovernorConfigBuilder};
+use actix_web::{web, App, HttpResponse, HttpServer, ResponseError};
+use anyhow::{Context, Result};
+use ark_bn254::Bn254;
 use ark_serialize::CanonicalDeserialize;
 use arkworks_phase2::{
-    accumulator::Accumulator, key::PartialKey, transcript::Transcript,
-    utils::serialize_uncompressed,
+    key::PartialKey, transcript::Transcript, utils::serialize_uncompressed,
 };
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{presigning::PresigningConfig, primitives::ByteStream, Client as S3Client};
-use folding_schemes::{
-    arith::Arith,
-    commitment::pedersen::Pedersen,
-    commitment::CommitmentScheme,
-    folding::nova::{decider_eth::DeciderEthCircuit, get_r1cs},
-    folding::traits::Dummy,
-    frontend::FCircuit,
-    transcript::poseidon::poseidon_canonical_config,
-};
-use rand::{rngs::StdRng, SeedableRng};
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
+use thiserror::Error;
+use tokio::sync::RwLock;
 use uuid::Uuid;
 
-use zkp::groth16::withdraw::SingleWithdrawCircuit;
-use zkp::nova::{
-    constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
-    params::FParams,
-    root_nova::RootCircuit,
-    withdraw_nova::WithdrawCircuit,
+use trusted_setup_common::{
+    build_initial_transcript, contribution_key, latest_key, load_accumulator, transcript_key,
+    verify_transcript, CeremonyCircuit, LatestMetadata,
 };
-use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
+
+// ============================================================================
+// Error Types
+// ============================================================================
+
+#[derive(Debug, Error)]
+pub enum ApiError {
+    #[error("bad request: {0}")]
+    BadRequest(String),
+
+    #[error("not found: {0}")]
+    NotFound(String),
+
+    #[error("conflict: {0}")]
+    Conflict(String),
+
+    #[error("internal error: {0}")]
+    Internal(#[from] anyhow::Error),
+
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+}
+
+impl ResponseError for ApiError {
+    fn status_code(&self) -> actix_web::http::StatusCode {
+        use actix_web::http::StatusCode;
+        match self {
+            ApiError::BadRequest(_) => StatusCode::BAD_REQUEST,
+            ApiError::NotFound(_) => StatusCode::NOT_FOUND,
+            ApiError::Conflict(_) => StatusCode::CONFLICT,
+            ApiError::Internal(_) | ApiError::Database(_) => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+
+    fn error_response(&self) -> HttpResponse {
+        let status = self.status_code();
+        HttpResponse::build(status).json(ErrorResponse {
+            error: self.to_string(),
+            code: status.as_u16(),
+        })
+    }
+}
+
+// ============================================================================
+// Configuration
+// ============================================================================
 
 #[derive(Clone)]
 struct Config {
@@ -49,6 +81,9 @@ struct Config {
     presign_ttl: Duration,
     lease_ttl: Duration,
     pedersen_seed: u64,
+    cleanup_interval: Duration,
+    rate_limit_per_second: u64,
+    rate_limit_burst: u32,
 }
 
 impl Config {
@@ -65,7 +100,7 @@ impl Config {
         });
         let ptau_path = std::env::var("TRUSTED_SETUP_PTAU_PATH")
             .map(PathBuf::from)
-            .unwrap_or_else(|_| default_ptau_path());
+            .unwrap_or_else(|_| trusted_setup_common::default_ptau_path());
         let s3_bucket = std::env::var("TRUSTED_SETUP_S3_BUCKET")
             .context("TRUSTED_SETUP_S3_BUCKET is required")?;
         let s3_prefix = std::env::var("TRUSTED_SETUP_S3_PREFIX").unwrap_or_default();
@@ -83,6 +118,19 @@ impl Config {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .unwrap_or(42);
+        let cleanup_interval = std::env::var("TRUSTED_SETUP_CLEANUP_INTERVAL_SECONDS")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .map(Duration::from_secs)
+            .unwrap_or_else(|| Duration::from_secs(60));
+        let rate_limit_per_second = std::env::var("TRUSTED_SETUP_RATE_LIMIT_PER_SECOND")
+            .ok()
+            .and_then(|value| value.parse::<u64>().ok())
+            .unwrap_or(10);
+        let rate_limit_burst = std::env::var("TRUSTED_SETUP_RATE_LIMIT_BURST")
+            .ok()
+            .and_then(|value| value.parse::<u32>().ok())
+            .unwrap_or(20);
 
         Ok(Self {
             listen_addr,
@@ -93,16 +141,36 @@ impl Config {
             presign_ttl,
             lease_ttl,
             pedersen_seed,
+            cleanup_interval,
+            rate_limit_per_second,
+            rate_limit_burst,
         })
     }
 }
+
+// ============================================================================
+// Application State
+// ============================================================================
 
 struct AppState {
     config: Config,
     db: SqlitePool,
     s3: Storage,
-    accum: Arc<Accumulator<Bn254>>,
+    accum: Arc<arkworks_phase2::accumulator::Accumulator<Bn254>>,
+    stats: RwLock<ServerStats>,
 }
+
+#[derive(Default, Clone, Serialize)]
+struct ServerStats {
+    requests_total: u64,
+    contributions_total: u64,
+    active_ceremonies: u64,
+    started_at: u64,
+}
+
+// ============================================================================
+// S3 Storage
+// ============================================================================
 
 #[derive(Clone)]
 struct Storage {
@@ -192,9 +260,14 @@ impl Storage {
     }
 }
 
+// ============================================================================
+// API Request/Response Types
+// ============================================================================
+
 #[derive(Serialize)]
 struct ErrorResponse {
     error: String,
+    code: u16,
 }
 
 #[derive(Deserialize)]
@@ -220,6 +293,7 @@ struct ParticipateResponse {
     participant_id: String,
     step: u64,
     expires_at: u64,
+    expires_in_seconds: u64,
     input_url: String,
     output_url: String,
     contribution_url: String,
@@ -237,45 +311,58 @@ struct SubmitResponse {
     transcript_key: String,
 }
 
-#[derive(Serialize, Deserialize)]
-struct LatestMetadata {
-    step: u64,
-    transcript_key: String,
-    contribution_key: Option<String>,
+#[derive(Serialize)]
+struct HealthResponse {
+    status: &'static str,
+    version: &'static str,
+    uptime_seconds: u64,
+}
+
+#[derive(Serialize)]
+struct CeremonyStatus {
+    id: String,
+    circuit: String,
+    current_step: u64,
+    current_head_key: String,
+    has_active_lease: bool,
+    active_lease_expires_at: Option<u64>,
+    total_contributions: u64,
+    created_at: u64,
     updated_at: u64,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum CeremonyCircuit {
-    WithdrawLocal,
-    WithdrawGlobal,
-    DeciderRoot,
-    DeciderWithdrawLocal,
-    DeciderWithdrawGlobal,
+#[derive(Serialize)]
+struct LeaseStatus {
+    id: String,
+    ceremony_id: String,
+    participant_id: String,
+    status: String,
+    step: u64,
+    started_at: u64,
+    expires_at: u64,
+    remaining_seconds: i64,
 }
 
-impl CeremonyCircuit {
-    fn parse(value: &str) -> Result<Self> {
-        match value {
-            "withdraw_local" => Ok(Self::WithdrawLocal),
-            "withdraw_global" => Ok(Self::WithdrawGlobal),
-            "decider_root" | "root" => Ok(Self::DeciderRoot),
-            "decider_withdraw_local" => Ok(Self::DeciderWithdrawLocal),
-            "decider_withdraw_global" => Ok(Self::DeciderWithdrawGlobal),
-            _ => bail!("unsupported circuit {value}"),
-        }
-    }
-
-    fn as_str(&self) -> &'static str {
-        match self {
-            CeremonyCircuit::WithdrawLocal => "withdraw_local",
-            CeremonyCircuit::WithdrawGlobal => "withdraw_global",
-            CeremonyCircuit::DeciderRoot => "decider_root",
-            CeremonyCircuit::DeciderWithdrawLocal => "decider_withdraw_local",
-            CeremonyCircuit::DeciderWithdrawGlobal => "decider_withdraw_global",
-        }
-    }
+#[derive(Serialize)]
+struct CeremonyStats {
+    ceremony_id: String,
+    circuit: String,
+    current_step: u64,
+    total_contributions: u64,
+    completed_contributions: u64,
+    pending_contributions: u64,
+    expired_contributions: u64,
+    average_contribution_time_seconds: Option<f64>,
 }
+
+#[derive(Serialize)]
+struct ListCeremoniesResponse {
+    ceremonies: Vec<CeremonyStatus>,
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -297,6 +384,7 @@ async fn main() -> Result<()> {
     log::info!("Database initialized");
 
     let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
+    #[allow(deprecated)]
     let aws_config = aws_config::from_env().region(region_provider).load().await;
     let s3 = Storage::new(
         S3Client::new(&aws_config),
@@ -310,17 +398,52 @@ async fn main() -> Result<()> {
     let accum = Arc::new(load_accumulator(&config.ptau_path)?);
     log::info!("PTAU file loaded successfully");
 
+    let stats = RwLock::new(ServerStats {
+        started_at: unix_seconds(),
+        ..Default::default()
+    });
+
     let state = web::Data::new(AppState {
         config: config.clone(),
         db: pool.clone(),
         s3,
         accum,
+        stats,
     });
+
+    // Start background cleanup task
+    let cleanup_state = state.clone();
+    let cleanup_interval = config.cleanup_interval;
+    tokio::spawn(async move {
+        run_background_cleanup(cleanup_state, cleanup_interval).await;
+    });
+
+    // Configure rate limiter
+    #[allow(deprecated)]
+    let governor_config = GovernorConfigBuilder::default()
+        .per_second(config.rate_limit_per_second)
+        .burst_size(config.rate_limit_burst)
+        .finish()
+        .expect("failed to build rate limiter config");
 
     log::info!("Server listening on {}", config.listen_addr);
     HttpServer::new(move || {
         App::new()
+            .wrap(Governor::new(&governor_config))
             .app_data(state.clone())
+            // Health and status endpoints
+            .route("/health", web::get().to(health_check))
+            .route("/api/stats", web::get().to(get_server_stats))
+            // Ceremony management
+            .route("/api/ceremonies", web::get().to(list_ceremonies))
+            .route(
+                "/api/ceremonies/{ceremony_id}",
+                web::get().to(get_ceremony_status),
+            )
+            .route(
+                "/api/ceremonies/{ceremony_id}/stats",
+                web::get().to(get_ceremony_stats),
+            )
             .route(
                 "/api/ceremonies/{ceremony_id}/init",
                 web::post().to(init_ceremony),
@@ -333,6 +456,11 @@ async fn main() -> Result<()> {
                 "/api/ceremonies/{ceremony_id}/submit",
                 web::post().to(submit),
             )
+            // Lease status
+            .route(
+                "/api/ceremonies/{ceremony_id}/leases/{lease_id}",
+                web::get().to(get_lease_status),
+            )
     })
     .bind(&config.listen_addr)
     .with_context(|| format!("failed to bind {}", config.listen_addr))?
@@ -342,6 +470,70 @@ async fn main() -> Result<()> {
 
     Ok(())
 }
+
+// ============================================================================
+// Background Cleanup Task
+// ============================================================================
+
+async fn run_background_cleanup(state: web::Data<AppState>, interval: Duration) {
+    let mut ticker = tokio::time::interval(interval);
+    loop {
+        ticker.tick().await;
+
+        let now = unix_seconds();
+        match cleanup_expired_leases(&state.db, now).await {
+            Ok(count) => {
+                if count > 0 {
+                    log::info!("Cleaned up {} expired leases", count);
+                }
+            }
+            Err(e) => {
+                log::error!("Failed to cleanup expired leases: {}", e);
+            }
+        }
+
+        // Update stats
+        if let Ok(active_count) = count_active_ceremonies(&state.db).await {
+            let mut stats = state.stats.write().await;
+            stats.active_ceremonies = active_count;
+        }
+    }
+}
+
+async fn cleanup_expired_leases(pool: &SqlitePool, now: u64) -> Result<u64> {
+    let result = sqlx::query(
+        "UPDATE leases SET status = 'expired' WHERE status = 'active' AND expires_at <= ?",
+    )
+    .bind(now as i64)
+    .execute(pool)
+    .await?;
+
+    // Also update corresponding contributions
+    sqlx::query(
+        "UPDATE contributions SET status = 'expired', updated_at = ?
+         WHERE status = 'pending' AND id IN (
+             SELECT c.id FROM contributions c
+             JOIN leases l ON c.ceremony_id = l.ceremony_id AND c.step = l.step
+             WHERE l.status = 'expired'
+         )",
+    )
+    .bind(now as i64)
+    .execute(pool)
+    .await?;
+
+    Ok(result.rows_affected())
+}
+
+async fn count_active_ceremonies(pool: &SqlitePool) -> Result<u64> {
+    let row = sqlx::query("SELECT COUNT(*) as count FROM ceremonies")
+        .fetch_one(pool)
+        .await?;
+    Ok(row.get::<i64, _>("count") as u64)
+}
+
+// ============================================================================
+// Database Initialization
+// ============================================================================
 
 async fn init_db(pool: &SqlitePool) -> Result<()> {
     sqlx::query(
@@ -392,14 +584,208 @@ async fn init_db(pool: &SqlitePool) -> Result<()> {
     .execute(pool)
     .await?;
 
+    // Create indexes for better query performance
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_leases_ceremony_status ON leases(ceremony_id, status)")
+        .execute(pool)
+        .await?;
+    sqlx::query("CREATE INDEX IF NOT EXISTS idx_contributions_ceremony ON contributions(ceremony_id)")
+        .execute(pool)
+        .await?;
+
     Ok(())
 }
+
+// ============================================================================
+// Health and Stats Endpoints
+// ============================================================================
+
+async fn health_check(state: web::Data<AppState>) -> HttpResponse {
+    let stats = state.stats.read().await;
+    let uptime = unix_seconds().saturating_sub(stats.started_at);
+
+    HttpResponse::Ok().json(HealthResponse {
+        status: "healthy",
+        version: env!("CARGO_PKG_VERSION"),
+        uptime_seconds: uptime,
+    })
+}
+
+async fn get_server_stats(state: web::Data<AppState>) -> HttpResponse {
+    let stats = state.stats.read().await;
+    HttpResponse::Ok().json(stats.clone())
+}
+
+// ============================================================================
+// Ceremony Management Endpoints
+// ============================================================================
+
+async fn list_ceremonies(state: web::Data<AppState>) -> Result<HttpResponse, ApiError> {
+    let now = unix_seconds();
+
+    let rows = sqlx::query(
+        "SELECT c.id, c.circuit, c.step, c.current_head_key, c.created_at, c.updated_at,
+                (SELECT COUNT(*) FROM contributions WHERE ceremony_id = c.id AND status = 'completed') as total_contributions,
+                (SELECT expires_at FROM leases WHERE ceremony_id = c.id AND status = 'active' ORDER BY started_at DESC LIMIT 1) as active_lease_expires
+         FROM ceremonies c
+         ORDER BY c.created_at DESC",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let ceremonies: Vec<CeremonyStatus> = rows
+        .into_iter()
+        .map(|row| {
+            let active_lease_expires: Option<i64> = row.get("active_lease_expires");
+            let has_active_lease = active_lease_expires.map(|e| e as u64 > now).unwrap_or(false);
+
+            CeremonyStatus {
+                id: row.get("id"),
+                circuit: row.get("circuit"),
+                current_step: row.get::<i64, _>("step") as u64,
+                current_head_key: row.get("current_head_key"),
+                has_active_lease,
+                active_lease_expires_at: active_lease_expires.map(|e| e as u64),
+                total_contributions: row.get::<i64, _>("total_contributions") as u64,
+                created_at: row.get::<i64, _>("created_at") as u64,
+                updated_at: row.get::<i64, _>("updated_at") as u64,
+            }
+        })
+        .collect();
+
+    Ok(HttpResponse::Ok().json(ListCeremoniesResponse { ceremonies }))
+}
+
+async fn get_ceremony_status(
+    state: web::Data<AppState>,
+    ceremony_id: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let ceremony_id = ceremony_id.into_inner();
+    let now = unix_seconds();
+
+    let row = sqlx::query(
+        "SELECT c.id, c.circuit, c.step, c.current_head_key, c.created_at, c.updated_at,
+                (SELECT COUNT(*) FROM contributions WHERE ceremony_id = c.id AND status = 'completed') as total_contributions,
+                (SELECT expires_at FROM leases WHERE ceremony_id = c.id AND status = 'active' ORDER BY started_at DESC LIMIT 1) as active_lease_expires
+         FROM ceremonies c
+         WHERE c.id = ?",
+    )
+    .bind(&ceremony_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound(format!("ceremony {} not found", ceremony_id)))?;
+
+    let active_lease_expires: Option<i64> = row.get("active_lease_expires");
+    let has_active_lease = active_lease_expires.map(|e| e as u64 > now).unwrap_or(false);
+
+    let status = CeremonyStatus {
+        id: row.get("id"),
+        circuit: row.get("circuit"),
+        current_step: row.get::<i64, _>("step") as u64,
+        current_head_key: row.get("current_head_key"),
+        has_active_lease,
+        active_lease_expires_at: active_lease_expires.map(|e| e as u64),
+        total_contributions: row.get::<i64, _>("total_contributions") as u64,
+        created_at: row.get::<i64, _>("created_at") as u64,
+        updated_at: row.get::<i64, _>("updated_at") as u64,
+    };
+
+    Ok(HttpResponse::Ok().json(status))
+}
+
+async fn get_ceremony_stats(
+    state: web::Data<AppState>,
+    ceremony_id: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let ceremony_id = ceremony_id.into_inner();
+
+    let ceremony = sqlx::query("SELECT circuit, step FROM ceremonies WHERE id = ?")
+        .bind(&ceremony_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::NotFound(format!("ceremony {} not found", ceremony_id)))?;
+
+    let stats_row = sqlx::query(
+        "SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending,
+            SUM(CASE WHEN status = 'expired' THEN 1 ELSE 0 END) as expired
+         FROM contributions WHERE ceremony_id = ?",
+    )
+    .bind(&ceremony_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    // Calculate average contribution time from completed contributions
+    let avg_time: Option<f64> = sqlx::query_scalar(
+        "SELECT AVG(l.expires_at - l.started_at - (l.expires_at - c.updated_at)) as avg_time
+         FROM contributions c
+         JOIN leases l ON c.ceremony_id = l.ceremony_id AND c.step = l.step
+         WHERE c.ceremony_id = ? AND c.status = 'completed'",
+    )
+    .bind(&ceremony_id)
+    .fetch_one(&state.db)
+    .await
+    .ok()
+    .flatten();
+
+    let stats = CeremonyStats {
+        ceremony_id: ceremony_id.clone(),
+        circuit: ceremony.get("circuit"),
+        current_step: ceremony.get::<i64, _>("step") as u64,
+        total_contributions: stats_row.get::<i64, _>("total") as u64,
+        completed_contributions: stats_row.get::<i64, _>("completed") as u64,
+        pending_contributions: stats_row.get::<i64, _>("pending") as u64,
+        expired_contributions: stats_row.get::<i64, _>("expired") as u64,
+        average_contribution_time_seconds: avg_time,
+    };
+
+    Ok(HttpResponse::Ok().json(stats))
+}
+
+async fn get_lease_status(
+    state: web::Data<AppState>,
+    path: web::Path<(String, String)>,
+) -> Result<HttpResponse, ApiError> {
+    let (ceremony_id, lease_id) = path.into_inner();
+    let now = unix_seconds();
+
+    let row = sqlx::query(
+        "SELECT id, ceremony_id, participant_id, status, step, started_at, expires_at
+         FROM leases WHERE id = ? AND ceremony_id = ?",
+    )
+    .bind(&lease_id)
+    .bind(&ceremony_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound(format!("lease {} not found", lease_id)))?;
+
+    let expires_at: i64 = row.get("expires_at");
+    let remaining = expires_at - now as i64;
+
+    let status = LeaseStatus {
+        id: row.get("id"),
+        ceremony_id: row.get("ceremony_id"),
+        participant_id: row.get("participant_id"),
+        status: row.get("status"),
+        step: row.get::<i64, _>("step") as u64,
+        started_at: row.get::<i64, _>("started_at") as u64,
+        expires_at: expires_at as u64,
+        remaining_seconds: remaining,
+    };
+
+    Ok(HttpResponse::Ok().json(status))
+}
+
+// ============================================================================
+// Ceremony Lifecycle Endpoints
+// ============================================================================
 
 async fn init_ceremony(
     state: web::Data<AppState>,
     ceremony_id: web::Path<String>,
     body: web::Json<InitRequest>,
-) -> HttpResponse {
+) -> Result<HttpResponse, ApiError> {
     let ceremony_id = ceremony_id.into_inner();
     log::info!(
         "Initializing ceremony {} with circuit {}",
@@ -407,137 +793,122 @@ async fn init_ceremony(
         body.circuit
     );
 
-    let circuit = match CeremonyCircuit::parse(&body.circuit) {
-        Ok(circuit) => circuit,
-        Err(err) => return error_response(400, err.to_string()),
-    };
-
-    if let Err(err) = ensure_ceremony_absent(&state.db, &ceremony_id).await {
-        return error_response(409, err.to_string());
+    // Increment request counter
+    {
+        let mut stats = state.stats.write().await;
+        stats.requests_total += 1;
     }
+
+    let circuit = CeremonyCircuit::parse(&body.circuit)
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    ensure_ceremony_absent(&state.db, &ceremony_id).await?;
 
     log::info!(
         "Building initial transcript for circuit {:?}...",
         circuit.as_str()
     );
-    let transcript =
-        match build_initial_transcript(&state.accum, circuit, state.config.pedersen_seed) {
-            Ok(transcript) => transcript,
-            Err(err) => return error_response(500, err.to_string()),
-        };
+    let transcript = build_initial_transcript(&state.accum, circuit, state.config.pedersen_seed)
+        .map_err(|e| ApiError::Internal(e))?;
     log::info!("Initial transcript built successfully");
 
     log::info!("Serializing transcript...");
-    let transcript_bytes = match serialize_uncompressed(&transcript) {
-        Ok(bytes) => bytes,
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    let transcript_bytes = serialize_uncompressed(&transcript)
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))?;
     log::info!(
         "Transcript serialized ({} bytes)",
         transcript_bytes.len()
     );
 
     let step = 0u64;
-    let transcript_key = transcript_key(&ceremony_id, step);
-    let latest_key = latest_key(&ceremony_id);
+    let tkey = transcript_key(&ceremony_id, step);
+    let lkey = latest_key(&ceremony_id);
 
-    log::info!("Uploading transcript to S3: {}...", transcript_key);
-    if let Err(err) = state
+    // Upload to S3 BEFORE updating database for consistency
+    log::info!("Uploading transcript to S3: {}...", tkey);
+    state
         .s3
-        .put_bytes(
-            &transcript_key,
-            transcript_bytes,
-            "application/octet-stream",
-        )
+        .put_bytes(&tkey, transcript_bytes, "application/octet-stream")
         .await
-    {
-        return error_response(500, err.to_string());
-    }
+        .map_err(|e| ApiError::Internal(e))?;
     log::info!("Transcript uploaded successfully");
 
     let now = unix_seconds();
     let latest = LatestMetadata {
         step,
-        transcript_key: transcript_key.clone(),
+        transcript_key: tkey.clone(),
         contribution_key: None,
         updated_at: now,
     };
 
-    let latest_bytes = match serde_json::to_vec(&latest) {
-        Ok(bytes) => bytes,
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    let latest_bytes = serde_json::to_vec(&latest)
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))?;
 
-    if let Err(err) = state
+    state
         .s3
-        .put_bytes(&latest_key, latest_bytes, "application/json")
+        .put_bytes(&lkey, latest_bytes, "application/json")
         .await
-    {
-        return error_response(500, err.to_string());
-    }
+        .map_err(|e| ApiError::Internal(e))?;
 
-    if let Err(err) = insert_ceremony(
-        &state.db,
-        &ceremony_id,
-        circuit,
-        &transcript_key,
-        now,
-        &state.config,
-    )
-    .await
+    // Now update database
+    insert_ceremony(&state.db, &ceremony_id, circuit, &tkey, now, &state.config).await?;
+
+    // Update stats
     {
-        return error_response(500, err.to_string());
+        let mut stats = state.stats.write().await;
+        stats.active_ceremonies += 1;
     }
 
     log::info!("Ceremony {} initialized successfully", ceremony_id);
-    HttpResponse::Ok().json(InitResponse {
+    Ok(HttpResponse::Ok().json(InitResponse {
         ceremony_id,
         step,
-        transcript_key,
-    })
+        transcript_key: tkey,
+    }))
 }
 
 async fn participate(
     state: web::Data<AppState>,
     ceremony_id: web::Path<String>,
     body: web::Json<ParticipateRequest>,
-) -> HttpResponse {
+) -> Result<HttpResponse, ApiError> {
     let ceremony_id = ceremony_id.into_inner();
-    let circuit = match CeremonyCircuit::parse(&body.circuit) {
-        Ok(circuit) => circuit,
-        Err(err) => return error_response(400, err.to_string()),
-    };
+    let circuit = CeremonyCircuit::parse(&body.circuit)
+        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+
+    // Increment request counter
+    {
+        let mut stats = state.stats.write().await;
+        stats.requests_total += 1;
+    }
 
     let now = unix_seconds();
 
-    let mut tx = match state.db.begin().await {
-        Ok(tx) => tx,
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    let mut tx = state.db.begin().await?;
 
     let ceremony_row =
-        match sqlx::query("SELECT circuit, current_head_key, step FROM ceremonies WHERE id = ?")
+        sqlx::query("SELECT circuit, current_head_key, step FROM ceremonies WHERE id = ?")
             .bind(&ceremony_id)
             .fetch_optional(&mut *tx)
-            .await
-        {
-            Ok(Some(row)) => row,
-            Ok(None) => return error_response(404, "ceremony not found".to_string()),
-            Err(err) => return error_response(500, err.to_string()),
-        };
+            .await?
+            .ok_or_else(|| ApiError::NotFound(format!("ceremony {} not found", ceremony_id)))?;
 
     let stored_circuit: String = ceremony_row.get("circuit");
     if stored_circuit != circuit.as_str() {
-        return error_response(400, "circuit mismatch".to_string());
+        return Err(ApiError::BadRequest("circuit mismatch".to_string()));
     }
 
-    if let Err(err) = expire_active_lease(&mut tx, &ceremony_id, now).await {
-        return error_response(500, err.to_string());
-    }
+    // Expire any active leases that are past their expiry time
+    expire_active_lease(&mut tx, &ceremony_id, now).await?;
 
-    if let Ok(Some(expires_at)) = active_lease_expires_at(&mut tx, &ceremony_id).await {
+    // Check if there's still an active (non-expired) lease
+    if let Some(expires_at) = active_lease_expires_at(&mut tx, &ceremony_id).await? {
         if expires_at > now {
-            return error_response(409, "active lease exists".to_string());
+            let remaining = expires_at - now;
+            return Err(ApiError::Conflict(format!(
+                "active lease exists, expires in {} seconds",
+                remaining
+            )));
         }
     }
 
@@ -548,10 +919,11 @@ async fn participate(
     let lease_id = Uuid::new_v4().to_string();
     let participant_id = Uuid::new_v4().to_string();
     let output_key = transcript_key(&ceremony_id, next_step);
-    let contribution_key = contribution_key(&ceremony_id, next_step);
+    let contrib_key = contribution_key(&ceremony_id, next_step);
 
-    let expires_at = now + state.config.lease_ttl.as_secs() as u64;
-    if let Err(err) = sqlx::query(
+    let expires_at = now + state.config.lease_ttl.as_secs();
+
+    sqlx::query(
         "INSERT INTO leases (id, ceremony_id, participant_id, status, input_key, output_key, contribution_key, step, started_at, expires_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -561,17 +933,14 @@ async fn participate(
     .bind("active")
     .bind(&current_head_key)
     .bind(&output_key)
-    .bind(&contribution_key)
+    .bind(&contrib_key)
     .bind(next_step as i64)
     .bind(now as i64)
     .bind(expires_at as i64)
     .execute(&mut *tx)
-    .await
-    {
-        return error_response(500, err.to_string());
-    }
+    .await?;
 
-    if let Err(err) = sqlx::query(
+    sqlx::query(
         "INSERT INTO contributions (id, ceremony_id, participant_id, step, input_key, output_key, contribution_key, status, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     )
@@ -581,168 +950,152 @@ async fn participate(
     .bind(next_step as i64)
     .bind(&current_head_key)
     .bind(&output_key)
-    .bind(&contribution_key)
+    .bind(&contrib_key)
     .bind("pending")
     .bind(now as i64)
     .bind(now as i64)
     .execute(&mut *tx)
-    .await
-    {
-        return error_response(500, err.to_string());
-    }
+    .await?;
 
-    if let Err(err) = tx.commit().await {
-        return error_response(500, err.to_string());
-    }
+    tx.commit().await?;
 
-    let input_url = match state.s3.presign_get(&current_head_key).await {
-        Ok(url) => url,
-        Err(err) => return error_response(500, err.to_string()),
-    };
-    let output_url = match state.s3.presign_put(&output_key).await {
-        Ok(url) => url,
-        Err(err) => return error_response(500, err.to_string()),
-    };
-    let contribution_url = match state.s3.presign_put(&contribution_key).await {
-        Ok(url) => url,
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    let input_url = state.s3.presign_get(&current_head_key).await?;
+    let output_url = state.s3.presign_put(&output_key).await?;
+    let contribution_url = state.s3.presign_put(&contrib_key).await?;
 
-    HttpResponse::Ok().json(ParticipateResponse {
+    let expires_in = expires_at - now;
+
+    Ok(HttpResponse::Ok().json(ParticipateResponse {
         lease_id,
         participant_id,
         step: next_step,
         expires_at,
+        expires_in_seconds: expires_in,
         input_url,
         output_url,
         contribution_url,
-    })
+    }))
 }
 
 async fn submit(
     state: web::Data<AppState>,
     ceremony_id: web::Path<String>,
     body: web::Json<SubmitRequest>,
-) -> HttpResponse {
+) -> Result<HttpResponse, ApiError> {
     let ceremony_id = ceremony_id.into_inner();
     log::info!(
         "Processing submission for ceremony {} from participant {}",
         ceremony_id,
         body.participant_id
     );
+
+    // Increment request counter
+    {
+        let mut stats = state.stats.write().await;
+        stats.requests_total += 1;
+    }
+
     let now = unix_seconds();
 
-    let mut tx = match state.db.begin().await {
-        Ok(tx) => tx,
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    let mut tx = state.db.begin().await?;
 
-    let lease_row = match sqlx::query(
+    let lease_row = sqlx::query(
         "SELECT ceremony_id, participant_id, status, input_key, output_key, contribution_key, step, expires_at
          FROM leases WHERE id = ?",
     )
     .bind(&body.lease_id)
     .fetch_optional(&mut *tx)
-    .await
-    {
-        Ok(Some(row)) => row,
-        Ok(None) => return error_response(404, "lease not found".to_string()),
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    .await?
+    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
 
     let lease_ceremony: String = lease_row.get("ceremony_id");
     if lease_ceremony != ceremony_id {
-        return error_response(400, "lease ceremony mismatch".to_string());
+        return Err(ApiError::BadRequest("lease ceremony mismatch".to_string()));
     }
     let participant_id: String = lease_row.get("participant_id");
     if participant_id != body.participant_id {
-        return error_response(400, "participant mismatch".to_string());
+        return Err(ApiError::BadRequest("participant mismatch".to_string()));
     }
     let status: String = lease_row.get("status");
     if status != "active" {
-        return error_response(409, "lease is not active".to_string());
+        return Err(ApiError::Conflict("lease is not active".to_string()));
     }
     let expires_at: i64 = lease_row.get("expires_at");
     if expires_at as u64 <= now {
-        let _ = sqlx::query("UPDATE leases SET status = ? WHERE id = ?")
+        sqlx::query("UPDATE leases SET status = ? WHERE id = ?")
             .bind("expired")
             .bind(&body.lease_id)
             .execute(&mut *tx)
-            .await;
-        let _ = tx.commit().await;
-        return error_response(409, "lease expired".to_string());
+            .await?;
+        tx.commit().await?;
+        return Err(ApiError::Conflict("lease expired".to_string()));
     }
 
     let input_key: String = lease_row.get("input_key");
     let output_key: String = lease_row.get("output_key");
-    let contribution_key: String = lease_row.get("contribution_key");
+    let contrib_key: String = lease_row.get("contribution_key");
     let step: i64 = lease_row.get("step");
 
-    let ceremony_row = match sqlx::query("SELECT circuit FROM ceremonies WHERE id = ?")
+    let ceremony_row = sqlx::query("SELECT circuit FROM ceremonies WHERE id = ?")
         .bind(&ceremony_id)
         .fetch_optional(&mut *tx)
-        .await
-    {
-        Ok(Some(row)) => row,
-        Ok(None) => return error_response(404, "ceremony not found".to_string()),
-        Err(err) => return error_response(500, err.to_string()),
-    };
+        .await?
+        .ok_or_else(|| ApiError::NotFound("ceremony not found".to_string()))?;
 
     let circuit_str: String = ceremony_row.get("circuit");
-    let circuit = match CeremonyCircuit::parse(&circuit_str) {
-        Ok(circuit) => circuit,
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    let circuit = CeremonyCircuit::parse(&circuit_str)
+        .map_err(|e| ApiError::Internal(e))?;
 
+    // Download and verify transcript BEFORE updating database
     log::info!("Downloading output transcript from S3: {}...", output_key);
-    let output_bytes = match state.s3.get_bytes(&output_key).await {
-        Ok(bytes) => bytes,
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    let output_bytes = state.s3.get_bytes(&output_key).await?;
     log::info!(
         "Output transcript downloaded ({} bytes)",
         output_bytes.len()
     );
 
     log::info!("Deserializing output transcript...");
-    let output_transcript = match Transcript::<Bn254>::deserialize_uncompressed(&output_bytes[..]) {
-        Ok(transcript) => transcript,
-        Err(err) => return error_response(400, err.to_string()),
-    };
+    let output_transcript = Transcript::<Bn254>::deserialize_uncompressed(&output_bytes[..])
+        .map_err(|e| ApiError::BadRequest(format!("invalid transcript: {}", e)))?;
     log::info!("Output transcript deserialized");
 
     log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
-    if let Err(err) = verify_transcript(
-        &state.accum,
-        circuit,
-        &output_transcript,
-        state.config.pedersen_seed,
-    ) {
-        return error_response(400, err.to_string());
-    }
+    verify_transcript(&state.accum, circuit, &output_transcript, state.config.pedersen_seed)
+        .map_err(|e| ApiError::BadRequest(format!("transcript verification failed: {}", e)))?;
     log::info!("Transcript verification passed");
 
     log::info!("Downloading input transcript from S3: {}...", input_key);
-    let input_bytes = match state.s3.get_bytes(&input_key).await {
-        Ok(bytes) => bytes,
-        Err(err) => return error_response(500, err.to_string()),
-    };
+    let input_bytes = state.s3.get_bytes(&input_key).await?;
     log::info!("Input transcript downloaded ({} bytes)", input_bytes.len());
 
     log::info!("Deserializing input transcript...");
-    let input_transcript = match Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..]) {
-        Ok(transcript) => transcript,
-        Err(err) => return error_response(400, err.to_string()),
-    };
+    let input_transcript = Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..])
+        .map_err(|e| ApiError::BadRequest(format!("invalid input transcript: {}", e)))?;
     log::info!("Input transcript deserialized");
 
     log::info!("Verifying key transform...");
-    if let Err(err) = verify_key_transform(&input_transcript, &output_transcript) {
-        return error_response(400, err.to_string());
-    }
+    verify_key_transform(&input_transcript, &output_transcript)
+        .map_err(|e| ApiError::BadRequest(format!("key transform verification failed: {}", e)))?;
     log::info!("Key transform verification passed");
 
-    if let Err(err) = sqlx::query(
+    // Upload latest.json BEFORE updating database for consistency
+    let latest = LatestMetadata {
+        step: step as u64,
+        transcript_key: output_key.clone(),
+        contribution_key: Some(contrib_key.clone()),
+        updated_at: now,
+    };
+    let latest_bytes = serde_json::to_vec(&latest)
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))?;
+
+    log::info!("Updating latest metadata in S3...");
+    state
+        .s3
+        .put_bytes(&latest_key(&ceremony_id), latest_bytes, "application/json")
+        .await?;
+
+    // Now update database (all verification passed, S3 updated)
+    sqlx::query(
         "UPDATE ceremonies SET current_head_key = ?, step = ?, updated_at = ? WHERE id = ?",
     )
     .bind(&output_key)
@@ -750,21 +1103,15 @@ async fn submit(
     .bind(now as i64)
     .bind(&ceremony_id)
     .execute(&mut *tx)
-    .await
-    {
-        return error_response(500, err.to_string());
-    }
+    .await?;
 
-    if let Err(err) = sqlx::query("UPDATE leases SET status = ? WHERE id = ?")
+    sqlx::query("UPDATE leases SET status = ? WHERE id = ?")
         .bind("completed")
         .bind(&body.lease_id)
         .execute(&mut *tx)
-        .await
-    {
-        return error_response(500, err.to_string());
-    }
+        .await?;
 
-    if let Err(err) = sqlx::query(
+    sqlx::query(
         "UPDATE contributions SET status = ?, updated_at = ? WHERE ceremony_id = ? AND step = ?",
     )
     .bind("completed")
@@ -772,33 +1119,14 @@ async fn submit(
     .bind(&ceremony_id)
     .bind(step)
     .execute(&mut *tx)
-    .await
+    .await?;
+
+    tx.commit().await?;
+
+    // Update stats
     {
-        return error_response(500, err.to_string());
-    }
-
-    if let Err(err) = tx.commit().await {
-        return error_response(500, err.to_string());
-    }
-
-    let latest = LatestMetadata {
-        step: step as u64,
-        transcript_key: output_key.clone(),
-        contribution_key: Some(contribution_key.clone()),
-        updated_at: now,
-    };
-    let latest_bytes = match serde_json::to_vec(&latest) {
-        Ok(bytes) => bytes,
-        Err(err) => return error_response(500, err.to_string()),
-    };
-
-    log::info!("Updating latest metadata in S3...");
-    if let Err(err) = state
-        .s3
-        .put_bytes(&latest_key(&ceremony_id), latest_bytes, "application/json")
-        .await
-    {
-        return error_response(500, err.to_string());
+        let mut stats = state.stats.write().await;
+        stats.contributions_total += 1;
     }
 
     log::info!(
@@ -806,20 +1134,24 @@ async fn submit(
         ceremony_id,
         step
     );
-    HttpResponse::Ok().json(SubmitResponse {
+    Ok(HttpResponse::Ok().json(SubmitResponse {
         step: step as u64,
         transcript_key: output_key,
-    })
+    }))
 }
 
-async fn ensure_ceremony_absent(pool: &SqlitePool, ceremony_id: &str) -> Result<()> {
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+async fn ensure_ceremony_absent(pool: &SqlitePool, ceremony_id: &str) -> Result<(), ApiError> {
     let exists = sqlx::query("SELECT 1 FROM ceremonies WHERE id = ?")
         .bind(ceremony_id)
         .fetch_optional(pool)
         .await?
         .is_some();
     if exists {
-        bail!("ceremony already exists")
+        return Err(ApiError::Conflict("ceremony already exists".to_string()));
     }
     Ok(())
 }
@@ -831,7 +1163,7 @@ async fn insert_ceremony(
     current_head_key: &str,
     now: u64,
     config: &Config,
-) -> Result<()> {
+) -> Result<(), ApiError> {
     sqlx::query(
         "INSERT INTO ceremonies (id, circuit, current_head_key, step, lease_ttl_seconds, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -852,7 +1184,7 @@ async fn expire_active_lease(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     ceremony_id: &str,
     now: u64,
-) -> Result<()> {
+) -> Result<(), ApiError> {
     sqlx::query(
         "UPDATE leases SET status = ? WHERE ceremony_id = ? AND status = ? AND expires_at <= ?",
     )
@@ -868,7 +1200,7 @@ async fn expire_active_lease(
 async fn active_lease_expires_at(
     tx: &mut sqlx::Transaction<'_, sqlx::Sqlite>,
     ceremony_id: &str,
-) -> Result<Option<u64>> {
+) -> Result<Option<u64>, ApiError> {
     let row = sqlx::query(
         "SELECT expires_at FROM leases WHERE ceremony_id = ? AND status = ? ORDER BY started_at DESC LIMIT 1",
     )
@@ -879,93 +1211,12 @@ async fn active_lease_expires_at(
     Ok(row.map(|row| row.get::<i64, _>("expires_at") as u64))
 }
 
-fn build_initial_transcript(
-    accum: &Accumulator<Bn254>,
-    circuit: CeremonyCircuit,
-    pedersen_seed: u64,
-) -> Result<Transcript<Bn254>> {
-    match circuit {
-        CeremonyCircuit::WithdrawLocal => {
-            let circuit = build_withdraw_circuit::<TRANSFER_TREE_HEIGHT>()?;
-            Transcript::new_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-        CeremonyCircuit::WithdrawGlobal => {
-            let circuit = build_withdraw_circuit::<GLOBAL_TRANSFER_TREE_HEIGHT>()?;
-            Transcript::new_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-        CeremonyCircuit::DeciderRoot => {
-            let circuit = build_decider_circuit::<RootCircuit<Fr>>(pedersen_seed)?;
-            Transcript::new_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-        CeremonyCircuit::DeciderWithdrawLocal => {
-            let circuit =
-                build_decider_circuit::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(pedersen_seed)?;
-            Transcript::new_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-        CeremonyCircuit::DeciderWithdrawGlobal => {
-            let circuit = build_decider_circuit::<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
-                pedersen_seed,
-            )?;
-            Transcript::new_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-    }
-}
-
-fn verify_transcript(
-    accum: &Accumulator<Bn254>,
-    circuit: CeremonyCircuit,
-    transcript: &Transcript<Bn254>,
-    pedersen_seed: u64,
-) -> Result<()> {
-    match circuit {
-        CeremonyCircuit::WithdrawLocal => {
-            let circuit = build_withdraw_circuit::<TRANSFER_TREE_HEIGHT>()?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-        CeremonyCircuit::WithdrawGlobal => {
-            let circuit = build_withdraw_circuit::<GLOBAL_TRANSFER_TREE_HEIGHT>()?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-        CeremonyCircuit::DeciderRoot => {
-            let circuit = build_decider_circuit::<RootCircuit<Fr>>(pedersen_seed)?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-        CeremonyCircuit::DeciderWithdrawLocal => {
-            let circuit =
-                build_decider_circuit::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(pedersen_seed)?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-        CeremonyCircuit::DeciderWithdrawGlobal => {
-            let circuit = build_decider_circuit::<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
-                pedersen_seed,
-            )?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-    }
-    Ok(())
-}
-
 fn verify_key_transform(prev: &Transcript<Bn254>, next: &Transcript<Bn254>) -> Result<()> {
     if next.contributions.len() != prev.contributions.len() + 1 {
-        bail!("contribution chain length mismatch")
+        anyhow::bail!("contribution chain length mismatch")
     }
     if next.contributions[..prev.contributions.len()] != prev.contributions {
-        bail!("contribution chain mismatch")
+        anyhow::bail!("contribution chain mismatch")
     }
 
     let prev_partial = PartialKey::from(&prev.key);
@@ -980,115 +1231,11 @@ fn verify_key_transform(prev: &Transcript<Bn254>, next: &Transcript<Bn254>) -> R
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
-fn build_withdraw_circuit<const DEPTH: usize>() -> Result<SingleWithdrawCircuit<Fr, DEPTH>> {
-    let poseidon2_config = circom_poseidon2_config::<Fr>();
-    let poseidon3_config = circom_poseidon3_config();
-    let zero = Fr::from(0u64);
-    Ok(SingleWithdrawCircuit::<Fr, DEPTH> {
-        poseidon2_params: poseidon2_config,
-        poseidon3_params: poseidon3_config,
-        merkle_root: Some(zero),
-        recipient: Some(zero),
-        withdraw_value: Some(zero),
-        from: Some(zero),
-        value: Some(zero),
-        delta: Some(zero),
-        secret: Some(zero),
-        leaf_index: Some(0),
-        siblings: [(); DEPTH].map(|_| Some(zero)),
-    })
-}
-
-fn build_decider_circuit<C>(pedersen_seed: u64) -> Result<DeciderEthCircuit<G1, G2>>
-where
-    C: FCircuit<
-        Fr,
-        Params = (
-            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-        ),
-    >,
-    FParams<C>: Clone,
-{
-    let poseidon_config = poseidon_canonical_config::<Fr>();
-    let circuit = C::new(default_f_params::<C>()?).map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    let state_len = circuit.state_len();
-    let (r1cs, cf_r1cs) = get_r1cs::<G1, G2, C>(&poseidon_config, circuit)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    let pedersen_len = max(cf_r1cs.n_constraints(), cf_r1cs.n_witnesses());
-    let mut rng = StdRng::seed_from_u64(pedersen_seed);
-    let (cf_cs_pp, _) = Pedersen::<G2>::setup(&mut rng, pedersen_len)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-
-    Ok(DeciderEthCircuit::<G1, G2>::dummy((
-        r1cs,
-        cf_r1cs,
-        cf_cs_pp,
-        poseidon_config,
-        (),
-        (),
-        state_len,
-        2,
-    )))
-}
-
-fn default_f_params<C>() -> Result<(
-    ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-    ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-)>
-where
-    C: FCircuit<
-        Fr,
-        Params = (
-            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-        ),
-    >,
-{
-    let poseidon2_config = circom_poseidon2_config::<Fr>();
-    let poseidon3_config = circom_poseidon3_config();
-    Ok((poseidon2_config, poseidon3_config))
-}
-
-fn load_accumulator(path: &PathBuf) -> Result<Accumulator<Bn254>> {
-    Accumulator::<Bn254>::from_ptau_file(path)
-        .with_context(|| format!("failed to load ptau from {}", path.display()))
-}
-
-fn transcript_key(ceremony_id: &str, step: u64) -> String {
-    format!("ceremonies/{}/transcripts/{}.bin", ceremony_id, step)
-}
-
-fn contribution_key(ceremony_id: &str, step: u64) -> String {
-    format!("ceremonies/{}/contributions/{}.bin", ceremony_id, step)
-}
-
-fn latest_key(ceremony_id: &str) -> String {
-    format!("ceremonies/{}/latest.json", ceremony_id)
-}
-
 fn unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default()
         .as_secs()
-}
-
-fn error_response(status: u16, message: String) -> HttpResponse {
-    HttpResponse::build(actix_web::http::StatusCode::from_u16(status).unwrap())
-        .json(ErrorResponse { error: message })
-}
-
-fn default_ptau_path() -> PathBuf {
-    if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home)
-            .join(".cache")
-            .join("zerc20")
-            .join("ptau")
-            .join("ppot_0080_24.ptau")
-    } else {
-        PathBuf::from("ptau").join("ppot_0080_24.ptau")
-    }
 }
 
 fn workspace_root() -> PathBuf {

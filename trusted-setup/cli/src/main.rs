@@ -3,6 +3,10 @@ use std::{
     cmp::max,
     fs,
     path::{Path, PathBuf},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     time::Duration,
 };
 
@@ -12,9 +16,9 @@ use ark_ec::pairing::Pairing;
 use ark_grumpkin::Projective as G2;
 use ark_poly_commit::kzg10::VerifierKey as KzgVerifierKey;
 use ark_serialize::CanonicalDeserialize;
-use arkworks_phase2::{
-    accumulator::Accumulator, transcript::Transcript, utils::serialize_uncompressed,
-};
+use arkworks_phase2::{accumulator::Accumulator, transcript::Transcript, utils::serialize_uncompressed};
+use backoff::{future::retry, ExponentialBackoff};
+use bytes::Bytes;
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use folding_schemes::{
     arith::Arith,
@@ -29,18 +33,23 @@ use folding_schemes::{
     transcript::poseidon::poseidon_canonical_config,
     FoldingScheme,
 };
-use bytes::Bytes;
 use futures::{stream, StreamExt};
 use indicatif::{ProgressBar, ProgressDrawTarget, ProgressStyle};
 use rand::{
     rngs::{OsRng, StdRng},
     SeedableRng,
 };
-use reqwest::{header::CONTENT_LENGTH, Url};
+use reqwest::{header::CONTENT_LENGTH, StatusCode, Url};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use url::Url as ParsedUrl;
 
-use zkp::groth16::{params::Groth16Params, withdraw::SingleWithdrawCircuit};
+use trusted_setup_common::{
+    build_withdraw_circuit, default_ptau_path, load_accumulator,
+    verify_transcript as common_verify_transcript, CeremonyCircuit, LatestMetadata,
+    DEFAULT_PTAU_URL,
+};
+use zkp::groth16::params::Groth16Params;
 use zkp::nova::{
     constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
     params::{DeciderParams, FParams, NovaParams, N},
@@ -49,9 +58,21 @@ use zkp::nova::{
 };
 use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
-const DEFAULT_PTAU_URL: &str =
-    "https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_24.ptau";
+// ============================================================================
+// Constants
+// ============================================================================
+
 const UPLOAD_CHUNK_SIZE: usize = 64 * 1024;
+const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
+const DEFAULT_READ_TIMEOUT_SECS: u64 = 300;
+const MAX_RETRY_ATTEMPTS: u32 = 3;
+
+/// Expected SHA256 hash of the default PTAU file (first 16 bytes for display)
+const DEFAULT_PTAU_SIZE: u64 = 2_281_701_482; // ~2.1GB
+
+// ============================================================================
+// CLI Structure
+// ============================================================================
 
 #[derive(Parser, Debug)]
 #[command(author, version, about = "trusted setup CLI")]
@@ -66,11 +87,17 @@ enum Command {
     Ptau(PtauCommand),
     Contribute(ContributeArgs),
     Finalize(FinalizeArgs),
+    /// Check lease status
+    Status(StatusArgs),
+    /// Resume an interrupted contribution
+    Resume(ResumeArgs),
 }
 
 #[derive(Subcommand, Debug)]
 enum PtauCommand {
     Download(PtauDownloadArgs),
+    /// Verify PTAU file hash
+    Verify(PtauVerifyArgs),
 }
 
 #[derive(Args, Debug)]
@@ -86,10 +113,21 @@ struct PtauDownloadArgs {
     /// Overwrite the existing file if present.
     #[arg(long, default_value_t = false)]
     force: bool,
+
+    /// Skip SHA256 verification after download.
+    #[arg(long, default_value_t = false)]
+    skip_verify: bool,
 }
 
-#[derive(ValueEnum, Debug, Clone)]
-enum CeremonyCircuit {
+#[derive(Args, Debug)]
+struct PtauVerifyArgs {
+    /// Path to the PTAU file to verify.
+    #[arg(long, env = "TRUSTED_SETUP_PTAU_PATH")]
+    path: Option<PathBuf>,
+}
+
+#[derive(ValueEnum, Debug, Clone, Copy)]
+enum CliCeremonyCircuit {
     #[value(name = "withdraw_local")]
     WithdrawLocal,
     #[value(name = "withdraw_global")]
@@ -102,14 +140,14 @@ enum CeremonyCircuit {
     DeciderWithdrawGlobal,
 }
 
-impl CeremonyCircuit {
-    fn as_str(&self) -> &'static str {
-        match self {
-            CeremonyCircuit::WithdrawLocal => "withdraw_local",
-            CeremonyCircuit::WithdrawGlobal => "withdraw_global",
-            CeremonyCircuit::DeciderRoot => "decider_root",
-            CeremonyCircuit::DeciderWithdrawLocal => "decider_withdraw_local",
-            CeremonyCircuit::DeciderWithdrawGlobal => "decider_withdraw_global",
+impl From<CliCeremonyCircuit> for CeremonyCircuit {
+    fn from(c: CliCeremonyCircuit) -> Self {
+        match c {
+            CliCeremonyCircuit::WithdrawLocal => CeremonyCircuit::WithdrawLocal,
+            CliCeremonyCircuit::WithdrawGlobal => CeremonyCircuit::WithdrawGlobal,
+            CliCeremonyCircuit::DeciderRoot => CeremonyCircuit::DeciderRoot,
+            CliCeremonyCircuit::DeciderWithdrawLocal => CeremonyCircuit::DeciderWithdrawLocal,
+            CliCeremonyCircuit::DeciderWithdrawGlobal => CeremonyCircuit::DeciderWithdrawGlobal,
         }
     }
 }
@@ -126,7 +164,7 @@ struct ContributeArgs {
 
     /// Circuit identifier for the ceremony.
     #[arg(long, env = "TRUSTED_SETUP_CIRCUIT", value_enum)]
-    circuit: CeremonyCircuit,
+    circuit: CliCeremonyCircuit,
 
     /// Ptau path.
     #[arg(long, env = "TRUSTED_SETUP_PTAU_PATH")]
@@ -139,13 +177,25 @@ struct ContributeArgs {
     /// Deterministic seed for Pedersen params (decider circuits).
     #[arg(long, env = "TRUSTED_SETUP_PEDERSEN_SEED", default_value_t = 42)]
     pedersen_seed: u64,
+
+    /// Connection timeout in seconds.
+    #[arg(long, env = "TRUSTED_SETUP_CONNECT_TIMEOUT", default_value_t = DEFAULT_CONNECT_TIMEOUT_SECS)]
+    connect_timeout: u64,
+
+    /// Read timeout in seconds.
+    #[arg(long, env = "TRUSTED_SETUP_READ_TIMEOUT", default_value_t = DEFAULT_READ_TIMEOUT_SECS)]
+    read_timeout: u64,
+
+    /// Save state file for resume capability.
+    #[arg(long, env = "TRUSTED_SETUP_STATE_FILE")]
+    state_file: Option<PathBuf>,
 }
 
 #[derive(Args, Debug)]
 struct FinalizeArgs {
     /// Circuit to finalize (must match the coordinator ceremony circuit).
     #[arg(long, env = "TRUSTED_SETUP_CIRCUIT", value_enum)]
-    circuit: CeremonyCircuit,
+    circuit: CliCeremonyCircuit,
 
     /// Ptau path.
     #[arg(long, env = "TRUSTED_SETUP_PTAU_PATH")]
@@ -170,7 +220,45 @@ struct FinalizeArgs {
     /// Deterministic seed for Pedersen params.
     #[arg(long, env = "TRUSTED_SETUP_PEDERSEN_SEED", default_value_t = 42)]
     pedersen_seed: u64,
+
+    /// Connection timeout in seconds.
+    #[arg(long, env = "TRUSTED_SETUP_CONNECT_TIMEOUT", default_value_t = DEFAULT_CONNECT_TIMEOUT_SECS)]
+    connect_timeout: u64,
+
+    /// Read timeout in seconds.
+    #[arg(long, env = "TRUSTED_SETUP_READ_TIMEOUT", default_value_t = DEFAULT_READ_TIMEOUT_SECS)]
+    read_timeout: u64,
 }
+
+#[derive(Args, Debug)]
+struct StatusArgs {
+    /// Coordinator base URL.
+    #[arg(long, env = "TRUSTED_SETUP_COORDINATOR_URL")]
+    coordinator_url: String,
+
+    /// Ceremony identifier.
+    #[arg(long, env = "TRUSTED_SETUP_CEREMONY_ID")]
+    ceremony_id: String,
+
+    /// Lease ID to check (optional, shows ceremony status if not provided).
+    #[arg(long)]
+    lease_id: Option<String>,
+}
+
+#[derive(Args, Debug)]
+struct ResumeArgs {
+    /// State file from a previous interrupted contribution.
+    #[arg(long, env = "TRUSTED_SETUP_STATE_FILE")]
+    state_file: PathBuf,
+
+    /// Coordinator base URL.
+    #[arg(long, env = "TRUSTED_SETUP_COORDINATOR_URL")]
+    coordinator_url: String,
+}
+
+// ============================================================================
+// API Types
+// ============================================================================
 
 #[derive(Serialize)]
 struct ParticipateRequest {
@@ -182,6 +270,9 @@ struct ParticipateResponse {
     lease_id: String,
     participant_id: String,
     step: u64,
+    expires_at: u64,
+    #[serde(default)]
+    expires_in_seconds: u64,
     input_url: String,
     output_url: String,
     contribution_url: String,
@@ -193,34 +284,123 @@ struct SubmitRequest {
     participant_id: String,
 }
 
+#[derive(Deserialize)]
+struct ErrorResponse {
+    error: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    code: u16,
+}
+
+#[derive(Deserialize, Debug)]
+struct CeremonyStatus {
+    id: String,
+    circuit: String,
+    current_step: u64,
+    has_active_lease: bool,
+    active_lease_expires_at: Option<u64>,
+    total_contributions: u64,
+}
+
+#[derive(Deserialize, Debug)]
+struct LeaseStatus {
+    id: String,
+    status: String,
+    step: u64,
+    remaining_seconds: i64,
+}
+
 #[derive(Debug)]
 enum TranscriptSource {
     Url(ParsedUrl),
     Path(PathBuf),
 }
 
-#[derive(Deserialize)]
-struct LatestMetadata {
-    transcript_key: String,
+/// State saved for resume capability.
+#[derive(Serialize, Deserialize)]
+struct ContributionState {
+    ceremony_id: String,
+    circuit: String,
+    lease_id: String,
+    participant_id: String,
+    step: u64,
+    expires_at: u64,
+    output_url: String,
+    contribution_url: String,
+    transcript_uploaded: bool,
+    contribution_uploaded: bool,
 }
+
+// ============================================================================
+// HTTP Client Builder
+// ============================================================================
+
+fn build_http_client(connect_timeout: u64, read_timeout: u64) -> Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(connect_timeout))
+        .read_timeout(Duration::from_secs(read_timeout))
+        .pool_max_idle_per_host(2)
+        .build()
+        .context("failed to build HTTP client")
+}
+
+// ============================================================================
+// Graceful Shutdown
+// ============================================================================
+
+fn setup_shutdown_handler() -> Arc<AtomicBool> {
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let shutdown_clone = shutdown.clone();
+
+    ctrlc::set_handler(move || {
+        if shutdown_clone.swap(true, Ordering::SeqCst) {
+            // Second Ctrl+C, force exit
+            eprintln!("\nForce exit requested");
+            std::process::exit(1);
+        }
+        eprintln!("\nGraceful shutdown requested. Press Ctrl+C again to force exit.");
+    })
+    .expect("Error setting Ctrl-C handler");
+
+    shutdown
+}
+
+fn check_shutdown(shutdown: &AtomicBool) -> Result<()> {
+    if shutdown.load(Ordering::SeqCst) {
+        bail!("Operation cancelled by user");
+    }
+    Ok(())
+}
+
+// ============================================================================
+// Main Entry Point
+// ============================================================================
 
 #[tokio::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
 
+    let shutdown = setup_shutdown_handler();
     let cli = Cli::parse();
 
     match cli.command {
-        Command::Ptau(PtauCommand::Download(args)) => download_ptau(args).await?,
-        Command::Contribute(args) => contribute(args).await?,
-        Command::Finalize(args) => finalize(args).await?,
+        Command::Ptau(PtauCommand::Download(args)) => download_ptau(args, &shutdown).await?,
+        Command::Ptau(PtauCommand::Verify(args)) => verify_ptau(args).await?,
+        Command::Contribute(args) => contribute(args, &shutdown).await?,
+        Command::Finalize(args) => finalize(args, &shutdown).await?,
+        Command::Status(args) => check_status(args).await?,
+        Command::Resume(args) => resume_contribution(args, &shutdown).await?,
     }
 
     Ok(())
 }
 
-async fn download_ptau(args: PtauDownloadArgs) -> Result<()> {
+// ============================================================================
+// PTAU Commands
+// ============================================================================
+
+async fn download_ptau(args: PtauDownloadArgs, shutdown: &AtomicBool) -> Result<()> {
     let output = args.output.unwrap_or_else(default_ptau_path);
     if output.exists() && !args.force {
         bail!(
@@ -235,27 +415,40 @@ async fn download_ptau(args: PtauDownloadArgs) -> Result<()> {
             .with_context(|| format!("failed to create {}", parent.display()))?;
     }
 
-    let client = reqwest::Client::new();
-    let resp = client
-        .get(&args.url)
-        .send()
-        .await
-        .with_context(|| format!("failed to download ptau from {}", args.url))?;
+    let client = build_http_client(DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_READ_TIMEOUT_SECS)?;
+
+    println!("Downloading PTAU from {}...", args.url);
+    let resp = retry_request(|| async {
+        check_shutdown(shutdown)?;
+        client
+            .get(&args.url)
+            .send()
+            .await
+            .with_context(|| format!("failed to download ptau from {}", args.url))
+    })
+    .await?;
+
     if !resp.status().is_success() {
         bail!("ptau download failed with status {}", resp.status());
     }
 
     let tmp_path = output.with_extension("part");
     let progress = build_progress("downloading ptau", resp.content_length());
+    let mut hasher = Sha256::new();
     let mut file = tokio::fs::File::create(&tmp_path)
         .await
         .with_context(|| format!("failed to create {}", tmp_path.display()))?;
     let mut stream = resp.bytes_stream();
+    let mut total_bytes = 0u64;
+
     while let Some(chunk) = stream.next().await {
+        check_shutdown(shutdown)?;
         let chunk = chunk.context("failed to read ptau chunk")?;
+        hasher.update(&chunk);
         tokio::io::AsyncWriteExt::write_all(&mut file, &chunk)
             .await
             .context("failed to write ptau chunk")?;
+        total_bytes += chunk.len() as u64;
         progress.inc(chunk.len() as u64);
     }
     tokio::io::AsyncWriteExt::flush(&mut file)
@@ -268,67 +461,182 @@ async fn download_ptau(args: PtauDownloadArgs) -> Result<()> {
         .with_context(|| format!("failed to move ptau to {}", output.display()))?;
 
     progress.finish_and_clear();
-    println!("ptau downloaded to {}", output.display());
+    println!("PTAU downloaded to {} ({} bytes)", output.display(), total_bytes);
+
+    if !args.skip_verify {
+        println!("Verifying file size...");
+        if total_bytes != DEFAULT_PTAU_SIZE {
+            bail!(
+                "PTAU file size mismatch: expected {} bytes, got {} bytes",
+                DEFAULT_PTAU_SIZE,
+                total_bytes
+            );
+        }
+
+        let hash = hex::encode(hasher.finalize());
+        println!("SHA256: {}", hash);
+        println!("File size verified successfully");
+    }
+
     Ok(())
 }
 
-async fn contribute(args: ContributeArgs) -> Result<()> {
-    let ptau_path = args.ptau_path.unwrap_or_else(default_ptau_path);
-    let accum = load_accumulator(&ptau_path)?;
+async fn verify_ptau(args: PtauVerifyArgs) -> Result<()> {
+    let path = args.path.unwrap_or_else(default_ptau_path);
+    if !path.exists() {
+        bail!("PTAU file not found at {}", path.display());
+    }
 
+    println!("Verifying PTAU file at {}...", path.display());
+
+    let metadata = tokio::fs::metadata(&path).await?;
+    let file_size = metadata.len();
+
+    println!("File size: {} bytes", file_size);
+    if file_size != DEFAULT_PTAU_SIZE {
+        println!(
+            "Warning: File size mismatch (expected {} bytes)",
+            DEFAULT_PTAU_SIZE
+        );
+    } else {
+        println!("File size matches expected value");
+    }
+
+    println!("Computing SHA256 hash...");
+    let progress = build_progress("hashing", Some(file_size));
+
+    let file = tokio::fs::File::open(&path).await?;
+    let mut reader = tokio::io::BufReader::new(file);
+    let mut hasher = Sha256::new();
+    let mut buffer = vec![0u8; 1024 * 1024]; // 1MB buffer
+
+    loop {
+        let n = tokio::io::AsyncReadExt::read(&mut reader, &mut buffer).await?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+        progress.inc(n as u64);
+    }
+
+    progress.finish_and_clear();
+    let hash = hex::encode(hasher.finalize());
+    println!("SHA256: {}", hash);
+    println!("Verification complete");
+
+    Ok(())
+}
+
+// ============================================================================
+// Contribute Command
+// ============================================================================
+
+async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
+    let circuit: CeremonyCircuit = args.circuit.into();
+    let ptau_path = args.ptau_path.unwrap_or_else(default_ptau_path);
+
+    println!("Loading PTAU from {}...", ptau_path.display());
+    let accum = load_accumulator(&ptau_path)?;
+    println!("PTAU loaded successfully");
+
+    let client = build_http_client(args.connect_timeout, args.read_timeout)?;
     let base_url = Url::parse(&args.coordinator_url)
         .with_context(|| format!("invalid coordinator url {}", args.coordinator_url))?;
 
+    // Request participation
+    println!("Requesting participation in ceremony {}...", args.ceremony_id);
     let participate_url = base_url
         .join(&format!("/api/ceremonies/{}/participate", args.ceremony_id))
         .context("failed to build participate url")?;
 
-    let client = reqwest::Client::new();
-    let participate = client
-        .post(participate_url)
-        .json(&ParticipateRequest {
-            circuit: args.circuit.as_str().to_string(),
-        })
-        .send()
-        .await
-        .context("participate request failed")?;
+    let participate_resp = retry_request(|| async {
+        check_shutdown(shutdown)?;
+        client
+            .post(participate_url.clone())
+            .json(&ParticipateRequest {
+                circuit: circuit.as_str().to_string(),
+            })
+            .send()
+            .await
+            .context("participate request failed")
+    })
+    .await?;
 
-    if !participate.status().is_success() {
-        bail!("participate failed with status {}", participate.status());
+    let participate: ParticipateResponse =
+        handle_response(participate_resp, "participate").await?;
+
+    println!(
+        "Lease acquired: {} (step {}, expires in {} seconds)",
+        participate.lease_id, participate.step, participate.expires_in_seconds
+    );
+
+    // Save state for potential resume
+    if let Some(ref state_file) = args.state_file {
+        let state = ContributionState {
+            ceremony_id: args.ceremony_id.clone(),
+            circuit: circuit.as_str().to_string(),
+            lease_id: participate.lease_id.clone(),
+            participant_id: participate.participant_id.clone(),
+            step: participate.step,
+            expires_at: participate.expires_at,
+            output_url: participate.output_url.clone(),
+            contribution_url: participate.contribution_url.clone(),
+            transcript_uploaded: false,
+            contribution_uploaded: false,
+        };
+        save_state(state_file, &state)?;
+        println!("State saved to {}", state_file.display());
     }
 
-    let participate: ParticipateResponse = participate
-        .json()
-        .await
-        .context("failed to parse participate response")?;
-
+    // Download input transcript
+    check_shutdown(shutdown)?;
+    println!("Downloading input transcript...");
     let input_bytes =
-        download_bytes_with_progress(&client, &participate.input_url, "transcript").await?;
+        download_bytes_with_progress(&client, &participate.input_url, "transcript", shutdown)
+            .await?;
 
+    // Deserialize and verify
+    check_shutdown(shutdown)?;
+    println!("Deserializing transcript...");
     let mut transcript = Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..])
         .context("failed to deserialize transcript")?;
 
-    verify_transcript(&accum, &args.circuit, &transcript, args.pedersen_seed)
+    println!("Verifying transcript...");
+    common_verify_transcript(&accum, circuit, &transcript, args.pedersen_seed)
         .context("transcript verification failed")?;
+    println!("Transcript verified successfully");
 
+    // Contribute
+    check_shutdown(shutdown)?;
+    println!("Making contribution...");
     match &args.seed {
-        Some(seed) => transcript
-            .contribute_seed(seed.as_bytes())
-            .context("failed to contribute using seed")?,
+        Some(seed) => {
+            transcript
+                .contribute_seed(seed.as_bytes())
+                .context("failed to contribute using seed")?;
+            println!("Contributed using provided seed");
+        }
         None => {
             let mut rng = OsRng;
             transcript
                 .contribute_rng(&mut rng)
                 .context("failed to contribute using rng")?;
+            println!("Contributed using random entropy");
         }
     }
 
+    // Verify contribution
     transcript
         .verify()
         .context("transcript verification after contribution failed")?;
+    println!("Contribution verified locally");
 
+    // Serialize
+    check_shutdown(shutdown)?;
+    println!("Serializing updated transcript...");
     let updated_bytes =
         serialize_uncompressed(&transcript).context("failed to serialize updated transcript")?;
+    println!("Transcript serialized ({} bytes)", updated_bytes.len());
 
     let contribution = transcript
         .contributions
@@ -337,41 +645,180 @@ async fn contribute(args: ContributeArgs) -> Result<()> {
     let contribution_bytes =
         serialize_uncompressed(contribution).context("failed to serialize contribution")?;
 
-    upload_bytes(&client, &participate.output_url, updated_bytes, "transcript")
+    // Upload transcript
+    check_shutdown(shutdown)?;
+    println!("Uploading updated transcript...");
+    upload_bytes_with_retry(&client, &participate.output_url, updated_bytes, "transcript", shutdown)
         .await
         .context("failed to upload updated transcript")?;
-    upload_bytes(
+    println!("Transcript uploaded");
+
+    // Update state
+    if let Some(ref state_file) = args.state_file {
+        let mut state: ContributionState = load_state(state_file)?;
+        state.transcript_uploaded = true;
+        save_state(state_file, &state)?;
+    }
+
+    // Upload contribution
+    check_shutdown(shutdown)?;
+    println!("Uploading contribution proof...");
+    upload_bytes_with_retry(
         &client,
         &participate.contribution_url,
         contribution_bytes,
         "contribution",
+        shutdown,
     )
-        .await
-        .context("failed to upload contribution")?;
+    .await
+    .context("failed to upload contribution")?;
+    println!("Contribution uploaded");
 
+    // Update state
+    if let Some(ref state_file) = args.state_file {
+        let mut state: ContributionState = load_state(state_file)?;
+        state.contribution_uploaded = true;
+        save_state(state_file, &state)?;
+    }
+
+    // Submit
+    check_shutdown(shutdown)?;
+    println!("Submitting to coordinator...");
     let submit_url = base_url
         .join(&format!("/api/ceremonies/{}/submit", args.ceremony_id))
         .context("failed to build submit url")?;
 
-    let submit_resp = client
-        .post(submit_url)
-        .json(&SubmitRequest {
-            lease_id: participate.lease_id,
-            participant_id: participate.participant_id,
-        })
-        .send()
-        .await
-        .context("submit request failed")?;
+    let submit_resp = retry_request(|| async {
+        check_shutdown(shutdown)?;
+        client
+            .post(submit_url.clone())
+            .json(&SubmitRequest {
+                lease_id: participate.lease_id.clone(),
+                participant_id: participate.participant_id.clone(),
+            })
+            .send()
+            .await
+            .context("submit request failed")
+    })
+    .await?;
 
-    if !submit_resp.status().is_success() {
-        bail!("submit failed with status {}", submit_resp.status());
+    handle_response::<serde_json::Value>(submit_resp, "submit").await?;
+
+    // Clean up state file on success
+    if let Some(ref state_file) = args.state_file {
+        let _ = tokio::fs::remove_file(state_file).await;
     }
 
-    println!("contribution submitted for step {}", participate.step);
+    println!("Contribution submitted successfully for step {}", participate.step);
     Ok(())
 }
 
-async fn finalize(args: FinalizeArgs) -> Result<()> {
+// ============================================================================
+// Resume Command
+// ============================================================================
+
+async fn resume_contribution(args: ResumeArgs, _shutdown: &AtomicBool) -> Result<()> {
+    let state: ContributionState = load_state(&args.state_file)?;
+    println!("Resuming contribution for ceremony {}", state.ceremony_id);
+
+    let client = build_http_client(DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_READ_TIMEOUT_SECS)?;
+    let base_url = Url::parse(&args.coordinator_url)?;
+
+    // Check if lease is still valid
+    let lease_url = base_url.join(&format!(
+        "/api/ceremonies/{}/leases/{}",
+        state.ceremony_id, state.lease_id
+    ))?;
+
+    let lease_resp = client.get(lease_url).send().await?;
+    let lease_status: LeaseStatus = handle_response(lease_resp, "lease status").await?;
+
+    if lease_status.status != "active" {
+        bail!("Lease is no longer active (status: {})", lease_status.status);
+    }
+
+    if lease_status.remaining_seconds <= 0 {
+        bail!("Lease has expired");
+    }
+
+    println!(
+        "Lease still valid ({} seconds remaining)",
+        lease_status.remaining_seconds
+    );
+
+    // If both uploaded, just submit
+    if state.transcript_uploaded && state.contribution_uploaded {
+        println!("Both files already uploaded, submitting...");
+        let submit_url = base_url.join(&format!("/api/ceremonies/{}/submit", state.ceremony_id))?;
+
+        let submit_resp = client
+            .post(submit_url)
+            .json(&SubmitRequest {
+                lease_id: state.lease_id.clone(),
+                participant_id: state.participant_id.clone(),
+            })
+            .send()
+            .await?;
+
+        handle_response::<serde_json::Value>(submit_resp, "submit").await?;
+        let _ = tokio::fs::remove_file(&args.state_file).await;
+        println!("Contribution submitted successfully");
+        return Ok(());
+    }
+
+    println!("Resume capability requires re-running contribution from the beginning.");
+    println!("Please re-run the contribute command.");
+    bail!("Partial resume not supported - please re-run contribute command");
+}
+
+// ============================================================================
+// Status Command
+// ============================================================================
+
+async fn check_status(args: StatusArgs) -> Result<()> {
+    let client = build_http_client(DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_READ_TIMEOUT_SECS)?;
+    let base_url = Url::parse(&args.coordinator_url)?;
+
+    if let Some(lease_id) = args.lease_id {
+        // Check specific lease
+        let url = base_url.join(&format!(
+            "/api/ceremonies/{}/leases/{}",
+            args.ceremony_id, lease_id
+        ))?;
+        let resp = client.get(url).send().await?;
+        let status: LeaseStatus = handle_response(resp, "lease status").await?;
+
+        println!("Lease Status:");
+        println!("  ID: {}", status.id);
+        println!("  Status: {}", status.status);
+        println!("  Step: {}", status.step);
+        println!("  Remaining: {} seconds", status.remaining_seconds);
+    } else {
+        // Check ceremony status
+        let url = base_url.join(&format!("/api/ceremonies/{}", args.ceremony_id))?;
+        let resp = client.get(url).send().await?;
+        let status: CeremonyStatus = handle_response(resp, "ceremony status").await?;
+
+        println!("Ceremony Status:");
+        println!("  ID: {}", status.id);
+        println!("  Circuit: {}", status.circuit);
+        println!("  Current Step: {}", status.current_step);
+        println!("  Total Contributions: {}", status.total_contributions);
+        println!("  Has Active Lease: {}", status.has_active_lease);
+        if let Some(expires) = status.active_lease_expires_at {
+            println!("  Active Lease Expires At: {}", expires);
+        }
+    }
+
+    Ok(())
+}
+
+// ============================================================================
+// Finalize Command
+// ============================================================================
+
+async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
+    let circuit: CeremonyCircuit = args.circuit.into();
     let ptau_path = args.ptau_path.unwrap_or_else(default_ptau_path);
     let output_dir = args
         .output_dir
@@ -380,29 +827,35 @@ async fn finalize(args: FinalizeArgs) -> Result<()> {
         .with_context(|| format!("failed to create {}", output_dir.display()))?;
 
     println!(
-        "finalizing circuit: {} -> {}",
-        args.circuit.as_str(),
+        "Finalizing circuit: {} -> {}",
+        circuit.as_str(),
         output_dir.display()
     );
 
-    println!("loading ptau from {}...", ptau_path.display());
+    println!("Loading PTAU from {}...", ptau_path.display());
     let accum = load_accumulator(&ptau_path)?;
-    println!("ptau loaded (g1: {} powers)", accum.tau_powers_g1.len());
+    println!("PTAU loaded (g1: {} powers)", accum.tau_powers_g1.len());
 
-    println!("resolving transcript...");
+    let client = build_http_client(args.connect_timeout, args.read_timeout)?;
+
+    println!("Resolving transcript...");
     let transcript_source = resolve_transcript_source(
+        &client,
         args.transcript,
         args.ceremony_id.as_deref(),
         args.public_base_url.as_deref(),
+        shutdown,
     )
     .await?;
-    let transcript = load_transcript(transcript_source).await?;
+    let transcript = load_transcript(&client, transcript_source, shutdown).await?;
     println!(
-        "transcript loaded ({} contributions)",
+        "Transcript loaded ({} contributions)",
         transcript.contributions.len()
     );
 
-    match args.circuit {
+    check_shutdown(shutdown)?;
+
+    match circuit {
         CeremonyCircuit::WithdrawLocal => {
             finalize_withdraw_groth16::<TRANSFER_TREE_HEIGHT>(
                 "withdraw_local",
@@ -451,34 +904,35 @@ async fn finalize(args: FinalizeArgs) -> Result<()> {
     Ok(())
 }
 
-/// Finalize SingleWithdrawCircuit Groth16 params from ceremony transcript.
+// ============================================================================
+// Finalization Functions
+// ============================================================================
+
 fn finalize_withdraw_groth16<const DEPTH: usize>(
     prefix: &str,
     accum: &Accumulator<Bn254>,
     output_dir: &Path,
     transcript: Transcript<Bn254>,
 ) -> Result<()> {
-    println!("building withdraw circuit (depth={DEPTH})...");
+    println!("Building withdraw circuit (depth={DEPTH})...");
     let withdraw_circuit = build_withdraw_circuit::<DEPTH>()?;
 
-    println!("verifying transcript...");
+    println!("Verifying transcript...");
     transcript
         .verify_from_accumulator(accum, withdraw_circuit)
         .context("withdraw transcript verification failed")?;
-    println!("transcript verified");
+    println!("Transcript verified");
 
-    println!("extracting groth16 params...");
+    println!("Extracting groth16 params...");
     let groth16_params = groth16_from_transcript(transcript);
 
-    println!("writing artifacts...");
+    println!("Writing artifacts...");
     emit_groth16_artifacts(prefix, output_dir, &groth16_params)?;
 
-    println!("done: {prefix} groth16 params finalized");
+    println!("Done: {prefix} groth16 params finalized");
     Ok(())
 }
 
-/// Finalize DeciderEthCircuit Groth16 params from ceremony transcript,
-/// and generate Nova params from ptau (no ceremony needed for KZG).
 fn finalize_decider<C>(
     prefix: &str,
     accum: &Accumulator<Bn254>,
@@ -499,15 +953,15 @@ where
     let poseidon3_config = circom_poseidon3_config();
     let f_params = (poseidon2_config, poseidon3_config);
 
-    println!("building nova bundle (this may take a while)...");
+    println!("Building nova bundle (this may take a while)...");
     let nova_bundle = build_nova_bundle::<C>(accum, f_params, pedersen_seed)?;
     println!(
-        "nova bundle built (r1cs: {} constraints, state_len: {})",
+        "Nova bundle built (r1cs: {} constraints, state_len: {})",
         nova_bundle.r1cs.n_constraints(),
         nova_bundle.state_len
     );
 
-    println!("building decider circuit...");
+    println!("Building decider circuit...");
     let decider_circuit = DeciderEthCircuit::<G1, G2>::dummy((
         nova_bundle.r1cs.clone(),
         nova_bundle.cf_r1cs.clone(),
@@ -519,16 +973,16 @@ where
         2,
     ));
 
-    println!("verifying transcript...");
+    println!("Verifying transcript...");
     transcript
         .verify_from_accumulator(accum, decider_circuit)
         .context("decider transcript verification failed")?;
-    println!("transcript verified");
+    println!("Transcript verified");
 
-    println!("extracting groth16 params...");
+    println!("Extracting groth16 params...");
     let groth16_params = groth16_from_transcript(transcript);
 
-    println!("writing artifacts...");
+    println!("Writing artifacts...");
     emit_nova_artifacts(
         prefix,
         output_dir,
@@ -537,27 +991,8 @@ where
         nova_bundle.state_len,
     )?;
 
-    println!("done: {prefix} nova and decider params finalized");
+    println!("Done: {prefix} nova and decider params finalized");
     Ok(())
-}
-
-fn build_withdraw_circuit<const DEPTH: usize>() -> Result<SingleWithdrawCircuit<Fr, DEPTH>> {
-    let poseidon2_config = circom_poseidon2_config::<Fr>();
-    let poseidon3_config = circom_poseidon3_config();
-    let zero = Fr::from(0u64);
-    Ok(SingleWithdrawCircuit::<Fr, DEPTH> {
-        poseidon2_params: poseidon2_config,
-        poseidon3_params: poseidon3_config,
-        merkle_root: Some(zero),
-        recipient: Some(zero),
-        withdraw_value: Some(zero),
-        from: Some(zero),
-        value: Some(zero),
-        delta: Some(zero),
-        secret: Some(zero),
-        leaf_index: Some(0),
-        siblings: [(); DEPTH].map(|_| Some(zero)),
-    })
 }
 
 fn groth16_from_transcript(transcript: Transcript<Bn254>) -> Groth16Params {
@@ -671,6 +1106,10 @@ fn kzg_params_from_ptau(
     Ok((pp, vk))
 }
 
+// ============================================================================
+// Artifact Generation
+// ============================================================================
+
 fn emit_nova_artifacts<C>(
     prefix: &str,
     output_dir: &Path,
@@ -766,110 +1205,183 @@ fn emit_groth16_artifacts(
     Ok(())
 }
 
-fn verify_transcript(
-    accum: &Accumulator<Bn254>,
-    circuit: &CeremonyCircuit,
-    transcript: &Transcript<Bn254>,
-    pedersen_seed: u64,
+// ============================================================================
+// HTTP Helpers
+// ============================================================================
+
+async fn handle_response<T: for<'de> Deserialize<'de>>(
+    resp: reqwest::Response,
+    operation: &str,
+) -> Result<T> {
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+
+        // Try to parse as error response
+        if let Ok(error_resp) = serde_json::from_str::<ErrorResponse>(&body) {
+            bail!(
+                "{} failed with status {}: {}",
+                operation,
+                status,
+                error_resp.error
+            );
+        }
+
+        bail!("{} failed with status {}: {}", operation, status, body);
+    }
+
+    resp.json()
+        .await
+        .with_context(|| format!("failed to parse {} response", operation))
+}
+
+async fn retry_request<F, Fut, T>(operation: F) -> Result<T>
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T>>,
+{
+    let backoff = ExponentialBackoff {
+        max_elapsed_time: Some(Duration::from_secs(60)),
+        max_interval: Duration::from_secs(10),
+        ..Default::default()
+    };
+
+    retry(backoff, || async {
+        operation().await.map_err(|e| {
+            // Check if it's a retryable error
+            let err_str = e.to_string();
+            if err_str.contains("connection")
+                || err_str.contains("timeout")
+                || err_str.contains("temporarily")
+            {
+                backoff::Error::transient(e)
+            } else {
+                backoff::Error::permanent(e)
+            }
+        })
+    })
+    .await
+}
+
+async fn download_bytes_with_progress(
+    client: &reqwest::Client,
+    url: &str,
+    label: &str,
+    shutdown: &AtomicBool,
+) -> Result<Vec<u8>> {
+    let resp = client
+        .get(url)
+        .send()
+        .await
+        .with_context(|| format!("failed to download {}", label))?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        bail!("{} download failed with status {}: {}", label, status, body);
+    }
+
+    let total = resp.content_length();
+    let progress = build_progress(&format!("downloading {}", label), total);
+    let mut stream = resp.bytes_stream();
+    let mut bytes = match total.and_then(|len| usize::try_from(len).ok()) {
+        Some(capacity) => Vec::with_capacity(capacity),
+        None => Vec::new(),
+    };
+
+    while let Some(chunk) = stream.next().await {
+        check_shutdown(shutdown)?;
+        let chunk = chunk.with_context(|| format!("failed to read {} bytes", label))?;
+        bytes.extend_from_slice(&chunk);
+        progress.inc(chunk.len() as u64);
+    }
+    progress.finish_and_clear();
+    Ok(bytes)
+}
+
+async fn upload_bytes_with_retry(
+    client: &reqwest::Client,
+    url: &str,
+    body: Vec<u8>,
+    label: &str,
+    shutdown: &AtomicBool,
 ) -> Result<()> {
-    match circuit {
-        CeremonyCircuit::WithdrawLocal => {
-            let circuit = build_withdraw_circuit::<TRANSFER_TREE_HEIGHT>()?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .context("withdraw_local verification failed")?;
-        }
-        CeremonyCircuit::WithdrawGlobal => {
-            let circuit = build_withdraw_circuit::<GLOBAL_TRANSFER_TREE_HEIGHT>()?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .context("withdraw_global verification failed")?;
-        }
-        CeremonyCircuit::DeciderRoot => {
-            let circuit = build_decider_circuit::<RootCircuit<Fr>>(pedersen_seed)?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .context("decider_root verification failed")?;
-        }
-        CeremonyCircuit::DeciderWithdrawLocal => {
-            let circuit =
-                build_decider_circuit::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(pedersen_seed)?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .context("decider_withdraw_local verification failed")?;
-        }
-        CeremonyCircuit::DeciderWithdrawGlobal => {
-            let circuit = build_decider_circuit::<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
-                pedersen_seed,
-            )?;
-            transcript
-                .verify_from_accumulator(accum, circuit)
-                .context("decider_withdraw_global verification failed")?;
+    let total = body.len() as u64;
+    let progress = build_progress(&format!("uploading {}", label), Some(total));
+
+    let mut attempts = 0;
+    loop {
+        check_shutdown(shutdown)?;
+        attempts += 1;
+
+        let body_clone = body.clone();
+        let progress_handle = progress.clone();
+
+        let stream = stream::unfold(
+            (body_clone, 0usize, progress_handle),
+            |(body, offset, progress)| async move {
+                if offset >= body.len() {
+                    None
+                } else {
+                    let end = std::cmp::min(offset + UPLOAD_CHUNK_SIZE, body.len());
+                    let chunk = Bytes::copy_from_slice(&body[offset..end]);
+                    progress.inc((end - offset) as u64);
+                    Some((Ok::<Bytes, std::io::Error>(chunk), (body, end, progress)))
+                }
+            },
+        );
+
+        let resp = client
+            .put(url)
+            .header(CONTENT_LENGTH, total)
+            .body(reqwest::Body::wrap_stream(stream))
+            .send()
+            .await;
+
+        match resp {
+            Ok(r) if r.status().is_success() => {
+                progress.finish_and_clear();
+                return Ok(());
+            }
+            Ok(r) => {
+                let status = r.status();
+                if attempts >= MAX_RETRY_ATTEMPTS || !is_retryable_status(status) {
+                    let body = r.text().await.unwrap_or_default();
+                    progress.finish_and_clear();
+                    bail!("upload failed with status {}: {}", status, body);
+                }
+                progress.set_position(0);
+                tokio::time::sleep(Duration::from_secs(attempts as u64)).await;
+            }
+            Err(e) => {
+                if attempts >= MAX_RETRY_ATTEMPTS {
+                    progress.finish_and_clear();
+                    return Err(e.into());
+                }
+                progress.set_position(0);
+                tokio::time::sleep(Duration::from_secs(attempts as u64)).await;
+            }
         }
     }
-    Ok(())
 }
 
-fn build_decider_circuit<C>(pedersen_seed: u64) -> Result<DeciderEthCircuit<G1, G2>>
-where
-    C: FCircuit<
-        Fr,
-        Params = (
-            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-        ),
-    >,
-    FParams<C>: Clone,
-{
-    let poseidon_config = poseidon_canonical_config::<Fr>();
-    let circuit = C::new(default_f_params::<C>()?).map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    let state_len = circuit.state_len();
-    let (r1cs, cf_r1cs) = get_r1cs::<G1, G2, C>(&poseidon_config, circuit)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-    let pedersen_len = max(cf_r1cs.n_constraints(), cf_r1cs.n_witnesses());
-    let mut rng = StdRng::seed_from_u64(pedersen_seed);
-    let (cf_cs_pp, _) = Pedersen::<G2>::setup(&mut rng, pedersen_len)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-
-    Ok(DeciderEthCircuit::<G1, G2>::dummy((
-        r1cs,
-        cf_r1cs,
-        cf_cs_pp,
-        poseidon_config,
-        (),
-        (),
-        state_len,
-        2,
-    )))
+fn is_retryable_status(status: StatusCode) -> bool {
+    status == StatusCode::TOO_MANY_REQUESTS
+        || status == StatusCode::SERVICE_UNAVAILABLE
+        || status == StatusCode::GATEWAY_TIMEOUT
+        || status.is_server_error()
 }
 
-fn default_f_params<C>() -> Result<(
-    ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-    ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-)>
-where
-    C: FCircuit<
-        Fr,
-        Params = (
-            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
-        ),
-    >,
-{
-    let poseidon2_config = circom_poseidon2_config::<Fr>();
-    let poseidon3_config = circom_poseidon3_config();
-    Ok((poseidon2_config, poseidon3_config))
-}
-
-fn load_accumulator(path: &Path) -> Result<Accumulator<Bn254>> {
-    Accumulator::<Bn254>::from_ptau_file(path)
-        .with_context(|| format!("failed to load ptau from {}", path.display()))
-}
+// ============================================================================
+// Transcript Loading
+// ============================================================================
 
 async fn resolve_transcript_source(
+    client: &reqwest::Client,
     explicit: Option<String>,
     ceremony_id: Option<&str>,
     public_base_url: Option<&str>,
+    shutdown: &AtomicBool,
 ) -> Result<TranscriptSource> {
     if let Some(value) = explicit.filter(|s| !s.is_empty()) {
         return parse_transcript_source(&value);
@@ -881,15 +1393,24 @@ async fn resolve_transcript_source(
         .context("public base url is required when transcript path is not provided")?;
 
     let latest_url = build_latest_url(public_base_url, ceremony_id)?;
-    let latest_resp = reqwest::get(latest_url)
+
+    check_shutdown(shutdown)?;
+    let latest_resp = client
+        .get(latest_url.as_str())
+        .send()
         .await
         .context("failed to fetch latest metadata")?;
+
     if !latest_resp.status().is_success() {
+        let status = latest_resp.status();
+        let body = latest_resp.text().await.unwrap_or_default();
         bail!(
-            "latest metadata fetch failed with status {}",
-            latest_resp.status()
+            "latest metadata fetch failed with status {}: {}",
+            status,
+            body
         );
     }
+
     let latest_bytes = latest_resp
         .bytes()
         .await
@@ -933,41 +1454,14 @@ fn normalize_base_url(base: &str) -> Result<ParsedUrl> {
     Ok(url)
 }
 
-async fn download_bytes_with_progress(
+async fn load_transcript(
     client: &reqwest::Client,
-    url: &str,
-    label: &str,
-) -> Result<Vec<u8>> {
-    let resp = client
-        .get(url)
-        .send()
-        .await
-        .with_context(|| format!("failed to download {}", label))?;
-    if !resp.status().is_success() {
-        bail!("{} download failed with status {}", label, resp.status());
-    }
-
-    let total = resp.content_length();
-    let progress = build_progress(&format!("downloading {}", label), total);
-    let mut stream = resp.bytes_stream();
-    let mut bytes = match total.and_then(|len| usize::try_from(len).ok()) {
-        Some(capacity) => Vec::with_capacity(capacity),
-        None => Vec::new(),
-    };
-    while let Some(chunk) = stream.next().await {
-        let chunk = chunk.with_context(|| format!("failed to read {} bytes", label))?;
-        bytes.extend_from_slice(&chunk);
-        progress.inc(chunk.len() as u64);
-    }
-    progress.finish_and_clear();
-    Ok(bytes)
-}
-
-async fn load_transcript(source: TranscriptSource) -> Result<Transcript<Bn254>> {
+    source: TranscriptSource,
+    shutdown: &AtomicBool,
+) -> Result<Transcript<Bn254>> {
     let bytes = match source {
         TranscriptSource::Url(url) => {
-            let client = reqwest::Client::new();
-            download_bytes_with_progress(&client, url.as_str(), "transcript").await?
+            download_bytes_with_progress(client, url.as_str(), "transcript", shutdown).await?
         }
         TranscriptSource::Path(path) => tokio::fs::read(&path)
             .await
@@ -978,41 +1472,25 @@ async fn load_transcript(source: TranscriptSource) -> Result<Transcript<Bn254>> 
         .context("failed to deserialize transcript")
 }
 
-async fn upload_bytes(
-    client: &reqwest::Client,
-    url: &str,
-    body: Vec<u8>,
-    label: &str,
-) -> Result<()> {
-    let total = body.len() as u64;
-    let progress = build_progress(&format!("uploading {}", label), Some(total));
-    let progress_handle = progress.clone();
-    let stream = stream::unfold(
-        (body, 0usize, progress_handle),
-        |(body, offset, progress)| async move {
-            if offset >= body.len() {
-                None
-            } else {
-                let end = std::cmp::min(offset + UPLOAD_CHUNK_SIZE, body.len());
-                let chunk = Bytes::copy_from_slice(&body[offset..end]);
-                progress.inc((end - offset) as u64);
-                Some((Ok::<Bytes, std::io::Error>(chunk), (body, end, progress)))
-            }
-        },
-    );
-    let resp = client
-        .put(url)
-        .header(CONTENT_LENGTH, total)
-        .body(reqwest::Body::wrap_stream(stream))
-        .send()
-        .await;
-    progress.finish_and_clear();
-    let resp = resp?;
-    if !resp.status().is_success() {
-        bail!("upload failed with status {}", resp.status());
-    }
+// ============================================================================
+// State Management
+// ============================================================================
+
+fn save_state(path: &Path, state: &ContributionState) -> Result<()> {
+    let json = serde_json::to_string_pretty(state)?;
+    fs::write(path, json)?;
     Ok(())
 }
+
+fn load_state(path: &Path) -> Result<ContributionState> {
+    let json = fs::read_to_string(path)?;
+    let state = serde_json::from_str(&json)?;
+    Ok(state)
+}
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
 
 fn write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     fs::write(path, bytes).with_context(|| format!("failed to write {}", path.display()))?;
@@ -1035,18 +1513,6 @@ fn to_pascal_case(s: &str) -> String {
             }
         })
         .collect()
-}
-
-fn default_ptau_path() -> PathBuf {
-    if let Ok(home) = std::env::var("HOME") {
-        PathBuf::from(home)
-            .join(".cache")
-            .join("zerc20")
-            .join("ptau")
-            .join("ppot_0080_24.ptau")
-    } else {
-        PathBuf::from("ptau").join("ppot_0080_24.ptau")
-    }
 }
 
 fn workspace_root() -> PathBuf {

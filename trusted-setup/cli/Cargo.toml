@@ -15,12 +15,15 @@ ark-poly-commit = { version = "0.5.0", default-features = false }
 ark-serialize = { workspace = true }
 ark-std = { workspace = true }
 arkworks-phase2 = { workspace = true }
+backoff = { version = "0.4", features = ["tokio"] }
 bytes = "1"
 clap = { workspace = true, features = ["derive", "env"] }
+ctrlc = { version = "3.4", features = ["termination"] }
 dotenvy = { workspace = true }
 env_logger = { workspace = true }
 folding-schemes = { workspace = true }
 futures = { workspace = true }
+hex = { workspace = true }
 indicatif = "0.17"
 log = { workspace = true }
 rand = { workspace = true }
@@ -28,6 +31,7 @@ rand_chacha = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
+sha2 = { workspace = true }
 tokio = { workspace = true, features = [
     "fs",
     "io-util",
@@ -36,11 +40,13 @@ tokio = { workspace = true, features = [
     "rt-multi-thread",
     "sync",
     "time",
+    "signal",
 ] }
 url = { workspace = true }
 uuid = { workspace = true }
 zkp = { path = "../../zkp" }
+trusted-setup-common = { path = "../common" }
 
 [features]
 default = ["parallel"]
-parallel = ["arkworks-phase2/parallel"]
+parallel = ["arkworks-phase2/parallel", "trusted-setup-common/parallel"]

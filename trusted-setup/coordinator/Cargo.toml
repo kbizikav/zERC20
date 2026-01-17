@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 actix-web = { workspace = true }
+actix-governor = "0.6"
 anyhow = { workspace = true }
 ark-bn254 = { workspace = true }
 ark-ec = { workspace = true }
@@ -29,6 +30,7 @@ sqlx = { workspace = true, features = [
     "runtime-tokio-native-tls",
     "macros",
 ] }
+thiserror = { workspace = true }
 tokio = { workspace = true, features = [
     "rt",
     "rt-multi-thread",
@@ -40,7 +42,8 @@ tokio = { workspace = true, features = [
 url = { workspace = true }
 uuid = { workspace = true }
 zkp = { path = "../../zkp" }
+trusted-setup-common = { path = "../common" }
 
 [features]
 default = ["parallel"]
-parallel = ["arkworks-phase2/parallel"]
+parallel = ["arkworks-phase2/parallel", "trusted-setup-common/parallel"]
