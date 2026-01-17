@@ -282,8 +282,11 @@ async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
 
+    log::info!("Starting coordinator server...");
+
     let config = Config::from_env()?;
 
+    log::info!("Connecting to database: {}", config.database_url);
     let pool = SqlitePoolOptions::new()
         .max_connections(5)
         .connect(&config.database_url)
@@ -291,6 +294,7 @@ async fn main() -> Result<()> {
         .with_context(|| format!("failed to connect to {}", config.database_url))?;
 
     init_db(&pool).await?;
+    log::info!("Database initialized");
 
     let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
     let aws_config = aws_config::from_env().region(region_provider).load().await;
@@ -300,8 +304,11 @@ async fn main() -> Result<()> {
         config.s3_prefix.clone(),
         config.presign_ttl,
     );
+    log::info!("S3 client initialized (bucket: {})", config.s3_bucket);
 
+    log::info!("Loading PTAU file from {}...", config.ptau_path.display());
     let accum = Arc::new(load_accumulator(&config.ptau_path)?);
+    log::info!("PTAU file loaded successfully");
 
     let state = web::Data::new(AppState {
         config: config.clone(),
@@ -310,6 +317,7 @@ async fn main() -> Result<()> {
         accum,
     });
 
+    log::info!("Server listening on {}", config.listen_addr);
     HttpServer::new(move || {
         App::new()
             .app_data(state.clone())
@@ -393,6 +401,12 @@ async fn init_ceremony(
     body: web::Json<InitRequest>,
 ) -> HttpResponse {
     let ceremony_id = ceremony_id.into_inner();
+    log::info!(
+        "Initializing ceremony {} with circuit {}",
+        ceremony_id,
+        body.circuit
+    );
+
     let circuit = match CeremonyCircuit::parse(&body.circuit) {
         Ok(circuit) => circuit,
         Err(err) => return error_response(400, err.to_string()),
@@ -402,21 +416,32 @@ async fn init_ceremony(
         return error_response(409, err.to_string());
     }
 
+    log::info!(
+        "Building initial transcript for circuit {:?}...",
+        circuit.as_str()
+    );
     let transcript =
         match build_initial_transcript(&state.accum, circuit, state.config.pedersen_seed) {
             Ok(transcript) => transcript,
             Err(err) => return error_response(500, err.to_string()),
         };
+    log::info!("Initial transcript built successfully");
 
+    log::info!("Serializing transcript...");
     let transcript_bytes = match serialize_uncompressed(&transcript) {
         Ok(bytes) => bytes,
         Err(err) => return error_response(500, err.to_string()),
     };
+    log::info!(
+        "Transcript serialized ({} bytes)",
+        transcript_bytes.len()
+    );
 
     let step = 0u64;
     let transcript_key = transcript_key(&ceremony_id, step);
     let latest_key = latest_key(&ceremony_id);
 
+    log::info!("Uploading transcript to S3: {}...", transcript_key);
     if let Err(err) = state
         .s3
         .put_bytes(
@@ -428,6 +453,7 @@ async fn init_ceremony(
     {
         return error_response(500, err.to_string());
     }
+    log::info!("Transcript uploaded successfully");
 
     let now = unix_seconds();
     let latest = LatestMetadata {
@@ -463,6 +489,7 @@ async fn init_ceremony(
         return error_response(500, err.to_string());
     }
 
+    log::info!("Ceremony {} initialized successfully", ceremony_id);
     HttpResponse::Ok().json(InitResponse {
         ceremony_id,
         step,
@@ -598,6 +625,11 @@ async fn submit(
     body: web::Json<SubmitRequest>,
 ) -> HttpResponse {
     let ceremony_id = ceremony_id.into_inner();
+    log::info!(
+        "Processing submission for ceremony {} from participant {}",
+        ceremony_id,
+        body.participant_id
+    );
     let now = unix_seconds();
 
     let mut tx = match state.db.begin().await {
@@ -662,16 +694,24 @@ async fn submit(
         Err(err) => return error_response(500, err.to_string()),
     };
 
+    log::info!("Downloading output transcript from S3: {}...", output_key);
     let output_bytes = match state.s3.get_bytes(&output_key).await {
         Ok(bytes) => bytes,
         Err(err) => return error_response(500, err.to_string()),
     };
+    log::info!(
+        "Output transcript downloaded ({} bytes)",
+        output_bytes.len()
+    );
 
+    log::info!("Deserializing output transcript...");
     let output_transcript = match Transcript::<Bn254>::deserialize_uncompressed(&output_bytes[..]) {
         Ok(transcript) => transcript,
         Err(err) => return error_response(400, err.to_string()),
     };
+    log::info!("Output transcript deserialized");
 
+    log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
     if let Err(err) = verify_transcript(
         &state.accum,
         circuit,
@@ -680,19 +720,27 @@ async fn submit(
     ) {
         return error_response(400, err.to_string());
     }
+    log::info!("Transcript verification passed");
 
+    log::info!("Downloading input transcript from S3: {}...", input_key);
     let input_bytes = match state.s3.get_bytes(&input_key).await {
         Ok(bytes) => bytes,
         Err(err) => return error_response(500, err.to_string()),
     };
+    log::info!("Input transcript downloaded ({} bytes)", input_bytes.len());
+
+    log::info!("Deserializing input transcript...");
     let input_transcript = match Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..]) {
         Ok(transcript) => transcript,
         Err(err) => return error_response(400, err.to_string()),
     };
+    log::info!("Input transcript deserialized");
 
+    log::info!("Verifying key transform...");
     if let Err(err) = verify_key_transform(&input_transcript, &output_transcript) {
         return error_response(400, err.to_string());
     }
+    log::info!("Key transform verification passed");
 
     if let Err(err) = sqlx::query(
         "UPDATE ceremonies SET current_head_key = ?, step = ?, updated_at = ? WHERE id = ?",
@@ -744,6 +792,7 @@ async fn submit(
         Err(err) => return error_response(500, err.to_string()),
     };
 
+    log::info!("Updating latest metadata in S3...");
     if let Err(err) = state
         .s3
         .put_bytes(&latest_key(&ceremony_id), latest_bytes, "application/json")
@@ -752,6 +801,11 @@ async fn submit(
         return error_response(500, err.to_string());
     }
 
+    log::info!(
+        "Submission completed successfully for ceremony {} step {}",
+        ceremony_id,
+        step
+    );
     HttpResponse::Ok().json(SubmitResponse {
         step: step as u64,
         transcript_key: output_key,

@@ -1428,7 +1428,7 @@ dependencies = [
 [[package]]
 name = "arkworks-phase2"
 version = "0.1.0"
-source = "git+https://github.com/kbizikav/arkworks-phase2.git?branch=gr1cs#eadd6a51ae59894698f53a0aa968ba3c8925720c"
+source = "git+https://github.com/kbizikav/arkworks-phase2.git?branch=parallel#476223cd5f0f9f79de446abdfbdfceb68637cc9b"
 dependencies = [
  "ark-ec",
  "ark-ff 0.5.0",
