@@ -114,16 +114,6 @@ impl CeremonyCircuit {
     }
 }
 
-#[derive(ValueEnum, Debug, Clone)]
-enum CircuitPrefix {
-    #[value(name = "root")]
-    Root,
-    #[value(name = "withdraw_local")]
-    WithdrawLocal,
-    #[value(name = "withdraw_global")]
-    WithdrawGlobal,
-}
-
 #[derive(Args, Debug)]
 struct ContributeArgs {
     /// Coordinator base URL.
@@ -153,9 +143,9 @@ struct ContributeArgs {
 
 #[derive(Args, Debug)]
 struct FinalizeArgs {
-    /// Circuit prefix for artifact output.
+    /// Circuit to finalize (must match the coordinator ceremony circuit).
     #[arg(long, env = "TRUSTED_SETUP_CIRCUIT", value_enum)]
-    circuit: CircuitPrefix,
+    circuit: CeremonyCircuit,
 
     /// Ptau path.
     #[arg(long, env = "TRUSTED_SETUP_PTAU_PATH")]
@@ -169,21 +159,13 @@ struct FinalizeArgs {
     #[arg(long, env = "TRUSTED_SETUP_PUBLIC_BASE_URL")]
     public_base_url: Option<String>,
 
-    /// Ceremony id for the decider transcript.
-    #[arg(long, env = "TRUSTED_SETUP_DECIDER_CEREMONY_ID")]
-    decider_ceremony_id: Option<String>,
+    /// Ceremony id for the transcript.
+    #[arg(long, env = "TRUSTED_SETUP_CEREMONY_ID")]
+    ceremony_id: Option<String>,
 
-    /// Ceremony id for the withdraw Groth16 transcript.
-    #[arg(long, env = "TRUSTED_SETUP_WITHDRAW_CEREMONY_ID")]
-    withdraw_ceremony_id: Option<String>,
-
-    /// Explicit path or URL for the decider transcript.
-    #[arg(long, env = "TRUSTED_SETUP_DECIDER_TRANSCRIPT")]
-    decider_transcript: Option<String>,
-
-    /// Explicit path or URL for the withdraw Groth16 transcript.
-    #[arg(long, env = "TRUSTED_SETUP_WITHDRAW_TRANSCRIPT")]
-    withdraw_transcript: Option<String>,
+    /// Explicit path or URL for the transcript.
+    #[arg(long, env = "TRUSTED_SETUP_TRANSCRIPT")]
+    transcript: Option<String>,
 
     /// Deterministic seed for Pedersen params.
     #[arg(long, env = "TRUSTED_SETUP_PEDERSEN_SEED", default_value_t = 42)]
@@ -399,90 +381,105 @@ async fn finalize(args: FinalizeArgs) -> Result<()> {
 
     let accum = load_accumulator(&ptau_path)?;
 
-    let poseidon2_config = circom_poseidon2_config::<Fr>();
-    let poseidon3_config = circom_poseidon3_config();
+    let transcript_source = resolve_transcript_source(
+        args.transcript,
+        args.ceremony_id.as_deref(),
+        args.public_base_url.as_deref(),
+    )
+    .await?;
+    let transcript = load_transcript(transcript_source).await?;
 
     match args.circuit {
-        CircuitPrefix::Root => {
-            finalize_nova::<RootCircuit<Fr>>(
-                "root",
-                &accum,
-                &output_dir,
-                (poseidon2_config.clone(), poseidon3_config.clone()),
-                args.decider_transcript,
-                args.decider_ceremony_id,
-                None,
-                args.public_base_url,
-                args.pedersen_seed,
-            )
-            .await?;
-        }
-        CircuitPrefix::WithdrawLocal => {
-            finalize_withdraw::<TRANSFER_TREE_HEIGHT, WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(
+        CeremonyCircuit::WithdrawLocal => {
+            finalize_withdraw_groth16::<TRANSFER_TREE_HEIGHT>(
                 "withdraw_local",
                 &accum,
                 &output_dir,
-                (poseidon2_config.clone(), poseidon3_config.clone()),
-                args.decider_transcript,
-                args.decider_ceremony_id,
-                args.withdraw_transcript,
-                args.withdraw_ceremony_id,
-                args.public_base_url,
-                args.pedersen_seed,
-            )
-            .await?;
+                transcript,
+            )?;
         }
-        CircuitPrefix::WithdrawGlobal => {
-            finalize_withdraw::<
-                GLOBAL_TRANSFER_TREE_HEIGHT,
-                WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>,
-            >(
+        CeremonyCircuit::WithdrawGlobal => {
+            finalize_withdraw_groth16::<GLOBAL_TRANSFER_TREE_HEIGHT>(
                 "withdraw_global",
                 &accum,
                 &output_dir,
-                (poseidon2_config.clone(), poseidon3_config.clone()),
-                args.decider_transcript,
-                args.decider_ceremony_id,
-                args.withdraw_transcript,
-                args.withdraw_ceremony_id,
-                args.public_base_url,
+                transcript,
+            )?;
+        }
+        CeremonyCircuit::DeciderRoot => {
+            finalize_decider::<RootCircuit<Fr>>(
+                "root",
+                &accum,
+                &output_dir,
+                transcript,
                 args.pedersen_seed,
-            )
-            .await?;
+            )?;
+        }
+        CeremonyCircuit::DeciderWithdrawLocal => {
+            finalize_decider::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(
+                "withdraw_local",
+                &accum,
+                &output_dir,
+                transcript,
+                args.pedersen_seed,
+            )?;
+        }
+        CeremonyCircuit::DeciderWithdrawGlobal => {
+            finalize_decider::<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
+                "withdraw_global",
+                &accum,
+                &output_dir,
+                transcript,
+                args.pedersen_seed,
+            )?;
         }
     }
 
     Ok(())
 }
 
-async fn finalize_nova<C>(
+/// Finalize SingleWithdrawCircuit Groth16 params from ceremony transcript.
+fn finalize_withdraw_groth16<const DEPTH: usize>(
     prefix: &str,
     accum: &Accumulator<Bn254>,
     output_dir: &Path,
-    f_params: FParams<C>,
-    decider_transcript: Option<String>,
-    decider_ceremony_id: Option<String>,
-    withdraw_transcript: Option<String>,
-    public_base_url: Option<String>,
+    transcript: Transcript<Bn254>,
+) -> Result<()> {
+    let withdraw_circuit = build_withdraw_circuit::<DEPTH>()?;
+    transcript
+        .verify_from_accumulator(accum, withdraw_circuit)
+        .context("withdraw transcript verification failed")?;
+
+    let groth16_params = groth16_from_transcript(transcript);
+    emit_groth16_artifacts(prefix, output_dir, &groth16_params)?;
+
+    println!("finalized {prefix} groth16 params");
+    Ok(())
+}
+
+/// Finalize DeciderEthCircuit Groth16 params from ceremony transcript,
+/// and generate Nova params from ptau (no ceremony needed for KZG).
+fn finalize_decider<C>(
+    prefix: &str,
+    accum: &Accumulator<Bn254>,
+    output_dir: &Path,
+    transcript: Transcript<Bn254>,
     pedersen_seed: u64,
 ) -> Result<()>
 where
-    C: FCircuit<Fr>,
-    FParams<C>: Clone,
+    C: FCircuit<
+        Fr,
+        Params = (
+            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
+            ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
+        ),
+    >,
 {
-    if withdraw_transcript.is_some() {
-        bail!("withdraw transcript not applicable for {prefix}");
-    }
+    let poseidon2_config = circom_poseidon2_config::<Fr>();
+    let poseidon3_config = circom_poseidon3_config();
+    let f_params = (poseidon2_config, poseidon3_config);
 
-    let nova_bundle = build_nova_bundle::<C>(accum, f_params.clone(), pedersen_seed)?;
-
-    let decider_source = resolve_transcript_source(
-        decider_transcript,
-        decider_ceremony_id.as_deref(),
-        public_base_url.as_deref(),
-    )
-    .await?;
-    let decider_transcript = load_transcript(decider_source).await?;
+    let nova_bundle = build_nova_bundle::<C>(accum, f_params, pedersen_seed)?;
 
     let decider_circuit = DeciderEthCircuit::<G1, G2>::dummy((
         nova_bundle.r1cs.clone(),
@@ -494,11 +491,11 @@ where
         nova_bundle.state_len,
         2,
     ));
-    decider_transcript
+    transcript
         .verify_from_accumulator(accum, decider_circuit)
         .context("decider transcript verification failed")?;
 
-    let groth16_params = groth16_from_transcript(decider_transcript);
+    let groth16_params = groth16_from_transcript(transcript);
 
     emit_nova_artifacts(
         prefix,
@@ -508,74 +505,7 @@ where
         nova_bundle.state_len,
     )?;
 
-    Ok(())
-}
-
-async fn finalize_withdraw<const DEPTH: usize, C>(
-    prefix: &str,
-    accum: &Accumulator<Bn254>,
-    output_dir: &Path,
-    f_params: FParams<C>,
-    decider_transcript: Option<String>,
-    decider_ceremony_id: Option<String>,
-    withdraw_transcript: Option<String>,
-    withdraw_ceremony_id: Option<String>,
-    public_base_url: Option<String>,
-    pedersen_seed: u64,
-) -> Result<()>
-where
-    C: FCircuit<Fr>,
-    FParams<C>: Clone,
-{
-    let withdraw_source = resolve_transcript_source(
-        withdraw_transcript,
-        withdraw_ceremony_id.as_deref(),
-        public_base_url.as_deref(),
-    )
-    .await?;
-
-    let nova_bundle = build_nova_bundle::<C>(accum, f_params.clone(), pedersen_seed)?;
-
-    let decider_source = resolve_transcript_source(
-        decider_transcript,
-        decider_ceremony_id.as_deref(),
-        public_base_url.as_deref(),
-    )
-    .await?;
-
-    let decider_transcript = load_transcript(decider_source).await?;
-    let decider_circuit = DeciderEthCircuit::<G1, G2>::dummy((
-        nova_bundle.r1cs.clone(),
-        nova_bundle.cf_r1cs.clone(),
-        nova_bundle.cf_cs_pp.clone(),
-        nova_bundle.poseidon_config.clone(),
-        (),
-        (),
-        nova_bundle.state_len,
-        2,
-    ));
-    decider_transcript
-        .verify_from_accumulator(accum, decider_circuit)
-        .context("decider transcript verification failed")?;
-
-    let groth16_decider = groth16_from_transcript(decider_transcript);
-
-    emit_nova_artifacts(
-        prefix,
-        output_dir,
-        &nova_bundle.params,
-        &groth16_decider,
-        nova_bundle.state_len,
-    )?;
-
-    let withdraw_transcript = load_transcript(withdraw_source).await?;
-    let withdraw_circuit = build_withdraw_circuit::<DEPTH>()?;
-    withdraw_transcript
-        .verify_from_accumulator(accum, withdraw_circuit)
-        .context("withdraw transcript verification failed")?;
-    let groth16_withdraw = groth16_from_transcript(withdraw_transcript);
-    emit_groth16_artifacts(prefix, output_dir, &groth16_withdraw)?;
-
+    println!("finalized {prefix} nova and decider params");
     Ok(())
 }
 
