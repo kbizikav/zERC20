@@ -379,8 +379,17 @@ async fn finalize(args: FinalizeArgs) -> Result<()> {
     fs::create_dir_all(&output_dir)
         .with_context(|| format!("failed to create {}", output_dir.display()))?;
 
-    let accum = load_accumulator(&ptau_path)?;
+    println!(
+        "finalizing circuit: {} -> {}",
+        args.circuit.as_str(),
+        output_dir.display()
+    );
 
+    println!("loading ptau from {}...", ptau_path.display());
+    let accum = load_accumulator(&ptau_path)?;
+    println!("ptau loaded (g1: {} powers)", accum.tau_powers_g1.len());
+
+    println!("resolving transcript...");
     let transcript_source = resolve_transcript_source(
         args.transcript,
         args.ceremony_id.as_deref(),
@@ -388,6 +397,10 @@ async fn finalize(args: FinalizeArgs) -> Result<()> {
     )
     .await?;
     let transcript = load_transcript(transcript_source).await?;
+    println!(
+        "transcript loaded ({} contributions)",
+        transcript.contributions.len()
+    );
 
     match args.circuit {
         CeremonyCircuit::WithdrawLocal => {
@@ -445,15 +458,22 @@ fn finalize_withdraw_groth16<const DEPTH: usize>(
     output_dir: &Path,
     transcript: Transcript<Bn254>,
 ) -> Result<()> {
+    println!("building withdraw circuit (depth={DEPTH})...");
     let withdraw_circuit = build_withdraw_circuit::<DEPTH>()?;
+
+    println!("verifying transcript...");
     transcript
         .verify_from_accumulator(accum, withdraw_circuit)
         .context("withdraw transcript verification failed")?;
+    println!("transcript verified");
 
+    println!("extracting groth16 params...");
     let groth16_params = groth16_from_transcript(transcript);
+
+    println!("writing artifacts...");
     emit_groth16_artifacts(prefix, output_dir, &groth16_params)?;
 
-    println!("finalized {prefix} groth16 params");
+    println!("done: {prefix} groth16 params finalized");
     Ok(())
 }
 
@@ -479,8 +499,15 @@ where
     let poseidon3_config = circom_poseidon3_config();
     let f_params = (poseidon2_config, poseidon3_config);
 
+    println!("building nova bundle (this may take a while)...");
     let nova_bundle = build_nova_bundle::<C>(accum, f_params, pedersen_seed)?;
+    println!(
+        "nova bundle built (r1cs: {} constraints, state_len: {})",
+        nova_bundle.r1cs.n_constraints(),
+        nova_bundle.state_len
+    );
 
+    println!("building decider circuit...");
     let decider_circuit = DeciderEthCircuit::<G1, G2>::dummy((
         nova_bundle.r1cs.clone(),
         nova_bundle.cf_r1cs.clone(),
@@ -491,12 +518,17 @@ where
         nova_bundle.state_len,
         2,
     ));
+
+    println!("verifying transcript...");
     transcript
         .verify_from_accumulator(accum, decider_circuit)
         .context("decider transcript verification failed")?;
+    println!("transcript verified");
 
+    println!("extracting groth16 params...");
     let groth16_params = groth16_from_transcript(transcript);
 
+    println!("writing artifacts...");
     emit_nova_artifacts(
         prefix,
         output_dir,
@@ -505,7 +537,7 @@ where
         nova_bundle.state_len,
     )?;
 
-    println!("finalized {prefix} nova and decider params");
+    println!("done: {prefix} nova and decider params finalized");
     Ok(())
 }
 
@@ -839,7 +871,7 @@ async fn resolve_transcript_source(
     ceremony_id: Option<&str>,
     public_base_url: Option<&str>,
 ) -> Result<TranscriptSource> {
-    if let Some(value) = explicit {
+    if let Some(value) = explicit.filter(|s| !s.is_empty()) {
         return parse_transcript_source(&value);
     }
 

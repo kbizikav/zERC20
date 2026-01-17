@@ -24,8 +24,23 @@ rand = { workspace = true }
 rand_chacha = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-sqlx = { workspace = true, features = ["sqlite", "runtime-tokio-native-tls", "macros"] }
-tokio = { workspace = true, features = ["rt", "rt-multi-thread", "macros", "sync", "time", "fs"] }
+sqlx = { workspace = true, features = [
+    "sqlite",
+    "runtime-tokio-native-tls",
+    "macros",
+] }
+tokio = { workspace = true, features = [
+    "rt",
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+    "fs",
+] }
 url = { workspace = true }
 uuid = { workspace = true }
 zkp = { path = "../../zkp" }
+
+[features]
+default = ["parallel"]
+parallel = ["arkworks-phase2/parallel"]

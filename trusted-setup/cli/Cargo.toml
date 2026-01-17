@@ -28,7 +28,19 @@ rand_chacha = { workspace = true }
 reqwest = { workspace = true, features = ["stream"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "rt", "rt-multi-thread", "sync", "time"] }
+tokio = { workspace = true, features = [
+    "fs",
+    "io-util",
+    "macros",
+    "rt",
+    "rt-multi-thread",
+    "sync",
+    "time",
+] }
 url = { workspace = true }
 uuid = { workspace = true }
 zkp = { path = "../../zkp" }
+
+[features]
+default = ["parallel"]
+parallel = ["arkworks-phase2/parallel"]
