@@ -65,6 +65,7 @@ const UPLOAD_CHUNK_SIZE: usize = 64 * 1024;
 const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_READ_TIMEOUT_SECS: u64 = 300;
 const MAX_RETRY_ATTEMPTS: u32 = 3;
+const PEDERSEN_SEED: u64 = 42;
 
 /// Expected SHA256 hash of the default PTAU file (first 16 bytes for display)
 const DEFAULT_PTAU_SIZE: u64 = 2_281_701_482; // ~2.1GB
@@ -210,10 +211,6 @@ struct FinalizeArgs {
     #[arg(long, env = "TRUSTED_SETUP_PUBLIC_BASE_URL")]
     public_base_url: Option<String>,
 
-    /// Deterministic seed for Pedersen params.
-    #[arg(long, env = "TRUSTED_SETUP_PEDERSEN_SEED", default_value_t = 42)]
-    pedersen_seed: u64,
-
     /// Connection timeout in seconds.
     #[arg(long, env = "TRUSTED_SETUP_CONNECT_TIMEOUT", default_value_t = DEFAULT_CONNECT_TIMEOUT_SECS)]
     connect_timeout: u64,
@@ -266,10 +263,6 @@ struct GenerateInitialTranscriptArgs {
     /// PreparedAccumulator cache path. If not specified, uses default path.
     #[arg(long)]
     prepared_accum_cache: Option<PathBuf>,
-
-    /// Deterministic seed for Pedersen params (decider circuits).
-    #[arg(long, env = "TRUSTED_SETUP_PEDERSEN_SEED", default_value_t = 42)]
-    pedersen_seed: u64,
 
     /// Overwrite the existing file if present.
     #[arg(long, default_value_t = false)]
@@ -619,7 +612,7 @@ fn generate_initial_transcript(args: GenerateInitialTranscriptArgs) -> Result<()
     let transcript = build_initial_transcript_cached(
         &accum,
         circuit,
-        args.pedersen_seed,
+        PEDERSEN_SEED,
         args.prepared_accum_cache.as_deref(),
     )?;
     println!(
@@ -1066,7 +1059,7 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
                 &accum,
                 &output_dir,
                 transcript,
-                args.pedersen_seed,
+                PEDERSEN_SEED,
             )?;
         }
         CeremonyCircuit::DeciderWithdrawLocal => {
@@ -1075,7 +1068,7 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
                 &accum,
                 &output_dir,
                 transcript,
-                args.pedersen_seed,
+                PEDERSEN_SEED,
             )?;
         }
         CeremonyCircuit::DeciderWithdrawGlobal => {
@@ -1084,7 +1077,7 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
                 &accum,
                 &output_dir,
                 transcript,
-                args.pedersen_seed,
+                PEDERSEN_SEED,
             )?;
         }
     }
