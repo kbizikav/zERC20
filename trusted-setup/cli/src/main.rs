@@ -601,16 +601,10 @@ fn generate_initial_transcript(args: GenerateInitialTranscriptArgs) -> Result<()
     }
     println!();
 
-    // Load PTAU
-    println!("Loading PTAU...");
-    let accum = load_accumulator(&ptau_path)?;
-    println!("PTAU loaded (g1: {} powers)", accum.tau_powers_g1.len());
-
-    // Generate initial transcript with caching
-    // If no explicit cache path provided, the function will compute one based on ptau_power and domain_size
-    println!("Generating initial transcript (this may take a while)...");
+    // Generate initial transcript with caching (PTAU is loaded lazily only if cache is invalid/missing)
+    println!("Generating initial transcript...");
     let transcript = build_initial_transcript_cached(
-        &accum,
+        &ptau_path,
         circuit,
         PEDERSEN_SEED,
         args.prepared_accum_cache.as_deref(),

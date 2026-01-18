@@ -126,46 +126,12 @@ pub fn load_accumulator(path: &Path) -> Result<Accumulator<Bn254>> {
         .with_context(|| format!("failed to load ptau from {}", path.display()))
 }
 
-/// Build initial transcript for a ceremony circuit.
-pub fn build_initial_transcript(
-    accum: &Accumulator<Bn254>,
-    circuit: CeremonyCircuit,
-    pedersen_seed: u64,
-) -> Result<Transcript<Bn254>> {
-    match circuit {
-        CeremonyCircuit::WithdrawLocal => {
-            let c = build_withdraw_circuit::<TRANSFER_TREE_HEIGHT>()?;
-            Transcript::new_from_accumulator(accum, c).map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-        CeremonyCircuit::WithdrawGlobal => {
-            let c = build_withdraw_circuit::<GLOBAL_TRANSFER_TREE_HEIGHT>()?;
-            Transcript::new_from_accumulator(accum, c).map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-        CeremonyCircuit::DeciderRoot => {
-            let c = build_decider_circuit::<RootCircuit<Fr>>(pedersen_seed)?;
-            Transcript::new_from_accumulator(accum, c).map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-        CeremonyCircuit::DeciderWithdrawLocal => {
-            let c =
-                build_decider_circuit::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(pedersen_seed)?;
-            Transcript::new_from_accumulator(accum, c).map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-        CeremonyCircuit::DeciderWithdrawGlobal => {
-            let c = build_decider_circuit::<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
-                pedersen_seed,
-            )?;
-            Transcript::new_from_accumulator(accum, c).map_err(|e| anyhow::anyhow!(e.to_string()))
-        }
-    }
-}
-
 /// Build initial transcript using a cached PreparedAccumulator.
-/// This is much faster than build_initial_transcript when the cache exists.
 ///
 /// If `cache_path` is None, uses a default path based on ptau_power and domain_size,
 /// allowing cache sharing across circuits with the same domain size.
 pub fn build_initial_transcript_cached(
-    accum: &Accumulator<Bn254>,
+    ptau_path: &Path,
     circuit: CeremonyCircuit,
     pedersen_seed: u64,
     cache_path: Option<&Path>,
@@ -185,7 +151,7 @@ pub fn build_initial_transcript_cached(
         domain_size
     );
 
-    // Try to load cached PreparedAccumulator
+    // Try to load cached PreparedAccumulator (lazy load PTAU only if needed)
     let prepared = if cache_path.exists() {
         eprintln!("Loading cached PreparedAccumulator...");
         match PreparedAccumulator::load(cache_path) {
@@ -200,7 +166,11 @@ pub fn build_initial_transcript_cached(
                         "Cached PreparedAccumulator size mismatch (expected {}, got {}), regenerating...",
                         domain_size, len
                     );
-                    generate_and_save_prepared(accum, domain_size, cache_path)?
+                    // Load PTAU only when cache is invalid
+                    eprintln!("Loading PTAU (this may take a while)...");
+                    let accum = load_accumulator(ptau_path)?;
+                    eprintln!("PTAU loaded (g1: {} powers)", accum.tau_powers_g1.len());
+                    generate_and_save_prepared(&accum, domain_size, cache_path)?
                 }
             }
             Err(e) => {
@@ -208,12 +178,20 @@ pub fn build_initial_transcript_cached(
                     "Failed to load cached PreparedAccumulator: {}, regenerating...",
                     e
                 );
-                generate_and_save_prepared(accum, domain_size, cache_path)?
+                // Load PTAU only when cache loading fails
+                eprintln!("Loading PTAU (this may take a while)...");
+                let accum = load_accumulator(ptau_path)?;
+                eprintln!("PTAU loaded (g1: {} powers)", accum.tau_powers_g1.len());
+                generate_and_save_prepared(&accum, domain_size, cache_path)?
             }
         }
     } else {
         eprintln!("PreparedAccumulator cache not found, generating...");
-        generate_and_save_prepared(accum, domain_size, cache_path)?
+        // Load PTAU only when cache doesn't exist
+        eprintln!("Loading PTAU (this may take a while)...");
+        let accum = load_accumulator(ptau_path)?;
+        eprintln!("PTAU loaded (g1: {} powers)", accum.tau_powers_g1.len());
+        generate_and_save_prepared(&accum, domain_size, cache_path)?
     };
 
     // Build transcript from prepared accumulator
