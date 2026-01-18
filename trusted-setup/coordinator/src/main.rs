@@ -9,9 +9,7 @@ use actix_web::{web, App, HttpResponse, HttpServer, ResponseError};
 use anyhow::{Context, Result};
 use ark_bn254::Bn254;
 use ark_serialize::CanonicalDeserialize;
-use arkworks_phase2::{
-    key::PartialKey, transcript::Transcript, utils::serialize_uncompressed,
-};
+use arkworks_phase2::{key::PartialKey, transcript::Transcript, utils::serialize_uncompressed};
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{presigning::PresigningConfig, primitives::ByteStream, Client as S3Client};
 use serde::{Deserialize, Serialize};
@@ -263,7 +261,6 @@ struct ErrorResponse {
     code: u16,
 }
 
-
 #[derive(Serialize)]
 struct InitResponse {
     ceremony_id: String,
@@ -271,15 +268,12 @@ struct InitResponse {
     transcript_key: String,
 }
 
-#[derive(Deserialize)]
-struct ParticipateRequest {
-    circuit: String,
-}
 
 #[derive(Serialize)]
 struct ParticipateResponse {
     lease_id: String,
     participant_id: String,
+    circuit: String,
     step: u64,
     expires_at: u64,
     expires_in_seconds: u64,
@@ -435,7 +429,7 @@ async fn main() -> Result<()> {
             )
             .route(
                 "/api/ceremonies/{ceremony_id}/participate",
-                web::post().to(participate),
+                web::get().to(participate),
             )
             .route(
                 "/api/ceremonies/{ceremony_id}/submit",
@@ -570,12 +564,16 @@ async fn init_db(pool: &SqlitePool) -> Result<()> {
     .await?;
 
     // Create indexes for better query performance
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_leases_ceremony_status ON leases(ceremony_id, status)")
-        .execute(pool)
-        .await?;
-    sqlx::query("CREATE INDEX IF NOT EXISTS idx_contributions_ceremony ON contributions(ceremony_id)")
-        .execute(pool)
-        .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_leases_ceremony_status ON leases(ceremony_id, status)",
+    )
+    .execute(pool)
+    .await?;
+    sqlx::query(
+        "CREATE INDEX IF NOT EXISTS idx_contributions_ceremony ON contributions(ceremony_id)",
+    )
+    .execute(pool)
+    .await?;
 
     Ok(())
 }
@@ -621,7 +619,9 @@ async fn list_ceremonies(state: web::Data<AppState>) -> Result<HttpResponse, Api
         .into_iter()
         .map(|row| {
             let active_lease_expires: Option<i64> = row.get("active_lease_expires");
-            let has_active_lease = active_lease_expires.map(|e| e as u64 > now).unwrap_or(false);
+            let has_active_lease = active_lease_expires
+                .map(|e| e as u64 > now)
+                .unwrap_or(false);
 
             CeremonyStatus {
                 id: row.get("id"),
@@ -660,7 +660,9 @@ async fn get_ceremony_status(
     .ok_or_else(|| ApiError::NotFound(format!("ceremony {} not found", ceremony_id)))?;
 
     let active_lease_expires: Option<i64> = row.get("active_lease_expires");
-    let has_active_lease = active_lease_expires.map(|e| e as u64 > now).unwrap_or(false);
+    let has_active_lease = active_lease_expires
+        .map(|e| e as u64 > now)
+        .unwrap_or(false);
 
     let status = CeremonyStatus {
         id: row.get("id"),
@@ -785,8 +787,8 @@ async fn init_ceremony(
         stats.requests_total += 1;
     }
 
-    let circuit = CeremonyCircuit::parse(&circuit_str)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
+    let circuit =
+        CeremonyCircuit::parse(&circuit_str).map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     // Load initial transcript from cache or file
     let initial_transcript = get_or_load_initial_transcript(&state, circuit).await?;
@@ -799,10 +801,7 @@ async fn init_ceremony(
     log::info!("Serializing transcript...");
     let transcript_bytes = serialize_uncompressed(initial_transcript.as_ref())
         .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))?;
-    log::info!(
-        "Transcript serialized ({} bytes)",
-        transcript_bytes.len()
-    );
+    log::info!("Transcript serialized ({} bytes)", transcript_bytes.len());
 
     let step = 0u64;
     let tkey = transcript_key(&ceremony_id, step);
@@ -854,11 +853,8 @@ async fn init_ceremony(
 async fn participate(
     state: web::Data<AppState>,
     ceremony_id: web::Path<String>,
-    body: web::Json<ParticipateRequest>,
 ) -> Result<HttpResponse, ApiError> {
     let ceremony_id = ceremony_id.into_inner();
-    let circuit = CeremonyCircuit::parse(&body.circuit)
-        .map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
     // Increment request counter
     {
@@ -877,10 +873,7 @@ async fn participate(
             .await?
             .ok_or_else(|| ApiError::NotFound(format!("ceremony {} not found", ceremony_id)))?;
 
-    let stored_circuit: String = ceremony_row.get("circuit");
-    if stored_circuit != circuit.as_str() {
-        return Err(ApiError::BadRequest("circuit mismatch".to_string()));
-    }
+    let circuit_str: String = ceremony_row.get("circuit");
 
     // Expire any active leases that are past their expiry time
     expire_active_lease(&mut tx, &ceremony_id, now).await?;
@@ -952,6 +945,7 @@ async fn participate(
     Ok(HttpResponse::Ok().json(ParticipateResponse {
         lease_id,
         participant_id,
+        circuit: circuit_str,
         step: next_step,
         expires_at,
         expires_in_seconds: expires_in,
@@ -1054,10 +1048,7 @@ async fn submit(
         .map_err(|e| ApiError::BadRequest(format!("invalid transcript: {}", e)))?;
     log::info!("Output transcript deserialized");
 
-    log::info!(
-        "Verifying transcript for circuit {:?}...",
-        circuit.as_str()
-    );
+    log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
     verify_transcript_from_initial(&initial_transcript, &output_transcript)
         .map_err(|e| ApiError::BadRequest(format!("transcript verification failed: {}", e)))?;
     log::info!("Transcript verification passed");
@@ -1180,8 +1171,12 @@ async fn get_or_load_initial_transcript(
         ))
     })?;
 
-    let transcript = Transcript::<Bn254>::deserialize_uncompressed(&bytes[..])
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!("failed to deserialize initial transcript: {}", e)))?;
+    let transcript = Transcript::<Bn254>::deserialize_uncompressed(&bytes[..]).map_err(|e| {
+        ApiError::Internal(anyhow::anyhow!(
+            "failed to deserialize initial transcript: {}",
+            e
+        ))
+    })?;
 
     log::info!(
         "Initial transcript loaded ({} contributions)",
@@ -1197,18 +1192,6 @@ async fn get_or_load_initial_transcript(
     }
 
     Ok(transcript)
-}
-
-async fn ensure_ceremony_absent(pool: &SqlitePool, ceremony_id: &str) -> Result<(), ApiError> {
-    let exists = sqlx::query("SELECT 1 FROM ceremonies WHERE id = ?")
-        .bind(ceremony_id)
-        .fetch_optional(pool)
-        .await?
-        .is_some();
-    if exists {
-        return Err(ApiError::Conflict("ceremony already exists".to_string()));
-    }
-    Ok(())
 }
 
 async fn insert_ceremony(

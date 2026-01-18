@@ -333,54 +333,7 @@ fn build_transcript_from_prepared(
     }
 }
 
-/// Verify transcript against accumulator for a given circuit.
-pub fn verify_transcript(
-    accum: &Accumulator<Bn254>,
-    circuit: CeremonyCircuit,
-    transcript: &Transcript<Bn254>,
-    pedersen_seed: u64,
-) -> Result<()> {
-    match circuit {
-        CeremonyCircuit::WithdrawLocal => {
-            let c = build_withdraw_circuit::<TRANSFER_TREE_HEIGHT>()?;
-            transcript
-                .verify_from_accumulator(accum, c)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-        CeremonyCircuit::WithdrawGlobal => {
-            let c = build_withdraw_circuit::<GLOBAL_TRANSFER_TREE_HEIGHT>()?;
-            transcript
-                .verify_from_accumulator(accum, c)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-        CeremonyCircuit::DeciderRoot => {
-            let c = build_decider_circuit::<RootCircuit<Fr>>(pedersen_seed)?;
-            transcript
-                .verify_from_accumulator(accum, c)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-        CeremonyCircuit::DeciderWithdrawLocal => {
-            let c =
-                build_decider_circuit::<WithdrawCircuit<Fr, TRANSFER_TREE_HEIGHT>>(pedersen_seed)?;
-            transcript
-                .verify_from_accumulator(accum, c)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-        CeremonyCircuit::DeciderWithdrawGlobal => {
-            let c = build_decider_circuit::<WithdrawCircuit<Fr, GLOBAL_TRANSFER_TREE_HEIGHT>>(
-                pedersen_seed,
-            )?;
-            transcript
-                .verify_from_accumulator(accum, c)
-                .map_err(|e| anyhow::anyhow!(e.to_string()))?;
-        }
-    }
-    Ok(())
-}
-
 /// Verify transcript against a pre-computed initial transcript.
-/// This is much faster than verify_transcript as it skips the expensive
-/// IFFT and MSM computations needed to regenerate the initial transcript.
 pub fn verify_transcript_from_initial(
     initial_transcript: &Transcript<Bn254>,
     transcript: &Transcript<Bn254>,

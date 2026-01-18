@@ -192,24 +192,24 @@ Edit `.env` file:
 TRUSTED_SETUP_COORDINATOR_URL=http://localhost:8080
 
 # Ceremony ID to participate in
-TRUSTED_SETUP_CEREMONY_ID=my-ceremony-001
-
-# Target circuit
-TRUSTED_SETUP_CIRCUIT=withdraw_local
+TRUSTED_SETUP_CEREMONY_ID=<ceremony_id_from_coordinator>
 ```
 
-### 2. Download PTAU File
+Note: The circuit type is automatically determined from the ceremony.
+
+### 2. (Optional) Generate Initial Transcript for Verification
+
+To verify the transcript before contributing, generate the initial transcript locally:
 
 ```bash
-# Download appropriate PTAU based on circuit type
-# For Groth16 (withdraw_local, withdraw_global):
-cargo run --release -p trusted-setup-cli -- ptau download --power 14
+# Check the circuit type of your ceremony first
+curl http://localhost:8080/api/ceremonies/<ceremony_id>
 
-# For Decider circuits:
-cargo run --release -p trusted-setup-cli -- ptau download --power 24
+# Generate initial transcript for that circuit
+cargo run --release -p trusted-setup-cli -- generate-initial-transcript --circuit <circuit>
 ```
 
-File size is automatically verified after download.
+If you skip this step, verification will be skipped with a warning (contribution still works).
 
 ### 3. Contribute to Ceremony
 
@@ -218,12 +218,14 @@ cargo run --release -p trusted-setup-cli -- contribute
 ```
 
 This command performs the following:
-1. Fetches current transcript from Coordinator
-2. Computes contribution using random entropy
-3. Uploads updated transcript
-4. Verifies and finalizes contribution
+1. Requests participation lease from Coordinator (circuit is returned automatically)
+2. Downloads and verifies current transcript (if initial transcript exists locally)
+3. Computes contribution using random entropy
+4. Uploads updated transcript and submits
 
-**Note**: If interrupted with Ctrl+C, you can resume using `--state-file` option.
+**Options:**
+- `--skip-verify`: Skip transcript verification (not recommended)
+- `--state-file <path>`: Save state for resume capability
 
 ```bash
 # Save state file while contributing

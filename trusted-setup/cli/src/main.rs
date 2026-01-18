@@ -27,8 +27,7 @@ use folding_schemes::{
         pedersen::Pedersen,
         CommitmentScheme,
     },
-    folding::nova::{decider_eth::DeciderEthCircuit, get_r1cs, PreprocessorParam},
-    folding::traits::Dummy,
+    folding::nova::{get_r1cs, PreprocessorParam},
     frontend::FCircuit,
     transcript::poseidon::poseidon_canonical_config,
     FoldingScheme,
@@ -45,9 +44,8 @@ use sha2::{Digest, Sha256};
 use url::Url as ParsedUrl;
 
 use trusted_setup_common::{
-    build_initial_transcript_cached, build_withdraw_circuit, default_ptau_path,
-    initial_transcript_path, load_accumulator, ptau_path_for_circuit, ptau_url_for_power,
-    verify_transcript as common_verify_transcript, CeremonyCircuit, LatestMetadata,
+    build_initial_transcript_cached, default_ptau_path, initial_transcript_path, load_accumulator,
+    ptau_path_for_circuit, ptau_url_for_power, CeremonyCircuit, LatestMetadata,
     SUPPORTED_PTAU_POWERS,
 };
 use zkp::groth16::params::Groth16Params;
@@ -169,21 +167,9 @@ struct ContributeArgs {
     #[arg(long, env = "TRUSTED_SETUP_CEREMONY_ID")]
     ceremony_id: String,
 
-    /// Circuit identifier for the ceremony.
-    #[arg(long, env = "TRUSTED_SETUP_CIRCUIT", value_enum)]
-    circuit: CliCeremonyCircuit,
-
-    /// Ptau path.
-    #[arg(long, env = "TRUSTED_SETUP_PTAU_PATH")]
-    ptau_path: Option<PathBuf>,
-
     /// Optional seed for deterministic contribution.
     #[arg(long, env = "TRUSTED_SETUP_SEED")]
     seed: Option<String>,
-
-    /// Deterministic seed for Pedersen params (decider circuits).
-    #[arg(long, env = "TRUSTED_SETUP_PEDERSEN_SEED", default_value_t = 42)]
-    pedersen_seed: u64,
 
     /// Connection timeout in seconds.
     #[arg(long, env = "TRUSTED_SETUP_CONNECT_TIMEOUT", default_value_t = DEFAULT_CONNECT_TIMEOUT_SECS)]
@@ -196,6 +182,10 @@ struct ContributeArgs {
     /// Save state file for resume capability.
     #[arg(long, env = "TRUSTED_SETUP_STATE_FILE")]
     state_file: Option<PathBuf>,
+
+    /// Skip transcript verification (not recommended).
+    #[arg(long, default_value_t = false)]
+    skip_verify: bool,
 }
 
 #[derive(Args, Debug)]
@@ -294,15 +284,11 @@ struct GenerateInitialTranscriptArgs {
 // API Types
 // ============================================================================
 
-#[derive(Serialize)]
-struct ParticipateRequest {
-    circuit: String,
-}
-
 #[derive(Deserialize)]
 struct ParticipateResponse {
     lease_id: String,
     participant_id: String,
+    circuit: String,
     step: u64,
     expires_at: u64,
     #[serde(default)]
@@ -673,15 +659,6 @@ fn generate_initial_transcript(args: GenerateInitialTranscriptArgs) -> Result<()
 // ============================================================================
 
 async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
-    let circuit: CeremonyCircuit = args.circuit.into();
-    let ptau_path = args
-        .ptau_path
-        .unwrap_or_else(|| ptau_path_for_circuit(circuit));
-
-    println!("Loading PTAU from {}...", ptau_path.display());
-    let accum = load_accumulator(&ptau_path)?;
-    println!("PTAU loaded successfully");
-
     let client = build_http_client(args.connect_timeout, args.read_timeout)?;
     let base_url = Url::parse(&args.coordinator_url)
         .with_context(|| format!("invalid coordinator url {}", args.coordinator_url))?;
@@ -695,10 +672,7 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     let participate_resp = retry_request(|| async {
         check_shutdown(shutdown)?;
         client
-            .post(participate_url.clone())
-            .json(&ParticipateRequest {
-                circuit: circuit.as_str().to_string(),
-            })
+            .get(participate_url.clone())
             .send()
             .await
             .context("participate request failed")
@@ -708,16 +682,19 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     let participate: ParticipateResponse =
         handle_response(participate_resp, "participate").await?;
 
+    let circuit = CeremonyCircuit::parse(&participate.circuit)
+        .with_context(|| format!("invalid circuit from server: {}", participate.circuit))?;
+
     println!(
-        "Lease acquired: {} (step {}, expires in {} seconds)",
-        participate.lease_id, participate.step, participate.expires_in_seconds
+        "Lease acquired: {} (circuit: {}, step {}, expires in {} seconds)",
+        participate.lease_id, participate.circuit, participate.step, participate.expires_in_seconds
     );
 
     // Save state for potential resume
     if let Some(ref state_file) = args.state_file {
         let state = ContributionState {
             ceremony_id: args.ceremony_id.clone(),
-            circuit: circuit.as_str().to_string(),
+            circuit: participate.circuit.clone(),
             lease_id: participate.lease_id.clone(),
             participant_id: participate.participant_id.clone(),
             step: participate.step,
@@ -744,10 +721,33 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     let mut transcript = Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..])
         .context("failed to deserialize transcript")?;
 
-    println!("Verifying transcript...");
-    common_verify_transcript(&accum, circuit, &transcript, args.pedersen_seed)
-        .context("transcript verification failed")?;
-    println!("Transcript verified successfully");
+    // Verify using initial transcript (optional but recommended)
+    if !args.skip_verify {
+        println!("Verifying transcript using initial transcript...");
+        let initial_path = initial_transcript_path(circuit);
+        if initial_path.exists() {
+            let initial_bytes = fs::read(&initial_path)
+                .with_context(|| format!("failed to read {}", initial_path.display()))?;
+            let initial_transcript = Transcript::<Bn254>::deserialize_uncompressed(&initial_bytes[..])
+                .context("failed to deserialize initial transcript")?;
+            initial_transcript
+                .verify()
+                .context("initial transcript verification failed")?;
+            transcript
+                .verify_from_initial_transcript(&initial_transcript)
+                .map_err(|e| anyhow::anyhow!(e.to_string()))
+                .context("transcript verification failed")?;
+            println!("Transcript verified successfully");
+        } else {
+            println!(
+                "Warning: Initial transcript not found at {}. Skipping verification.",
+                initial_path.display()
+            );
+            println!("  Generate it with: cargo run --release -p trusted-setup-cli -- generate-initial-transcript --circuit {}", circuit.as_str());
+        }
+    } else {
+        println!("Skipping transcript verification (--skip-verify)");
+    }
 
     // Contribute
     check_shutdown(shutdown)?;
@@ -998,13 +998,34 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
         transcript.contributions.len()
     );
 
+    // Verify transcript using initial transcript
+    println!("Verifying transcript using initial transcript...");
+    let initial_path = initial_transcript_path(circuit);
+    if initial_path.exists() {
+        let initial_bytes = fs::read(&initial_path)
+            .with_context(|| format!("failed to read {}", initial_path.display()))?;
+        let initial_transcript = Transcript::<Bn254>::deserialize_uncompressed(&initial_bytes[..])
+            .context("failed to deserialize initial transcript")?;
+        transcript
+            .verify_from_initial_transcript(&initial_transcript)
+            .map_err(|e| anyhow::anyhow!(e.to_string()))
+            .context("transcript verification failed")?;
+        println!("Transcript verified successfully");
+    } else {
+        bail!(
+            "Initial transcript not found at {}. Generate it first with:\n  \
+             cargo run --release -p trusted-setup-cli -- generate-initial-transcript --circuit {}",
+            initial_path.display(),
+            circuit.as_str()
+        );
+    }
+
     check_shutdown(shutdown)?;
 
     match circuit {
         CeremonyCircuit::WithdrawLocal => {
             finalize_withdraw_groth16::<TRANSFER_TREE_HEIGHT>(
                 "withdraw_local",
-                &accum,
                 &output_dir,
                 transcript,
             )?;
@@ -1012,7 +1033,6 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
         CeremonyCircuit::WithdrawGlobal => {
             finalize_withdraw_groth16::<GLOBAL_TRANSFER_TREE_HEIGHT>(
                 "withdraw_global",
-                &accum,
                 &output_dir,
                 transcript,
             )?;
@@ -1055,19 +1075,9 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
 
 fn finalize_withdraw_groth16<const DEPTH: usize>(
     prefix: &str,
-    accum: &Accumulator<Bn254>,
     output_dir: &Path,
     transcript: Transcript<Bn254>,
 ) -> Result<()> {
-    println!("Building withdraw circuit (depth={DEPTH})...");
-    let withdraw_circuit = build_withdraw_circuit::<DEPTH>()?;
-
-    println!("Verifying transcript...");
-    transcript
-        .verify_from_accumulator(accum, withdraw_circuit)
-        .context("withdraw transcript verification failed")?;
-    println!("Transcript verified");
-
     println!("Extracting groth16 params...");
     let groth16_params = groth16_from_transcript(transcript);
 
@@ -1106,24 +1116,6 @@ where
         nova_bundle.state_len
     );
 
-    println!("Building decider circuit...");
-    let decider_circuit = DeciderEthCircuit::<G1, G2>::dummy((
-        nova_bundle.r1cs.clone(),
-        nova_bundle.cf_r1cs.clone(),
-        nova_bundle.cf_cs_pp.clone(),
-        nova_bundle.poseidon_config.clone(),
-        (),
-        (),
-        nova_bundle.state_len,
-        2,
-    ));
-
-    println!("Verifying transcript...");
-    transcript
-        .verify_from_accumulator(accum, decider_circuit)
-        .context("decider transcript verification failed")?;
-    println!("Transcript verified");
-
     println!("Extracting groth16 params...");
     let groth16_params = groth16_from_transcript(transcript);
 
@@ -1152,9 +1144,6 @@ where
 {
     params: NovaParams<C>,
     r1cs: folding_schemes::arith::r1cs::R1CS<Fr>,
-    cf_r1cs: folding_schemes::arith::r1cs::R1CS<<G2 as ark_ec::PrimeGroup>::ScalarField>,
-    cf_cs_pp: folding_schemes::commitment::pedersen::Params<G2>,
-    poseidon_config: ark_crypto_primitives::sponge::poseidon::PoseidonConfig<Fr>,
     state_len: usize,
 }
 
@@ -1200,9 +1189,6 @@ where
     Ok(NovaBundle {
         params,
         r1cs,
-        cf_r1cs,
-        cf_cs_pp,
-        poseidon_config,
         state_len,
     })
 }
