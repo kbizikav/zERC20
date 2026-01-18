@@ -98,7 +98,8 @@ url = "2.5.3"
 futures = "0.3.31"
 flate2 = { version = "1.0.34", default-features = true }
 ic-agent = { version = "0.44.3" }
-arkworks-phase2 = { git = "https://github.com/kbizikav/arkworks-phase2.git", branch = "parallel" }
+# arkworks-phase2 = { git = "https://github.com/kbizikav/arkworks-phase2.git", branch = "parallel" }
+arkworks-phase2 = { path = "/Users/yh/dev/arkworks-phase2" }
 
 [patch.crates-io]
 ark-groth16 = { git = "https://github.com/arkworks-rs/groth16", rev = "b3b4a15" }

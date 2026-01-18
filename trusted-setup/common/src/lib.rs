@@ -1,6 +1,6 @@
 //! Common utilities and types for trusted setup ceremony.
 
-use std::{cmp::max, path::Path};
+use std::{cmp::max, path::Path, time::Instant};
 
 use anyhow::{Context, Result};
 use ark_bn254::{Bn254, Fr, G1Projective as G1};
@@ -154,12 +154,17 @@ pub fn build_initial_transcript_cached(
     // Try to load cached PreparedAccumulator (lazy load PTAU only if needed)
     let prepared = if cache_path.exists() {
         eprintln!("Loading cached PreparedAccumulator...");
+        let cache_load_start = Instant::now();
         match PreparedAccumulator::load(cache_path) {
             Ok(cached) => {
                 // Verify the cached accumulator has the right size
                 let (valid, len) = cached.check_pow_len();
                 if valid && len == domain_size {
-                    eprintln!("Cached PreparedAccumulator loaded (size={})", len);
+                    eprintln!(
+                        "Cached PreparedAccumulator loaded (size={}) in {:.2?}",
+                        len,
+                        cache_load_start.elapsed()
+                    );
                     cached
                 } else {
                     eprintln!(
