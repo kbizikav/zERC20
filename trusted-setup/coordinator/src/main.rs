@@ -11,7 +11,12 @@ use ark_bn254::Bn254;
 use ark_serialize::CanonicalDeserialize;
 use arkworks_phase2::{key::PartialKey, transcript::Transcript, utils::serialize_uncompressed};
 use aws_config::meta::region::RegionProviderChain;
-use aws_sdk_s3::{presigning::PresigningConfig, primitives::ByteStream, Client as S3Client};
+use aws_sdk_s3::{
+    presigning::PresigningConfig,
+    primitives::ByteStream,
+    types::{CompletedMultipartUpload, CompletedPart},
+    Client as S3Client,
+};
 use serde::{Deserialize, Serialize};
 use sqlx::{sqlite::SqlitePoolOptions, Row, SqlitePool};
 use thiserror::Error;
@@ -107,7 +112,7 @@ impl Config {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .map(Duration::from_secs)
-            .unwrap_or_else(|| Duration::from_secs(900));
+            .unwrap_or_else(|| Duration::from_secs(7200)); // 120 minutes
         let cleanup_interval = std::env::var("TRUSTED_SETUP_CLEANUP_INTERVAL_SECONDS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
@@ -236,17 +241,222 @@ impl Storage {
         Ok(data.into_bytes().to_vec())
     }
 
+    /// Upload bytes to S3, using multipart upload for large files (>100MB).
     async fn put_bytes(&self, key: &str, bytes: Vec<u8>, content_type: &str) -> Result<()> {
+        const MULTIPART_THRESHOLD: usize = 100 * 1024 * 1024; // 100MB
+        const PART_SIZE: usize = 100 * 1024 * 1024; // 100MB per part
+
+        if bytes.len() < MULTIPART_THRESHOLD {
+            // Use simple put for small files
+            let full_key = self.key(key);
+            self.client
+                .put_object()
+                .bucket(&self.bucket)
+                .key(full_key)
+                .content_type(content_type)
+                .body(ByteStream::from(bytes))
+                .send()
+                .await
+                .context("failed to upload object")?;
+        } else {
+            // Use multipart upload for large files
+            self.put_bytes_multipart(key, bytes, content_type, PART_SIZE)
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Upload bytes using S3 multipart upload.
+    async fn put_bytes_multipart(
+        &self,
+        key: &str,
+        bytes: Vec<u8>,
+        content_type: &str,
+        part_size: usize,
+    ) -> Result<()> {
         let full_key = self.key(key);
-        self.client
-            .put_object()
+        let total_size = bytes.len();
+        let num_parts = (total_size + part_size - 1) / part_size;
+
+        log::info!(
+            "Starting multipart upload: {} ({} bytes, {} parts)",
+            full_key,
+            total_size,
+            num_parts
+        );
+
+        // Create multipart upload
+        let create_resp = self
+            .client
+            .create_multipart_upload()
             .bucket(&self.bucket)
-            .key(full_key)
+            .key(&full_key)
             .content_type(content_type)
-            .body(ByteStream::from(bytes))
             .send()
             .await
-            .context("failed to upload object")?;
+            .context("failed to create multipart upload")?;
+
+        let upload_id = create_resp
+            .upload_id()
+            .context("no upload_id in response")?;
+
+        let mut completed_parts: Vec<CompletedPart> = Vec::with_capacity(num_parts);
+
+        // Upload each part
+        for part_number in 1..=num_parts {
+            let start = (part_number - 1) * part_size;
+            let end = std::cmp::min(start + part_size, total_size);
+            let part_bytes = bytes[start..end].to_vec();
+
+            log::info!(
+                "Uploading part {}/{} ({} bytes)",
+                part_number,
+                num_parts,
+                part_bytes.len()
+            );
+
+            let upload_resp = self
+                .client
+                .upload_part()
+                .bucket(&self.bucket)
+                .key(&full_key)
+                .upload_id(upload_id)
+                .part_number(part_number as i32)
+                .body(ByteStream::from(part_bytes))
+                .send()
+                .await;
+
+            match upload_resp {
+                Ok(resp) => {
+                    let etag = resp.e_tag().context("no etag in upload_part response")?;
+                    completed_parts.push(
+                        CompletedPart::builder()
+                            .part_number(part_number as i32)
+                            .e_tag(etag)
+                            .build(),
+                    );
+                }
+                Err(e) => {
+                    // Abort multipart upload on failure
+                    log::error!("Part {} upload failed, aborting multipart upload: {}", part_number, e);
+                    let _ = self
+                        .client
+                        .abort_multipart_upload()
+                        .bucket(&self.bucket)
+                        .key(&full_key)
+                        .upload_id(upload_id)
+                        .send()
+                        .await;
+                    return Err(e).context("failed to upload part")?;
+                }
+            }
+        }
+
+        // Complete multipart upload
+        let completed_upload = CompletedMultipartUpload::builder()
+            .set_parts(Some(completed_parts))
+            .build();
+
+        self.client
+            .complete_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&full_key)
+            .upload_id(upload_id)
+            .multipart_upload(completed_upload)
+            .send()
+            .await
+            .context("failed to complete multipart upload")?;
+
+        log::info!("Multipart upload completed: {}", full_key);
+        Ok(())
+    }
+
+    /// Start a multipart upload and return the upload_id.
+    async fn start_multipart_upload(&self, key: &str, content_type: &str) -> Result<String> {
+        let full_key = self.key(key);
+        let resp = self
+            .client
+            .create_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&full_key)
+            .content_type(content_type)
+            .send()
+            .await
+            .context("failed to create multipart upload")?;
+
+        resp.upload_id()
+            .map(|s| s.to_string())
+            .context("no upload_id in response")
+    }
+
+    /// Generate a presigned URL for uploading a specific part.
+    async fn presign_upload_part(
+        &self,
+        key: &str,
+        upload_id: &str,
+        part_number: i32,
+    ) -> Result<String> {
+        let full_key = self.key(key);
+        let config = PresigningConfig::expires_in(self.presign_ttl)?;
+        let presigned = self
+            .client
+            .upload_part()
+            .bucket(&self.bucket)
+            .key(&full_key)
+            .upload_id(upload_id)
+            .part_number(part_number)
+            .presigned(config)
+            .await
+            .context("failed to presign upload_part")?;
+        Ok(presigned.uri().to_string())
+    }
+
+    /// Complete a multipart upload.
+    async fn complete_multipart_upload(
+        &self,
+        key: &str,
+        upload_id: &str,
+        parts: Vec<(i32, String)>, // (part_number, etag)
+    ) -> Result<()> {
+        let full_key = self.key(key);
+        let completed_parts: Vec<CompletedPart> = parts
+            .into_iter()
+            .map(|(part_number, etag)| {
+                CompletedPart::builder()
+                    .part_number(part_number)
+                    .e_tag(etag)
+                    .build()
+            })
+            .collect();
+
+        let completed_upload = CompletedMultipartUpload::builder()
+            .set_parts(Some(completed_parts))
+            .build();
+
+        self.client
+            .complete_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&full_key)
+            .upload_id(upload_id)
+            .multipart_upload(completed_upload)
+            .send()
+            .await
+            .context("failed to complete multipart upload")?;
+
+        Ok(())
+    }
+
+    /// Abort a multipart upload.
+    async fn abort_multipart_upload(&self, key: &str, upload_id: &str) -> Result<()> {
+        let full_key = self.key(key);
+        self.client
+            .abort_multipart_upload()
+            .bucket(&self.bucket)
+            .key(&full_key)
+            .upload_id(upload_id)
+            .send()
+            .await
+            .context("failed to abort multipart upload")?;
         Ok(())
     }
 }
@@ -280,6 +490,53 @@ struct ParticipateResponse {
     input_url: String,
     output_url: String,
     contribution_url: String,
+}
+
+// Multipart upload types
+#[derive(Deserialize)]
+struct MultipartStartRequest {
+    lease_id: String,
+    key_type: String, // "transcript" or "contribution"
+}
+
+#[derive(Serialize)]
+struct MultipartStartResponse {
+    upload_id: String,
+    key: String,
+}
+
+#[derive(Deserialize)]
+struct MultipartPresignRequest {
+    lease_id: String,
+    upload_id: String,
+    key: String,
+    part_number: i32,
+}
+
+#[derive(Serialize)]
+struct MultipartPresignResponse {
+    url: String,
+}
+
+#[derive(Deserialize)]
+struct MultipartPartInfo {
+    part_number: i32,
+    etag: String,
+}
+
+#[derive(Deserialize)]
+struct MultipartCompleteRequest {
+    lease_id: String,
+    upload_id: String,
+    key: String,
+    parts: Vec<MultipartPartInfo>,
+}
+
+#[derive(Deserialize)]
+struct MultipartAbortRequest {
+    lease_id: String,
+    upload_id: String,
+    key: String,
 }
 
 #[derive(Deserialize)]
@@ -443,6 +700,23 @@ async fn main() -> Result<()> {
             .route(
                 "/api/ceremonies/{ceremony_id}/expire-lease",
                 web::post().to(expire_lease),
+            )
+            // Multipart upload
+            .route(
+                "/api/ceremonies/{ceremony_id}/multipart/start",
+                web::post().to(multipart_start),
+            )
+            .route(
+                "/api/ceremonies/{ceremony_id}/multipart/presign",
+                web::post().to(multipart_presign),
+            )
+            .route(
+                "/api/ceremonies/{ceremony_id}/multipart/complete",
+                web::post().to(multipart_complete),
+            )
+            .route(
+                "/api/ceremonies/{ceremony_id}/multipart/abort",
+                web::post().to(multipart_abort),
             )
     })
     .bind(&config.listen_addr)
@@ -1160,6 +1434,180 @@ async fn submit(
 }
 
 // ============================================================================
+// Multipart Upload Handlers
+// ============================================================================
+
+/// Start a multipart upload for transcript or contribution.
+async fn multipart_start(
+    state: web::Data<AppState>,
+    ceremony_id: web::Path<String>,
+    body: web::Json<MultipartStartRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let ceremony_id = ceremony_id.into_inner();
+
+    // Verify lease is valid
+    let lease = sqlx::query(
+        "SELECT output_key, contribution_key, status, expires_at FROM leases WHERE id = ? AND ceremony_id = ?",
+    )
+    .bind(&body.lease_id)
+    .bind(&ceremony_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+
+    let status: String = lease.get("status");
+    let expires_at: i64 = lease.get("expires_at");
+
+    if status != "active" {
+        return Err(ApiError::BadRequest("lease is not active".to_string()));
+    }
+    if expires_at < unix_seconds() as i64 {
+        return Err(ApiError::BadRequest("lease has expired".to_string()));
+    }
+
+    let key = match body.key_type.as_str() {
+        "transcript" => lease.get::<String, _>("output_key"),
+        "contribution" => lease.get::<String, _>("contribution_key"),
+        _ => return Err(ApiError::BadRequest("invalid key_type".to_string())),
+    };
+
+    let upload_id = state
+        .s3
+        .start_multipart_upload(&key, "application/octet-stream")
+        .await
+        .map_err(ApiError::Internal)?;
+
+    log::info!(
+        "Started multipart upload for {} (upload_id: {})",
+        key,
+        upload_id
+    );
+
+    Ok(HttpResponse::Ok().json(MultipartStartResponse { upload_id, key }))
+}
+
+/// Generate presigned URL for a specific part.
+async fn multipart_presign(
+    state: web::Data<AppState>,
+    ceremony_id: web::Path<String>,
+    body: web::Json<MultipartPresignRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let ceremony_id = ceremony_id.into_inner();
+
+    // Verify lease is valid
+    let lease = sqlx::query(
+        "SELECT status, expires_at FROM leases WHERE id = ? AND ceremony_id = ?",
+    )
+    .bind(&body.lease_id)
+    .bind(&ceremony_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+
+    let status: String = lease.get("status");
+    let expires_at: i64 = lease.get("expires_at");
+
+    if status != "active" {
+        return Err(ApiError::BadRequest("lease is not active".to_string()));
+    }
+    if expires_at < unix_seconds() as i64 {
+        return Err(ApiError::BadRequest("lease has expired".to_string()));
+    }
+
+    let url = state
+        .s3
+        .presign_upload_part(&body.key, &body.upload_id, body.part_number)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    Ok(HttpResponse::Ok().json(MultipartPresignResponse { url }))
+}
+
+/// Complete a multipart upload.
+async fn multipart_complete(
+    state: web::Data<AppState>,
+    ceremony_id: web::Path<String>,
+    body: web::Json<MultipartCompleteRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let ceremony_id = ceremony_id.into_inner();
+
+    // Verify lease is valid
+    let lease = sqlx::query(
+        "SELECT status, expires_at FROM leases WHERE id = ? AND ceremony_id = ?",
+    )
+    .bind(&body.lease_id)
+    .bind(&ceremony_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+
+    let status: String = lease.get("status");
+    let expires_at: i64 = lease.get("expires_at");
+
+    if status != "active" {
+        return Err(ApiError::BadRequest("lease is not active".to_string()));
+    }
+    if expires_at < unix_seconds() as i64 {
+        return Err(ApiError::BadRequest("lease has expired".to_string()));
+    }
+
+    let parts: Vec<(i32, String)> = body
+        .parts
+        .iter()
+        .map(|p| (p.part_number, p.etag.clone()))
+        .collect();
+
+    state
+        .s3
+        .complete_multipart_upload(&body.key, &body.upload_id, parts)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    log::info!(
+        "Completed multipart upload for {} (upload_id: {})",
+        body.key,
+        body.upload_id
+    );
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+/// Abort a multipart upload.
+async fn multipart_abort(
+    state: web::Data<AppState>,
+    ceremony_id: web::Path<String>,
+    body: web::Json<MultipartAbortRequest>,
+) -> Result<HttpResponse, ApiError> {
+    let ceremony_id = ceremony_id.into_inner();
+
+    // Verify lease exists (don't need to check status for abort)
+    let lease = sqlx::query(
+        "SELECT id FROM leases WHERE id = ? AND ceremony_id = ?",
+    )
+    .bind(&body.lease_id)
+    .bind(&ceremony_id)
+    .fetch_optional(&state.db)
+    .await?
+    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+
+    let _ = lease; // Just to use the variable
+
+    state
+        .s3
+        .abort_multipart_upload(&body.key, &body.upload_id)
+        .await
+        .map_err(ApiError::Internal)?;
+
+    log::info!(
+        "Aborted multipart upload for {} (upload_id: {})",
+        body.key,
+        body.upload_id
+    );
+
+    Ok(HttpResponse::Ok().finish())
+}
+
+// ============================================================================
 // Helper Functions
 // ============================================================================
 
@@ -1193,23 +1641,37 @@ async fn get_or_load_initial_transcript(
         path.display()
     );
 
-    let bytes = std::fs::read(&path).map_err(|e| {
+    // Use async file I/O for better performance
+    let start = std::time::Instant::now();
+    let bytes = tokio::fs::read(&path).await.map_err(|e| {
         ApiError::Internal(anyhow::anyhow!(
             "failed to read initial transcript from {}: {}",
             path.display(),
             e
         ))
     })?;
+    log::info!(
+        "Initial transcript file read in {:?} ({} bytes)",
+        start.elapsed(),
+        bytes.len()
+    );
 
-    let transcript = Transcript::<Bn254>::deserialize_uncompressed(&bytes[..]).map_err(|e| {
+    // Deserialize in a blocking thread to avoid blocking the async runtime
+    let start = std::time::Instant::now();
+    let transcript = tokio::task::spawn_blocking(move || {
+        Transcript::<Bn254>::deserialize_uncompressed(&bytes[..])
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("spawn_blocking failed: {}", e)))?
+    .map_err(|e| {
         ApiError::Internal(anyhow::anyhow!(
             "failed to deserialize initial transcript: {}",
             e
         ))
     })?;
-
     log::info!(
-        "Initial transcript loaded ({} contributions)",
+        "Initial transcript deserialized in {:?} ({} contributions)",
+        start.elapsed(),
         transcript.contributions.len()
     );
 

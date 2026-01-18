@@ -153,9 +153,9 @@ pub fn build_initial_transcript_cached(
 
     // Try to load cached PreparedAccumulator (lazy load PTAU only if needed)
     let prepared = if cache_path.exists() {
-        eprintln!("Loading cached PreparedAccumulator...");
+        eprintln!("Loading cached PreparedAccumulator (mmap)...");
         let cache_load_start = Instant::now();
-        match PreparedAccumulator::load(cache_path) {
+        match PreparedAccumulator::load_mmap(cache_path) {
             Ok(cached) => {
                 // Verify the cached accumulator has the right size
                 let (valid, len) = cached.check_pow_len();

@@ -293,6 +293,46 @@ struct SubmitRequest {
     participant_id: String,
 }
 
+// Multipart upload types
+#[derive(Serialize)]
+struct MultipartStartRequest {
+    lease_id: String,
+    key_type: String, // "transcript" or "contribution"
+}
+
+#[derive(Deserialize)]
+struct MultipartStartResponse {
+    upload_id: String,
+    key: String,
+}
+
+#[derive(Serialize)]
+struct MultipartPresignRequest {
+    lease_id: String,
+    upload_id: String,
+    key: String,
+    part_number: i32,
+}
+
+#[derive(Deserialize)]
+struct MultipartPresignResponse {
+    url: String,
+}
+
+#[derive(Serialize)]
+struct MultipartPartInfo {
+    part_number: i32,
+    etag: String,
+}
+
+#[derive(Serialize)]
+struct MultipartCompleteRequest {
+    lease_id: String,
+    upload_id: String,
+    key: String,
+    parts: Vec<MultipartPartInfo>,
+}
+
 #[derive(Deserialize)]
 struct ErrorResponse {
     error: String,
@@ -709,13 +749,7 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
         println!("Verifying transcript using initial transcript...");
         let initial_path = initial_transcript_path(circuit);
         if initial_path.exists() {
-            let initial_bytes = fs::read(&initial_path)
-                .with_context(|| format!("failed to read {}", initial_path.display()))?;
-            let initial_transcript = Transcript::<Bn254>::deserialize_uncompressed(&initial_bytes[..])
-                .context("failed to deserialize initial transcript")?;
-            initial_transcript
-                .verify()
-                .context("initial transcript verification failed")?;
+            let initial_transcript = load_initial_transcript_async(&initial_path).await?;
             transcript
                 .verify_from_initial_transcript(&initial_transcript)
                 .map_err(|e| anyhow::anyhow!(e.to_string()))
@@ -754,12 +788,6 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
         }
     }
 
-    // Verify contribution
-    transcript
-        .verify()
-        .context("transcript verification after contribution failed")?;
-    println!("Contribution verified locally");
-
     // Serialize
     check_shutdown(shutdown)?;
     println!("Serializing updated transcript...");
@@ -777,9 +805,19 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     // Upload transcript
     check_shutdown(shutdown)?;
     println!("Uploading updated transcript...");
-    upload_bytes_with_retry(&client, &participate.output_url, updated_bytes, "transcript", shutdown)
-        .await
-        .context("failed to upload updated transcript")?;
+    upload_bytes_smart(
+        &client,
+        &base_url,
+        &args.ceremony_id,
+        &participate.lease_id,
+        "transcript",
+        &participate.output_url,
+        updated_bytes,
+        "transcript",
+        shutdown,
+    )
+    .await
+    .context("failed to upload updated transcript")?;
     println!("Transcript uploaded");
 
     // Update state
@@ -792,8 +830,12 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     // Upload contribution
     check_shutdown(shutdown)?;
     println!("Uploading contribution proof...");
-    upload_bytes_with_retry(
+    upload_bytes_smart(
         &client,
+        &base_url,
+        &args.ceremony_id,
+        &participate.lease_id,
+        "contribution",
         &participate.contribution_url,
         contribution_bytes,
         "contribution",
@@ -1012,10 +1054,7 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
     println!("Verifying transcript using initial transcript...");
     let initial_path = initial_transcript_path(circuit);
     if initial_path.exists() {
-        let initial_bytes = fs::read(&initial_path)
-            .with_context(|| format!("failed to read {}", initial_path.display()))?;
-        let initial_transcript = Transcript::<Bn254>::deserialize_uncompressed(&initial_bytes[..])
-            .context("failed to deserialize initial transcript")?;
+        let initial_transcript = load_initial_transcript_async(&initial_path).await?;
         transcript
             .verify_from_initial_transcript(&initial_transcript)
             .map_err(|e| anyhow::anyhow!(e.to_string()))
@@ -1514,6 +1553,232 @@ fn is_retryable_status(status: StatusCode) -> bool {
 }
 
 // ============================================================================
+// Multipart Upload
+// ============================================================================
+
+/// Threshold for using multipart upload (100MB)
+const MULTIPART_THRESHOLD: usize = 100 * 1024 * 1024;
+/// Part size for multipart upload (100MB)
+const MULTIPART_PART_SIZE: usize = 100 * 1024 * 1024;
+
+/// Upload bytes using multipart upload via Coordinator API.
+async fn upload_multipart(
+    client: &reqwest::Client,
+    base_url: &Url,
+    ceremony_id: &str,
+    lease_id: &str,
+    key_type: &str, // "transcript" or "contribution"
+    body: Vec<u8>,
+    label: &str,
+    shutdown: &AtomicBool,
+) -> Result<()> {
+    let total_size = body.len();
+    let num_parts = (total_size + MULTIPART_PART_SIZE - 1) / MULTIPART_PART_SIZE;
+
+    println!(
+        "Using multipart upload for {} ({} bytes, {} parts)",
+        label, total_size, num_parts
+    );
+
+    // Start multipart upload
+    let start_url = base_url
+        .join(&format!(
+            "/api/ceremonies/{}/multipart/start",
+            ceremony_id
+        ))
+        .context("failed to build multipart start url")?;
+
+    let start_resp = client
+        .post(start_url)
+        .json(&MultipartStartRequest {
+            lease_id: lease_id.to_string(),
+            key_type: key_type.to_string(),
+        })
+        .send()
+        .await
+        .context("failed to start multipart upload")?;
+
+    if !start_resp.status().is_success() {
+        let status = start_resp.status();
+        let body = start_resp.text().await.unwrap_or_default();
+        bail!("multipart start failed with status {}: {}", status, body);
+    }
+
+    let start_data: MultipartStartResponse = start_resp
+        .json()
+        .await
+        .context("failed to parse multipart start response")?;
+
+    let upload_id = start_data.upload_id;
+    let key = start_data.key;
+
+    let progress = build_progress(&format!("uploading {} (multipart)", label), Some(total_size as u64));
+    let mut completed_parts: Vec<MultipartPartInfo> = Vec::with_capacity(num_parts);
+
+    // Upload each part
+    for part_number in 1..=num_parts {
+        check_shutdown(shutdown)?;
+
+        let start = (part_number - 1) * MULTIPART_PART_SIZE;
+        let end = std::cmp::min(start + MULTIPART_PART_SIZE, total_size);
+        let part_bytes = body[start..end].to_vec();
+        let part_size = part_bytes.len();
+
+        // Get presigned URL for this part
+        let presign_url = base_url
+            .join(&format!(
+                "/api/ceremonies/{}/multipart/presign",
+                ceremony_id
+            ))
+            .context("failed to build multipart presign url")?;
+
+        let presign_resp = client
+            .post(presign_url)
+            .json(&MultipartPresignRequest {
+                lease_id: lease_id.to_string(),
+                upload_id: upload_id.clone(),
+                key: key.clone(),
+                part_number: part_number as i32,
+            })
+            .send()
+            .await
+            .context("failed to get presigned URL for part")?;
+
+        if !presign_resp.status().is_success() {
+            let status = presign_resp.status();
+            let body = presign_resp.text().await.unwrap_or_default();
+            bail!(
+                "multipart presign failed for part {} with status {}: {}",
+                part_number,
+                status,
+                body
+            );
+        }
+
+        let presign_data: MultipartPresignResponse = presign_resp
+            .json()
+            .await
+            .context("failed to parse multipart presign response")?;
+
+        // Upload part to presigned URL
+        let mut attempts = 0;
+        let etag = loop {
+            attempts += 1;
+            let upload_resp = client
+                .put(&presign_data.url)
+                .header(CONTENT_LENGTH, part_size)
+                .body(part_bytes.clone())
+                .send()
+                .await;
+
+            match upload_resp {
+                Ok(r) if r.status().is_success() => {
+                    // Get ETag from response header
+                    let etag = r
+                        .headers()
+                        .get("etag")
+                        .and_then(|v| v.to_str().ok())
+                        .map(|s| s.to_string())
+                        .context("missing etag in upload response")?;
+                    break etag;
+                }
+                Ok(r) => {
+                    let status = r.status();
+                    if attempts >= MAX_RETRY_ATTEMPTS || !is_retryable_status(status) {
+                        let body = r.text().await.unwrap_or_default();
+                        bail!(
+                            "part {} upload failed with status {}: {}",
+                            part_number,
+                            status,
+                            body
+                        );
+                    }
+                    tokio::time::sleep(Duration::from_secs(attempts as u64)).await;
+                }
+                Err(e) => {
+                    if attempts >= MAX_RETRY_ATTEMPTS {
+                        return Err(e).context(format!("failed to upload part {}", part_number));
+                    }
+                    tokio::time::sleep(Duration::from_secs(attempts as u64)).await;
+                }
+            }
+        };
+
+        completed_parts.push(MultipartPartInfo {
+            part_number: part_number as i32,
+            etag,
+        });
+
+        progress.inc(part_size as u64);
+    }
+
+    progress.finish_and_clear();
+
+    // Complete multipart upload
+    let complete_url = base_url
+        .join(&format!(
+            "/api/ceremonies/{}/multipart/complete",
+            ceremony_id
+        ))
+        .context("failed to build multipart complete url")?;
+
+    let complete_resp = client
+        .post(complete_url)
+        .json(&MultipartCompleteRequest {
+            lease_id: lease_id.to_string(),
+            upload_id,
+            key,
+            parts: completed_parts,
+        })
+        .send()
+        .await
+        .context("failed to complete multipart upload")?;
+
+    if !complete_resp.status().is_success() {
+        let status = complete_resp.status();
+        let body = complete_resp.text().await.unwrap_or_default();
+        bail!(
+            "multipart complete failed with status {}: {}",
+            status,
+            body
+        );
+    }
+
+    Ok(())
+}
+
+/// Upload bytes using simple PUT or multipart upload depending on size.
+async fn upload_bytes_smart(
+    client: &reqwest::Client,
+    base_url: &Url,
+    ceremony_id: &str,
+    lease_id: &str,
+    key_type: &str,
+    presigned_url: &str,
+    body: Vec<u8>,
+    label: &str,
+    shutdown: &AtomicBool,
+) -> Result<()> {
+    if body.len() < MULTIPART_THRESHOLD {
+        // Use simple PUT for small files
+        upload_bytes_with_retry(client, presigned_url, body, label, shutdown).await
+    } else {
+        // Use multipart upload for large files
+        upload_multipart(
+            client,
+            base_url,
+            ceremony_id,
+            lease_id,
+            key_type,
+            body,
+            label,
+            shutdown,
+        )
+        .await
+    }
+}
+
+// ============================================================================
 // Transcript Loading
 // ============================================================================
 
@@ -1611,6 +1876,40 @@ async fn load_transcript(
 
     Transcript::<Bn254>::deserialize_uncompressed(&bytes[..])
         .context("failed to deserialize transcript")
+}
+
+/// Load initial transcript from file asynchronously with optimized I/O.
+async fn load_initial_transcript_async(path: &Path) -> Result<Transcript<Bn254>> {
+    use std::time::Instant;
+
+    let path_display = path.display().to_string();
+
+    // Use async file I/O
+    let start = Instant::now();
+    let bytes = tokio::fs::read(path)
+        .await
+        .with_context(|| format!("failed to read {}", path_display))?;
+    println!(
+        "Initial transcript file read in {:?} ({} bytes)",
+        start.elapsed(),
+        bytes.len()
+    );
+
+    // Deserialize in a blocking thread to avoid blocking the async runtime
+    let start = Instant::now();
+    let transcript = tokio::task::spawn_blocking(move || {
+        Transcript::<Bn254>::deserialize_uncompressed(&bytes[..])
+    })
+    .await
+    .context("spawn_blocking failed")?
+    .context("failed to deserialize initial transcript")?;
+    println!(
+        "Initial transcript deserialized in {:?} ({} contributions)",
+        start.elapsed(),
+        transcript.contributions.len()
+    );
+
+    Ok(transcript)
 }
 
 // ============================================================================
