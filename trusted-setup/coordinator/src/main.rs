@@ -121,11 +121,11 @@ impl Config {
         let rate_limit_per_second = std::env::var("TRUSTED_SETUP_RATE_LIMIT_PER_SECOND")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(10);
+            .unwrap_or(100);
         let rate_limit_burst = std::env::var("TRUSTED_SETUP_RATE_LIMIT_BURST")
             .ok()
             .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or(20);
+            .unwrap_or(200);
 
         Ok(Self {
             listen_addr,
