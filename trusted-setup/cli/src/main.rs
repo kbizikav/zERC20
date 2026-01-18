@@ -735,11 +735,14 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
                 .context("transcript verification failed")?;
             println!("Transcript verified successfully");
         } else {
-            println!(
-                "Warning: Initial transcript not found at {}. Skipping verification.",
-                initial_path.display()
+            bail!(
+                "Initial transcript not found at {}.\n\
+                 Generate it first with:\n  \
+                 cargo run --release -p trusted-setup-cli -- generate-initial-transcript --circuit {}\n\n\
+                 Or use --skip-verify to skip verification (not recommended).",
+                initial_path.display(),
+                circuit.as_str()
             );
-            println!("  Generate it with: cargo run --release -p trusted-setup-cli -- generate-initial-transcript --circuit {}", circuit.as_str());
         }
     } else {
         println!("Skipping transcript verification (--skip-verify)");

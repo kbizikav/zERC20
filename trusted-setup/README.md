@@ -221,7 +221,7 @@ curl http://localhost:8080/api/ceremonies/<ceremony_id>
 cargo run --release -p trusted-setup-cli -- generate-initial-transcript --circuit <circuit>
 ```
 
-If you skip this step, verification will be skipped with a warning (contribution still works).
+If you skip this step, contribution will fail unless you use `--skip-verify` (not recommended).
 
 ### 3. Contribute to Ceremony
 
