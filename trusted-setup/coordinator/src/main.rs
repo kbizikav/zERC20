@@ -263,10 +263,6 @@ struct ErrorResponse {
     code: u16,
 }
 
-#[derive(Deserialize)]
-struct InitRequest {
-    circuit: String,
-}
 
 #[derive(Serialize)]
 struct InitResponse {
@@ -434,8 +430,8 @@ async fn main() -> Result<()> {
                 web::get().to(get_ceremony_stats),
             )
             .route(
-                "/api/ceremonies/{ceremony_id}/init",
-                web::post().to(init_ceremony),
+                "/api/ceremonies/init/{circuit}",
+                web::get().to(init_ceremony),
             )
             .route(
                 "/api/ceremonies/{ceremony_id}/participate",
@@ -772,14 +768,15 @@ async fn get_lease_status(
 
 async fn init_ceremony(
     state: web::Data<AppState>,
-    ceremony_id: web::Path<String>,
-    body: web::Json<InitRequest>,
+    circuit_path: web::Path<String>,
 ) -> Result<HttpResponse, ApiError> {
-    let ceremony_id = ceremony_id.into_inner();
+    let circuit_str = circuit_path.into_inner();
+    let ceremony_id = Uuid::new_v4().to_string();
+
     log::info!(
         "Initializing ceremony {} with circuit {}",
         ceremony_id,
-        body.circuit
+        circuit_str
     );
 
     // Increment request counter
@@ -788,10 +785,8 @@ async fn init_ceremony(
         stats.requests_total += 1;
     }
 
-    let circuit = CeremonyCircuit::parse(&body.circuit)
+    let circuit = CeremonyCircuit::parse(&circuit_str)
         .map_err(|e| ApiError::BadRequest(e.to_string()))?;
-
-    ensure_ceremony_absent(&state.db, &ceremony_id).await?;
 
     // Load initial transcript from cache or file
     let initial_transcript = get_or_load_initial_transcript(&state, circuit).await?;
