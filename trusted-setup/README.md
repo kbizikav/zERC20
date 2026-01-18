@@ -149,7 +149,7 @@ Server starts at `http://localhost:8080`.
 ```bash
 # Example: Initialize ceremony for withdraw_local circuit
 # Returns generated ceremony_id (UUID)
-curl "http://localhost:8080/api/ceremonies/init/withdraw_local"
+curl -X POST http://localhost:8080/api/ceremonies/init/withdraw_local
 ```
 
 Response:
@@ -168,11 +168,23 @@ Response:
 curl http://localhost:8080/api/ceremonies
 
 # Get specific ceremony status
-curl http://localhost:8080/api/ceremonies/my-ceremony-001
+curl http://localhost:8080/api/ceremonies/<ceremony_id>
 
 # Get ceremony statistics
-curl http://localhost:8080/api/ceremonies/my-ceremony-001/stats
+curl http://localhost:8080/api/ceremonies/<ceremony_id>/stats
 ```
+
+### 6. Force Expire Active Leases (Admin)
+
+If a participant's contribution was interrupted and left an active lease, you can force expire it:
+
+```bash
+curl -X POST http://localhost:8080/api/ceremonies/<ceremony_id>/expire-lease
+```
+
+This is useful when:
+- A participant disconnected during contribution
+- Testing and need to reset without waiting for lease timeout
 
 ---
 
@@ -313,7 +325,12 @@ Commands:
 ## Troubleshooting
 
 ### "active lease exists" error
-Another participant is currently contributing. Wait until the lease expires (default 15 minutes) or contact the Coordinator operator.
+Another participant is currently contributing. Options:
+1. Wait until the lease expires (shown in error message)
+2. Ask the Coordinator operator to force expire the lease:
+   ```bash
+   curl -X POST http://localhost:8080/api/ceremonies/<ceremony_id>/expire-lease
+   ```
 
 ### PTAU file size mismatch
 Download may have been interrupted. Re-download with `--force` option:

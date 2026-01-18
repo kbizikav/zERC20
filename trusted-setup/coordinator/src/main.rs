@@ -425,7 +425,7 @@ async fn main() -> Result<()> {
             )
             .route(
                 "/api/ceremonies/init/{circuit}",
-                web::get().to(init_ceremony),
+                web::post().to(init_ceremony),
             )
             .route(
                 "/api/ceremonies/{ceremony_id}/participate",
@@ -435,10 +435,14 @@ async fn main() -> Result<()> {
                 "/api/ceremonies/{ceremony_id}/submit",
                 web::post().to(submit),
             )
-            // Lease status
+            // Lease management
             .route(
                 "/api/ceremonies/{ceremony_id}/leases/{lease_id}",
                 web::get().to(get_lease_status),
+            )
+            .route(
+                "/api/ceremonies/{ceremony_id}/expire-lease",
+                web::post().to(expire_lease),
             )
     })
     .bind(&config.listen_addr)
@@ -764,6 +768,40 @@ async fn get_lease_status(
     Ok(HttpResponse::Ok().json(status))
 }
 
+/// Force expire all active leases for a ceremony (admin endpoint).
+async fn expire_lease(
+    state: web::Data<AppState>,
+    ceremony_id: web::Path<String>,
+) -> Result<HttpResponse, ApiError> {
+    let ceremony_id = ceremony_id.into_inner();
+    let now = unix_seconds();
+
+    log::info!("Force expiring active leases for ceremony {}", ceremony_id);
+
+    // Update all active leases to expired
+    let result = sqlx::query(
+        "UPDATE leases SET status = 'expired', expires_at = ?
+         WHERE ceremony_id = ? AND status = 'active'",
+    )
+    .bind(now as i64)
+    .bind(&ceremony_id)
+    .execute(&state.db)
+    .await?;
+
+    let expired_count = result.rows_affected();
+    log::info!(
+        "Force expired {} active lease(s) for ceremony {}",
+        expired_count,
+        ceremony_id
+    );
+
+    Ok(HttpResponse::Ok().json(serde_json::json!({
+        "ceremony_id": ceremony_id,
+        "expired_count": expired_count,
+        "message": format!("Expired {} active lease(s)", expired_count)
+    })))
+}
+
 // ============================================================================
 // Ceremony Lifecycle Endpoints
 // ============================================================================
@@ -1024,16 +1062,8 @@ async fn submit(
     let circuit_str: String = ceremony_row.get("circuit");
     let circuit = CeremonyCircuit::parse(&circuit_str).map_err(|e| ApiError::Internal(e))?;
 
-    // Get cached initial transcript (should already be loaded from init_ceremony)
-    let initial_transcript = {
-        let cache = state.initial_transcripts.read().await;
-        cache.get(&circuit).cloned().ok_or_else(|| {
-            ApiError::Internal(anyhow::anyhow!(
-                "initial transcript not loaded for circuit {}",
-                circuit.as_str()
-            ))
-        })?
-    };
+    // Get or load initial transcript from cache or file
+    let initial_transcript = get_or_load_initial_transcript(&state, circuit).await?;
 
     // Download and verify transcript BEFORE updating database
     log::info!("Downloading output transcript from S3: {}...", output_key);
