@@ -71,6 +71,16 @@ impl CeremonyCircuit {
         !self.is_groth16()
     }
 
+    /// Get the required PTAU power for this circuit.
+    pub fn ptau_power(&self) -> u8 {
+        match self {
+            // Groth16 circuits use smaller PTAU
+            Self::WithdrawLocal | Self::WithdrawGlobal => 14,
+            // Decider circuits need larger PTAU
+            Self::DeciderRoot | Self::DeciderWithdrawLocal | Self::DeciderWithdrawGlobal => 24,
+        }
+    }
+
     /// Get all available circuit types.
     pub fn all() -> &'static [CeremonyCircuit] {
         &[
@@ -269,17 +279,28 @@ where
     Ok((poseidon2_config, poseidon3_config))
 }
 
-/// Get default PTAU cache path.
-pub fn default_ptau_path() -> std::path::PathBuf {
+/// Get default PTAU cache path for a given power.
+pub fn ptau_path_for_power(power: u8) -> std::path::PathBuf {
+    let filename = format!("ppot_0080_{}.ptau", power);
     if let Ok(home) = std::env::var("HOME") {
         std::path::PathBuf::from(home)
             .join(".cache")
             .join("zerc20")
             .join("ptau")
-            .join("ppot_0080_24.ptau")
+            .join(filename)
     } else {
-        std::path::PathBuf::from("ptau").join("ppot_0080_24.ptau")
+        std::path::PathBuf::from("ptau").join(filename)
     }
+}
+
+/// Get default PTAU cache path (for backwards compatibility, uses power 24).
+pub fn default_ptau_path() -> std::path::PathBuf {
+    ptau_path_for_power(24)
+}
+
+/// Get PTAU cache path for a given circuit.
+pub fn ptau_path_for_circuit(circuit: CeremonyCircuit) -> std::path::PathBuf {
+    ptau_path_for_power(circuit.ptau_power())
 }
 
 /// Generate S3 key for transcript.
@@ -297,13 +318,33 @@ pub fn latest_key(ceremony_id: &str) -> String {
     format!("ceremonies/{}/latest.json", ceremony_id)
 }
 
-/// Expected SHA256 hash of the default PTAU file.
-pub const DEFAULT_PTAU_SHA256: &str =
-    "7a7a0e6967e86f57df5d6ba90f5e7e7d1d6c4cf4b5af0c9d7e8f4a3b2c1d0e9f8";
+/// Supported PTAU powers.
+pub const SUPPORTED_PTAU_POWERS: &[u8] = &[14, 24];
 
-/// Default PTAU download URL.
-pub const DEFAULT_PTAU_URL: &str =
+/// PTAU URL for power 14 (used by withdraw_local/global groth16).
+pub const PTAU_URL_14: &str =
+    "https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_14.ptau";
+
+/// PTAU URL for power 24 (used by decider circuits).
+pub const PTAU_URL_24: &str =
     "https://pse-trusted-setup-ppot.s3.eu-central-1.amazonaws.com/pot28_0080/ppot_0080_24.ptau";
+
+/// Default PTAU download URL (for backwards compatibility, uses power 24).
+pub const DEFAULT_PTAU_URL: &str = PTAU_URL_24;
+
+/// Get PTAU download URL for a given power.
+pub fn ptau_url_for_power(power: u8) -> Option<&'static str> {
+    match power {
+        14 => Some(PTAU_URL_14),
+        24 => Some(PTAU_URL_24),
+        _ => None,
+    }
+}
+
+/// Get PTAU download URL for a given circuit.
+pub fn ptau_url_for_circuit(circuit: CeremonyCircuit) -> &'static str {
+    ptau_url_for_power(circuit.ptau_power()).expect("circuit uses supported ptau power")
+}
 
 #[cfg(test)]
 mod tests {

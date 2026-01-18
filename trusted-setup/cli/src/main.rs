@@ -45,9 +45,9 @@ use sha2::{Digest, Sha256};
 use url::Url as ParsedUrl;
 
 use trusted_setup_common::{
-    build_withdraw_circuit, default_ptau_path, load_accumulator,
-    verify_transcript as common_verify_transcript, CeremonyCircuit, LatestMetadata,
-    DEFAULT_PTAU_URL,
+    build_withdraw_circuit, default_ptau_path, load_accumulator, ptau_path_for_circuit,
+    ptau_url_for_power, verify_transcript as common_verify_transcript, CeremonyCircuit,
+    LatestMetadata, SUPPORTED_PTAU_POWERS,
 };
 use zkp::groth16::params::Groth16Params;
 use zkp::nova::{
@@ -102,12 +102,16 @@ enum PtauCommand {
 
 #[derive(Args, Debug)]
 struct PtauDownloadArgs {
-    /// Ptau URL to download.
-    #[arg(long, env = "TRUSTED_SETUP_PTAU_URL", default_value = DEFAULT_PTAU_URL)]
-    url: String,
+    /// Ptau URL to download. If not specified, uses URL based on --power.
+    #[arg(long, env = "TRUSTED_SETUP_PTAU_URL")]
+    url: Option<String>,
 
-    /// Output path for the ptau file.
-    #[arg(long, env = "TRUSTED_SETUP_PTAU_PATH")]
+    /// PTAU power (14 for groth16, 24 for decider). Determines URL and output path if not specified.
+    #[arg(long, env = "TRUSTED_SETUP_PTAU_POWER", default_value_t = 24)]
+    power: u8,
+
+    /// Output path for the ptau file. If not specified, uses default path based on --power.
+    #[arg(long)]
     output: Option<PathBuf>,
 
     /// Overwrite the existing file if present.
@@ -401,7 +405,26 @@ async fn main() -> Result<()> {
 // ============================================================================
 
 async fn download_ptau(args: PtauDownloadArgs, shutdown: &AtomicBool) -> Result<()> {
-    let output = args.output.unwrap_or_else(default_ptau_path);
+    // Validate power
+    if !SUPPORTED_PTAU_POWERS.contains(&args.power) {
+        bail!(
+            "unsupported ptau power {}. Supported powers: {:?}",
+            args.power,
+            SUPPORTED_PTAU_POWERS
+        );
+    }
+
+    // Determine URL and output path based on power
+    let url = args.url.unwrap_or_else(|| {
+        ptau_url_for_power(args.power)
+            .expect("validated power")
+            .to_string()
+    });
+
+    let output = args
+        .output
+        .unwrap_or_else(|| trusted_setup_common::ptau_path_for_power(args.power));
+
     if output.exists() && !args.force {
         bail!(
             "ptau already exists at {} (use --force to overwrite)",
@@ -417,14 +440,17 @@ async fn download_ptau(args: PtauDownloadArgs, shutdown: &AtomicBool) -> Result<
 
     let client = build_http_client(DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_READ_TIMEOUT_SECS)?;
 
-    println!("Downloading PTAU from {}...", args.url);
+    println!(
+        "Downloading PTAU (power {}) from {}...",
+        args.power, url
+    );
     let resp = retry_request(|| async {
         check_shutdown(shutdown)?;
         client
-            .get(&args.url)
+            .get(&url)
             .send()
             .await
-            .with_context(|| format!("failed to download ptau from {}", args.url))
+            .with_context(|| format!("failed to download ptau from {}", url))
     })
     .await?;
 
@@ -461,21 +487,29 @@ async fn download_ptau(args: PtauDownloadArgs, shutdown: &AtomicBool) -> Result<
         .with_context(|| format!("failed to move ptau to {}", output.display()))?;
 
     progress.finish_and_clear();
-    println!("PTAU downloaded to {} ({} bytes)", output.display(), total_bytes);
+    println!(
+        "PTAU (power {}) downloaded to {} ({} bytes)",
+        args.power,
+        output.display(),
+        total_bytes
+    );
 
     if !args.skip_verify {
-        println!("Verifying file size...");
-        if total_bytes != DEFAULT_PTAU_SIZE {
-            bail!(
-                "PTAU file size mismatch: expected {} bytes, got {} bytes",
-                DEFAULT_PTAU_SIZE,
-                total_bytes
-            );
+        // Size verification is only for power 24 (we have the expected size)
+        if args.power == 24 {
+            println!("Verifying file size...");
+            if total_bytes != DEFAULT_PTAU_SIZE {
+                bail!(
+                    "PTAU file size mismatch: expected {} bytes, got {} bytes",
+                    DEFAULT_PTAU_SIZE,
+                    total_bytes
+                );
+            }
+            println!("File size verified successfully");
         }
 
         let hash = hex::encode(hasher.finalize());
         println!("SHA256: {}", hash);
-        println!("File size verified successfully");
     }
 
     Ok(())
@@ -533,7 +567,9 @@ async fn verify_ptau(args: PtauVerifyArgs) -> Result<()> {
 
 async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     let circuit: CeremonyCircuit = args.circuit.into();
-    let ptau_path = args.ptau_path.unwrap_or_else(default_ptau_path);
+    let ptau_path = args
+        .ptau_path
+        .unwrap_or_else(|| ptau_path_for_circuit(circuit));
 
     println!("Loading PTAU from {}...", ptau_path.display());
     let accum = load_accumulator(&ptau_path)?;
@@ -819,7 +855,9 @@ async fn check_status(args: StatusArgs) -> Result<()> {
 
 async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
     let circuit: CeremonyCircuit = args.circuit.into();
-    let ptau_path = args.ptau_path.unwrap_or_else(default_ptau_path);
+    let ptau_path = args
+        .ptau_path
+        .unwrap_or_else(|| ptau_path_for_circuit(circuit));
     let output_dir = args
         .output_dir
         .unwrap_or_else(|| workspace_root().join("nova_artifacts"));
