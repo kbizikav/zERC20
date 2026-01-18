@@ -260,20 +260,14 @@ cargo run --release -p trusted-setup-cli -- status
 Once sufficient contributions have been collected, generate final parameters:
 
 ```bash
-# Generate Groth16 parameters
 cargo run --release -p trusted-setup-cli -- finalize \
-  --circuit withdraw_local \
-  --ceremony-id my-ceremony-001 \
-  --public-base-url https://example.com/trusted-setup \
-  --output-dir ./artifacts
-
-# Generate Nova/Decider parameters
-cargo run --release -p trusted-setup-cli -- finalize \
-  --circuit decider_root \
-  --ceremony-id my-ceremony-002 \
-  --public-base-url https://example.com/trusted-setup \
+  --ceremony-id <ceremony_id> \
   --output-dir ./artifacts
 ```
+
+The circuit type is automatically determined from the ceremony. Optional flags:
+- `--public-base-url`: Base URL for published artifacts
+- `--ptau-path`: Override default PTAU path
 
 ### Output Files
 

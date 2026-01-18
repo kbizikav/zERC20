@@ -190,11 +190,15 @@ struct ContributeArgs {
 
 #[derive(Args, Debug)]
 struct FinalizeArgs {
-    /// Circuit to finalize (must match the coordinator ceremony circuit).
-    #[arg(long, env = "TRUSTED_SETUP_CIRCUIT", value_enum)]
-    circuit: CliCeremonyCircuit,
+    /// Coordinator base URL.
+    #[arg(long, env = "TRUSTED_SETUP_COORDINATOR_URL")]
+    coordinator_url: String,
 
-    /// Ptau path.
+    /// Ceremony id for the transcript.
+    #[arg(long, env = "TRUSTED_SETUP_CEREMONY_ID")]
+    ceremony_id: String,
+
+    /// Ptau path (optional, auto-determined from circuit).
     #[arg(long, env = "TRUSTED_SETUP_PTAU_PATH")]
     ptau_path: Option<PathBuf>,
 
@@ -205,14 +209,6 @@ struct FinalizeArgs {
     /// Public base URL for latest.json and transcripts.
     #[arg(long, env = "TRUSTED_SETUP_PUBLIC_BASE_URL")]
     public_base_url: Option<String>,
-
-    /// Ceremony id for the transcript.
-    #[arg(long, env = "TRUSTED_SETUP_CEREMONY_ID")]
-    ceremony_id: Option<String>,
-
-    /// Explicit path or URL for the transcript.
-    #[arg(long, env = "TRUSTED_SETUP_TRANSCRIPT")]
-    transcript: Option<String>,
 
     /// Deterministic seed for Pedersen params.
     #[arg(long, env = "TRUSTED_SETUP_PEDERSEN_SEED", default_value_t = 42)]
@@ -961,7 +957,31 @@ async fn check_status(args: StatusArgs) -> Result<()> {
 // ============================================================================
 
 async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
-    let circuit: CeremonyCircuit = args.circuit.into();
+    let client = build_http_client(args.connect_timeout, args.read_timeout)?;
+    let base_url = Url::parse(&args.coordinator_url)
+        .with_context(|| format!("invalid coordinator url {}", args.coordinator_url))?;
+
+    // Get ceremony info from coordinator
+    println!("Fetching ceremony info from coordinator...");
+    let ceremony_url = base_url
+        .join(&format!("/api/ceremonies/{}", args.ceremony_id))
+        .context("failed to build ceremony url")?;
+
+    let ceremony_resp = client
+        .get(ceremony_url)
+        .send()
+        .await
+        .context("failed to fetch ceremony info")?;
+
+    let ceremony: CeremonyStatus = handle_response(ceremony_resp, "ceremony info").await?;
+    let circuit = CeremonyCircuit::parse(&ceremony.circuit)
+        .with_context(|| format!("invalid circuit from server: {}", ceremony.circuit))?;
+
+    println!(
+        "Ceremony: {} (circuit: {}, step: {}, contributions: {})",
+        ceremony.id, ceremony.circuit, ceremony.current_step, ceremony.total_contributions
+    );
+
     let ptau_path = args
         .ptau_path
         .unwrap_or_else(|| ptau_path_for_circuit(circuit));
@@ -977,17 +997,17 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
         output_dir.display()
     );
 
+    // Load PTAU (only needed for decider circuits)
     println!("Loading PTAU from {}...", ptau_path.display());
     let accum = load_accumulator(&ptau_path)?;
     println!("PTAU loaded (g1: {} powers)", accum.tau_powers_g1.len());
 
-    let client = build_http_client(args.connect_timeout, args.read_timeout)?;
-
+    // Resolve transcript from coordinator
     println!("Resolving transcript...");
     let transcript_source = resolve_transcript_source(
         &client,
-        args.transcript,
-        args.ceremony_id.as_deref(),
+        None,
+        Some(&args.ceremony_id),
         args.public_base_url.as_deref(),
         shutdown,
     )
