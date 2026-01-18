@@ -21,8 +21,8 @@ use tokio::sync::RwLock;
 use uuid::Uuid;
 
 use trusted_setup_common::{
-    build_initial_transcript, contribution_key, latest_key, load_accumulator, transcript_key,
-    verify_transcript, CeremonyCircuit, LatestMetadata,
+    contribution_key, initial_transcript_path as default_initial_transcript_path, latest_key,
+    transcript_key, verify_transcript_from_initial, CeremonyCircuit, LatestMetadata,
 };
 
 // ============================================================================
@@ -75,12 +75,10 @@ impl ResponseError for ApiError {
 struct Config {
     listen_addr: String,
     database_url: String,
-    ptau_path: PathBuf,
     s3_bucket: String,
     s3_prefix: String,
     presign_ttl: Duration,
     lease_ttl: Duration,
-    pedersen_seed: u64,
     cleanup_interval: Duration,
     rate_limit_per_second: u64,
     rate_limit_burst: u32,
@@ -98,9 +96,7 @@ impl Config {
                 .display()
                 .to_string()
         });
-        let ptau_path = std::env::var("TRUSTED_SETUP_PTAU_PATH")
-            .map(PathBuf::from)
-            .unwrap_or_else(|_| trusted_setup_common::default_ptau_path());
+
         let s3_bucket = std::env::var("TRUSTED_SETUP_S3_BUCKET")
             .context("TRUSTED_SETUP_S3_BUCKET is required")?;
         let s3_prefix = std::env::var("TRUSTED_SETUP_S3_PREFIX").unwrap_or_default();
@@ -114,10 +110,6 @@ impl Config {
             .and_then(|value| value.parse::<u64>().ok())
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(900));
-        let pedersen_seed = std::env::var("TRUSTED_SETUP_PEDERSEN_SEED")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(42);
         let cleanup_interval = std::env::var("TRUSTED_SETUP_CLEANUP_INTERVAL_SECONDS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
@@ -135,12 +127,10 @@ impl Config {
         Ok(Self {
             listen_addr,
             database_url,
-            ptau_path,
             s3_bucket,
             s3_prefix,
             presign_ttl,
             lease_ttl,
-            pedersen_seed,
             cleanup_interval,
             rate_limit_per_second,
             rate_limit_burst,
@@ -152,11 +142,14 @@ impl Config {
 // Application State
 // ============================================================================
 
+use std::collections::HashMap;
+
 struct AppState {
     config: Config,
     db: SqlitePool,
     s3: Storage,
-    accum: Arc<arkworks_phase2::accumulator::Accumulator<Bn254>>,
+    /// Cached initial transcripts per circuit (loaded on-demand at init_ceremony)
+    initial_transcripts: RwLock<HashMap<CeremonyCircuit, Arc<Transcript<Bn254>>>>,
     stats: RwLock<ServerStats>,
 }
 
@@ -394,10 +387,6 @@ async fn main() -> Result<()> {
     );
     log::info!("S3 client initialized (bucket: {})", config.s3_bucket);
 
-    log::info!("Loading PTAU file from {}...", config.ptau_path.display());
-    let accum = Arc::new(load_accumulator(&config.ptau_path)?);
-    log::info!("PTAU file loaded successfully");
-
     let stats = RwLock::new(ServerStats {
         started_at: unix_seconds(),
         ..Default::default()
@@ -407,7 +396,7 @@ async fn main() -> Result<()> {
         config: config.clone(),
         db: pool.clone(),
         s3,
-        accum,
+        initial_transcripts: RwLock::new(HashMap::new()),
         stats,
     });
 
@@ -804,16 +793,16 @@ async fn init_ceremony(
 
     ensure_ceremony_absent(&state.db, &ceremony_id).await?;
 
+    // Load initial transcript from cache or file
+    let initial_transcript = get_or_load_initial_transcript(&state, circuit).await?;
+
     log::info!(
-        "Building initial transcript for circuit {:?}...",
+        "Using initial transcript for circuit {:?}...",
         circuit.as_str()
     );
-    let transcript = build_initial_transcript(&state.accum, circuit, state.config.pedersen_seed)
-        .map_err(|e| ApiError::Internal(e))?;
-    log::info!("Initial transcript built successfully");
 
     log::info!("Serializing transcript...");
-    let transcript_bytes = serialize_uncompressed(&transcript)
+    let transcript_bytes = serialize_uncompressed(initial_transcript.as_ref())
         .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))?;
     log::info!(
         "Transcript serialized ({} bytes)",
@@ -1036,6 +1025,7 @@ async fn submit(
     let contrib_key: String = lease_row.get("contribution_key");
     let step: i64 = lease_row.get("step");
 
+    // Get the circuit for this ceremony
     let ceremony_row = sqlx::query("SELECT circuit FROM ceremonies WHERE id = ?")
         .bind(&ceremony_id)
         .fetch_optional(&mut *tx)
@@ -1043,8 +1033,18 @@ async fn submit(
         .ok_or_else(|| ApiError::NotFound("ceremony not found".to_string()))?;
 
     let circuit_str: String = ceremony_row.get("circuit");
-    let circuit = CeremonyCircuit::parse(&circuit_str)
-        .map_err(|e| ApiError::Internal(e))?;
+    let circuit = CeremonyCircuit::parse(&circuit_str).map_err(|e| ApiError::Internal(e))?;
+
+    // Get cached initial transcript (should already be loaded from init_ceremony)
+    let initial_transcript = {
+        let cache = state.initial_transcripts.read().await;
+        cache.get(&circuit).cloned().ok_or_else(|| {
+            ApiError::Internal(anyhow::anyhow!(
+                "initial transcript not loaded for circuit {}",
+                circuit.as_str()
+            ))
+        })?
+    };
 
     // Download and verify transcript BEFORE updating database
     log::info!("Downloading output transcript from S3: {}...", output_key);
@@ -1059,8 +1059,11 @@ async fn submit(
         .map_err(|e| ApiError::BadRequest(format!("invalid transcript: {}", e)))?;
     log::info!("Output transcript deserialized");
 
-    log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
-    verify_transcript(&state.accum, circuit, &output_transcript, state.config.pedersen_seed)
+    log::info!(
+        "Verifying transcript for circuit {:?}...",
+        circuit.as_str()
+    );
+    verify_transcript_from_initial(&initial_transcript, &output_transcript)
         .map_err(|e| ApiError::BadRequest(format!("transcript verification failed: {}", e)))?;
     log::info!("Transcript verification passed");
 
@@ -1143,6 +1146,63 @@ async fn submit(
 // ============================================================================
 // Helper Functions
 // ============================================================================
+
+/// Load initial transcript from cache, or load from file and cache it.
+async fn get_or_load_initial_transcript(
+    state: &web::Data<AppState>,
+    circuit: CeremonyCircuit,
+) -> Result<Arc<Transcript<Bn254>>, ApiError> {
+    // Check cache first
+    {
+        let cache = state.initial_transcripts.read().await;
+        if let Some(transcript) = cache.get(&circuit) {
+            return Ok(transcript.clone());
+        }
+    }
+
+    // Not in cache, load from file
+    let path = default_initial_transcript_path(circuit);
+    if !path.exists() {
+        return Err(ApiError::BadRequest(format!(
+            "Initial transcript not found for circuit {}. Generate one using:\n\
+             trusted-setup-cli generate-initial-transcript --circuit {}",
+            circuit.as_str(),
+            circuit.as_str()
+        )));
+    }
+
+    log::info!(
+        "Loading initial transcript for {} from {}...",
+        circuit.as_str(),
+        path.display()
+    );
+
+    let bytes = std::fs::read(&path).map_err(|e| {
+        ApiError::Internal(anyhow::anyhow!(
+            "failed to read initial transcript from {}: {}",
+            path.display(),
+            e
+        ))
+    })?;
+
+    let transcript = Transcript::<Bn254>::deserialize_uncompressed(&bytes[..])
+        .map_err(|e| ApiError::Internal(anyhow::anyhow!("failed to deserialize initial transcript: {}", e)))?;
+
+    log::info!(
+        "Initial transcript loaded ({} contributions)",
+        transcript.contributions.len()
+    );
+
+    let transcript = Arc::new(transcript);
+
+    // Cache it
+    {
+        let mut cache = state.initial_transcripts.write().await;
+        cache.insert(circuit, transcript.clone());
+    }
+
+    Ok(transcript)
+}
 
 async fn ensure_ceremony_absent(pool: &SqlitePool, ceremony_id: &str) -> Result<(), ApiError> {
     let exists = sqlx::query("SELECT 1 FROM ceremonies WHERE id = ?")

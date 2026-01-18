@@ -45,9 +45,10 @@ use sha2::{Digest, Sha256};
 use url::Url as ParsedUrl;
 
 use trusted_setup_common::{
-    build_withdraw_circuit, default_ptau_path, load_accumulator, ptau_path_for_circuit,
-    ptau_url_for_power, verify_transcript as common_verify_transcript, CeremonyCircuit,
-    LatestMetadata, SUPPORTED_PTAU_POWERS,
+    build_initial_transcript_cached, build_withdraw_circuit, default_ptau_path,
+    initial_transcript_path, load_accumulator, ptau_path_for_circuit, ptau_url_for_power,
+    verify_transcript as common_verify_transcript, CeremonyCircuit, LatestMetadata,
+    SUPPORTED_PTAU_POWERS,
 };
 use zkp::groth16::params::Groth16Params;
 use zkp::nova::{
@@ -91,6 +92,8 @@ enum Command {
     Status(StatusArgs),
     /// Resume an interrupted contribution
     Resume(ResumeArgs),
+    /// Generate initial transcript for a circuit (can be used to speed up coordinator initialization)
+    GenerateInitialTranscript(GenerateInitialTranscriptArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -260,6 +263,33 @@ struct ResumeArgs {
     coordinator_url: String,
 }
 
+#[derive(Args, Debug)]
+struct GenerateInitialTranscriptArgs {
+    /// Circuit to generate initial transcript for.
+    #[arg(long, env = "TRUSTED_SETUP_CIRCUIT", value_enum)]
+    circuit: CliCeremonyCircuit,
+
+    /// Ptau path.
+    #[arg(long, env = "TRUSTED_SETUP_PTAU_PATH")]
+    ptau_path: Option<PathBuf>,
+
+    /// Output path for the initial transcript. If not specified, uses default path.
+    #[arg(long)]
+    output: Option<PathBuf>,
+
+    /// PreparedAccumulator cache path. If not specified, uses default path.
+    #[arg(long)]
+    prepared_accum_cache: Option<PathBuf>,
+
+    /// Deterministic seed for Pedersen params (decider circuits).
+    #[arg(long, env = "TRUSTED_SETUP_PEDERSEN_SEED", default_value_t = 42)]
+    pedersen_seed: u64,
+
+    /// Overwrite the existing file if present.
+    #[arg(long, default_value_t = false)]
+    force: bool,
+}
+
 // ============================================================================
 // API Types
 // ============================================================================
@@ -395,6 +425,7 @@ async fn main() -> Result<()> {
         Command::Finalize(args) => finalize(args, &shutdown).await?,
         Command::Status(args) => check_status(args).await?,
         Command::Resume(args) => resume_contribution(args, &shutdown).await?,
+        Command::GenerateInitialTranscript(args) => generate_initial_transcript(args)?,
     }
 
     Ok(())
@@ -557,6 +588,82 @@ async fn verify_ptau(args: PtauVerifyArgs) -> Result<()> {
     let hash = hex::encode(hasher.finalize());
     println!("SHA256: {}", hash);
     println!("Verification complete");
+
+    Ok(())
+}
+
+// ============================================================================
+// Generate Initial Transcript Command
+// ============================================================================
+
+fn generate_initial_transcript(args: GenerateInitialTranscriptArgs) -> Result<()> {
+    let circuit: CeremonyCircuit = args.circuit.into();
+
+    // Determine paths
+    let ptau_path = args
+        .ptau_path
+        .unwrap_or_else(|| ptau_path_for_circuit(circuit));
+    let output_path = args
+        .output
+        .unwrap_or_else(|| initial_transcript_path(circuit));
+
+    // Check if output exists
+    if output_path.exists() && !args.force {
+        bail!(
+            "Initial transcript already exists at {} (use --force to overwrite)",
+            output_path.display()
+        );
+    }
+
+    println!("=== Generate Initial Transcript ===");
+    println!("Circuit: {}", circuit.as_str());
+    println!("PTAU path: {}", ptau_path.display());
+    println!("Output path: {}", output_path.display());
+    if let Some(ref path) = args.prepared_accum_cache {
+        println!("PreparedAccumulator cache (override): {}", path.display());
+    } else {
+        println!("PreparedAccumulator cache: (auto-computed based on ptau_power and domain_size)");
+    }
+    println!();
+
+    // Load PTAU
+    println!("Loading PTAU...");
+    let accum = load_accumulator(&ptau_path)?;
+    println!("PTAU loaded (g1: {} powers)", accum.tau_powers_g1.len());
+
+    // Generate initial transcript with caching
+    // If no explicit cache path provided, the function will compute one based on ptau_power and domain_size
+    println!("Generating initial transcript (this may take a while)...");
+    let transcript = build_initial_transcript_cached(
+        &accum,
+        circuit,
+        args.pedersen_seed,
+        args.prepared_accum_cache.as_deref(),
+    )?;
+    println!(
+        "Initial transcript generated ({} contributions)",
+        transcript.contributions.len()
+    );
+
+    // Create output directory if needed
+    if let Some(parent) = output_path.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+
+    // Serialize and save
+    println!("Saving initial transcript to {}...", output_path.display());
+    let bytes =
+        serialize_uncompressed(&transcript).context("failed to serialize initial transcript")?;
+    fs::write(&output_path, &bytes)
+        .with_context(|| format!("failed to write {}", output_path.display()))?;
+
+    println!(
+        "Initial transcript saved ({} bytes)",
+        bytes.len()
+    );
+    println!();
+    println!("=== Done ===");
 
     Ok(())
 }

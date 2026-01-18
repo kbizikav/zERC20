@@ -10,7 +10,9 @@ ark-ec = { workspace = true }
 ark-ff = { workspace = true }
 ark-grumpkin = { workspace = true }
 ark-crypto-primitives = { workspace = true }
+ark-poly = { workspace = true }
 ark-poly-commit = { version = "0.5.0", default-features = false }
+ark-relations = { workspace = true }
 ark-serialize = { workspace = true }
 arkworks-phase2 = { workspace = true }
 folding-schemes = { workspace = true }
