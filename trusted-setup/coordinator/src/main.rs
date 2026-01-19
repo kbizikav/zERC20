@@ -1514,6 +1514,23 @@ async fn process_submission(
         verify_transcript_from_initial(&initial_transcript, &output_transcript)
             .map_err(|e| anyhow::anyhow!("transcript verification failed: {}", e))?;
         log::info!("Transcript verification passed");
+
+        // Verify the contribution count matches the expected step
+        // This prevents replay attacks where an older transcript is submitted
+        let contribution_count = output_transcript.contributions.len();
+        if contribution_count != step as usize {
+            return Err(anyhow::anyhow!(
+                "transcript has {} contributions, expected {} for step {}",
+                contribution_count,
+                step,
+                step
+            ));
+        }
+        log::info!(
+            "Contribution count verified: {} contributions for step {}",
+            contribution_count,
+            step
+        );
     }
 
     // Upload latest.json BEFORE updating database for consistency
