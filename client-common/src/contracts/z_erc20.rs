@@ -2,12 +2,12 @@ use crate::contracts::{
     ContractError, ContractResult,
     utils::{NormalProvider, get_provider_with_signer, send_call_with_legacy, uint256_as_u64},
 };
-use alloy::network::Ethereum;
-use alloy::providers::{PendingTransactionBuilder, Provider};
-use alloy::sol_types::SolCall;
 use alloy::{
+    network::Ethereum,
     primitives::{Address, B256, Bytes, U256},
+    providers::{PendingTransactionBuilder, Provider},
     sol,
+    sol_types::SolCall,
 };
 use api_types::indexer::IndexedEvent;
 use serde::{Deserialize, Serialize}; // for get_block_number

@@ -5,13 +5,15 @@ use ark_bn254::Fr;
 use ark_ff::Zero;
 use folding_schemes::FoldingScheme;
 use rand::{SeedableRng, rngs::StdRng};
-use zkp::nova::{
-    constants::TRANSFER_TREE_HEIGHT,
-    params::{DeciderParams, NovaParams},
-    root_nova::{RootCircuit, RootExternalInputs},
-    withdraw_nova::{WITHDRAW_STATE_LEN, WithdrawCircuit, dummy_withdraw_ext_input},
+use zkp::{
+    nova::{
+        constants::TRANSFER_TREE_HEIGHT,
+        params::{DeciderParams, NovaParams},
+        root_nova::{RootCircuit, RootExternalInputs},
+        withdraw_nova::{WITHDRAW_STATE_LEN, WithdrawCircuit, dummy_withdraw_ext_input},
+    },
+    utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
 };
-use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
 fn main() {
     println!("== Nova decider proof benchmarks (single run) ==");

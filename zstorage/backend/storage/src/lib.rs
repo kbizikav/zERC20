@@ -1,5 +1,4 @@
-use std::cell::RefCell;
-use std::collections::BTreeMap;
+use std::{cell::RefCell, collections::BTreeMap};
 
 use alloy_primitives::{utils::eip191_message, Signature, B256};
 use candid::{CandidType, Deserialize};

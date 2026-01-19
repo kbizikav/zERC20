@@ -32,3 +32,5 @@ zkp/coverage/
 .dfx
 .ic.env
 canister_ids.json
+
+test-ledger/

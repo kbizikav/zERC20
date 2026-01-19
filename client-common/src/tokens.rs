@@ -38,6 +38,14 @@ pub struct TokenEntry {
     pub rpc_urls: Vec<String>,
     #[serde(default)]
     pub legacy_tx: bool,
+    #[serde(default, alias = "relayIntervalSecs", alias = "relay_interval_secs")]
+    pub relay_interval_secs: Option<u64>,
+    #[serde(
+        default,
+        alias = "rootSubmitIntervalMs",
+        alias = "root_submit_interval_ms"
+    )]
+    pub root_submit_interval_ms: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
@@ -52,6 +60,12 @@ pub struct HubEntry {
     pub rpc_urls: Vec<String>,
     #[serde(default, alias = "legacyTx")]
     pub legacy_tx: bool,
+    #[serde(
+        default,
+        alias = "broadcastIntervalSecs",
+        alias = "broadcast_interval_secs"
+    )]
+    pub broadcast_interval_secs: Option<u64>,
 }
 
 #[derive(Debug, Deserialize, Clone, Copy)]
@@ -76,6 +90,18 @@ impl TokenEntry {
         if self.rpc_urls.is_empty() {
             return Err(anyhow!(
                 "token '{}' must configure at least one rpc url",
+                self.label
+            ));
+        }
+        if matches!(self.relay_interval_secs, Some(0)) {
+            return Err(anyhow!(
+                "token '{}' relay_interval_secs must be greater than zero",
+                self.label
+            ));
+        }
+        if matches!(self.root_submit_interval_ms, Some(0)) {
+            return Err(anyhow!(
+                "token '{}' root_submit_interval_ms must be greater than zero",
                 self.label
             ));
         }
@@ -122,6 +148,11 @@ impl HubEntry {
     pub fn normalize(&mut self) -> Result<()> {
         if self.rpc_urls.is_empty() {
             return Err(anyhow!("hub must configure at least one rpc url"));
+        }
+        if matches!(self.broadcast_interval_secs, Some(0)) {
+            return Err(anyhow!(
+                "hub broadcast_interval_secs must be greater than zero"
+            ));
         }
         Ok(())
     }

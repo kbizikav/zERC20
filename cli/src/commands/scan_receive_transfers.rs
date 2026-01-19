@@ -2,8 +2,7 @@ use std::{collections::HashSet, fs, path::PathBuf};
 
 use alloy::primitives::{Address, B256};
 use anyhow::{Context, Result, anyhow};
-use client_common::payment::burn_address::FullBurnAddress;
-use client_common::tokens::TokenEntry;
+use client_common::{payment::burn_address::FullBurnAddress, tokens::TokenEntry};
 use hex;
 use k256::{FieldBytes, ecdsa::SigningKey};
 use key_manager::authorization::authorization_message;

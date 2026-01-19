@@ -6,8 +6,7 @@ use ark_relations::gr1cs::ConstraintSynthesizer;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize, Compress};
 use ark_snark::{CircuitSpecificSetupSNARK, SNARK};
 use rand::{CryptoRng, RngCore};
-use solidity_verifiers::utils::eth::ToEth;
-use solidity_verifiers::{Groth16VerifierKey, ProtocolVerifierKey};
+use solidity_verifiers::{Groth16VerifierKey, ProtocolVerifierKey, utils::eth::ToEth};
 
 #[derive(thiserror::Error, Debug)]
 pub enum Groth16Error {

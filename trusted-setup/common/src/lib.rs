@@ -12,22 +12,26 @@ use arkworks_phase2::{
 use folding_schemes::{
     arith::Arith,
     commitment::{pedersen::Pedersen, CommitmentScheme},
-    folding::nova::{decider_eth::DeciderEthCircuit, get_r1cs},
-    folding::traits::Dummy,
+    folding::{
+        nova::{decider_eth::DeciderEthCircuit, get_r1cs},
+        traits::Dummy,
+    },
     frontend::FCircuit,
     transcript::poseidon::poseidon_canonical_config,
 };
 use rand::{rngs::StdRng, SeedableRng};
 use serde::{Deserialize, Serialize};
 
-use zkp::groth16::withdraw::SingleWithdrawCircuit;
-use zkp::nova::{
-    constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
-    params::FParams,
-    root_nova::RootCircuit,
-    withdraw_nova::WithdrawCircuit,
+use zkp::{
+    groth16::withdraw::SingleWithdrawCircuit,
+    nova::{
+        constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
+        params::FParams,
+        root_nova::RootCircuit,
+        withdraw_nova::WithdrawCircuit,
+    },
+    utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
 };
-use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
 /// Supported ceremony circuit types.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

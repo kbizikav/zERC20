@@ -1,9 +1,12 @@
 use std::collections::HashMap;
 
-use crate::utils::convertion::{address_to_fr, u256_to_fr};
-use crate::utils::tree::gadgets::hash_chain::hash_chain;
-use crate::utils::tree::gadgets::leaf_hash::compute_leaf_hash;
-use crate::utils::tree::merkle_tree::{MerkleProof, MerkleTree};
+use crate::utils::{
+    convertion::{address_to_fr, u256_to_fr},
+    tree::{
+        gadgets::{hash_chain::hash_chain, leaf_hash::compute_leaf_hash},
+        merkle_tree::{MerkleProof, MerkleTree},
+    },
+};
 use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;
 use thiserror::Error;
