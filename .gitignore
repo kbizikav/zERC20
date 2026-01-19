@@ -19,6 +19,7 @@ frontend-app/public/config/*.json
 
 # scan output files
 **/output.json
+zkp/coverage/
 
 **/node_modules/
 

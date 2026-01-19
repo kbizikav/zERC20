@@ -19,15 +19,15 @@ interface IAdaptor {
         bytes oftCmd;
     }
     // forge-lint: disable-next-line(mixed-case-function)
-    function LIQUIDITY_MANAGER() external returns (address);
+    function LIQUIDITY_MANAGER() external view returns (address);
     // forge-lint: disable-next-line(mixed-case-function)
-    function STARGATE() external returns (address);
+    function STARGATE() external view returns (address);
     // forge-lint: disable-next-line(mixed-case-function)
-    function LZ_ENDPOINT() external returns (address);
+    function LZ_ENDPOINT() external view returns (address);
     // forge-lint: disable-next-line(mixed-case-function)
-    function UNDERLYING_TOKEN() external returns (address);
+    function UNDERLYING_TOKEN() external view returns (address);
     // forge-lint: disable-next-line(mixed-case-function)
-    function ZERC20_TOKEN() external returns (address);
+    function ZERC20_TOKEN() external view returns (address);
 
     function underlyingTokenBalances(address user) external view returns (uint256);
     function zerc20Balances(address user) external view returns (uint256);

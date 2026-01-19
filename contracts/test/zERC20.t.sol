@@ -447,4 +447,45 @@ contract ZERC20Test is Test {
         uint256 expectedHash = ShaHashChainLib.compute(hashAfterMint, ALICE, address(0), debitAmount);
         assertEq(token.hashChain(), expectedHash, "hash chain after debit");
     }
+
+    function testUpgradeRevertsOnEndpointMismatch() public {
+        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18);
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(this)));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
+        ZERC20Harness proxiedToken = ZERC20Harness(address(proxy));
+
+        EndpointV2 otherEndpoint = new EndpointV2(2, address(this));
+        ZERC20UpgradeMock newImpl = new ZERC20UpgradeMock(address(otherEndpoint), 18);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(zERC20.EndpointMismatch.selector, address(endpoint), address(otherEndpoint))
+        );
+        proxiedToken.upgradeToAndCall(address(newImpl), bytes(""));
+    }
+
+    function testUpgradeSucceedsWithSameEndpoint() public {
+        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18);
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(this)));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
+        ZERC20Harness proxiedToken = ZERC20Harness(address(proxy));
+
+        // Mint some tokens to verify state preservation
+        proxiedToken.setMinter(address(this));
+        proxiedToken.mint(ALICE, 5 ether);
+
+        ZERC20UpgradeMock newImpl = new ZERC20UpgradeMock(address(endpoint), 18);
+        proxiedToken.upgradeToAndCall(address(newImpl), bytes(""));
+
+        ZERC20UpgradeMock upgraded = ZERC20UpgradeMock(address(proxiedToken));
+        assertEq(upgraded.version(), "v2", "upgrade succeeded");
+        assertEq(upgraded.balanceOf(ALICE), 5 ether, "state preserved");
+    }
+}
+
+contract ZERC20UpgradeMock is zERC20 {
+    constructor(address endpoint_, uint8 decimals_) zERC20(endpoint_, decimals_) {}
+
+    function version() external pure returns (string memory) {
+        return "v2";
+    }
 }

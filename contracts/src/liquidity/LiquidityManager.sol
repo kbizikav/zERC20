@@ -41,6 +41,8 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     error SlippageExceeded();
     error InvalidMsgValue(uint256 expected, uint256 actual);
     error NativeTokenNotSupported();
+    error UnderlyingTokenMismatch(address expected, address actual);
+    error Zerc20TokenMismatch(address expected, address actual);
 
     // ERC-7201 slot for namespace "zerc20.storage.liquidityManager".
     bytes32 internal constant LIQUIDITY_MANAGER_STORAGE_SLOT =
@@ -288,6 +290,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         uint256 feeAmount = _quoteUnwrapFee(amount, $);
         amountOut = amount - feeAmount;
 
+        // slither-disable-next-line reentrancy-balance
         ZERC20_TOKEN.burn(msg.sender, amount);
         if (amountOut > 0) {
             if (IS_NATIVE_UNDERLYING) {
@@ -305,8 +308,17 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         emit Unwrapped(msg.sender, receiver, amountOut, feeAmount);
     }
 
-    /// @dev Restricts upgrade authorization to admins.
-    function _authorizeUpgrade(address) internal override onlyRole(DEFAULT_ADMIN_ROLE) {}
+    /// @dev Restricts upgrade authorization to admins and prevents immutable dependency swaps.
+    function _authorizeUpgrade(address newImplementation) internal view override onlyRole(DEFAULT_ADMIN_ROLE) {
+        LiquidityManager candidate = LiquidityManager(payable(newImplementation));
+        address expectedUnderlying = address(UNDERLYING_TOKEN);
+        address actualUnderlying = address(candidate.underlyingToken());
+        require(actualUnderlying == expectedUnderlying, UnderlyingTokenMismatch(expectedUnderlying, actualUnderlying));
+
+        address expectedZerc20 = address(ZERC20_TOKEN);
+        address actualZerc20 = address(candidate.zerc20());
+        require(actualZerc20 == expectedZerc20, Zerc20TokenMismatch(expectedZerc20, actualZerc20));
+    }
 
     // solhint-disable-next-line no-complex-fallback
     receive() external payable nonReentrant {

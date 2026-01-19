@@ -9,7 +9,8 @@ import {
 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {IzERC20} from "./interfaces/IzERC20.sol";
-import {IRootDecider, IWithdrawDecider} from "./interfaces/IDecider.sol";
+import {IWithdrawDecider} from "./interfaces/IWithdrawDecider.sol";
+import {IRootDecider} from "./interfaces/IRootDecider.sol";
 import {IWithdrawVerifier} from "./interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "./utils/GeneralRecipientLib.sol";
 import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
@@ -39,6 +40,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         uint256 transferRoot,
         GeneralRecipientLib.GeneralRecipient gr
     );
+    // slither-disable-next-line unindexed-event
     event VerifiersSet(
         address rootDecider,
         address withdrawGlobalDecider,
