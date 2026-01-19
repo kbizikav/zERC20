@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Unlicense
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
 import {PoseidonT3} from "poseidon-solidity/contracts/PoseidonT3.sol";
@@ -13,10 +13,14 @@ library PoseidonAggregationLib {
     uint256 private constant ZERO_HASH_COUNT = POSEIDON_ZERO_HASH_COUNT;
     uint256 private constant MAX_LEAVES = POSEIDON_MAX_LEAVES;
 
+    error TooManyLeaves(uint256 provided, uint256 max);
+
     /**
      * @notice Computes the aggregation root for the provided leaves, padding with zeros up to TREE_HEIGHT.
-     * @param leaves The list of active leaves.
+     * @dev Mutates `leaves` in-place (the array contents are overwritten during hashing).
+     * @param leaves The list of active leaves. Must not exceed MAX_LEAVES.
      * @param zeroHash Pre-computed zero hashes for depths 0..TREE_HEIGHT.
+     * @return The computed Merkle root.
      */
     function computeAggregationRoot(uint256[] memory leaves, uint256[ZERO_HASH_COUNT] memory zeroHash)
         internal
@@ -24,6 +28,9 @@ library PoseidonAggregationLib {
         returns (uint256)
     {
         uint256 count = leaves.length;
+        if (count > MAX_LEAVES) {
+            revert TooManyLeaves(count, MAX_LEAVES);
+        }
         if (count == 0) {
             return zeroHash[TREE_HEIGHT];
         }
@@ -61,6 +68,9 @@ library PoseidonAggregationLib {
 
     /**
      * @notice Hashes a pair of leaves using PoseidonT3.
+     * @param left The left child node value.
+     * @param right The right child node value.
+     * @return The Poseidon hash of the two inputs.
      */
     function _hashPair(uint256 left, uint256 right) internal pure returns (uint256) {
         uint256[2] memory inputs;
