@@ -8,7 +8,7 @@ use actix_web::{web, App, HttpResponse, HttpServer, ResponseError};
 use anyhow::{Context, Result};
 use ark_bn254::Bn254;
 use ark_serialize::CanonicalDeserialize;
-use arkworks_phase2::{key::PartialKey, transcript::Transcript, utils::serialize_uncompressed};
+use arkworks_phase2::{transcript::Transcript, utils::serialize_uncompressed};
 use aws_config::meta::region::RegionProviderChain;
 use aws_sdk_s3::{
     presigning::PresigningConfig,
@@ -1887,26 +1887,6 @@ async fn active_lease_expires_at(
     .fetch_optional(&mut **tx)
     .await?;
     Ok(row.map(|row| row.get::<i64, _>("expires_at") as u64))
-}
-
-fn verify_key_transform(prev: &Transcript<Bn254>, next: &Transcript<Bn254>) -> Result<()> {
-    if next.contributions.len() != prev.contributions.len() + 1 {
-        anyhow::bail!("contribution chain length mismatch")
-    }
-    if next.contributions[..prev.contributions.len()] != prev.contributions {
-        anyhow::bail!("contribution chain mismatch")
-    }
-
-    let prev_partial = PartialKey::from(&prev.key);
-    let next_partial = PartialKey::from(&next.key);
-    let proof = next
-        .contributions
-        .last()
-        .copied()
-        .context("missing contribution proof")?;
-
-    Transcript::<Bn254>::verify_key_transform(&prev_partial, &next_partial, &proof.proof)
-        .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
 fn unix_seconds() -> u64 {
