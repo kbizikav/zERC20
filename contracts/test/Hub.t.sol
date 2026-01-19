@@ -3,11 +3,15 @@ pragma solidity 0.8.33;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Hub} from "../src/Hub.sol";
+import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {ISendLib, Packet} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ISendLib.sol";
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {IMessageLib, MessageLibType} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLib.sol";
+import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
 import {
     TestHelperOz5,
     EndpointV2,
@@ -160,14 +164,21 @@ contract HubTest is TestHelperOz5 {
         uint32[] memory targetEids = _targetEids();
         bytes memory options = _options();
 
+        NonZeroLzTokenFeeSendLibMock nonZeroLzTokenFeeLib = new NonZeroLzTokenFeeSendLibMock();
+        endpoint.registerLibrary(address(nonZeroLzTokenFeeLib));
+
+        endpoint.setDefaultSendLibrary(targetEids[0], address(nonZeroLzTokenFeeLib));
+        endpoint.setDefaultSendLibrary(targetEids[1], address(nonZeroLzTokenFeeLib));
+
         uint256 tokenFee = 1;
-        sendLib.setMessagingFee(FEE_PER_MESSAGE, tokenFee);
+        nonZeroLzTokenFeeLib.setMessagingFee(FEE_PER_MESSAGE, tokenFee);
 
         vm.expectRevert(abi.encodeWithSelector(Hub.LayerZeroTokenFeeUnsupported.selector, targetEids[0], tokenFee));
         hub.quoteBroadcast(targetEids, options);
 
         // Restore defaults for other tests
-        sendLib.setMessagingFee(FEE_PER_MESSAGE, 0);
+        endpoint.setDefaultSendLibrary(targetEids[0], address(sendLib));
+        endpoint.setDefaultSendLibrary(targetEids[1], address(sendLib));
     }
 
     function testAggSeqIncrementsWithEachBroadcast() public {
@@ -761,20 +772,68 @@ contract HubZeroRootMock is Hub {
 }
 
 contract RefundRejectorCaller {
-    Hub internal immutable hub;
+    Hub internal immutable HUB;
 
     constructor(Hub hub_) {
-        hub = hub_;
+        HUB = hub_;
     }
 
     function callBroadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
-        hub.broadcast{value: msg.value}(targetEids, lzOptions);
+        HUB.broadcast{value: msg.value}(targetEids, lzOptions);
     }
 
     function callBroadcastWithRefund(uint32[] calldata targetEids, bytes calldata lzOptions, address refundAddress)
         external
         payable
     {
-        hub.broadcast{value: msg.value}(targetEids, lzOptions, refundAddress);
+        HUB.broadcast{value: msg.value}(targetEids, lzOptions, refundAddress);
     }
+}
+
+contract NonZeroLzTokenFeeSendLibMock is ISendLib {
+    error NotImplemented();
+
+    uint256 public nativeFee;
+    uint256 public lzTokenFee;
+
+    function setMessagingFee(uint256 nativeFee_, uint256 lzTokenFee_) external {
+        nativeFee = nativeFee_;
+        lzTokenFee = lzTokenFee_;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IMessageLib).interfaceId || interfaceId == type(ISendLib).interfaceId;
+    }
+
+    function setConfig(address, SetConfigParam[] calldata) external pure {}
+
+    function getConfig(uint32, address, uint32) external pure returns (bytes memory) {
+        return "";
+    }
+
+    function isSupportedEid(uint32) external pure returns (bool) {
+        return true;
+    }
+
+    function version() external pure returns (uint64 major, uint8 minor, uint8 endpointVersion) {
+        return (0, 0, 2);
+    }
+
+    function messageLibType() external pure returns (MessageLibType) {
+        return MessageLibType.SendAndReceive;
+    }
+
+    function send(Packet calldata, bytes calldata, bool) external pure returns (MessagingFee memory, bytes memory) {
+        revert NotImplemented();
+    }
+
+    function quote(Packet calldata, bytes calldata, bool) external view returns (MessagingFee memory) {
+        return MessagingFee(nativeFee, lzTokenFee);
+    }
+
+    function setTreasury(address) external pure {}
+
+    function withdrawFee(address, uint256) external pure {}
+
+    function withdrawLzTokenFee(address, address, uint256) external pure {}
 }
