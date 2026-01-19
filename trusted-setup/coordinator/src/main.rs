@@ -107,7 +107,7 @@ impl Config {
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
             .map(Duration::from_secs)
-            .unwrap_or_else(|| Duration::from_secs(900));
+            .unwrap_or_else(|| Duration::from_secs(7200)); // 120 minutes (same as lease_ttl)
         let lease_ttl = std::env::var("TRUSTED_SETUP_LEASE_TTL_SECONDS")
             .ok()
             .and_then(|value| value.parse::<u64>().ok())
@@ -1287,59 +1287,56 @@ async fn submit(
 
     let now = unix_seconds();
 
-    let mut tx = state.db.begin().await?;
-
-    let lease_row = sqlx::query(
-        "SELECT ceremony_id, participant_id, status, input_key, output_key, contribution_key, step, expires_at
-         FROM leases WHERE id = ?",
-    )
-    .bind(&body.lease_id)
-    .fetch_optional(&mut *tx)
-    .await?
-    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
-
-    let lease_ceremony: String = lease_row.get("ceremony_id");
-    if lease_ceremony != ceremony_id {
-        return Err(ApiError::BadRequest("lease ceremony mismatch".to_string()));
-    }
-    let participant_id: String = lease_row.get("participant_id");
-    if participant_id != body.participant_id {
-        return Err(ApiError::BadRequest("participant mismatch".to_string()));
-    }
-    let status: String = lease_row.get("status");
-    if status != "active" {
-        return Err(ApiError::Conflict("lease is not active".to_string()));
-    }
-    let expires_at: i64 = lease_row.get("expires_at");
-    if expires_at as u64 <= now {
-        sqlx::query("UPDATE leases SET status = ? WHERE id = ?")
-            .bind("expired")
-            .bind(&body.lease_id)
-            .execute(&mut *tx)
-            .await?;
-        tx.commit().await?;
-        return Err(ApiError::Conflict("lease expired".to_string()));
-    }
-
-    let input_key: String = lease_row.get("input_key");
-    let output_key: String = lease_row.get("output_key");
-    let contrib_key: String = lease_row.get("contribution_key");
-    let step: i64 = lease_row.get("step");
-
-    // Get the circuit for this ceremony
-    let ceremony_row = sqlx::query("SELECT circuit FROM ceremonies WHERE id = ?")
-        .bind(&ceremony_id)
-        .fetch_optional(&mut *tx)
+    // Phase 1: Validate lease and get keys (quick DB operation, no long transaction)
+    let (input_key, output_key, contrib_key, step, circuit) = {
+        let lease_row = sqlx::query(
+            "SELECT l.ceremony_id, l.participant_id, l.status, l.input_key, l.output_key, l.contribution_key, l.step, l.expires_at, c.circuit
+             FROM leases l
+             JOIN ceremonies c ON l.ceremony_id = c.id
+             WHERE l.id = ?",
+        )
+        .bind(&body.lease_id)
+        .fetch_optional(&state.db)
         .await?
-        .ok_or_else(|| ApiError::NotFound("ceremony not found".to_string()))?;
+        .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
 
-    let circuit_str: String = ceremony_row.get("circuit");
-    let circuit = CeremonyCircuit::parse(&circuit_str).map_err(|e| ApiError::Internal(e))?;
+        let lease_ceremony: String = lease_row.get("ceremony_id");
+        if lease_ceremony != ceremony_id {
+            return Err(ApiError::BadRequest("lease ceremony mismatch".to_string()));
+        }
+        let participant_id: String = lease_row.get("participant_id");
+        if participant_id != body.participant_id {
+            return Err(ApiError::BadRequest("participant mismatch".to_string()));
+        }
+        let status: String = lease_row.get("status");
+        if status != "active" {
+            return Err(ApiError::Conflict("lease is not active".to_string()));
+        }
+        let expires_at: i64 = lease_row.get("expires_at");
+        if expires_at as u64 <= now {
+            sqlx::query("UPDATE leases SET status = ? WHERE id = ?")
+                .bind("expired")
+                .bind(&body.lease_id)
+                .execute(&state.db)
+                .await?;
+            return Err(ApiError::Conflict("lease expired".to_string()));
+        }
 
+        let input_key: String = lease_row.get("input_key");
+        let output_key: String = lease_row.get("output_key");
+        let contrib_key: String = lease_row.get("contribution_key");
+        let step: i64 = lease_row.get("step");
+        let circuit_str: String = lease_row.get("circuit");
+        let circuit = CeremonyCircuit::parse(&circuit_str).map_err(ApiError::Internal)?;
+
+        (input_key, output_key, contrib_key, step, circuit)
+    };
+
+    // Phase 2: Heavy operations (no DB transaction held)
     // Get or load initial transcript from cache or file
     let initial_transcript = get_or_load_initial_transcript(&state, circuit).await?;
 
-    // Download and verify transcript BEFORE updating database
+    // Download and verify transcript
     log::info!("Downloading output transcript from S3: {}...", output_key);
     let output_bytes = state.s3.get_bytes(&output_key).await?;
     log::info!(
@@ -1348,8 +1345,12 @@ async fn submit(
     );
 
     log::info!("Deserializing output transcript...");
-    let output_transcript = Transcript::<Bn254>::deserialize_uncompressed(&output_bytes[..])
-        .map_err(|e| ApiError::BadRequest(format!("invalid transcript: {}", e)))?;
+    let output_transcript = tokio::task::spawn_blocking(move || {
+        Transcript::<Bn254>::deserialize_uncompressed(&output_bytes[..])
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("spawn_blocking failed: {}", e)))?
+    .map_err(|e| ApiError::BadRequest(format!("invalid transcript: {}", e)))?;
     log::info!("Output transcript deserialized");
 
     log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
@@ -1362,8 +1363,12 @@ async fn submit(
     log::info!("Input transcript downloaded ({} bytes)", input_bytes.len());
 
     log::info!("Deserializing input transcript...");
-    let input_transcript = Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..])
-        .map_err(|e| ApiError::BadRequest(format!("invalid input transcript: {}", e)))?;
+    let input_transcript = tokio::task::spawn_blocking(move || {
+        Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..])
+    })
+    .await
+    .map_err(|e| ApiError::Internal(anyhow::anyhow!("spawn_blocking failed: {}", e)))?
+    .map_err(|e| ApiError::BadRequest(format!("invalid input transcript: {}", e)))?;
     log::info!("Input transcript deserialized");
 
     log::info!("Verifying key transform...");
@@ -1387,7 +1392,20 @@ async fn submit(
         .put_bytes(&latest_key(&ceremony_id), latest_bytes, "application/json")
         .await?;
 
-    // Now update database (all verification passed, S3 updated)
+    // Phase 3: Update database (quick transaction after all verification passed)
+    let mut tx = state.db.begin().await?;
+
+    // Re-check lease status (might have been expired/cancelled during verification)
+    let lease_check = sqlx::query("SELECT status FROM leases WHERE id = ?")
+        .bind(&body.lease_id)
+        .fetch_optional(&mut *tx)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+    let current_status: String = lease_check.get("status");
+    if current_status != "active" {
+        return Err(ApiError::Conflict(format!("lease is no longer active (status: {})", current_status)));
+    }
+
     sqlx::query(
         "UPDATE ceremonies SET current_head_key = ?, step = ?, updated_at = ? WHERE id = ?",
     )

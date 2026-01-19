@@ -63,7 +63,7 @@ use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_conf
 
 const UPLOAD_CHUNK_SIZE: usize = 64 * 1024;
 const DEFAULT_CONNECT_TIMEOUT_SECS: u64 = 30;
-const DEFAULT_READ_TIMEOUT_SECS: u64 = 300;
+const DEFAULT_READ_TIMEOUT_SECS: u64 = 1800; // 30 minutes (submit verification takes time)
 const MAX_RETRY_ATTEMPTS: u32 = 3;
 const PEDERSEN_SEED: u64 = 42;
 
