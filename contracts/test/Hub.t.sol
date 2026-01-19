@@ -7,6 +7,7 @@ import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILa
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {
     TestHelperOz5,
     EndpointV2,
@@ -126,6 +127,47 @@ contract HubTest is TestHelperOz5 {
         uint256 balanceAfter = address(this).balance;
         assertEq(balanceBefore - balanceAfter, total, "net cost");
         assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testBroadcastSucceedsWhenExactFeePaid() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        vm.deal(address(this), total);
+
+        uint256 balanceBefore = address(this).balance;
+        hub.broadcast{value: total}(targetEids, options);
+        uint256 balanceAfter = address(this).balance;
+
+        assertEq(balanceBefore - balanceAfter, total, "net cost");
+        assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testBroadcastSucceedsForNonPayableCallerWhenExactFeePaid() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        RefundRejectorCaller caller = new RefundRejectorCaller(hub);
+
+        // Exact fee means no refund attempt, so even a non-payable caller should succeed.
+        caller.callBroadcast{value: total}(targetEids, options);
+        assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testQuoteBroadcastRevertsWhenLzTokenFeeUnsupported() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 tokenFee = 1;
+        sendLib.setMessagingFee(FEE_PER_MESSAGE, tokenFee);
+
+        vm.expectRevert(abi.encodeWithSelector(Hub.LayerZeroTokenFeeUnsupported.selector, targetEids[0], tokenFee));
+        hub.quoteBroadcast(targetEids, options);
+
+        // Restore defaults for other tests
+        sendLib.setMessagingFee(FEE_PER_MESSAGE, 0);
     }
 
     function testAggSeqIncrementsWithEachBroadcast() public {
@@ -492,6 +534,181 @@ contract HubTest is TestHelperOz5 {
         assertTrue(foundEvent, "AggregationRootUpdated event emitted");
     }
 
+    // ==================== Pause Tests ====================
+
+    function testActivateEmergencyPausesContract() public {
+        assertFalse(hub.paused(), "should not be paused initially");
+
+        vm.expectEmit(true, true, true, true, address(hub));
+        emit Hub.ActivateEmergency();
+        hub.activateEmergency();
+
+        assertTrue(hub.paused(), "should be paused after activateEmergency");
+    }
+
+    function testDeactivateEmergencyUnpausesContract() public {
+        hub.activateEmergency();
+        assertTrue(hub.paused(), "should be paused");
+
+        vm.expectEmit(true, true, true, true, address(hub));
+        emit Hub.DeactivateEmergency();
+        hub.deactivateEmergency();
+
+        assertFalse(hub.paused(), "should not be paused after deactivateEmergency");
+    }
+
+    function testActivateEmergencyOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        hub.activateEmergency();
+    }
+
+    function testDeactivateEmergencyOnlyOwner() public {
+        hub.activateEmergency();
+
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        hub.deactivateEmergency();
+    }
+
+    function testBroadcastRevertsWhenPaused() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+        uint256 fee = hub.quoteBroadcast(targetEids, options);
+        vm.deal(address(this), fee);
+
+        hub.activateEmergency();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        hub.broadcast{value: fee}(targetEids, options);
+    }
+
+    function testRegisterTokenWorksWhenPaused() public {
+        Hub localHub = _deployInitializedHub();
+        localHub.activateEmergency();
+        assertTrue(localHub.paused(), "should be paused");
+
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 123, eid: 456, verifier: address(0x1), token: address(0x2)});
+
+        // Should not revert
+        localHub.registerToken(info);
+
+        (uint64 chainId,,,) = localHub.tokenInfos(0);
+        assertEq(chainId, 123, "token registered while paused");
+    }
+
+    function testUpdateTokenWorksWhenPaused() public {
+        hub.activateEmergency();
+        assertTrue(hub.paused(), "should be paused");
+
+        Hub.TokenInfo memory updated =
+            Hub.TokenInfo({chainId: 999, eid: REMOTE_EID_A, verifier: address(0xABC), token: address(0xDEF)});
+
+        // Should not revert
+        hub.updateToken(updated);
+
+        (uint64 chainId,, address verifier,) = hub.tokenInfos(0);
+        assertEq(chainId, 999, "token updated while paused");
+        assertEq(verifier, address(0xABC), "verifier updated while paused");
+    }
+
+    function testLzReceiveWorksWhenPaused() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 1, eid: 10, verifier: address(0x1), token: address(0x2)});
+        localHub.registerToken(info);
+        localHub.setPeer(info.eid, _toBytes32(address(this)));
+
+        localHub.activateEmergency();
+        assertTrue(localHub.paused(), "should be paused");
+
+        Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), abi.encode(uint256(777), uint64(3)), address(0), bytes(""));
+
+        assertEq(localHub.transferRoots(0), 777, "transfer root updated while paused");
+        assertEq(localHub.transferTreeIndices(0), 3, "transfer tree index updated while paused");
+    }
+
+    function testQuoteBroadcastWorksWhenPaused() public {
+        hub.activateEmergency();
+        assertTrue(hub.paused(), "should be paused");
+
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        // Should not revert - quoteBroadcast is a view function
+        uint256 fee = hub.quoteBroadcast(targetEids, options);
+        assertGt(fee, 0, "fee should be quoted while paused");
+    }
+
+    function testBroadcastWorksAfterUnpause() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+        uint256 fee = hub.quoteBroadcast(targetEids, options);
+        vm.deal(address(this), fee);
+
+        hub.activateEmergency();
+        hub.deactivateEmergency();
+
+        // Should not revert after unpause
+        hub.broadcast{value: fee}(targetEids, options);
+        assertEq(hub.aggSeq(), 1, "broadcast succeeded after unpause");
+    }
+
+    // ==================== RefundAddress Tests ====================
+
+    function testBroadcastRefundsExcessToRefundAddress() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        uint256 refund = 0.02 ether;
+        uint256 deposit = total + refund;
+
+        address refundAddress = address(0xB0B);
+        uint256 refundBalanceBefore = refundAddress.balance;
+
+        vm.deal(address(this), deposit);
+        hub.broadcast{value: deposit}(targetEids, options, refundAddress);
+
+        assertEq(refundAddress.balance - refundBalanceBefore, refund, "refund paid to refundAddress");
+        assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testBroadcastRevertsOnZeroRefundAddress() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+
+        vm.deal(address(this), total);
+        vm.expectRevert(Hub.ZeroRefundAddress.selector);
+        hub.broadcast{value: total}(targetEids, options, address(0));
+    }
+
+    function testBroadcastWithRefundAddressAvoidsRevertWhenCallerCannotReceiveEth() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        uint256 refund = 0.02 ether;
+        uint256 deposit = total + refund;
+
+        RefundRejectorCaller caller = new RefundRejectorCaller(hub);
+
+        // The original broadcast() refunds to msg.sender (the caller), so this should revert.
+        vm.expectRevert(abi.encodeWithSelector(Hub.FeeRefundFailed.selector, refund));
+        caller.callBroadcast{value: deposit}(targetEids, options);
+
+        // With refundAddress, the call succeeds and refunds to an EOA.
+        address refundAddress = address(0xCAFE);
+        uint256 refundBalanceBefore = refundAddress.balance;
+        caller.callBroadcastWithRefund{value: deposit}(targetEids, options, refundAddress);
+        assertEq(refundAddress.balance - refundBalanceBefore, refund, "refund paid to refundAddress");
+    }
+
     function _targetEids() internal pure returns (uint32[] memory targetEids) {
         targetEids = new uint32[](2);
         targetEids[0] = REMOTE_EID_A;
@@ -540,5 +757,24 @@ contract HubZeroRootMock is Hub {
         returns (uint256)
     {
         return 0;
+    }
+}
+
+contract RefundRejectorCaller {
+    Hub internal immutable hub;
+
+    constructor(Hub hub_) {
+        hub = hub_;
+    }
+
+    function callBroadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
+        hub.broadcast{value: msg.value}(targetEids, lzOptions);
+    }
+
+    function callBroadcastWithRefund(uint32[] calldata targetEids, bytes calldata lzOptions, address refundAddress)
+        external
+        payable
+    {
+        hub.broadcast{value: msg.value}(targetEids, lzOptions, refundAddress);
     }
 }
