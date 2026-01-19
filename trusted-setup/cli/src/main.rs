@@ -319,7 +319,7 @@ struct MultipartPresignResponse {
     url: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 struct MultipartPartInfo {
     part_number: i32,
     etag: String,
@@ -357,6 +357,8 @@ struct LeaseStatus {
     status: String,
     step: u64,
     remaining_seconds: i64,
+    #[serde(default)]
+    error_message: Option<String>,
 }
 
 #[derive(Debug)]
@@ -873,7 +875,25 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     })
     .await?;
 
-    handle_response::<serde_json::Value>(submit_resp, "submit").await?;
+    let status_code = submit_resp.status();
+    if status_code == reqwest::StatusCode::ACCEPTED {
+        // 202 Accepted - processing in background, poll for completion
+        println!("Submission accepted, waiting for verification to complete...");
+        poll_submission_status(
+            &client,
+            &base_url,
+            &args.ceremony_id,
+            &participate.lease_id,
+            shutdown,
+        )
+        .await?;
+    } else if status_code.is_success() {
+        // Direct success (backwards compatibility)
+        let _: serde_json::Value = submit_resp.json().await.context("failed to parse submit response")?;
+    } else {
+        // Error
+        handle_response::<serde_json::Value>(submit_resp, "submit").await?;
+    }
 
     // Clean up state file on success
     if let Some(ref state_file) = args.state_file {
@@ -882,6 +902,62 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
 
     println!("Contribution submitted successfully for step {}", participate.step);
     Ok(())
+}
+
+/// Poll lease status until submission is completed or failed.
+async fn poll_submission_status(
+    client: &reqwest::Client,
+    base_url: &Url,
+    ceremony_id: &str,
+    lease_id: &str,
+    shutdown: &AtomicBool,
+) -> Result<()> {
+    let lease_url = base_url
+        .join(&format!("/api/ceremonies/{}/leases/{}", ceremony_id, lease_id))
+        .context("failed to build lease url")?;
+
+    let poll_interval = Duration::from_secs(10);
+    let progress = build_progress("verifying submission", None);
+
+    loop {
+        check_shutdown(shutdown)?;
+
+        let resp = client
+            .get(lease_url.clone())
+            .send()
+            .await
+            .context("failed to check lease status")?;
+
+        // Handle rate limiting
+        if resp.status() == StatusCode::TOO_MANY_REQUESTS {
+            progress.set_message("rate limited, waiting...");
+            tokio::time::sleep(Duration::from_secs(30)).await;
+            continue;
+        }
+
+        let status: LeaseStatus = handle_response(resp, "lease status").await?;
+
+        match status.status.as_str() {
+            "completed" => {
+                progress.finish_and_clear();
+                println!("Verification completed successfully");
+                return Ok(());
+            }
+            "failed" => {
+                progress.finish_and_clear();
+                let error_msg = status.error_message.unwrap_or_else(|| "unknown error".to_string());
+                bail!("Submission verification failed: {}", error_msg);
+            }
+            "processing" => {
+                progress.set_message(format!("verifying submission (step {})", status.step));
+                tokio::time::sleep(poll_interval).await;
+            }
+            other => {
+                progress.finish_and_clear();
+                bail!("Unexpected lease status: {}", other);
+            }
+        }
+    }
 }
 
 // ============================================================================
@@ -1558,8 +1634,8 @@ fn is_retryable_status(status: StatusCode) -> bool {
 
 /// Threshold for using multipart upload (100MB)
 const MULTIPART_THRESHOLD: usize = 100 * 1024 * 1024;
-/// Part size for multipart upload (100MB)
-const MULTIPART_PART_SIZE: usize = 100 * 1024 * 1024;
+/// Part size for multipart upload (1GB)
+const MULTIPART_PART_SIZE: usize = 1024 * 1024 * 1024;
 
 /// Upload bytes using multipart upload via Coordinator API.
 async fn upload_multipart(
@@ -1580,7 +1656,7 @@ async fn upload_multipart(
         label, total_size, num_parts
     );
 
-    // Start multipart upload
+    // Start multipart upload (with retry for rate limiting)
     let start_url = base_url
         .join(&format!(
             "/api/ceremonies/{}/multipart/start",
@@ -1588,26 +1664,43 @@ async fn upload_multipart(
         ))
         .context("failed to build multipart start url")?;
 
-    let start_resp = client
-        .post(start_url)
-        .json(&MultipartStartRequest {
-            lease_id: lease_id.to_string(),
-            key_type: key_type.to_string(),
-        })
-        .send()
-        .await
-        .context("failed to start multipart upload")?;
+    let start_data: MultipartStartResponse = {
+        let mut start_attempts: u32 = 0;
+        loop {
+            start_attempts += 1;
+            let start_resp = client
+                .post(start_url.clone())
+                .json(&MultipartStartRequest {
+                    lease_id: lease_id.to_string(),
+                    key_type: key_type.to_string(),
+                })
+                .send()
+                .await
+                .context("failed to start multipart upload")?;
 
-    if !start_resp.status().is_success() {
-        let status = start_resp.status();
-        let body = start_resp.text().await.unwrap_or_default();
-        bail!("multipart start failed with status {}: {}", status, body);
-    }
-
-    let start_data: MultipartStartResponse = start_resp
-        .json()
-        .await
-        .context("failed to parse multipart start response")?;
+            let status = start_resp.status();
+            if status.is_success() {
+                break start_resp
+                    .json()
+                    .await
+                    .context("failed to parse multipart start response")?;
+            } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                let wait_secs = std::cmp::min(30, 5 * start_attempts as u64);
+                eprintln!(
+                    "Rate limited on multipart start, waiting {}s before retry...",
+                    wait_secs
+                );
+                tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                continue;
+            } else if start_attempts < MAX_RETRY_ATTEMPTS && is_retryable_status(status) {
+                tokio::time::sleep(Duration::from_secs(start_attempts as u64)).await;
+                continue;
+            } else {
+                let body = start_resp.text().await.unwrap_or_default();
+                bail!("multipart start failed with status {}: {}", status, body);
+            }
+        }
+    };
 
     let upload_id = start_data.upload_id;
     let key = start_data.key;
@@ -1624,7 +1717,7 @@ async fn upload_multipart(
         let part_bytes = body[start..end].to_vec();
         let part_size = part_bytes.len();
 
-        // Get presigned URL for this part
+        // Get presigned URL for this part (with retry for rate limiting)
         let presign_url = base_url
             .join(&format!(
                 "/api/ceremonies/{}/multipart/presign",
@@ -1632,33 +1725,51 @@ async fn upload_multipart(
             ))
             .context("failed to build multipart presign url")?;
 
-        let presign_resp = client
-            .post(presign_url)
-            .json(&MultipartPresignRequest {
-                lease_id: lease_id.to_string(),
-                upload_id: upload_id.clone(),
-                key: key.clone(),
-                part_number: part_number as i32,
-            })
-            .send()
-            .await
-            .context("failed to get presigned URL for part")?;
+        let presign_data: MultipartPresignResponse = {
+            let mut presign_attempts: u32 = 0;
+            loop {
+                presign_attempts += 1;
+                let presign_resp = client
+                    .post(presign_url.clone())
+                    .json(&MultipartPresignRequest {
+                        lease_id: lease_id.to_string(),
+                        upload_id: upload_id.clone(),
+                        key: key.clone(),
+                        part_number: part_number as i32,
+                    })
+                    .send()
+                    .await
+                    .context("failed to get presigned URL for part")?;
 
-        if !presign_resp.status().is_success() {
-            let status = presign_resp.status();
-            let body = presign_resp.text().await.unwrap_or_default();
-            bail!(
-                "multipart presign failed for part {} with status {}: {}",
-                part_number,
-                status,
-                body
-            );
-        }
-
-        let presign_data: MultipartPresignResponse = presign_resp
-            .json()
-            .await
-            .context("failed to parse multipart presign response")?;
+                let status = presign_resp.status();
+                if status.is_success() {
+                    break presign_resp
+                        .json()
+                        .await
+                        .context("failed to parse multipart presign response")?;
+                } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                    // Rate limited - wait and retry
+                    let wait_secs = std::cmp::min(30, 5 * presign_attempts as u64);
+                    eprintln!(
+                        "Rate limited on presign for part {}, waiting {}s before retry...",
+                        part_number, wait_secs
+                    );
+                    tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+                    continue;
+                } else if presign_attempts < MAX_RETRY_ATTEMPTS && is_retryable_status(status) {
+                    tokio::time::sleep(Duration::from_secs(presign_attempts as u64)).await;
+                    continue;
+                } else {
+                    let body = presign_resp.text().await.unwrap_or_default();
+                    bail!(
+                        "multipart presign failed for part {} with status {}: {}",
+                        part_number,
+                        status,
+                        body
+                    );
+                }
+            }
+        };
 
         // Upload part to presigned URL
         let mut attempts = 0;
@@ -1714,7 +1825,7 @@ async fn upload_multipart(
 
     progress.finish_and_clear();
 
-    // Complete multipart upload
+    // Complete multipart upload (with retry for rate limiting)
     let complete_url = base_url
         .join(&format!(
             "/api/ceremonies/{}/multipart/complete",
@@ -1722,26 +1833,43 @@ async fn upload_multipart(
         ))
         .context("failed to build multipart complete url")?;
 
-    let complete_resp = client
-        .post(complete_url)
-        .json(&MultipartCompleteRequest {
-            lease_id: lease_id.to_string(),
-            upload_id,
-            key,
-            parts: completed_parts,
-        })
-        .send()
-        .await
-        .context("failed to complete multipart upload")?;
+    let mut complete_attempts: u32 = 0;
+    loop {
+        complete_attempts += 1;
+        let complete_resp = client
+            .post(complete_url.clone())
+            .json(&MultipartCompleteRequest {
+                lease_id: lease_id.to_string(),
+                upload_id: upload_id.clone(),
+                key: key.clone(),
+                parts: completed_parts.clone(),
+            })
+            .send()
+            .await
+            .context("failed to complete multipart upload")?;
 
-    if !complete_resp.status().is_success() {
         let status = complete_resp.status();
-        let body = complete_resp.text().await.unwrap_or_default();
-        bail!(
-            "multipart complete failed with status {}: {}",
-            status,
-            body
-        );
+        if status.is_success() {
+            break;
+        } else if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            let wait_secs = std::cmp::min(30, 5 * complete_attempts as u64);
+            eprintln!(
+                "Rate limited on multipart complete, waiting {}s before retry...",
+                wait_secs
+            );
+            tokio::time::sleep(Duration::from_secs(wait_secs)).await;
+            continue;
+        } else if complete_attempts < MAX_RETRY_ATTEMPTS && is_retryable_status(status) {
+            tokio::time::sleep(Duration::from_secs(complete_attempts as u64)).await;
+            continue;
+        } else {
+            let body = complete_resp.text().await.unwrap_or_default();
+            bail!(
+                "multipart complete failed with status {}: {}",
+                status,
+                body
+            );
+        }
     }
 
     Ok(())

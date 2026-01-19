@@ -4,7 +4,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{web, App, HttpResponse, HttpServer, ResponseError};
 use anyhow::{Context, Result};
 use ark_bn254::Bn254;
@@ -83,8 +82,6 @@ struct Config {
     presign_ttl: Duration,
     lease_ttl: Duration,
     cleanup_interval: Duration,
-    rate_limit_per_second: u64,
-    rate_limit_burst: u32,
 }
 
 impl Config {
@@ -118,14 +115,6 @@ impl Config {
             .and_then(|value| value.parse::<u64>().ok())
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(60));
-        let rate_limit_per_second = std::env::var("TRUSTED_SETUP_RATE_LIMIT_PER_SECOND")
-            .ok()
-            .and_then(|value| value.parse::<u64>().ok())
-            .unwrap_or(100);
-        let rate_limit_burst = std::env::var("TRUSTED_SETUP_RATE_LIMIT_BURST")
-            .ok()
-            .and_then(|value| value.parse::<u32>().ok())
-            .unwrap_or(200);
 
         Ok(Self {
             listen_addr,
@@ -135,8 +124,6 @@ impl Config {
             presign_ttl,
             lease_ttl,
             cleanup_interval,
-            rate_limit_per_second,
-            rate_limit_burst,
         })
     }
 }
@@ -338,7 +325,11 @@ impl Storage {
                 }
                 Err(e) => {
                     // Abort multipart upload on failure
-                    log::error!("Part {} upload failed, aborting multipart upload: {}", part_number, e);
+                    log::error!(
+                        "Part {} upload failed, aborting multipart upload: {}",
+                        part_number,
+                        e
+                    );
                     let _ = self
                         .client
                         .abort_multipart_upload()
@@ -472,14 +463,6 @@ struct ErrorResponse {
 }
 
 #[derive(Serialize)]
-struct InitResponse {
-    ceremony_id: String,
-    step: u64,
-    transcript_key: String,
-}
-
-
-#[derive(Serialize)]
 struct ParticipateResponse {
     lease_id: String,
     participant_id: String,
@@ -546,12 +529,6 @@ struct SubmitRequest {
 }
 
 #[derive(Serialize)]
-struct SubmitResponse {
-    step: u64,
-    transcript_key: String,
-}
-
-#[derive(Serialize)]
 struct HealthResponse {
     status: &'static str,
     version: &'static str,
@@ -562,6 +539,7 @@ struct HealthResponse {
 struct CeremonyStatus {
     id: String,
     circuit: String,
+    status: String,
     current_step: u64,
     current_head_key: String,
     has_active_lease: bool,
@@ -569,6 +547,8 @@ struct CeremonyStatus {
     total_contributions: u64,
     created_at: u64,
     updated_at: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_message: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -581,6 +561,8 @@ struct LeaseStatus {
     started_at: u64,
     expires_at: u64,
     remaining_seconds: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error_message: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -654,18 +636,9 @@ async fn main() -> Result<()> {
         run_background_cleanup(cleanup_state, cleanup_interval).await;
     });
 
-    // Configure rate limiter
-    #[allow(deprecated)]
-    let governor_config = GovernorConfigBuilder::default()
-        .per_second(config.rate_limit_per_second)
-        .burst_size(config.rate_limit_burst)
-        .finish()
-        .expect("failed to build rate limiter config");
-
     log::info!("Server listening on {}", config.listen_addr);
     HttpServer::new(move || {
         App::new()
-            .wrap(Governor::new(&governor_config))
             .app_data(state.clone())
             // Health and status endpoints
             .route("/health", web::get().to(health_check))
@@ -801,11 +774,21 @@ async fn init_db(pool: &SqlitePool) -> Result<()> {
             step INTEGER NOT NULL,
             lease_ttl_seconds INTEGER NOT NULL,
             created_at INTEGER NOT NULL,
-            updated_at INTEGER NOT NULL
+            updated_at INTEGER NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            error_message TEXT
         )",
     )
     .execute(pool)
     .await?;
+
+    // Add status and error_message columns if they don't exist (for existing databases)
+    let _ = sqlx::query("ALTER TABLE ceremonies ADD COLUMN status TEXT NOT NULL DEFAULT 'active'")
+        .execute(pool)
+        .await;
+    let _ = sqlx::query("ALTER TABLE ceremonies ADD COLUMN error_message TEXT")
+        .execute(pool)
+        .await;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS leases (
@@ -818,11 +801,17 @@ async fn init_db(pool: &SqlitePool) -> Result<()> {
             contribution_key TEXT NOT NULL,
             step INTEGER NOT NULL,
             started_at INTEGER NOT NULL,
-            expires_at INTEGER NOT NULL
+            expires_at INTEGER NOT NULL,
+            error_message TEXT
         )",
     )
     .execute(pool)
     .await?;
+
+    // Add error_message column if it doesn't exist (for existing databases)
+    let _ = sqlx::query("ALTER TABLE leases ADD COLUMN error_message TEXT")
+        .execute(pool)
+        .await;
 
     sqlx::query(
         "CREATE TABLE IF NOT EXISTS contributions (
@@ -884,7 +873,7 @@ async fn list_ceremonies(state: web::Data<AppState>) -> Result<HttpResponse, Api
     let now = unix_seconds();
 
     let rows = sqlx::query(
-        "SELECT c.id, c.circuit, c.step, c.current_head_key, c.created_at, c.updated_at,
+        "SELECT c.id, c.circuit, c.status, c.error_message, c.step, c.current_head_key, c.created_at, c.updated_at,
                 (SELECT COUNT(*) FROM contributions WHERE ceremony_id = c.id AND status = 'completed') as total_contributions,
                 (SELECT expires_at FROM leases WHERE ceremony_id = c.id AND status = 'active' ORDER BY started_at DESC LIMIT 1) as active_lease_expires
          FROM ceremonies c
@@ -904,6 +893,7 @@ async fn list_ceremonies(state: web::Data<AppState>) -> Result<HttpResponse, Api
             CeremonyStatus {
                 id: row.get("id"),
                 circuit: row.get("circuit"),
+                status: row.get("status"),
                 current_step: row.get::<i64, _>("step") as u64,
                 current_head_key: row.get("current_head_key"),
                 has_active_lease,
@@ -911,6 +901,7 @@ async fn list_ceremonies(state: web::Data<AppState>) -> Result<HttpResponse, Api
                 total_contributions: row.get::<i64, _>("total_contributions") as u64,
                 created_at: row.get::<i64, _>("created_at") as u64,
                 updated_at: row.get::<i64, _>("updated_at") as u64,
+                error_message: row.get("error_message"),
             }
         })
         .collect();
@@ -926,7 +917,7 @@ async fn get_ceremony_status(
     let now = unix_seconds();
 
     let row = sqlx::query(
-        "SELECT c.id, c.circuit, c.step, c.current_head_key, c.created_at, c.updated_at,
+        "SELECT c.id, c.circuit, c.status, c.error_message, c.step, c.current_head_key, c.created_at, c.updated_at,
                 (SELECT COUNT(*) FROM contributions WHERE ceremony_id = c.id AND status = 'completed') as total_contributions,
                 (SELECT expires_at FROM leases WHERE ceremony_id = c.id AND status = 'active' ORDER BY started_at DESC LIMIT 1) as active_lease_expires
          FROM ceremonies c
@@ -945,6 +936,7 @@ async fn get_ceremony_status(
     let status = CeremonyStatus {
         id: row.get("id"),
         circuit: row.get("circuit"),
+        status: row.get("status"),
         current_step: row.get::<i64, _>("step") as u64,
         current_head_key: row.get("current_head_key"),
         has_active_lease,
@@ -952,6 +944,7 @@ async fn get_ceremony_status(
         total_contributions: row.get::<i64, _>("total_contributions") as u64,
         created_at: row.get::<i64, _>("created_at") as u64,
         updated_at: row.get::<i64, _>("updated_at") as u64,
+        error_message: row.get("error_message"),
     };
 
     Ok(HttpResponse::Ok().json(status))
@@ -1016,7 +1009,7 @@ async fn get_lease_status(
     let now = unix_seconds();
 
     let row = sqlx::query(
-        "SELECT id, ceremony_id, participant_id, status, step, started_at, expires_at
+        "SELECT id, ceremony_id, participant_id, status, step, started_at, expires_at, error_message
          FROM leases WHERE id = ? AND ceremony_id = ?",
     )
     .bind(&lease_id)
@@ -1037,6 +1030,7 @@ async fn get_lease_status(
         started_at: row.get::<i64, _>("started_at") as u64,
         expires_at: expires_at as u64,
         remaining_seconds: remaining,
+        error_message: row.get("error_message"),
     };
 
     Ok(HttpResponse::Ok().json(status))
@@ -1102,8 +1096,74 @@ async fn init_ceremony(
     let circuit =
         CeremonyCircuit::parse(&circuit_str).map_err(|e| ApiError::BadRequest(e.to_string()))?;
 
+    let now = unix_seconds();
+    let step = 0u64;
+    let tkey = transcript_key(&ceremony_id, step);
+
+    // Create ceremony with "initializing" status
+    insert_ceremony(
+        &state.db,
+        &ceremony_id,
+        circuit,
+        &tkey,
+        "initializing",
+        now,
+        &state.config,
+    )
+    .await?;
+
+    // Spawn background task for heavy initialization
+    let state_clone = state.clone();
+    let ceremony_id_clone = ceremony_id.clone();
+    let tkey_clone = tkey.clone();
+    tokio::spawn(async move {
+        let result =
+            process_init_ceremony(&state_clone, &ceremony_id_clone, circuit, &tkey_clone).await;
+
+        match result {
+            Ok(_) => {
+                log::info!(
+                    "Background ceremony initialization completed successfully for {}",
+                    ceremony_id_clone
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "Background ceremony initialization failed for {}: {}",
+                    ceremony_id_clone,
+                    e
+                );
+                // Update ceremony with error
+                let _ = sqlx::query(
+                    "UPDATE ceremonies SET status = 'failed', error_message = ? WHERE id = ?",
+                )
+                .bind(e.to_string())
+                .bind(&ceremony_id_clone)
+                .execute(&state_clone.db)
+                .await;
+            }
+        }
+    });
+
+    // Return immediately with 202 Accepted
+    Ok(HttpResponse::Accepted().json(serde_json::json!({
+        "ceremony_id": ceremony_id,
+        "status": "initializing",
+        "message": "ceremony initialization started, poll status endpoint for completion"
+    })))
+}
+
+/// Process ceremony initialization in background (heavy work)
+async fn process_init_ceremony(
+    state: &web::Data<AppState>,
+    ceremony_id: &str,
+    circuit: CeremonyCircuit,
+    tkey: &str,
+) -> Result<(), anyhow::Error> {
     // Load initial transcript from cache or file
-    let initial_transcript = get_or_load_initial_transcript(&state, circuit).await?;
+    let initial_transcript = get_or_load_initial_transcript(state, circuit)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to load initial transcript: {}", e))?;
 
     log::info!(
         "Using initial transcript for circuit {:?}...",
@@ -1112,41 +1172,40 @@ async fn init_ceremony(
 
     log::info!("Serializing transcript...");
     let transcript_bytes = serialize_uncompressed(initial_transcript.as_ref())
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))?;
+        .map_err(|e| anyhow::anyhow!("failed to serialize transcript: {}", e))?;
     log::info!("Transcript serialized ({} bytes)", transcript_bytes.len());
 
-    let step = 0u64;
-    let tkey = transcript_key(&ceremony_id, step);
-    let lkey = latest_key(&ceremony_id);
+    let lkey = latest_key(ceremony_id);
 
-    // Upload to S3 BEFORE updating database for consistency
+    // Upload to S3
     log::info!("Uploading transcript to S3: {}...", tkey);
     state
         .s3
-        .put_bytes(&tkey, transcript_bytes, "application/octet-stream")
-        .await
-        .map_err(|e| ApiError::Internal(e))?;
+        .put_bytes(tkey, transcript_bytes, "application/octet-stream")
+        .await?;
     log::info!("Transcript uploaded successfully");
 
     let now = unix_seconds();
     let latest = LatestMetadata {
-        step,
-        transcript_key: tkey.clone(),
+        step: 0,
+        transcript_key: tkey.to_string(),
         contribution_key: None,
         updated_at: now,
     };
 
-    let latest_bytes = serde_json::to_vec(&latest)
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))?;
+    let latest_bytes = serde_json::to_vec(&latest)?;
 
     state
         .s3
         .put_bytes(&lkey, latest_bytes, "application/json")
-        .await
-        .map_err(|e| ApiError::Internal(e))?;
+        .await?;
 
-    // Now update database
-    insert_ceremony(&state.db, &ceremony_id, circuit, &tkey, now, &state.config).await?;
+    // Update ceremony status to active
+    sqlx::query("UPDATE ceremonies SET status = 'active', updated_at = ? WHERE id = ?")
+        .bind(now as i64)
+        .bind(ceremony_id)
+        .execute(&state.db)
+        .await?;
 
     // Update stats
     {
@@ -1154,12 +1213,7 @@ async fn init_ceremony(
         stats.active_ceremonies += 1;
     }
 
-    log::info!("Ceremony {} initialized successfully", ceremony_id);
-    Ok(HttpResponse::Ok().json(InitResponse {
-        ceremony_id,
-        step,
-        transcript_key: tkey,
-    }))
+    Ok(())
 }
 
 async fn participate(
@@ -1179,11 +1233,19 @@ async fn participate(
     let mut tx = state.db.begin().await?;
 
     let ceremony_row =
-        sqlx::query("SELECT circuit, current_head_key, step FROM ceremonies WHERE id = ?")
+        sqlx::query("SELECT circuit, current_head_key, step, status FROM ceremonies WHERE id = ?")
             .bind(&ceremony_id)
             .fetch_optional(&mut *tx)
             .await?
             .ok_or_else(|| ApiError::NotFound(format!("ceremony {} not found", ceremony_id)))?;
+
+    let ceremony_status: String = ceremony_row.get("status");
+    if ceremony_status != "active" {
+        return Err(ApiError::Conflict(format!(
+            "ceremony is not active (status: {})",
+            ceremony_status
+        )));
+    }
 
     let circuit_str: String = ceremony_row.get("circuit");
 
@@ -1287,7 +1349,7 @@ async fn submit(
 
     let now = unix_seconds();
 
-    // Phase 1: Validate lease and get keys (quick DB operation, no long transaction)
+    // Phase 1: Validate lease and mark as processing (quick DB operation)
     let (input_key, output_key, contrib_key, step, circuit) = {
         let lease_row = sqlx::query(
             "SELECT l.ceremony_id, l.participant_id, l.status, l.input_key, l.output_key, l.contribution_key, l.step, l.expires_at, c.circuit
@@ -1309,8 +1371,19 @@ async fn submit(
             return Err(ApiError::BadRequest("participant mismatch".to_string()));
         }
         let status: String = lease_row.get("status");
+        if status == "processing" {
+            // Already processing, return 202 immediately
+            return Ok(HttpResponse::Accepted().json(serde_json::json!({
+                "message": "submission is being processed",
+                "lease_id": body.lease_id,
+                "status": "processing"
+            })));
+        }
         if status != "active" {
-            return Err(ApiError::Conflict("lease is not active".to_string()));
+            return Err(ApiError::Conflict(format!(
+                "lease is not active (status: {})",
+                status
+            )));
         }
         let expires_at: i64 = lease_row.get("expires_at");
         if expires_at as u64 <= now {
@@ -1332,9 +1405,81 @@ async fn submit(
         (input_key, output_key, contrib_key, step, circuit)
     };
 
-    // Phase 2: Heavy operations (no DB transaction held)
+    // Mark lease as processing
+    sqlx::query("UPDATE leases SET status = 'processing', error_message = NULL WHERE id = ?")
+        .bind(&body.lease_id)
+        .execute(&state.db)
+        .await?;
+
+    // Spawn background task for heavy verification
+    let state_clone = state.clone();
+    let lease_id = body.lease_id.clone();
+    let ceremony_id_clone = ceremony_id.clone();
+    tokio::spawn(async move {
+        let result = process_submission(
+            &state_clone,
+            &ceremony_id_clone,
+            &lease_id,
+            input_key,
+            output_key,
+            contrib_key,
+            step,
+            circuit,
+        )
+        .await;
+
+        match result {
+            Ok(_) => {
+                log::info!(
+                    "Background submission completed successfully for ceremony {} step {}",
+                    ceremony_id_clone,
+                    step
+                );
+            }
+            Err(e) => {
+                log::error!(
+                    "Background submission failed for ceremony {} step {}: {}",
+                    ceremony_id_clone,
+                    step,
+                    e
+                );
+                // Update lease with error
+                let _ = sqlx::query(
+                    "UPDATE leases SET status = 'failed', error_message = ? WHERE id = ?",
+                )
+                .bind(e.to_string())
+                .bind(&lease_id)
+                .execute(&state_clone.db)
+                .await;
+            }
+        }
+    });
+
+    // Return immediately with 202 Accepted
+    Ok(HttpResponse::Accepted().json(serde_json::json!({
+        "message": "submission accepted, processing in background",
+        "lease_id": body.lease_id,
+        "status": "processing"
+    })))
+}
+
+/// Process submission in background (heavy verification work)
+async fn process_submission(
+    state: &web::Data<AppState>,
+    ceremony_id: &str,
+    lease_id: &str,
+    input_key: String,
+    output_key: String,
+    contrib_key: String,
+    step: i64,
+    circuit: CeremonyCircuit,
+) -> Result<(), anyhow::Error> {
+    let now = unix_seconds();
+
     // Get or load initial transcript from cache or file
-    let initial_transcript = get_or_load_initial_transcript(&state, circuit).await?;
+    let initial_transcript = get_or_load_initial_transcript(state, circuit)
+        .await
+        .map_err(|e| anyhow::anyhow!("failed to load initial transcript: {}", e))?;
 
     // Download and verify transcript
     log::info!("Downloading output transcript from S3: {}...", output_key);
@@ -1349,13 +1494,13 @@ async fn submit(
         Transcript::<Bn254>::deserialize_uncompressed(&output_bytes[..])
     })
     .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("spawn_blocking failed: {}", e)))?
-    .map_err(|e| ApiError::BadRequest(format!("invalid transcript: {}", e)))?;
+    .context("spawn_blocking failed")?
+    .map_err(|e| anyhow::anyhow!("invalid transcript: {}", e))?;
     log::info!("Output transcript deserialized");
 
     log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
     verify_transcript_from_initial(&initial_transcript, &output_transcript)
-        .map_err(|e| ApiError::BadRequest(format!("transcript verification failed: {}", e)))?;
+        .map_err(|e| anyhow::anyhow!("transcript verification failed: {}", e))?;
     log::info!("Transcript verification passed");
 
     log::info!("Downloading input transcript from S3: {}...", input_key);
@@ -1367,13 +1512,13 @@ async fn submit(
         Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..])
     })
     .await
-    .map_err(|e| ApiError::Internal(anyhow::anyhow!("spawn_blocking failed: {}", e)))?
-    .map_err(|e| ApiError::BadRequest(format!("invalid input transcript: {}", e)))?;
+    .context("spawn_blocking failed")?
+    .map_err(|e| anyhow::anyhow!("invalid input transcript: {}", e))?;
     log::info!("Input transcript deserialized");
 
     log::info!("Verifying key transform...");
     verify_key_transform(&input_transcript, &output_transcript)
-        .map_err(|e| ApiError::BadRequest(format!("key transform verification failed: {}", e)))?;
+        .map_err(|e| anyhow::anyhow!("key transform verification failed: {}", e))?;
     log::info!("Key transform verification passed");
 
     // Upload latest.json BEFORE updating database for consistency
@@ -1383,27 +1528,29 @@ async fn submit(
         contribution_key: Some(contrib_key.clone()),
         updated_at: now,
     };
-    let latest_bytes = serde_json::to_vec(&latest)
-        .map_err(|e| ApiError::Internal(anyhow::anyhow!(e.to_string())))?;
+    let latest_bytes = serde_json::to_vec(&latest)?;
 
     log::info!("Updating latest metadata in S3...");
     state
         .s3
-        .put_bytes(&latest_key(&ceremony_id), latest_bytes, "application/json")
+        .put_bytes(&latest_key(ceremony_id), latest_bytes, "application/json")
         .await?;
 
-    // Phase 3: Update database (quick transaction after all verification passed)
+    // Update database (quick transaction after all verification passed)
     let mut tx = state.db.begin().await?;
 
-    // Re-check lease status (might have been expired/cancelled during verification)
+    // Re-check lease status (might have been cancelled during verification)
     let lease_check = sqlx::query("SELECT status FROM leases WHERE id = ?")
-        .bind(&body.lease_id)
+        .bind(lease_id)
         .fetch_optional(&mut *tx)
         .await?
-        .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+        .ok_or_else(|| anyhow::anyhow!("lease not found"))?;
     let current_status: String = lease_check.get("status");
-    if current_status != "active" {
-        return Err(ApiError::Conflict(format!("lease is no longer active (status: {})", current_status)));
+    if current_status != "processing" {
+        return Err(anyhow::anyhow!(
+            "lease is no longer processing (status: {})",
+            current_status
+        ));
     }
 
     sqlx::query(
@@ -1412,22 +1559,20 @@ async fn submit(
     .bind(&output_key)
     .bind(step)
     .bind(now as i64)
-    .bind(&ceremony_id)
+    .bind(ceremony_id)
     .execute(&mut *tx)
     .await?;
 
-    sqlx::query("UPDATE leases SET status = ? WHERE id = ?")
-        .bind("completed")
-        .bind(&body.lease_id)
+    sqlx::query("UPDATE leases SET status = 'completed' WHERE id = ?")
+        .bind(lease_id)
         .execute(&mut *tx)
         .await?;
 
     sqlx::query(
-        "UPDATE contributions SET status = ?, updated_at = ? WHERE ceremony_id = ? AND step = ?",
+        "UPDATE contributions SET status = 'completed', updated_at = ? WHERE ceremony_id = ? AND step = ?",
     )
-    .bind("completed")
     .bind(now as i64)
-    .bind(&ceremony_id)
+    .bind(ceremony_id)
     .bind(step)
     .execute(&mut *tx)
     .await?;
@@ -1440,15 +1585,7 @@ async fn submit(
         stats.contributions_total += 1;
     }
 
-    log::info!(
-        "Submission completed successfully for ceremony {} step {}",
-        ceremony_id,
-        step
-    );
-    Ok(HttpResponse::Ok().json(SubmitResponse {
-        step: step as u64,
-        transcript_key: output_key,
-    }))
+    Ok(())
 }
 
 // ============================================================================
@@ -1513,14 +1650,13 @@ async fn multipart_presign(
     let ceremony_id = ceremony_id.into_inner();
 
     // Verify lease is valid
-    let lease = sqlx::query(
-        "SELECT status, expires_at FROM leases WHERE id = ? AND ceremony_id = ?",
-    )
-    .bind(&body.lease_id)
-    .bind(&ceremony_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+    let lease =
+        sqlx::query("SELECT status, expires_at FROM leases WHERE id = ? AND ceremony_id = ?")
+            .bind(&body.lease_id)
+            .bind(&ceremony_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
 
     let status: String = lease.get("status");
     let expires_at: i64 = lease.get("expires_at");
@@ -1550,14 +1686,13 @@ async fn multipart_complete(
     let ceremony_id = ceremony_id.into_inner();
 
     // Verify lease is valid
-    let lease = sqlx::query(
-        "SELECT status, expires_at FROM leases WHERE id = ? AND ceremony_id = ?",
-    )
-    .bind(&body.lease_id)
-    .bind(&ceremony_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+    let lease =
+        sqlx::query("SELECT status, expires_at FROM leases WHERE id = ? AND ceremony_id = ?")
+            .bind(&body.lease_id)
+            .bind(&ceremony_id)
+            .fetch_optional(&state.db)
+            .await?
+            .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
 
     let status: String = lease.get("status");
     let expires_at: i64 = lease.get("expires_at");
@@ -1599,14 +1734,12 @@ async fn multipart_abort(
     let ceremony_id = ceremony_id.into_inner();
 
     // Verify lease exists (don't need to check status for abort)
-    let lease = sqlx::query(
-        "SELECT id FROM leases WHERE id = ? AND ceremony_id = ?",
-    )
-    .bind(&body.lease_id)
-    .bind(&ceremony_id)
-    .fetch_optional(&state.db)
-    .await?
-    .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
+    let lease = sqlx::query("SELECT id FROM leases WHERE id = ? AND ceremony_id = ?")
+        .bind(&body.lease_id)
+        .bind(&ceremony_id)
+        .fetch_optional(&state.db)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("lease not found".to_string()))?;
 
     let _ = lease; // Just to use the variable
 
@@ -1709,12 +1842,13 @@ async fn insert_ceremony(
     ceremony_id: &str,
     circuit: CeremonyCircuit,
     current_head_key: &str,
+    status: &str,
     now: u64,
     config: &Config,
 ) -> Result<(), ApiError> {
     sqlx::query(
-        "INSERT INTO ceremonies (id, circuit, current_head_key, step, lease_ttl_seconds, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?)",
+        "INSERT INTO ceremonies (id, circuit, current_head_key, step, lease_ttl_seconds, created_at, updated_at, status)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
     )
     .bind(ceremony_id)
     .bind(circuit.as_str())
@@ -1723,6 +1857,7 @@ async fn insert_ceremony(
     .bind(config.lease_ttl.as_secs() as i64)
     .bind(now as i64)
     .bind(now as i64)
+    .bind(status)
     .execute(pool)
     .await?;
     Ok(())
