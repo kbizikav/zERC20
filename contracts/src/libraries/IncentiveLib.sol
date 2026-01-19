@@ -127,9 +127,9 @@ library IncentiveLib {
     }
 
     /// @notice Basis points denominator for k (1 bps = 0.01% = 1 / 10_000).
-    uint256 internal constant K_BPS_DENOM = 10_000;
+    uint256 private constant K_BPS_DENOM = 10_000;
     /// @notice Largest T such that intermediate squares fit in uint256.
-    uint256 internal constant MAX_TARGET_LIQUIDITY = type(uint128).max;
+    uint256 private constant MAX_TARGET_LIQUIDITY = type(uint128).max;
 
     /*//////////////////////////////////////////////////////////////
                            PUBLIC API (INTERNAL)
@@ -138,6 +138,8 @@ library IncentiveLib {
     /**
      * @notice Compute deposit reward for adding `amount` liquidity.
      * @dev
+     * - Params MUST be validated via `validateFeeParams` before calling.
+     *   Using unvalidated params may return unexpected results (e.g., zero reward for overflow-prone k).
      * - Uses the continuous density described in the library header.
      * - Rounds DOWN (floor).
      * - Caps the result by `feeSurplus`.
@@ -156,6 +158,8 @@ library IncentiveLib {
     /**
      * @notice Compute withdrawal fee for removing `amount` liquidity.
      * @dev
+     * - Params MUST be validated via `validateFeeParams` before calling.
+     *   Using unvalidated params (e.g., k > 10_000) may return unexpectedly large fees.
      * - Uses the same continuous density described in the library header.
      * - Rounds UP (ceil).
      */
@@ -169,11 +173,10 @@ library IncentiveLib {
         if (liquidity > amount) {
             // Sufficient liquidity case: charge the raw fee
             return fee;
-        } else {
-            // Insufficient liquidity: charge the shortfall plus the curve fee, capped at amount.
-            uint256 liquidityMinusFee = liquidity >= fee ? liquidity - fee : 0;
-            return amount - liquidityMinusFee;
         }
+        // Insufficient liquidity: charge the shortfall plus the curve fee, capped at amount.
+        uint256 liquidityMinusFee = liquidity >= fee ? liquidity - fee : 0;
+        return amount - liquidityMinusFee;
     }
 
     /*//////////////////////////////////////////////////////////////
