@@ -390,6 +390,8 @@ contract Adaptor is
         emit UnwrapAndBridge(user, zerc20Amount, amountOut, request.to, request.dstEid);
     }
 
+    // slither-disable-next-line reentrancy-balance
+    // Safe: public caller (unwrapAndBridge) is protected by nonReentrant modifier
     function _unwrap(address user, uint256 amount, uint256 amountMinOut) private returns (uint256 amountOut) {
         _debitZerc20Balance(user, amount);
 
