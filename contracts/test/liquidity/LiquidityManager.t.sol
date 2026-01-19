@@ -2,9 +2,9 @@
 pragma solidity 0.8.33;
 
 import {Test} from "forge-std/Test.sol";
-import {LiquidityManager} from "../src/liquidity/LiquidityManager.sol";
-import {IncentiveLib} from "../src/libraries/IncentiveLib.sol";
-import {zERC20} from "../src/zERC20.sol";
+import {LiquidityManager} from "../../src/liquidity/LiquidityManager.sol";
+import {IncentiveLib} from "../../src/libraries/IncentiveLib.sol";
+import {zERC20} from "../../src/zERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {
