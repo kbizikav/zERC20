@@ -326,6 +326,18 @@ pub fn verify_transcript_from_initial(
         .map_err(|e| anyhow::anyhow!(e.to_string()))
 }
 
+/// Verify transcript against a pre-computed initial transcript, including signature verification.
+pub fn verify_transcript_from_initial_with_context(
+    initial_transcript: &Transcript<Bn254>,
+    transcript: &Transcript<Bn254>,
+    ceremony_id: &str,
+    circuit: &str,
+) -> Result<()> {
+    transcript
+        .verify_from_initial_transcript_with_context(initial_transcript, ceremony_id, circuit)
+        .map_err(|e| anyhow::anyhow!(e.to_string()))
+}
+
 /// Build a SingleWithdrawCircuit for Groth16.
 pub fn build_withdraw_circuit<const DEPTH: usize>() -> Result<SingleWithdrawCircuit<Fr, DEPTH>> {
     let poseidon2_config = circom_poseidon2_config::<Fr>();

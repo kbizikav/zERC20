@@ -46,6 +46,7 @@ url = { workspace = true }
 uuid = { workspace = true }
 zkp = { path = "../../zkp" }
 trusted-setup-common = { path = "../common" }
+alloy = { workspace = true, features = ["signer-local"] }
 
 [features]
 default = ["parallel"]

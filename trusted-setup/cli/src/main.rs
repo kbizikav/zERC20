@@ -10,13 +10,18 @@ use std::{
     time::Duration,
 };
 
+use alloy::signers::{local::PrivateKeySigner, SignerSync};
 use anyhow::{bail, Context, Result};
 use ark_bn254::{Bn254, Fr, G1Projective as G1};
 use ark_ec::pairing::Pairing;
 use ark_grumpkin::Projective as G2;
 use ark_poly_commit::kzg10::VerifierKey as KzgVerifierKey;
 use ark_serialize::CanonicalDeserialize;
-use arkworks_phase2::{accumulator::Accumulator, transcript::Transcript, utils::serialize_uncompressed};
+use arkworks_phase2::{
+    accumulator::Accumulator,
+    transcript::{ContributionContext, Transcript},
+    utils::serialize_uncompressed,
+};
 use backoff::{future::retry, ExponentialBackoff};
 use bytes::Bytes;
 use clap::{Args, Parser, Subcommand, ValueEnum};
@@ -167,6 +172,12 @@ struct ContributeArgs {
     /// Ceremony identifier.
     #[arg(long, env = "TRUSTED_SETUP_CEREMONY_ID")]
     ceremony_id: String,
+
+    /// Ethereum private key for signing contribution (required).
+    /// Can be provided via CLI argument or TRUSTED_SETUP_ETH_PRIVATE_KEY env var.
+    /// WARNING: CLI arguments may be visible in shell history. Prefer using the env var.
+    #[arg(long, env = "TRUSTED_SETUP_ETH_PRIVATE_KEY")]
+    eth_private_key: String,
 
     /// Optional seed for deterministic contribution.
     #[arg(long, env = "TRUSTED_SETUP_SEED")]
@@ -488,10 +499,7 @@ async fn download_ptau(args: PtauDownloadArgs, shutdown: &AtomicBool) -> Result<
 
     let client = build_http_client(DEFAULT_CONNECT_TIMEOUT_SECS, DEFAULT_READ_TIMEOUT_SECS)?;
 
-    println!(
-        "Downloading PTAU (power {}) from {}...",
-        args.power, url
-    );
+    println!("Downloading PTAU (power {}) from {}...", args.power, url);
     let resp = retry_request(|| async {
         check_shutdown(shutdown)?;
         client
@@ -669,10 +677,7 @@ fn generate_initial_transcript(args: GenerateInitialTranscriptArgs) -> Result<()
     fs::write(&output_path, &bytes)
         .with_context(|| format!("failed to write {}", output_path.display()))?;
 
-    println!(
-        "Initial transcript saved ({} bytes)",
-        bytes.len()
-    );
+    println!("Initial transcript saved ({} bytes)", bytes.len());
     println!();
     println!("=== Done ===");
 
@@ -688,8 +693,23 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     let base_url = Url::parse(&args.coordinator_url)
         .with_context(|| format!("invalid coordinator url {}", args.coordinator_url))?;
 
+    // Parse Ethereum private key and derive address
+    let eth_private_key = args.eth_private_key.trim();
+    let eth_private_key = eth_private_key
+        .strip_prefix("0x")
+        .unwrap_or(eth_private_key);
+    let signer: PrivateKeySigner = eth_private_key
+        .parse()
+        .context("invalid Ethereum private key")?;
+    let eth_address: [u8; 20] = signer.address().into_array();
+
+    println!("Contributor address: 0x{}", hex::encode(eth_address));
+
     // Request participation
-    println!("Requesting participation in ceremony {}...", args.ceremony_id);
+    println!(
+        "Requesting participation in ceremony {}...",
+        args.ceremony_id
+    );
     let participate_url = base_url
         .join(&format!("/api/ceremonies/{}/participate", args.ceremony_id))
         .context("failed to build participate url")?;
@@ -704,8 +724,7 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
     })
     .await?;
 
-    let participate: ParticipateResponse =
-        handle_response(participate_resp, "participate").await?;
+    let participate: ParticipateResponse = handle_response(participate_resp, "participate").await?;
 
     let circuit = CeremonyCircuit::parse(&participate.circuit)
         .with_context(|| format!("invalid circuit from server: {}", participate.circuit))?;
@@ -771,24 +790,53 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
         println!("Skipping transcript verification (--skip-verify)");
     }
 
-    // Contribute
+    // Contribute with Ethereum signature
     check_shutdown(shutdown)?;
     println!("Making contribution...");
+
+    // Create contribution context for signature
+    let context =
+        ContributionContext::new(&args.ceremony_id, participate.step, &participate.circuit);
+
+    // Create signing function
+    let sign_fn = |message_hash: &[u8; 32]| -> Result<[u8; 65], arkworks_phase2::error::Error> {
+        // Apply EIP-191 personal sign prefix
+        let prefixed_hash = {
+            let mut data = Vec::with_capacity(28 + 32);
+            data.extend_from_slice(b"\x19Ethereum Signed Message:\n32");
+            data.extend_from_slice(message_hash);
+            alloy::primitives::keccak256(&data)
+        };
+
+        // Sign synchronously (PrivateKeySigner.sign_hash is sync)
+        let signature = signer
+            .sign_hash_sync(&prefixed_hash)
+            .map_err(|e| arkworks_phase2::error::Error::Custom(format!("signing failed: {}", e)))?;
+
+        // Convert to 65-byte format (r, s, v)
+        let sig_bytes: [u8; 65] = signature.as_bytes().try_into().map_err(|_| {
+            arkworks_phase2::error::Error::Custom("invalid signature length".to_string())
+        })?;
+
+        Ok(sig_bytes)
+    };
+
     match &args.seed {
         Some(seed) => {
             transcript
-                .contribute_seed(seed.as_bytes())
+                .contribute_seed(seed.as_bytes(), eth_address, sign_fn, &context)
                 .context("failed to contribute using seed")?;
             println!("Contributed using provided seed");
         }
         None => {
             let mut rng = OsRng;
             transcript
-                .contribute_rng(&mut rng)
+                .contribute_rng(&mut rng, eth_address, sign_fn, &context)
                 .context("failed to contribute using rng")?;
             println!("Contributed using random entropy");
         }
     }
+    println!("Contribution signed by: 0x{}", hex::encode(eth_address));
 
     // Serialize
     check_shutdown(shutdown)?;
@@ -889,7 +937,10 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
         .await?;
     } else if status_code.is_success() {
         // Direct success (backwards compatibility)
-        let _: serde_json::Value = submit_resp.json().await.context("failed to parse submit response")?;
+        let _: serde_json::Value = submit_resp
+            .json()
+            .await
+            .context("failed to parse submit response")?;
     } else {
         // Error
         handle_response::<serde_json::Value>(submit_resp, "submit").await?;
@@ -900,7 +951,10 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
         let _ = tokio::fs::remove_file(state_file).await;
     }
 
-    println!("Contribution submitted successfully for step {}", participate.step);
+    println!(
+        "Contribution submitted successfully for step {}",
+        participate.step
+    );
     Ok(())
 }
 
@@ -913,7 +967,10 @@ async fn poll_submission_status(
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let lease_url = base_url
-        .join(&format!("/api/ceremonies/{}/leases/{}", ceremony_id, lease_id))
+        .join(&format!(
+            "/api/ceremonies/{}/leases/{}",
+            ceremony_id, lease_id
+        ))
         .context("failed to build lease url")?;
 
     let poll_interval = Duration::from_secs(10);
@@ -945,7 +1002,9 @@ async fn poll_submission_status(
             }
             "failed" => {
                 progress.finish_and_clear();
-                let error_msg = status.error_message.unwrap_or_else(|| "unknown error".to_string());
+                let error_msg = status
+                    .error_message
+                    .unwrap_or_else(|| "unknown error".to_string());
                 bail!("Submission verification failed: {}", error_msg);
             }
             "processing" => {
@@ -981,7 +1040,10 @@ async fn resume_contribution(args: ResumeArgs, _shutdown: &AtomicBool) -> Result
     let lease_status: LeaseStatus = handle_response(lease_resp, "lease status").await?;
 
     if lease_status.status != "active" {
-        bail!("Lease is no longer active (status: {})", lease_status.status);
+        bail!(
+            "Lease is no longer active (status: {})",
+            lease_status.status
+        );
     }
 
     if lease_status.remaining_seconds <= 0 {
@@ -1126,16 +1188,20 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
         transcript.contributions.len()
     );
 
-    // Verify transcript using initial transcript
+    // Verify transcript using initial transcript (with signature verification)
     println!("Verifying transcript using initial transcript...");
     let initial_path = initial_transcript_path(circuit);
     if initial_path.exists() {
         let initial_transcript = load_initial_transcript_async(&initial_path).await?;
         transcript
-            .verify_from_initial_transcript(&initial_transcript)
+            .verify_from_initial_transcript_with_context(
+                &initial_transcript,
+                &args.ceremony_id,
+                &ceremony.circuit,
+            )
             .map_err(|e| anyhow::anyhow!(e.to_string()))
-            .context("transcript verification failed")?;
-        println!("Transcript verified successfully");
+            .context("transcript verification failed (including signatures)")?;
+        println!("Transcript verified successfully (including all signatures)");
     } else {
         bail!(
             "Initial transcript not found at {}. Generate it first with:\n  \
@@ -1144,6 +1210,15 @@ async fn finalize(args: FinalizeArgs, shutdown: &AtomicBool) -> Result<()> {
             circuit.as_str()
         );
     }
+
+    // Display contributor addresses
+    println!();
+    println!("=== Contributors ===");
+    for (i, addr) in transcript.contributor_addresses().iter().enumerate() {
+        println!("  Step {}: 0x{}", i + 1, hex::encode(addr));
+    }
+    println!("====================");
+    println!();
 
     check_shutdown(shutdown)?;
 
@@ -1658,10 +1733,7 @@ async fn upload_multipart(
 
     // Start multipart upload (with retry for rate limiting)
     let start_url = base_url
-        .join(&format!(
-            "/api/ceremonies/{}/multipart/start",
-            ceremony_id
-        ))
+        .join(&format!("/api/ceremonies/{}/multipart/start", ceremony_id))
         .context("failed to build multipart start url")?;
 
     let start_data: MultipartStartResponse = {
@@ -1705,7 +1777,10 @@ async fn upload_multipart(
     let upload_id = start_data.upload_id;
     let key = start_data.key;
 
-    let progress = build_progress(&format!("uploading {} (multipart)", label), Some(total_size as u64));
+    let progress = build_progress(
+        &format!("uploading {} (multipart)", label),
+        Some(total_size as u64),
+    );
     let mut completed_parts: Vec<MultipartPartInfo> = Vec::with_capacity(num_parts);
 
     // Upload each part
@@ -1864,11 +1939,7 @@ async fn upload_multipart(
             continue;
         } else {
             let body = complete_resp.text().await.unwrap_or_default();
-            bail!(
-                "multipart complete failed with status {}: {}",
-                status,
-                body
-            );
+            bail!("multipart complete failed with status {}: {}", status, body);
         }
     }
 
@@ -2107,10 +2178,9 @@ fn build_progress(message: &str, total_bytes: Option<u64>) -> ProgressBar {
         .tick_chars("|/-\\");
         progress.set_style(style);
     } else {
-        let style =
-            ProgressStyle::with_template("{spinner:.green} {msg} {bytes} downloaded")
-                .unwrap()
-                .tick_chars("|/-\\");
+        let style = ProgressStyle::with_template("{spinner:.green} {msg} {bytes} downloaded")
+            .unwrap()
+            .tick_chars("|/-\\");
         progress.set_style(style);
     }
     progress.set_message(message.to_string());

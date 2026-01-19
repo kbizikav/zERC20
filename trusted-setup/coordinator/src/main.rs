@@ -24,7 +24,7 @@ use uuid::Uuid;
 
 use trusted_setup_common::{
     contribution_key, initial_transcript_path as default_initial_transcript_path, latest_key,
-    transcript_key, verify_transcript_from_initial, CeremonyCircuit, LatestMetadata,
+    transcript_key, verify_transcript_from_initial_with_context, CeremonyCircuit, LatestMetadata,
 };
 
 // ============================================================================
@@ -1510,10 +1510,18 @@ async fn process_submission(
         .map_err(|e| anyhow::anyhow!("invalid transcript: {}", e))?;
         log::info!("Output transcript deserialized");
 
-        log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
-        verify_transcript_from_initial(&initial_transcript, &output_transcript)
-            .map_err(|e| anyhow::anyhow!("transcript verification failed: {}", e))?;
-        log::info!("Transcript verification passed");
+        log::info!(
+            "Verifying transcript for circuit {:?} (including signatures)...",
+            circuit.as_str()
+        );
+        verify_transcript_from_initial_with_context(
+            &initial_transcript,
+            &output_transcript,
+            ceremony_id,
+            circuit.as_str(),
+        )
+        .map_err(|e| anyhow::anyhow!("transcript verification failed: {}", e))?;
+        log::info!("Transcript verification passed (including all signatures)");
 
         // Verify the contribution count matches the expected step
         // This prevents replay attacks where an older transcript is submitted
