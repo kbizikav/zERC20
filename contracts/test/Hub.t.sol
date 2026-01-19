@@ -3,9 +3,15 @@ pragma solidity 0.8.33;
 
 import {Vm} from "forge-std/Vm.sol";
 import {Hub} from "../src/Hub.sol";
+import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {ISendLib, Packet} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ISendLib.sol";
 import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {IMessageLib, MessageLibType} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLib.sol";
+import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
 import {
     TestHelperOz5,
     EndpointV2,
@@ -125,6 +131,54 @@ contract HubTest is TestHelperOz5 {
         uint256 balanceAfter = address(this).balance;
         assertEq(balanceBefore - balanceAfter, total, "net cost");
         assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testBroadcastSucceedsWhenExactFeePaid() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        vm.deal(address(this), total);
+
+        uint256 balanceBefore = address(this).balance;
+        hub.broadcast{value: total}(targetEids, options);
+        uint256 balanceAfter = address(this).balance;
+
+        assertEq(balanceBefore - balanceAfter, total, "net cost");
+        assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testBroadcastSucceedsForNonPayableCallerWhenExactFeePaid() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        RefundRejectorCaller caller = new RefundRejectorCaller(hub);
+
+        // Exact fee means no refund attempt, so even a non-payable caller should succeed.
+        caller.callBroadcast{value: total}(targetEids, options);
+        assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testQuoteBroadcastRevertsWhenLzTokenFeeUnsupported() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        NonZeroLzTokenFeeSendLibMock nonZeroLzTokenFeeLib = new NonZeroLzTokenFeeSendLibMock();
+        endpoint.registerLibrary(address(nonZeroLzTokenFeeLib));
+
+        endpoint.setDefaultSendLibrary(targetEids[0], address(nonZeroLzTokenFeeLib));
+        endpoint.setDefaultSendLibrary(targetEids[1], address(nonZeroLzTokenFeeLib));
+
+        uint256 tokenFee = 1;
+        nonZeroLzTokenFeeLib.setMessagingFee(FEE_PER_MESSAGE, tokenFee);
+
+        vm.expectRevert(abi.encodeWithSelector(Hub.LayerZeroTokenFeeUnsupported.selector, targetEids[0], tokenFee));
+        hub.quoteBroadcast(targetEids, options);
+
+        // Restore defaults for other tests
+        endpoint.setDefaultSendLibrary(targetEids[0], address(sendLib));
+        endpoint.setDefaultSendLibrary(targetEids[1], address(sendLib));
     }
 
     function testAggSeqIncrementsWithEachBroadcast() public {
@@ -325,6 +379,347 @@ contract HubTest is TestHelperOz5 {
         assertEq(tokenAddr, info.token, "token not preserved");
     }
 
+    function testHubUpgradeRevertsOnEndpointMismatch() public {
+        Hub implementation = new Hub(address(endpoint));
+        bytes memory initData = abi.encodeCall(Hub.initialize, (address(this)));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        Hub proxiedHub = Hub(address(proxy));
+
+        EndpointV2 otherEndpoint = endpointSetup.endpointList[1];
+        HubUpgradeMock newImplementation = new HubUpgradeMock(address(otherEndpoint));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Hub.EndpointMismatch.selector, address(endpoint), address(otherEndpoint))
+        );
+        proxiedHub.upgradeToAndCall(address(newImplementation), bytes(""));
+    }
+
+    function testRegisterTokenOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 999, eid: 999, verifier: address(0x1), token: address(0x2)});
+
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        hub.registerToken(info);
+    }
+
+    function testUpdateTokenOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        Hub.TokenInfo memory info =
+            Hub.TokenInfo({chainId: 999, eid: REMOTE_EID_A, verifier: address(0x1), token: address(0x2)});
+
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        hub.updateToken(info);
+    }
+
+    function testUpdateTokenValidationReverts() public {
+        vm.expectRevert(Hub.ZeroVerifier.selector);
+        hub.updateToken(Hub.TokenInfo({chainId: 1, eid: REMOTE_EID_A, verifier: address(0), token: address(0x1)}));
+
+        vm.expectRevert(Hub.ZeroToken.selector);
+        hub.updateToken(Hub.TokenInfo({chainId: 1, eid: REMOTE_EID_A, verifier: address(0x1), token: address(0)}));
+
+        vm.expectRevert(Hub.InvalidChainId.selector);
+        hub.updateToken(Hub.TokenInfo({chainId: 0, eid: REMOTE_EID_A, verifier: address(0x1), token: address(0x2)}));
+    }
+
+    function testRegisterTokenRevertsOnMaxCapacity() public {
+        Hub localHub = _deployInitializedHub();
+        uint256 maxLeaves = localHub.MAX_LEAVES();
+
+        for (uint256 i = 0; i < maxLeaves; ++i) {
+            // Casts are safe because i < maxLeaves (64) fits in uint64/uint32/uint160
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint64 chainId = uint64(i + 1);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            uint32 eid = uint32(i + 100);
+            // forge-lint: disable-next-line(unsafe-typecast)
+            address verifier = address(uint160(i + 1));
+            // forge-lint: disable-next-line(unsafe-typecast)
+            address token = address(uint160(i + 1000));
+            localHub.registerToken(Hub.TokenInfo({chainId: chainId, eid: eid, verifier: verifier, token: token}));
+        }
+
+        vm.expectRevert(Hub.HubCapacityReached.selector);
+        localHub.registerToken(Hub.TokenInfo({chainId: 999, eid: 9999, verifier: address(0x1), token: address(0x2)}));
+    }
+
+    function testZeroHashReturnsInitializedValues() public view {
+        // zeroHash[0] is 0 by design (Poseidon zero leaf)
+        // zeroHash[1] = hash(0, 0) which should be non-zero
+        uint256 secondZeroHash = hub.zeroHash(1);
+        assertGt(secondZeroHash, 0, "zero hash[1] should be non-zero");
+    }
+
+    function testGetTransferRootsAndIndicesReturnsSnapshot() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info1 = Hub.TokenInfo({chainId: 1, eid: 10, verifier: address(0x1), token: address(0x2)});
+        Hub.TokenInfo memory info2 = Hub.TokenInfo({chainId: 2, eid: 20, verifier: address(0x3), token: address(0x4)});
+        localHub.registerToken(info1);
+        localHub.registerToken(info2);
+        localHub.setPeer(info1.eid, _toBytes32(address(this)));
+        localHub.setPeer(info2.eid, _toBytes32(address(this)));
+
+        Origin memory origin1 = Origin({srcEid: info1.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin1, bytes32(0), abi.encode(uint256(111), uint64(5)), address(0), bytes(""));
+
+        Origin memory origin2 = Origin({srcEid: info2.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin2, bytes32(0), abi.encode(uint256(222), uint64(10)), address(0), bytes(""));
+
+        (uint256[] memory roots, uint64[] memory indices) = localHub.getTransferRootsAndIndices();
+
+        assertEq(roots.length, 2, "roots length");
+        assertEq(indices.length, 2, "indices length");
+        assertEq(roots[0], 111, "first root");
+        assertEq(roots[1], 222, "second root");
+        assertEq(indices[0], 5, "first index");
+        assertEq(indices[1], 10, "second index");
+    }
+
+    function testCurrentAggregationRootMatchesBroadcast() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 1, eid: 10, verifier: address(0x1), token: address(0x2)});
+        localHub.registerToken(info);
+        localHub.setPeer(info.eid, _toBytes32(address(this)));
+
+        Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), abi.encode(uint256(12345), uint64(1)), address(0), bytes(""));
+
+        uint256 computedRoot = localHub.currentAggregationRoot();
+        assertGt(computedRoot, 0, "aggregation root should be non-zero");
+    }
+
+    function testLzReceiveIgnoresSameTransferTreeIndex() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 1, eid: 10, verifier: address(0x1), token: address(0x2)});
+        localHub.registerToken(info);
+        localHub.setPeer(info.eid, _toBytes32(address(this)));
+
+        Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), abi.encode(uint256(111), uint64(5)), address(0), bytes(""));
+
+        assertEq(localHub.transferRoots(0), 111, "initial root stored");
+
+        vm.recordLogs();
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), abi.encode(uint256(222), uint64(5)), address(0), bytes(""));
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        assertEq(logs.length, 0, "no events for same index");
+        assertEq(localHub.transferRoots(0), 111, "root unchanged for same index");
+    }
+
+    function testBroadcastEmitsAggregationRootUpdated() public {
+        // Use existing hub which has sendLib configured
+        // First update a transfer root via lzReceive
+        Origin memory origin = Origin({srcEid: REMOTE_EID_A, sender: _toBytes32(REMOTE_PEER_A), nonce: 1});
+        vm.prank(address(endpoint));
+        hub.lzReceive(origin, bytes32(0), abi.encode(uint256(12345), uint64(1)), address(0), bytes(""));
+
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 fee = hub.quoteBroadcast(targetEids, options);
+        vm.deal(address(this), fee);
+
+        vm.recordLogs();
+        hub.broadcast{value: fee}(targetEids, options);
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+
+        bool foundEvent = false;
+        bytes32 eventSig = keccak256("AggregationRootUpdated(uint256,uint64,uint256[],uint64[])");
+        for (uint256 i = 0; i < logs.length; ++i) {
+            if (logs[i].topics[0] == eventSig) {
+                foundEvent = true;
+                uint256 emittedRoot = uint256(logs[i].topics[1]);
+                uint64 emittedSeq = uint64(uint256(logs[i].topics[2]));
+                assertGt(emittedRoot, 0, "emitted root non-zero");
+                assertEq(emittedSeq, 1, "emitted seq");
+            }
+        }
+        assertTrue(foundEvent, "AggregationRootUpdated event emitted");
+    }
+
+    // ==================== Pause Tests ====================
+
+    function testActivateEmergencyPausesContract() public {
+        assertFalse(hub.paused(), "should not be paused initially");
+
+        vm.expectEmit(true, true, true, true, address(hub));
+        emit Hub.ActivateEmergency();
+        hub.activateEmergency();
+
+        assertTrue(hub.paused(), "should be paused after activateEmergency");
+    }
+
+    function testDeactivateEmergencyUnpausesContract() public {
+        hub.activateEmergency();
+        assertTrue(hub.paused(), "should be paused");
+
+        vm.expectEmit(true, true, true, true, address(hub));
+        emit Hub.DeactivateEmergency();
+        hub.deactivateEmergency();
+
+        assertFalse(hub.paused(), "should not be paused after deactivateEmergency");
+    }
+
+    function testActivateEmergencyOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        hub.activateEmergency();
+    }
+
+    function testDeactivateEmergencyOnlyOwner() public {
+        hub.activateEmergency();
+
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        hub.deactivateEmergency();
+    }
+
+    function testBroadcastRevertsWhenPaused() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+        uint256 fee = hub.quoteBroadcast(targetEids, options);
+        vm.deal(address(this), fee);
+
+        hub.activateEmergency();
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        hub.broadcast{value: fee}(targetEids, options);
+    }
+
+    function testRegisterTokenWorksWhenPaused() public {
+        Hub localHub = _deployInitializedHub();
+        localHub.activateEmergency();
+        assertTrue(localHub.paused(), "should be paused");
+
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 123, eid: 456, verifier: address(0x1), token: address(0x2)});
+
+        // Should not revert
+        localHub.registerToken(info);
+
+        (uint64 chainId,,,) = localHub.tokenInfos(0);
+        assertEq(chainId, 123, "token registered while paused");
+    }
+
+    function testUpdateTokenWorksWhenPaused() public {
+        hub.activateEmergency();
+        assertTrue(hub.paused(), "should be paused");
+
+        Hub.TokenInfo memory updated =
+            Hub.TokenInfo({chainId: 999, eid: REMOTE_EID_A, verifier: address(0xABC), token: address(0xDEF)});
+
+        // Should not revert
+        hub.updateToken(updated);
+
+        (uint64 chainId,, address verifier,) = hub.tokenInfos(0);
+        assertEq(chainId, 999, "token updated while paused");
+        assertEq(verifier, address(0xABC), "verifier updated while paused");
+    }
+
+    function testLzReceiveWorksWhenPaused() public {
+        Hub localHub = _deployInitializedHub();
+        Hub.TokenInfo memory info = Hub.TokenInfo({chainId: 1, eid: 10, verifier: address(0x1), token: address(0x2)});
+        localHub.registerToken(info);
+        localHub.setPeer(info.eid, _toBytes32(address(this)));
+
+        localHub.activateEmergency();
+        assertTrue(localHub.paused(), "should be paused");
+
+        Origin memory origin = Origin({srcEid: info.eid, sender: _toBytes32(address(this)), nonce: 1});
+        vm.prank(address(endpoint));
+        localHub.lzReceive(origin, bytes32(0), abi.encode(uint256(777), uint64(3)), address(0), bytes(""));
+
+        assertEq(localHub.transferRoots(0), 777, "transfer root updated while paused");
+        assertEq(localHub.transferTreeIndices(0), 3, "transfer tree index updated while paused");
+    }
+
+    function testQuoteBroadcastWorksWhenPaused() public {
+        hub.activateEmergency();
+        assertTrue(hub.paused(), "should be paused");
+
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        // Should not revert - quoteBroadcast is a view function
+        uint256 fee = hub.quoteBroadcast(targetEids, options);
+        assertGt(fee, 0, "fee should be quoted while paused");
+    }
+
+    function testBroadcastWorksAfterUnpause() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+        uint256 fee = hub.quoteBroadcast(targetEids, options);
+        vm.deal(address(this), fee);
+
+        hub.activateEmergency();
+        hub.deactivateEmergency();
+
+        // Should not revert after unpause
+        hub.broadcast{value: fee}(targetEids, options);
+        assertEq(hub.aggSeq(), 1, "broadcast succeeded after unpause");
+    }
+
+    // ==================== RefundAddress Tests ====================
+
+    function testBroadcastRefundsExcessToRefundAddress() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        uint256 refund = 0.02 ether;
+        uint256 deposit = total + refund;
+
+        address refundAddress = address(0xB0B);
+        uint256 refundBalanceBefore = refundAddress.balance;
+
+        vm.deal(address(this), deposit);
+        hub.broadcast{value: deposit}(targetEids, options, refundAddress);
+
+        assertEq(refundAddress.balance - refundBalanceBefore, refund, "refund paid to refundAddress");
+        assertEq(hub.aggSeq(), 1, "agg sequence incremented");
+    }
+
+    function testBroadcastRevertsOnZeroRefundAddress() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+
+        vm.deal(address(this), total);
+        vm.expectRevert(Hub.ZeroRefundAddress.selector);
+        hub.broadcast{value: total}(targetEids, options, address(0));
+    }
+
+    function testBroadcastWithRefundAddressAvoidsRevertWhenCallerCannotReceiveEth() public {
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        uint256 refund = 0.02 ether;
+        uint256 deposit = total + refund;
+
+        RefundRejectorCaller caller = new RefundRejectorCaller(hub);
+
+        // The original broadcast() refunds to msg.sender (the caller), so this should revert.
+        vm.expectRevert(abi.encodeWithSelector(Hub.FeeRefundFailed.selector, refund));
+        caller.callBroadcast{value: deposit}(targetEids, options);
+
+        // With refundAddress, the call succeeds and refunds to an EOA.
+        address refundAddress = address(0xCAFE);
+        uint256 refundBalanceBefore = refundAddress.balance;
+        caller.callBroadcastWithRefund{value: deposit}(targetEids, options, refundAddress);
+        assertEq(refundAddress.balance - refundBalanceBefore, refund, "refund paid to refundAddress");
+    }
+
     function _targetEids() internal pure returns (uint32[] memory targetEids) {
         targetEids = new uint32[](2);
         targetEids[0] = REMOTE_EID_A;
@@ -374,4 +769,71 @@ contract HubZeroRootMock is Hub {
     {
         return 0;
     }
+}
+
+contract RefundRejectorCaller {
+    Hub internal immutable HUB;
+
+    constructor(Hub hub_) {
+        HUB = hub_;
+    }
+
+    function callBroadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
+        HUB.broadcast{value: msg.value}(targetEids, lzOptions);
+    }
+
+    function callBroadcastWithRefund(uint32[] calldata targetEids, bytes calldata lzOptions, address refundAddress)
+        external
+        payable
+    {
+        HUB.broadcast{value: msg.value}(targetEids, lzOptions, refundAddress);
+    }
+}
+
+contract NonZeroLzTokenFeeSendLibMock is ISendLib {
+    error NotImplemented();
+
+    uint256 public nativeFee;
+    uint256 public lzTokenFee;
+
+    function setMessagingFee(uint256 nativeFee_, uint256 lzTokenFee_) external {
+        nativeFee = nativeFee_;
+        lzTokenFee = lzTokenFee_;
+    }
+
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IMessageLib).interfaceId || interfaceId == type(ISendLib).interfaceId;
+    }
+
+    function setConfig(address, SetConfigParam[] calldata) external pure {}
+
+    function getConfig(uint32, address, uint32) external pure returns (bytes memory) {
+        return "";
+    }
+
+    function isSupportedEid(uint32) external pure returns (bool) {
+        return true;
+    }
+
+    function version() external pure returns (uint64 major, uint8 minor, uint8 endpointVersion) {
+        return (0, 0, 2);
+    }
+
+    function messageLibType() external pure returns (MessageLibType) {
+        return MessageLibType.SendAndReceive;
+    }
+
+    function send(Packet calldata, bytes calldata, bool) external pure returns (MessagingFee memory, bytes memory) {
+        revert NotImplemented();
+    }
+
+    function quote(Packet calldata, bytes calldata, bool) external view returns (MessagingFee memory) {
+        return MessagingFee(nativeFee, lzTokenFee);
+    }
+
+    function setTreasury(address) external pure {}
+
+    function withdrawFee(address, uint256) external pure {}
+
+    function withdrawLzTokenFee(address, address, uint256) external pure {}
 }

@@ -1,8 +1,9 @@
-// SPDX-License-Identifier: Unlicense
+// SPDX-License-Identifier: MIT
 pragma solidity 0.8.33;
 
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
+import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
 import {PoseidonAggregationLib} from "./utils/PoseidonAggregationLib.sol";
 import {POSEIDON_ZERO_HASH_COUNT, POSEIDON_MAX_LEAVES} from "./utils/PoseidonAggregationConfig.sol";
 import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
@@ -14,7 +15,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
  *         global root consumed by verifier contracts.
  * @dev Implements the PoseidonT3 tree (height 6 / 64 leaves) and fee semantics consumed by the verifier network.
  */
-contract Hub is OAppUpgradeable, UUPSUpgradeable {
+contract Hub is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// -----------------------------------------------------------------------
     /// Structs / Events
     /// -----------------------------------------------------------------------
@@ -42,6 +43,8 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         uint256[] transferRootsSnapshot,
         uint64[] transferTreeIndicesSnapshot
     );
+    event ActivateEmergency();
+    event DeactivateEmergency();
 
     /// -----------------------------------------------------------------------
     /// Errors
@@ -57,8 +60,10 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     error NativeFeeMismatch(uint256 provided, uint256 required);
     error LayerZeroTokenFeeUnsupported(uint32 eid, uint256 lzTokenFee);
     error FeeRefundFailed(uint256 amount);
+    error ZeroRefundAddress();
     error EmptyTargetEids();
     error AggregationRootZero();
+    error EndpointMismatch(address expected, address actual);
 
     /// -----------------------------------------------------------------------
     /// Constants & Storage
@@ -106,7 +111,11 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         __Hub_init();
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        address expected = address(endpoint);
+        address actual = address(Hub(newImplementation).endpoint());
+        if (actual != expected) revert EndpointMismatch(expected, actual);
+    }
 
     function transferRoots(uint256 index_) public view returns (uint256) {
         return _getHubStorage().transferRoots[index_];
@@ -139,6 +148,7 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
 
     /// forge-lint: disable-next-line(mixed-case-function)
     function __Hub_init() internal onlyInitializing {
+        __Pausable_init();
         HubStorage storage $ = _getHubStorage();
         uint256[ZERO_HASH_COUNT] memory zeroHashInit = PoseidonAggregationLib.generateZeroHashes();
         for (uint256 i = 0; i < zeroHashInit.length; ++i) {
@@ -191,8 +201,24 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     /// @dev Implements the `broadcast` step, including fee refund semantics.
     /// @param targetEids LayerZero endpoint IDs that must receive the global root.
     /// @param lzOptions LayerZero execution parameters (gas, native drop, etc.).
-    function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable {
+    function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable whenNotPaused {
+        _broadcast(targetEids, lzOptions, msg.sender);
+    }
+
+    /// @notice Broadcasts the latest aggregation root and refunds any excess msg.value to `refundAddress`.
+    /// @dev This overload avoids reverts when `msg.sender` is a non-payable contract by allowing an explicit refund
+    ///      destination (typically an EOA). The address is also forwarded to LayerZero as the native fee refund target.
+    function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions, address refundAddress)
+        external
+        payable
+        whenNotPaused
+    {
+        _broadcast(targetEids, lzOptions, refundAddress);
+    }
+
+    function _broadcast(uint32[] calldata targetEids, bytes calldata lzOptions, address refundAddress) internal {
         require(targetEids.length != 0, EmptyTargetEids());
+        require(refundAddress != address(0), ZeroRefundAddress());
         BroadcastContext memory ctx = _computeBroadcastContext();
         require(ctx.aggregationRoot != 0, AggregationRootZero());
         bytes memory options = lzOptions;
@@ -205,11 +231,11 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
         _getHubStorage().aggSeq = ctx.nextAggSeq;
 
         for (uint256 i = 0; i < targetEids.length; ++i) {
-            _lzSend(targetEids[i], ctx.payload, options, fees[i], msg.sender);
+            _lzSend(targetEids[i], ctx.payload, options, fees[i], refundAddress);
         }
 
         if (refund != 0) {
-            (bool success,) = msg.sender.call{value: refund}("");
+            (bool success,) = refundAddress.call{value: refund}("");
             require(success, FeeRefundFailed(refund));
         }
 
@@ -347,5 +373,21 @@ contract Hub is OAppUpgradeable, UUPSUpgradeable {
     function _payNative(uint256 _nativeFee) internal override returns (uint256 nativeFee) {
         require(msg.value >= _nativeFee, NotEnoughNative(msg.value));
         return _nativeFee;
+    }
+
+    /// -----------------------------------------------------------------------
+    /// Admin Functions
+    /// -----------------------------------------------------------------------
+
+    /// @notice Allows the owner to pause the broadcast function.
+    function activateEmergency() external onlyOwner {
+        _pause();
+        emit ActivateEmergency();
+    }
+
+    /// @notice Allows the owner to unpause the broadcast function.
+    function deactivateEmergency() external onlyOwner {
+        _unpause();
+        emit DeactivateEmergency();
     }
 }
