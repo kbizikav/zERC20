@@ -4,11 +4,11 @@ pragma solidity 0.8.33;
 /* solhint-disable gas-custom-errors */
 
 import {TestHelperOz5, EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
-import {Adaptor} from "../src/liquidity/Adaptor.sol";
-import {ILiquidityManager} from "../src/interfaces/ILiquidityManager.sol";
-import {IAdaptor} from "../src/interfaces/IAdaptor.sol";
-import {IStargate, Ticket, StargateType} from "../src/interfaces/IStargate.sol";
-import {IzERC20} from "../src/interfaces/IzERC20.sol";
+import {Adaptor} from "../../src/liquidity/Adaptor.sol";
+import {ILiquidityManager} from "../../src/interfaces/ILiquidityManager.sol";
+import {IAdaptor} from "../../src/interfaces/IAdaptor.sol";
+import {IStargate, Ticket, StargateType} from "../../src/interfaces/IStargate.sol";
+import {IzERC20} from "../../src/interfaces/IzERC20.sol";
 import {
     IOFT,
     SendParam,
@@ -19,18 +19,40 @@ import {
     OFTReceipt
 } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
-import {zERC20} from "../src/zERC20.sol";
+import {zERC20} from "../../src/zERC20.sol";
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SelfCall} from "../src/utils/SelfCall.sol";
+import {SelfCall} from "../../src/utils/SelfCall.sol";
 
 contract MintableToken is ERC20 {
     constructor() ERC20("Underlying", "UND") {}
 
     function mint(address to, uint256 amount) external {
         _mint(to, amount);
+    }
+}
+
+contract MintableToken6 is ERC20 {
+    constructor() ERC20("Underlying6", "UND6") {}
+
+    function decimals() public pure override returns (uint8) {
+        return 6;
+    }
+
+    function mint(address to, uint256 amount) external {
+        _mint(to, amount);
+    }
+}
+
+contract AdaptorUpgradeMock is Adaptor {
+    constructor(address liquidityManager, address stargate, address endpoint)
+        Adaptor(liquidityManager, stargate, endpoint)
+    {}
+
+    function version() external pure returns (string memory) {
+        return "adaptor-v2";
     }
 }
 
@@ -123,6 +145,7 @@ contract MockStargate is IStargate {
     uint256 public nativeFeeQuote;
     uint256 public tokenFee;
     uint256 public bonus;
+    uint256 public refundAmount;
     SendParam public lastSendParam;
     uint256 public lastValue;
     address public lastRefund;
@@ -140,6 +163,10 @@ contract MockStargate is IStargate {
 
     function setBonus(uint256 bonus_) external {
         bonus = bonus_;
+    }
+
+    function setRefund(uint256 refundAmount_) external {
+        refundAmount = refundAmount_;
     }
 
     function setRevertSend(bool shouldRevert) external {
@@ -203,6 +230,10 @@ contract MockStargate is IStargate {
         } else {
             require(IERC20(UNDERLYING).transferFrom(msg.sender, address(this), _sendParam.amountLD), "transfer failed");
         }
+        if (refundAmount > 0) {
+            (bool success,) = payable(msg.sender).call{value: refundAmount}("");
+            require(success, "refund failed");
+        }
 
         msgReceipt = MessagingReceipt({
             guid: bytes32(0), nonce: 0, fee: MessagingFee({nativeFee: _fee.nativeFee, lzTokenFee: _fee.lzTokenFee})
@@ -230,6 +261,10 @@ contract MockStargate is IStargate {
             require(msg.value == _sendParam.amountLD + _fee.nativeFee, "native value mismatch");
         } else {
             require(IERC20(UNDERLYING).transferFrom(msg.sender, address(this), _sendParam.amountLD), "transfer failed");
+        }
+        if (refundAmount > 0) {
+            (bool success,) = payable(msg.sender).call{value: refundAmount}("");
+            require(success, "refund failed");
         }
 
         msgReceipt = MessagingReceipt({
@@ -404,6 +439,63 @@ contract AdaptorTest is TestHelperOz5 {
         Adaptor newAdaptor = _deployAdaptor(address(manager), address(stargate), address(endpoint), owner);
 
         assertEq(newAdaptor.owner(), owner);
+    }
+
+    // ==================== Upgrade Tests ====================
+
+    function testAdaptorUpgradePreservesState() public {
+        uint256 amount = 10 ether;
+        uint256 nativeDeposit = 0.01 ether;
+
+        zerc20.mint(address(adaptor), amount);
+
+        bytes memory composeMsg = abi.encodePacked(OFTComposeMsgCodec.addressToBytes32(USER));
+        bytes memory message = OFTComposeMsgCodec.encode(0, DST_EID, amount, composeMsg);
+
+        vm.deal(address(endpoint), nativeDeposit);
+        vm.prank(address(endpoint));
+        adaptor.lzCompose{value: nativeDeposit}(address(zerc20), bytes32(0), message, address(0), bytes(""));
+
+        assertEq(adaptor.zerc20Balances(USER), amount, "zerc20 credited");
+        assertEq(adaptor.nativeBalances(USER), nativeDeposit, "native credited");
+
+        AdaptorUpgradeMock newImplementation =
+            new AdaptorUpgradeMock(address(manager), address(stargate), address(endpoint));
+        adaptor.upgradeToAndCall(address(newImplementation), bytes(""));
+
+        AdaptorUpgradeMock upgraded = AdaptorUpgradeMock(payable(address(adaptor)));
+        assertEq(upgraded.version(), "adaptor-v2", "upgraded implementation not active");
+        assertEq(upgraded.zerc20Balances(USER), amount, "zerc20 balance not preserved");
+        assertEq(upgraded.nativeBalances(USER), nativeDeposit, "native balance not preserved");
+        assertEq(upgraded.owner(), address(this), "owner not preserved");
+    }
+
+    function testAdaptorUpgradeRevertsOnLzEndpointMismatch() public {
+        address otherEndpoint = address(0xBEEF);
+        AdaptorUpgradeMock newImplementation =
+            new AdaptorUpgradeMock(address(manager), address(stargate), otherEndpoint);
+        vm.expectRevert(abi.encodeWithSelector(Adaptor.LzEndpointMismatch.selector, address(endpoint), otherEndpoint));
+        adaptor.upgradeToAndCall(address(newImplementation), bytes(""));
+    }
+
+    function testAdaptorUpgradeRevertsOnLiquidityManagerMismatch() public {
+        MockLiquidityManager otherManager = new MockLiquidityManager(underlying, address(zerc20));
+        AdaptorUpgradeMock newImplementation =
+            new AdaptorUpgradeMock(address(otherManager), address(stargate), address(endpoint));
+        vm.expectRevert(
+            abi.encodeWithSelector(Adaptor.LiquidityManagerMismatch.selector, address(manager), address(otherManager))
+        );
+        adaptor.upgradeToAndCall(address(newImplementation), bytes(""));
+    }
+
+    function testAdaptorUpgradeRevertsOnStargateMismatch() public {
+        MockStargate otherStargate = new MockStargate(address(underlying));
+        AdaptorUpgradeMock newImplementation =
+            new AdaptorUpgradeMock(address(manager), address(otherStargate), address(endpoint));
+        vm.expectRevert(
+            abi.encodeWithSelector(Adaptor.StargateMismatch.selector, address(stargate), address(otherStargate))
+        );
+        adaptor.upgradeToAndCall(address(newImplementation), bytes(""));
     }
 
     // ==================== Quote Tests ====================
@@ -736,6 +828,73 @@ contract AdaptorTest is TestHelperOz5 {
         assertEq(zerc20.lastSendValue(), returnNativeFee, "native fee consumed");
     }
 
+    function testLzComposeUnwrapAndBridgeSucceeds() public {
+        uint256 amount = 100 ether;
+        uint256 unwrapFee = 1 ether;
+        uint256 bridgeTokenFee = 0.5 ether;
+        uint256 nativeFee = 0.05 ether;
+
+        manager.setQuoteUnwrapFee(unwrapFee);
+        stargate.setQuote(nativeFee, bridgeTokenFee);
+        zerc20.mint(address(adaptor), amount);
+
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: amount - unwrapFee - bridgeTokenFee,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+        bytes memory message = _buildComposeMessage(USER, amount, request);
+
+        vm.deal(address(endpoint), nativeFee);
+        vm.prank(address(endpoint));
+        adaptor.lzCompose{value: nativeFee}(address(zerc20), bytes32(0), message, address(0), bytes(""));
+
+        assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 balance cleared");
+        assertEq(adaptor.underlyingTokenBalances(USER), 0, "underlying balance cleared");
+        assertEq(adaptor.nativeBalances(USER), 0, "native balance cleared");
+
+        uint256 expectedUnderlying = amount - unwrapFee;
+        assertEq(underlying.balanceOf(address(stargate)), expectedUnderlying, "stargate received underlying");
+    }
+
+    function testUnwrapAndBridgeCreditsNativeRefundWhenStargateRefunds() public {
+        uint256 amount = 10 ether;
+        uint256 nativeFee = 0.05 ether;
+        uint256 refund = 0.01 ether;
+
+        manager.setQuoteUnwrapFee(0);
+        stargate.setQuote(nativeFee, 0);
+        stargate.setRefund(refund);
+        vm.deal(address(stargate), refund);
+
+        zerc20.mint(USER, amount);
+        vm.prank(USER);
+        zerc20.approve(address(adaptor), amount);
+
+        vm.deal(USER, nativeFee);
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.prank(USER);
+        adaptor.unwrapAndBridge{value: nativeFee}(amount, request);
+
+        assertEq(adaptor.nativeBalances(USER), refund, "refund credited");
+
+        vm.prank(USER);
+        adaptor.withdraw(NATIVE_TOKEN, refund);
+        assertEq(adaptor.nativeBalances(USER), 0, "native balance cleared after withdraw");
+        assertEq(address(USER).balance, refund, "refund withdrawable");
+    }
+
     function _deployZerc20(EndpointV2 endpointMock) private returns (ZERC20AdaptorHarness) {
         ZERC20AdaptorHarness impl = new ZERC20AdaptorHarness(address(endpointMock));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this)));
@@ -760,5 +919,395 @@ contract AdaptorTest is TestHelperOz5 {
     {
         bytes memory composeMsg = abi.encodePacked(OFTComposeMsgCodec.addressToBytes32(user), abi.encode(request));
         return OFTComposeMsgCodec.encode(0, DST_EID, amount, composeMsg);
+    }
+
+    // ==================== Withdraw Tests ====================
+
+    function testWithdrawUnderlyingToken() public {
+        uint256 amount = 10 ether;
+
+        // Setup: give user underlying balance via unwrap flow
+        manager.setQuoteUnwrapFee(0);
+        stargate.setQuote(0.01 ether, 0);
+        stargate.setRevertSend(true); // force bridge to fail, leaving underlying in adaptor
+
+        zerc20.mint(USER, amount);
+        vm.prank(USER);
+        zerc20.approve(address(adaptor), amount);
+
+        vm.deal(USER, 0.01 ether);
+
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.prank(USER);
+        adaptor.unwrapAndBridge{value: 0.01 ether}(amount, request);
+
+        assertEq(adaptor.underlyingTokenBalances(USER), amount, "underlying credited");
+
+        vm.prank(USER);
+        adaptor.withdraw(address(underlying), amount);
+
+        assertEq(adaptor.underlyingTokenBalances(USER), 0, "underlying balance cleared");
+        assertEq(underlying.balanceOf(USER), amount, "underlying returned");
+    }
+
+    function testWithdrawZerc20Token() public {
+        uint256 amount = 10 ether;
+
+        // Setup: give user zerc20 balance via lzCompose with decode failure
+        zerc20.mint(address(adaptor), amount);
+
+        bytes memory composeMsg = abi.encodePacked(OFTComposeMsgCodec.addressToBytes32(USER));
+        bytes memory message = OFTComposeMsgCodec.encode(0, DST_EID, amount, composeMsg);
+
+        vm.prank(address(endpoint));
+        adaptor.lzCompose(address(zerc20), bytes32(0), message, address(0), bytes(""));
+
+        assertEq(adaptor.zerc20Balances(USER), amount, "zerc20 credited");
+
+        vm.prank(USER);
+        adaptor.withdraw(address(zerc20), amount);
+
+        assertEq(adaptor.zerc20Balances(USER), 0, "zerc20 balance cleared");
+        assertEq(zerc20.balanceOf(USER), amount, "zerc20 returned");
+    }
+
+    function testWithdrawRevertsOnInvalidToken() public {
+        address invalidToken = address(0x1234);
+
+        vm.expectRevert(Adaptor.InvalidToken.selector);
+        vm.prank(USER);
+        adaptor.withdraw(invalidToken, 1 ether);
+    }
+
+    function testWithdrawRevertsOnZeroAmount() public {
+        vm.expectRevert(Adaptor.ZeroAmount.selector);
+        vm.prank(USER);
+        adaptor.withdraw(NATIVE_TOKEN, 0);
+    }
+
+    function testWithdrawRevertsOnInsufficientNativeBalance() public {
+        vm.expectRevert(Adaptor.InsufficientNativeBalance.selector);
+        vm.prank(USER);
+        adaptor.withdraw(NATIVE_TOKEN, 1 ether);
+    }
+
+    function testWithdrawRevertsOnInsufficientUnderlyingBalance() public {
+        vm.expectRevert(Adaptor.InsufficientUnderlyingBalance.selector);
+        vm.prank(USER);
+        adaptor.withdraw(address(underlying), 1 ether);
+    }
+
+    function testWithdrawRevertsOnInsufficientZerc20Balance() public {
+        vm.expectRevert(Adaptor.InsufficientZerc20Balance.selector);
+        vm.prank(USER);
+        adaptor.withdraw(address(zerc20), 1 ether);
+    }
+
+    function testWithdrawNativeWhenUnderlyingIsNative() public {
+        // Setup native underlying adaptor
+        MockLiquidityManager nativeManager = new MockLiquidityManager(IERC20(NATIVE_TOKEN), address(zerc20));
+        MockStargate nativeStargate = new MockStargate(NATIVE_TOKEN);
+        Adaptor nativeAdaptor =
+            _deployAdaptor(address(nativeManager), address(nativeStargate), address(endpoint), address(this));
+
+        uint256 amount = 1 ether;
+        vm.deal(USER, amount);
+
+        vm.prank(USER);
+        (bool success,) = address(nativeAdaptor).call{value: amount}("");
+        assertTrue(success, "deposit failed");
+
+        // User should be able to withdraw from combined balance
+        vm.prank(USER);
+        nativeAdaptor.withdraw(NATIVE_TOKEN, amount);
+
+        assertEq(address(USER).balance, amount, "native returned");
+    }
+
+    function testWithdrawNativeWhenUnderlyingIsNativeDebitsUnderlyingFirst() public {
+        MockLiquidityManager nativeManager = new MockLiquidityManager(IERC20(NATIVE_TOKEN), address(zerc20));
+        MockStargate nativeStargate = new MockStargate(NATIVE_TOKEN);
+        Adaptor nativeAdaptor =
+            _deployAdaptor(address(nativeManager), address(nativeStargate), address(endpoint), address(this));
+
+        uint256 amount = 10 ether;
+        uint256 nativeFee = 0.01 ether;
+
+        nativeManager.setQuoteUnwrapFee(0);
+        nativeStargate.setQuote(nativeFee, 0);
+        nativeStargate.setRevertSend(true); // stop after unwrap, keep balances withdrawable
+
+        // Fund manager so it can send native underlying to adaptor during unwrap.
+        vm.deal(address(nativeManager), amount);
+
+        zerc20.mint(USER, amount);
+        vm.prank(USER);
+        zerc20.approve(address(nativeAdaptor), amount);
+
+        vm.deal(USER, nativeFee);
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.prank(USER);
+        nativeAdaptor.unwrapAndBridge{value: nativeFee}(amount, request);
+
+        assertEq(nativeAdaptor.underlyingTokenBalances(USER), amount, "underlying credited");
+        assertEq(nativeAdaptor.nativeBalances(USER), nativeFee, "native still held after bridge revert");
+
+        vm.prank(USER);
+        nativeAdaptor.withdraw(NATIVE_TOKEN, amount);
+
+        assertEq(nativeAdaptor.underlyingTokenBalances(USER), 0, "underlying debited first");
+        assertEq(nativeAdaptor.nativeBalances(USER), nativeFee, "native balance unchanged");
+        assertEq(address(USER).balance, amount, "native returned");
+    }
+
+    // ==================== quoteFee Edge Case Tests ====================
+
+    function testQuoteFeeReturnsZeroBridgeFeeWhenUnwrapFeeExceedsAmount() public {
+        uint256 amount = 10 ether;
+
+        manager.setQuoteUnwrapFee(15 ether); // exceeds amount
+        stargate.setQuote(0.01 ether, 0);
+
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        Adaptor.FeeQuote memory quote = adaptor.quoteFee(amount, request);
+
+        assertEq(quote.tokenUnwrapFee, 15 ether, "unwrap fee returned");
+        assertEq(quote.nativeBridgeFee, 0, "native bridge fee is zero");
+        assertEq(quote.tokenBridgeFee, 0, "token bridge fee is zero");
+    }
+
+    function testQuoteFeeReturnsZeroBridgeFeeWhenAmountAfterUnwrapIsZero() public {
+        uint256 amount = 10 ether;
+
+        manager.setQuoteUnwrapFee(10 ether); // equals amount
+        stargate.setQuote(0.01 ether, 0);
+
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        Adaptor.FeeQuote memory quote = adaptor.quoteFee(amount, request);
+
+        assertEq(quote.tokenUnwrapFee, 10 ether, "unwrap fee returned");
+        assertEq(quote.nativeBridgeFee, 0, "native bridge fee is zero");
+        assertEq(quote.tokenBridgeFee, 0, "token bridge fee is zero");
+    }
+
+    function testQuoteFeeReturnsTokenBridgeFeeWhenReceiptAmountLower() public {
+        uint256 amount = 10 ether;
+        uint256 unwrapFee = 1 ether;
+        uint256 bridgeTokenFee = 0.5 ether;
+        uint256 nativeFee = 0.02 ether;
+
+        manager.setQuoteUnwrapFee(unwrapFee);
+        stargate.setQuote(nativeFee, bridgeTokenFee);
+
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        Adaptor.FeeQuote memory quote = adaptor.quoteFee(amount, request);
+
+        assertEq(quote.tokenUnwrapFee, unwrapFee, "unwrap fee returned");
+        assertEq(quote.nativeBridgeFee, nativeFee, "native bridge fee returned");
+        assertEq(quote.tokenBridgeFee, bridgeTokenFee, "token bridge fee returned");
+    }
+
+    function testQuoteFeeReturnsTokenBridgeFeeWhenDustRemovesAllAmount() public {
+        MintableToken6 underlying6 = new MintableToken6();
+        MockLiquidityManager manager6 = new MockLiquidityManager(underlying6, address(zerc20));
+        MockStargate stargate6 = new MockStargate(address(underlying6));
+        Adaptor adaptor6 = _deployAdaptor(address(manager6), address(stargate6), address(endpoint), address(this));
+
+        uint256 amount = 10_000_000; // 10 UND6 with 6 decimals
+        uint256 unwrapFee = 1_000_000; // 1 UND6
+
+        manager6.setQuoteUnwrapFee(unwrapFee);
+
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        Adaptor.FeeQuote memory quote = adaptor6.quoteFee(amount, request);
+        uint256 amountAfterUnwrap = amount - unwrapFee;
+
+        assertEq(quote.tokenUnwrapFee, unwrapFee, "unwrap fee returned");
+        assertEq(quote.nativeBridgeFee, 0, "native bridge fee is zero");
+        assertEq(quote.tokenBridgeFee, amountAfterUnwrap, "token bridge fee equals amount after unwrap");
+    }
+
+    // ==================== unwrapAndBridge Validation Tests ====================
+
+    function testUnwrapAndBridgeRevertsOnZeroAmount() public {
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.expectRevert(Adaptor.ZeroAmount.selector);
+        vm.prank(USER);
+        adaptor.unwrapAndBridge(0, request);
+    }
+
+    function testUnwrapAndBridgeRevertsOnZeroDestination() public {
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: address(0),
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.expectRevert(Adaptor.ZeroAddress.selector);
+        vm.prank(USER);
+        adaptor.unwrapAndBridge(1 ether, request);
+    }
+
+    function testUnwrapAndBridgeRevertsOnZeroDstEid() public {
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: 0,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        vm.expectRevert(Adaptor.InvalidDstEid.selector);
+        vm.prank(USER);
+        adaptor.unwrapAndBridge(1 ether, request);
+    }
+
+    // ==================== receive() Protocol Contract Tests ====================
+
+    function testReceiveFromLiquidityManagerDoesNotCreditBalance() public {
+        uint256 amount = 1 ether;
+        vm.deal(address(manager), amount);
+
+        vm.prank(address(manager));
+        (bool success,) = address(adaptor).call{value: amount}("");
+        assertTrue(success, "receive failed");
+
+        assertEq(adaptor.nativeBalances(address(manager)), 0, "LM balance should not be credited");
+        assertEq(address(adaptor).balance, amount, "adaptor should hold the native");
+    }
+
+    function testReceiveFromEndpointDoesNotCreditBalance() public {
+        uint256 amount = 1 ether;
+        vm.deal(address(endpoint), amount);
+
+        vm.prank(address(endpoint));
+        (bool success,) = address(adaptor).call{value: amount}("");
+        assertTrue(success, "receive failed");
+
+        assertEq(adaptor.nativeBalances(address(endpoint)), 0, "endpoint balance should not be credited");
+    }
+
+    function testReceiveFromStargateDoesNotCreditBalance() public {
+        uint256 amount = 1 ether;
+        vm.deal(address(stargate), amount);
+
+        vm.prank(address(stargate));
+        (bool success,) = address(adaptor).call{value: amount}("");
+        assertTrue(success, "receive failed");
+
+        assertEq(adaptor.nativeBalances(address(stargate)), 0, "stargate balance should not be credited");
+    }
+
+    // ==================== lzCompose Edge Case Tests ====================
+
+    function testLzComposeWithZeroAmountReturnsEarly() public {
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 0,
+            extraOptions: bytes(""),
+            composeMsg: bytes(""),
+            oftCmd: bytes("")
+        });
+
+        bytes memory message = _buildComposeMessage(USER, 0, request);
+
+        vm.prank(address(endpoint));
+        adaptor.lzCompose(address(zerc20), bytes32(0), message, address(0), bytes(""));
+
+        // Should return early without any state changes beyond balance credit
+        assertEq(adaptor.zerc20Balances(USER), 0, "zero zerc20 credited");
+    }
+
+    function testLzComposeRejectsInvalidFromAddress() public {
+        bytes memory message = bytes("invalid");
+
+        vm.expectRevert(Adaptor.InvalidComposeCaller.selector);
+        vm.prank(address(endpoint));
+        adaptor.lzCompose(address(0x1234), bytes32(0), message, address(0), bytes(""));
+    }
+
+    // ==================== decodeBridgeRequest Tests ====================
+
+    function testDecodeBridgeRequestReturnsCorrectValues() public view {
+        Adaptor.BridgeRequest memory request = IAdaptor.BridgeRequest({
+            dstEid: DST_EID,
+            to: DESTINATION,
+            minAmountOut: 100 ether,
+            extraOptions: bytes("extra"),
+            composeMsg: bytes("compose"),
+            oftCmd: bytes("cmd")
+        });
+
+        bytes memory message = _buildComposeMessage(USER, 50 ether, request);
+
+        Adaptor.BridgeRequest memory decoded = adaptor.decodeBridgeRequest(message);
+
+        assertEq(decoded.dstEid, DST_EID, "dstEid mismatch");
+        assertEq(decoded.to, DESTINATION, "to mismatch");
+        assertEq(decoded.minAmountOut, 100 ether, "minAmountOut mismatch");
+        assertEq(decoded.extraOptions, bytes("extra"), "extraOptions mismatch");
+        assertEq(decoded.composeMsg, bytes("compose"), "composeMsg mismatch");
+        assertEq(decoded.oftCmd, bytes("cmd"), "oftCmd mismatch");
     }
 }
