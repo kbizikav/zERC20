@@ -48,6 +48,9 @@ contract Adaptor is
     error InsufficientNativeBalance();
     error UnexpectedAmountSent();
     error ZeroAmountSent();
+    error LiquidityManagerMismatch(address expected, address actual);
+    error StargateMismatch(address expected, address actual);
+    error LzEndpointMismatch(address expected, address actual);
 
     uint128 private constant RETURN_LZ_RECEIVE_GAS = 500_000;
     uint8 private constant NATIVE_DECIMALS = 18;
@@ -147,7 +150,20 @@ contract Adaptor is
         __Ownable_init(initialOwner);
     }
 
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+        Adaptor candidate = Adaptor(payable(newImplementation));
+        address expectedManager = LIQUIDITY_MANAGER;
+        address actualManager = candidate.LIQUIDITY_MANAGER();
+        require(actualManager == expectedManager, LiquidityManagerMismatch(expectedManager, actualManager));
+
+        address expectedStargate = STARGATE;
+        address actualStargate = candidate.STARGATE();
+        require(actualStargate == expectedStargate, StargateMismatch(expectedStargate, actualStargate));
+
+        address expectedEndpoint = LZ_ENDPOINT;
+        address actualEndpoint = candidate.LZ_ENDPOINT();
+        require(actualEndpoint == expectedEndpoint, LzEndpointMismatch(expectedEndpoint, actualEndpoint));
+    }
 
     // ---------------------------- External ---------------------------------
 
