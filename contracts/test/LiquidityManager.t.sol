@@ -27,6 +27,14 @@ contract MintableERC20 is ERC20 {
     }
 }
 
+contract LiquidityManagerUpgradeMock is LiquidityManager {
+    constructor(address underlyingToken_, address zerc20_) LiquidityManager(underlyingToken_, zerc20_) {}
+
+    function version() external pure returns (string memory) {
+        return "liquidity-manager-v2";
+    }
+}
+
 contract LiquidityManagerTest is Test {
     LiquidityManager internal manager;
     zERC20 internal token;
@@ -70,12 +78,83 @@ contract LiquidityManagerTest is Test {
         new ERC1967Proxy(address(impl), initData);
     }
 
+    function testInitializeRevertsOnDecimalMismatchWhenZerc20Not18ForNativeUnderlying() public {
+        zERC20 nativeToken = _deployToken(address(this), endpoint, 6);
+        LiquidityManager impl = new LiquidityManager(NATIVE_TOKEN, address(nativeToken));
+        bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (params, address(this)));
+
+        vm.expectRevert(LiquidityManager.DecimalMismatch.selector);
+        new ERC1967Proxy(address(impl), initData);
+    }
+
     function testInitializeRevertsOnZeroOwner() public {
         LiquidityManager impl = new LiquidityManager(address(underlying), address(token));
         bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (params, address(0)));
 
         vm.expectRevert(LiquidityManager.ZeroAddress.selector);
         new ERC1967Proxy(address(impl), initData);
+    }
+
+    function testInitializeRevertsOnInvalidFeeParams() public {
+        LiquidityManager impl = new LiquidityManager(address(underlying), address(token));
+        IncentiveLib.FeeParams memory invalidParams = IncentiveLib.FeeParams({targetLiquidity: 1, k: 10_001});
+        bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (invalidParams, address(this)));
+
+        vm.expectRevert(IncentiveLib.InvalidK.selector);
+        new ERC1967Proxy(address(impl), initData);
+    }
+
+    function testWrapRevertsOnZeroAmount() public {
+        vm.expectRevert(LiquidityManager.ZeroAmount.selector);
+        vm.prank(ALICE);
+        manager.wrap(0, ALICE);
+    }
+
+    function testWrapRevertsOnZeroReceiver() public {
+        vm.expectRevert(LiquidityManager.ZeroReceiver.selector);
+        vm.prank(ALICE);
+        manager.wrap(1 ether, address(0));
+    }
+
+    function testWrapRevertsOnNonZeroMsgValueForErc20Underlying() public {
+        vm.deal(ALICE, 1 ether);
+        vm.expectRevert(abi.encodeWithSelector(LiquidityManager.InvalidMsgValue.selector, 0, 1 ether));
+        vm.prank(ALICE);
+        manager.wrap{value: 1 ether}(1 ether, ALICE);
+    }
+
+    function testUnwrapRevertsOnZeroAmount() public {
+        vm.expectRevert(LiquidityManager.ZeroAmount.selector);
+        vm.prank(ALICE);
+        manager.unwrap(0, ALICE);
+    }
+
+    function testUnwrapRevertsOnZeroReceiver() public {
+        vm.startPrank(ALICE);
+        underlying.approve(address(manager), type(uint256).max);
+        manager.wrap(1 ether, ALICE);
+
+        vm.expectRevert(LiquidityManager.ZeroReceiver.selector);
+        manager.unwrap(1 ether, address(0));
+        vm.stopPrank();
+    }
+
+    function testUnwrapAfterExternalDrainChargesFullFee() public {
+        vm.startPrank(ALICE);
+        underlying.approve(address(manager), type(uint256).max);
+        manager.wrap(10 ether, ALICE);
+        vm.stopPrank();
+
+        // Simulate an external drain/donation reversal: remove underlying from the manager.
+        vm.prank(address(manager));
+        bool success = underlying.transfer(address(0xBEEF), 10 ether);
+        assertTrue(success, "drain transfer failed");
+
+        vm.prank(ALICE);
+        uint256 received = manager.unwrap(10 ether, ALICE);
+        assertEq(received, 0, "unwrap should pay zero when drained");
+        assertEq(manager.feeSurplus(), 10 ether, "fee surplus should accrue full amount");
+        assertEq(token.balanceOf(ALICE), 0, "zerc20 should be burned");
     }
 
     function testWrapThenUnwrapAccruesFeeAndPaysRewards() public {
@@ -187,6 +266,28 @@ contract LiquidityManagerTest is Test {
         assertEq(address(nativeManager).balance, fee, "native fee retained");
     }
 
+    function testReceiveRevertsWhenUnderlyingNotNative() public {
+        vm.deal(ALICE, 1 ether);
+        vm.prank(ALICE);
+        vm.expectRevert(LiquidityManager.NativeTokenNotSupported.selector);
+        (bool success,) = payable(address(manager)).call{value: 1 ether}("");
+        success;
+    }
+
+    function testReceiveWrapsNativeAndMintsToSender() public {
+        zERC20 nativeToken = _deployToken(address(this), endpoint, 18);
+        LiquidityManager nativeManager = _deployManager(NATIVE_TOKEN, address(nativeToken), params, address(this));
+        nativeToken.setMinter(address(nativeManager));
+
+        vm.deal(ALICE, 1 ether);
+        vm.prank(ALICE);
+        (bool success,) = payable(address(nativeManager)).call{value: 1 ether}("");
+        assertTrue(success, "receive failed");
+
+        assertEq(nativeToken.balanceOf(ALICE), 1 ether, "zerc20 minted");
+        assertEq(address(nativeManager).balance, 1 ether, "native held");
+    }
+
     function testWrapNativeRevertsOnValueMismatch() public {
         LiquidityManager nativeManager = _deployManager(NATIVE_TOKEN, address(token), params, address(this));
         token.setMinter(address(nativeManager));
@@ -212,6 +313,17 @@ contract LiquidityManagerTest is Test {
 
         assertEq(underlying.balanceOf(REWARD_COLLECTOR), receiverBefore + accruedFee, "rewards transferred");
         assertEq(manager.feeSurplus(), 0, "surplus cleared");
+    }
+
+    function testWithdrawRewardsRevertsOnZeroReceiver() public {
+        uint256 accruedFee = _accrueFeeSurplus();
+        vm.expectRevert(LiquidityManager.ZeroReceiver.selector);
+        manager.withdrawRewards(address(0), accruedFee);
+    }
+
+    function testWithdrawRewardsRevertsOnZeroAmount() public {
+        vm.expectRevert(LiquidityManager.ZeroAmount.selector);
+        manager.withdrawRewards(REWARD_COLLECTOR, 0);
     }
 
     function testSetFeeParamsRestrictedAndValidatesTarget() public {
@@ -265,6 +377,49 @@ contract LiquidityManagerTest is Test {
 
         vm.expectRevert(IncentiveLib.InvalidK.selector);
         manager.setFeeParams(newParams);
+    }
+
+    function testLiquidityManagerUpgradePreservesState() public {
+        uint256 accruedFee = _accrueFeeSurplus();
+        IncentiveLib.FeeParams memory storedBefore = manager.feeParams();
+        assertGt(accruedFee, 0, "fee should accumulate");
+
+        LiquidityManagerUpgradeMock newImplementation =
+            new LiquidityManagerUpgradeMock(address(underlying), address(token));
+        manager.upgradeToAndCall(address(newImplementation), bytes(""));
+
+        LiquidityManagerUpgradeMock upgraded = LiquidityManagerUpgradeMock(payable(address(manager)));
+        assertEq(upgraded.version(), "liquidity-manager-v2", "upgraded implementation not active");
+
+        IncentiveLib.FeeParams memory storedAfter = upgraded.feeParams();
+        assertEq(storedAfter.targetLiquidity, storedBefore.targetLiquidity, "fee params target not preserved");
+        assertEq(storedAfter.k, storedBefore.k, "fee params k not preserved");
+        assertEq(upgraded.feeSurplus(), accruedFee, "fee surplus not preserved");
+        assertTrue(upgraded.hasRole(upgraded.DEFAULT_ADMIN_ROLE(), address(this)), "admin role not preserved");
+    }
+
+    function testLiquidityManagerUpgradeRevertsOnUnderlyingTokenMismatch() public {
+        MintableERC20 otherUnderlying = new MintableERC20("Other", "OTH", 18);
+        LiquidityManagerUpgradeMock newImplementation =
+            new LiquidityManagerUpgradeMock(address(otherUnderlying), address(token));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                LiquidityManager.UnderlyingTokenMismatch.selector, address(underlying), address(otherUnderlying)
+            )
+        );
+        manager.upgradeToAndCall(address(newImplementation), bytes(""));
+    }
+
+    function testLiquidityManagerUpgradeRevertsOnZerc20TokenMismatch() public {
+        zERC20 otherToken = _deployToken(address(this), endpoint, 18);
+        LiquidityManagerUpgradeMock newImplementation =
+            new LiquidityManagerUpgradeMock(address(underlying), address(otherToken));
+
+        vm.expectRevert(
+            abi.encodeWithSelector(LiquidityManager.Zerc20TokenMismatch.selector, address(token), address(otherToken))
+        );
+        manager.upgradeToAndCall(address(newImplementation), bytes(""));
     }
 
     function _accrueFeeSurplus() private returns (uint256 feeAmount) {
