@@ -11,6 +11,9 @@ members = [
     "zstorage/frontend",
     "zstorage/backend/key_manager",
     "zstorage/backend/storage",
+    "trusted-setup/common",
+    "trusted-setup/cli",
+    "trusted-setup/coordinator",
 ]
 resolver = "2"
 
@@ -35,6 +38,7 @@ ark-grumpkin = { version = "0.5.0", default-features = false }
 ark-groth16 = { version = "0.5.0", default-features = false }
 ark-ec = { version = "0.5.0", default-features = false }
 ark-serialize = { version = "0.5.0", default-features = false }
+ark-poly = { version = "0.5.0", default-features = false }
 ark-r1cs-std = { version = "0.5.0", default-features = false }
 ark-relations = { version = "0.5.0", default-features = false }
 ark-crypto-primitives = { version = "0.5.0", default-features = false, features = [
@@ -94,6 +98,8 @@ url = "2.5.3"
 futures = "0.3.31"
 flate2 = { version = "1.0.34", default-features = true }
 ic-agent = { version = "0.44.3" }
+arkworks-phase2 = { git = "https://github.com/kbizikav/arkworks-phase2.git", branch = "signature" }
+
 
 [patch.crates-io]
 ark-groth16 = { git = "https://github.com/arkworks-rs/groth16", rev = "b3b4a15" }
