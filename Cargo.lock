@@ -717,7 +717,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "alloy-sol-types",
- "itertools 0.14.0",
+ "itertools 0.13.0",
  "serde",
  "serde_json",
  "serde_with",
@@ -1183,7 +1183,7 @@ dependencies = [
 [[package]]
 name = "ark-ff-asm"
 version = "0.5.0"
-source = "git+https://github.com/arkworks-rs/algebra#598a5fbabc1903c7bab6668ef8812bfdf2158723"
+source = "git+https://github.com/arkworks-rs/algebra#c1f4f5665504154a9de2345f464b0b3da72c28ec"
 dependencies = [
  "quote",
  "syn 2.0.106",
@@ -1217,7 +1217,7 @@ dependencies = [
 [[package]]
 name = "ark-ff-macros"
 version = "0.5.0"
-source = "git+https://github.com/arkworks-rs/algebra#598a5fbabc1903c7bab6668ef8812bfdf2158723"
+source = "git+https://github.com/arkworks-rs/algebra#c1f4f5665504154a9de2345f464b0b3da72c28ec"
 dependencies = [
  "num-bigint",
  "num-traits",
@@ -1379,7 +1379,7 @@ dependencies = [
 [[package]]
 name = "ark-serialize-derive"
 version = "0.5.0"
-source = "git+https://github.com/arkworks-rs/algebra#598a5fbabc1903c7bab6668ef8812bfdf2158723"
+source = "git+https://github.com/arkworks-rs/algebra#c1f4f5665504154a9de2345f464b0b3da72c28ec"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1440,6 +1440,7 @@ dependencies = [
 [[package]]
 name = "arkworks-phase2"
 version = "0.1.0"
+source = "git+https://github.com/kbizikav/arkworks-phase2.git?branch=signature#12ec30097317edae83a344893c30053da01f3424"
 dependencies = [
  "alloy-primitives",
  "ark-ec",
@@ -3566,7 +3567,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4848,7 +4849,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4b0f83760fb341a774ed326568e19f5a863af4a952def8c39f9ab92fd95b88e5"
 dependencies = [
  "equivalent",
- "hashbrown 0.16.0",
+ "hashbrown 0.15.5",
  "serde",
  "serde_core",
 ]
@@ -5432,7 +5433,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -6884,7 +6885,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -8062,7 +8063,7 @@ dependencies = [
  "getrandom 0.3.4",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -9030,7 +9031,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.48.0",
 ]
 
 [[package]]
