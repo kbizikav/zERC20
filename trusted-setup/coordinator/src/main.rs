@@ -82,6 +82,7 @@ struct Config {
     presign_ttl: Duration,
     lease_ttl: Duration,
     cleanup_interval: Duration,
+    skip_transcript_verification: bool,
 }
 
 impl Config {
@@ -115,6 +116,10 @@ impl Config {
             .and_then(|value| value.parse::<u64>().ok())
             .map(Duration::from_secs)
             .unwrap_or_else(|| Duration::from_secs(60));
+        let skip_transcript_verification =
+            std::env::var("TRUSTED_SETUP_SKIP_TRANSCRIPT_VERIFICATION")
+                .map(|v| v == "1" || v.to_lowercase() == "true")
+                .unwrap_or(false);
 
         Ok(Self {
             listen_addr,
@@ -124,6 +129,7 @@ impl Config {
             presign_ttl,
             lease_ttl,
             cleanup_interval,
+            skip_transcript_verification,
         })
     }
 }
@@ -1468,7 +1474,7 @@ async fn process_submission(
     state: &web::Data<AppState>,
     ceremony_id: &str,
     lease_id: &str,
-    input_key: String,
+    _input_key: String,
     output_key: String,
     contrib_key: String,
     step: i64,
@@ -1476,50 +1482,39 @@ async fn process_submission(
 ) -> Result<(), anyhow::Error> {
     let now = unix_seconds();
 
-    // Get or load initial transcript from cache or file
-    let initial_transcript = get_or_load_initial_transcript(state, circuit)
+    // Skip transcript verification if configured
+    if state.config.skip_transcript_verification {
+        log::warn!(
+            "TRUSTED_SETUP_SKIP_TRANSCRIPT_VERIFICATION is enabled - skipping transcript download and verification"
+        );
+    } else {
+        // Get or load initial transcript from cache or file
+        let initial_transcript = get_or_load_initial_transcript(state, circuit)
+            .await
+            .map_err(|e| anyhow::anyhow!("failed to load initial transcript: {}", e))?;
+
+        // Download and verify transcript
+        log::info!("Downloading output transcript from S3: {}...", output_key);
+        let output_bytes = state.s3.get_bytes(&output_key).await?;
+        log::info!(
+            "Output transcript downloaded ({} bytes)",
+            output_bytes.len()
+        );
+
+        log::info!("Deserializing output transcript...");
+        let output_transcript = tokio::task::spawn_blocking(move || {
+            Transcript::<Bn254>::deserialize_uncompressed(&output_bytes[..])
+        })
         .await
-        .map_err(|e| anyhow::anyhow!("failed to load initial transcript: {}", e))?;
+        .context("spawn_blocking failed")?
+        .map_err(|e| anyhow::anyhow!("invalid transcript: {}", e))?;
+        log::info!("Output transcript deserialized");
 
-    // Download and verify transcript
-    log::info!("Downloading output transcript from S3: {}...", output_key);
-    let output_bytes = state.s3.get_bytes(&output_key).await?;
-    log::info!(
-        "Output transcript downloaded ({} bytes)",
-        output_bytes.len()
-    );
-
-    log::info!("Deserializing output transcript...");
-    let output_transcript = tokio::task::spawn_blocking(move || {
-        Transcript::<Bn254>::deserialize_uncompressed(&output_bytes[..])
-    })
-    .await
-    .context("spawn_blocking failed")?
-    .map_err(|e| anyhow::anyhow!("invalid transcript: {}", e))?;
-    log::info!("Output transcript deserialized");
-
-    log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
-    verify_transcript_from_initial(&initial_transcript, &output_transcript)
-        .map_err(|e| anyhow::anyhow!("transcript verification failed: {}", e))?;
-    log::info!("Transcript verification passed");
-
-    log::info!("Downloading input transcript from S3: {}...", input_key);
-    let input_bytes = state.s3.get_bytes(&input_key).await?;
-    log::info!("Input transcript downloaded ({} bytes)", input_bytes.len());
-
-    log::info!("Deserializing input transcript...");
-    let input_transcript = tokio::task::spawn_blocking(move || {
-        Transcript::<Bn254>::deserialize_uncompressed(&input_bytes[..])
-    })
-    .await
-    .context("spawn_blocking failed")?
-    .map_err(|e| anyhow::anyhow!("invalid input transcript: {}", e))?;
-    log::info!("Input transcript deserialized");
-
-    log::info!("Verifying key transform...");
-    verify_key_transform(&input_transcript, &output_transcript)
-        .map_err(|e| anyhow::anyhow!("key transform verification failed: {}", e))?;
-    log::info!("Key transform verification passed");
+        log::info!("Verifying transcript for circuit {:?}...", circuit.as_str());
+        verify_transcript_from_initial(&initial_transcript, &output_transcript)
+            .map_err(|e| anyhow::anyhow!("transcript verification failed: {}", e))?;
+        log::info!("Transcript verification passed");
+    }
 
     // Upload latest.json BEFORE updating database for consistency
     let latest = LatestMetadata {
