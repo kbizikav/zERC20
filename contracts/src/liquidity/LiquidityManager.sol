@@ -280,8 +280,6 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
     }
 
     /// @dev Internal unwrap implementation that burns zERC20 and transfers underlying.
-    // slither-disable-next-line reentrancy-balance
-    // Safe: public caller (unwrap) is protected by nonReentrant modifier
     function _unwrap(uint256 amount, address receiver) private returns (uint256 amountOut) {
         require(amount != 0, ZeroAmount());
         require(receiver != address(0), ZeroReceiver());
@@ -290,6 +288,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         uint256 feeAmount = _quoteUnwrapFee(amount, $);
         amountOut = amount - feeAmount;
 
+        // slither-disable-next-line reentrancy-balance
         ZERC20_TOKEN.burn(msg.sender, amount);
         if (amountOut > 0) {
             if (IS_NATIVE_UNDERLYING) {
