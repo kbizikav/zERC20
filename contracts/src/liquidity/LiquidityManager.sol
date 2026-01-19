@@ -288,6 +288,7 @@ contract LiquidityManager is UUPSUpgradeable, AccessControlUpgradeable, Reentran
         uint256 feeAmount = _quoteUnwrapFee(amount, $);
         amountOut = amount - feeAmount;
 
+        // slither-disable-next-line reentrancy-balance
         ZERC20_TOKEN.burn(msg.sender, amount);
         if (amountOut > 0) {
             if (IS_NATIVE_UNDERLYING) {

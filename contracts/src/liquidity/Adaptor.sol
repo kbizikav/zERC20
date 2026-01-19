@@ -395,7 +395,7 @@ contract Adaptor is
 
         uint256 underlyingTokenBalanceBefore = _underlyingBalance();
 
-        // unwrap
+        // slither-disable-next-line reentrancy-balance
         amountOut = ILiquidityManager(LIQUIDITY_MANAGER).unwrap(amount, address(this));
         require(amountOut >= amountMinOut, OutputTooLow(amountOut, amountMinOut));
 
