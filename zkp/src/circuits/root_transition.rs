@@ -20,6 +20,9 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::SynthesisError;
 use core::ops::Not;
 
+type RootTransitionStepResult<F> = Result<(FpVar<F>, FpVar<F>, FpVar<F>), SynthesisError>;
+
+#[allow(clippy::too_many_arguments)]
 pub fn root_transition_step<F, const DEPTH: usize>(
     poseidon2_params: &CircomCRHParametersVar<F>,
     poseidon3_params: &CircomCRHParametersVar<F>,
@@ -31,7 +34,7 @@ pub fn root_transition_step<F, const DEPTH: usize>(
     value: &FpVar<F>,
     siblings: &[FpVar<F>],
     is_dummy: &Boolean<F>,
-) -> Result<(FpVar<F>, FpVar<F>, FpVar<F>), SynthesisError>
+) -> RootTransitionStepResult<F>
 where
     F: PrimeField + Absorb,
 {
@@ -248,7 +251,7 @@ mod tests {
 
     fn hex_bytes(hex: &str) -> Vec<u8> {
         let clean = hex.trim_start_matches("0x");
-        let mut bytes = Vec::with_capacity((clean.len() + 1) / 2);
+        let mut bytes = Vec::with_capacity(clean.len().div_ceil(2));
         let mut chars = clean.chars();
         while let Some(high) = chars.next() {
             let low = chars.next().unwrap_or('0');

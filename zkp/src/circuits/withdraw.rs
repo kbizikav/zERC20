@@ -21,6 +21,10 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::SynthesisError;
 use core::ops::Not;
 
+type SingleWithdrawResult<F> = Result<FpVar<F>, SynthesisError>;
+type WithdrawStepResult<F> = Result<(FpVar<F>, FpVar<F>, FpVar<F>, FpVar<F>), SynthesisError>;
+
+#[allow(clippy::too_many_arguments)]
 pub fn single_withdraw<F, const DEPTH: usize>(
     poseidon2_params: &CircomCRHParametersVar<F>,
     poseidon3_params: &CircomCRHParametersVar<F>,
@@ -32,7 +36,7 @@ pub fn single_withdraw<F, const DEPTH: usize>(
     secret: &FpVar<F>,
     leaf_index: &FpVar<F>,
     siblings: &[FpVar<F>],
-) -> Result<FpVar<F>, SynthesisError>
+) -> SingleWithdrawResult<F>
 where
     F: PrimeField + Absorb,
 {
@@ -57,6 +61,7 @@ where
     Ok(withdraw_value)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn withdraw_step<F, const DEPTH: usize>(
     poseidon2_params: &CircomCRHParametersVar<F>,
     poseidon3_params: &CircomCRHParametersVar<F>,
@@ -70,7 +75,7 @@ pub fn withdraw_step<F, const DEPTH: usize>(
     secret: &FpVar<F>,
     leaf_index: &FpVar<F>,
     siblings: &[FpVar<F>],
-) -> Result<(FpVar<F>, FpVar<F>, FpVar<F>, FpVar<F>), SynthesisError>
+) -> WithdrawStepResult<F>
 where
     F: PrimeField + Absorb,
 {
@@ -582,7 +587,7 @@ mod tests {
         let prev_total_value_value = Fr::zero();
         let is_dummy_value = false;
 
-        let siblings_values = vec![Fr::zero(); DEPTH];
+        let siblings_values = [Fr::zero(); DEPTH];
         let merkle_root_value = Fr::zero();
 
         let merkle_root =

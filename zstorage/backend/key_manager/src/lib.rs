@@ -32,7 +32,7 @@ struct State {
 }
 
 thread_local! {
-    static STATE: RefCell<Option<State>> = RefCell::new(None);
+    static STATE: RefCell<Option<State>> = const { RefCell::new(None) };
 }
 
 #[derive(CandidType, Deserialize)]

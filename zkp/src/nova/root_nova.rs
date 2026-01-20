@@ -71,7 +71,7 @@ impl<F: PrimeField> AllocVar<RootExternalInputs<F>, F> for RootExternalInputsVar
                 [F; TRANSFER_TREE_HEIGHT],
                 F,
             >>::new_variable(
-                cs.clone(), || Ok(value.siblings.clone()), mode
+                cs.clone(), || Ok(value.siblings), mode
             )?;
             Ok(Self {
                 is_dummy,
