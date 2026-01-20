@@ -720,6 +720,26 @@ contract HubTest is TestHelperOz5 {
         assertEq(refundAddress.balance - refundBalanceBefore, refund, "refund paid to refundAddress");
     }
 
+    function testBroadcastRefundDoesNotAllowReentrantBroadcast() public {
+        Origin memory origin = Origin({srcEid: REMOTE_EID_A, sender: _toBytes32(REMOTE_PEER_A), nonce: 1});
+        vm.prank(address(endpoint));
+        hub.lzReceive(origin, bytes32(0), abi.encode(uint256(12345), uint64(1)), address(0), bytes(""));
+
+        uint32[] memory targetEids = _targetEids();
+        bytes memory options = _options();
+
+        uint256 total = hub.quoteBroadcast(targetEids, options);
+        uint256 deposit = total * 2;
+        vm.deal(address(this), deposit);
+
+        ReentrantRefundReceiver refundReceiver = new ReentrantRefundReceiver(hub, targetEids, options);
+
+        hub.broadcast{value: deposit}(targetEids, options, address(refundReceiver));
+
+        assertEq(hub.aggSeq(), 1, "agg sequence incremented once");
+        assertFalse(refundReceiver.innerCallSucceeded(), "reentrant call blocked");
+    }
+
     function _targetEids() internal pure returns (uint32[] memory targetEids) {
         targetEids = new uint32[](2);
         targetEids[0] = REMOTE_EID_A;
@@ -836,4 +856,30 @@ contract NonZeroLzTokenFeeSendLibMock is ISendLib {
     function withdrawFee(address, uint256) external pure {}
 
     function withdrawLzTokenFee(address, address, uint256) external pure {}
+}
+
+contract ReentrantRefundReceiver {
+    Hub internal immutable HUB;
+    uint32[] internal TARGET_EIDS;
+    bytes internal OPTIONS;
+
+    bool internal INNER_CALL_SUCCEEDED;
+
+    constructor(Hub hub_, uint32[] memory targetEids_, bytes memory options_) {
+        HUB = hub_;
+        TARGET_EIDS = targetEids_;
+        OPTIONS = options_;
+    }
+
+    // solhint-disable-next-line no-complex-fallback
+    receive() external payable {
+        bytes memory data =
+            abi.encodeWithSignature("broadcast(uint32[],bytes,address)", TARGET_EIDS, OPTIONS, address(this));
+        (bool ok,) = address(HUB).call{value: msg.value}(data);
+        INNER_CALL_SUCCEEDED = ok;
+    }
+
+    function innerCallSucceeded() external view returns (bool) {
+        return INNER_CALL_SUCCEEDED;
+    }
 }
