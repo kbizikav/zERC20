@@ -1,7 +1,21 @@
+[default.extend-words]
+Groth = "Groth"
+groth = "groth"
+GROTH = "GROTH"
+
 [default.extend-identifiers]
-DirectWithdrawalSuccessed = "DirectWithdrawalSuccessed"
 smove = "smove"
 SMOVE = "SMOVE"
+convertion = "convertion"
+groth = "groth"
+Groth = "Groth"
+GROTH = "GROTH"
 
 [files]
-extend-exclude = ["**/*.bin", "redis-test-certs/*"]
+extend-exclude = [
+  "**/*.bin",
+  "client-common/abi/*.json",
+  "frontend/src/config/chains.json",
+  "redis-test-certs/*",
+  "sdk/src/assets/abi/*.json",
+]
