@@ -301,7 +301,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         require(expectedHashChain == newHashChain, NewHashChainMismatch(newIndex, expectedHashChain, newHashChain));
         uint256 existingRoot = $.provedTransferRoots[newIndex];
         if (existingRoot != 0 && existingRoot != newRoot) {
-            // non-determistic proof results - trigger emergency
+            // non-deterministic proof results - trigger emergency
             _pause();
             emit EmergencyTriggered(newIndex, existingRoot, newRoot);
             return;
