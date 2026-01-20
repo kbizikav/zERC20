@@ -287,7 +287,9 @@ fn decode_send_call(bytes: &[u8]) -> Result<zERC20::sendCall> {
         return Ok(call);
     }
 
-    if bytes.len() > 4 && let Ok(call) = zERC20::sendCall::abi_decode(&bytes[4..]) {
+    if bytes.len() > 4
+        && let Ok(call) = zERC20::sendCall::abi_decode(&bytes[4..])
+    {
         return Ok(call);
     }
 
@@ -354,7 +356,9 @@ fn find_token_for_message<'a>(
         .map(str::to_lowercase);
 
     tokens.iter().find(|t| {
-        if let Some(eid) = src_eid && t.eid == Some(eid) {
+        if let Some(eid) = src_eid
+            && t.eid == Some(eid)
+        {
             return true;
         }
         if let Some(chain) = src_chain.as_deref() {

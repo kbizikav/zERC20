@@ -212,7 +212,9 @@ impl HubRelayDestination {
     ) -> Result<bool> {
         let deadline = Instant::now() + confirmation.timeout;
         loop {
-            if let Some(current) = self.current_tree_index().await? && current >= expected_index {
+            if let Some(current) = self.current_tree_index().await?
+                && current >= expected_index
+            {
                 return Ok(true);
             }
 
