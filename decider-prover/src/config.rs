@@ -4,8 +4,10 @@ use std::{
     str::FromStr,
 };
 
-use serde::de::{self, SeqAccess, Visitor};
-use serde::{Deserialize, Deserializer};
+use serde::{
+    Deserialize, Deserializer,
+    de::{self, SeqAccess, Visitor},
+};
 
 use api_types::prover::CircuitKind;
 

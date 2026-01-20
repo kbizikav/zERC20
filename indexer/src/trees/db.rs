@@ -1,5 +1,7 @@
-use std::collections::{HashMap, HashSet};
-use std::num::NonZeroU64;
+use std::{
+    collections::{HashMap, HashSet},
+    num::NonZeroU64,
+};
 
 use alloy::primitives::{Address, U256};
 use ark_bn254::Fr;

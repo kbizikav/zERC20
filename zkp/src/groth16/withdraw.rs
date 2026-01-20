@@ -4,8 +4,10 @@ use crate::{
 use ark_crypto_primitives::sponge::{Absorb, poseidon::PoseidonConfig};
 use ark_ff::PrimeField;
 use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
-use ark_relations::gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError};
-use ark_relations::ns;
+use ark_relations::{
+    gr1cs::{ConstraintSynthesizer, ConstraintSystemRef, SynthesisError},
+    ns,
+};
 
 #[derive(Clone)]
 pub struct SingleWithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
@@ -27,10 +29,7 @@ pub struct SingleWithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
 }
 
 impl<F: PrimeField + Absorb, const DEPTH: usize> SingleWithdrawCircuit<F, DEPTH> {
-    pub fn new(
-        poseidon2_params: PoseidonConfig<F>,
-        poseidon3_params: PoseidonConfig<F>,
-    ) -> Self {
+    pub fn new(poseidon2_params: PoseidonConfig<F>, poseidon3_params: PoseidonConfig<F>) -> Self {
         Self {
             poseidon2_params,
             poseidon3_params,
@@ -74,14 +73,10 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
             siblings,
         } = self;
 
-        let poseidon2_params = CircomCRHParametersVar::new_constant(
-            ns!(cs, "poseidon2_params"),
-            &poseidon2_params,
-        )?;
-        let poseidon3_params = CircomCRHParametersVar::new_constant(
-            ns!(cs, "poseidon3_params"),
-            &poseidon3_params,
-        )?;
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_params)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_params)?;
 
         // ---- public inputs ----
         let merkle_root = FpVar::<F>::new_input(ns!(cs, "merkle_root"), || {
@@ -143,13 +138,17 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
 #[cfg(test)]
 mod tests {
     use super::SingleWithdrawCircuit;
-    use crate::circuits::burn_address::{
-        compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce,
+    use crate::{
+        circuits::burn_address::{
+            compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce,
+        },
+        groth16::params::Groth16Params,
+        test_utils::merkle_root_from_path,
+        utils::{
+            poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
+            tree::gadgets::leaf_hash::compute_leaf_hash,
+        },
     };
-    use crate::groth16::params::Groth16Params;
-    use crate::test_utils::merkle_root_from_path;
-    use crate::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
-    use crate::utils::tree::gadgets::leaf_hash::compute_leaf_hash;
     use alloy::primitives::keccak256;
     use ark_bn254::Fr;
     use ark_std::rand::{SeedableRng, rngs::StdRng};

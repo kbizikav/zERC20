@@ -3,16 +3,20 @@ use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
 use key_manager::authorization::authorization_message;
 use pocket_ic::{PocketIcBuilder, PocketIcState};
-use rand::{RngCore, rngs::OsRng};
+use rand::{rngs::OsRng, RngCore};
 use serde::Serialize;
-use std::net::TcpListener;
-use std::path::{Path, PathBuf};
-use std::process::Command;
-use std::sync::Once;
-use stealth_client::authorization::{derive_address, sign_authorization, unix_time_ns};
-use stealth_client::client::StealthCanisterClient;
-use stealth_client::encryption::{encrypt_payload, scan_announcements};
-use stealth_client::{recipient, types};
+use std::{
+    net::TcpListener,
+    path::{Path, PathBuf},
+    process::Command,
+    sync::Once,
+};
+use stealth_client::{
+    authorization::{derive_address, sign_authorization, unix_time_ns},
+    client::StealthCanisterClient,
+    encryption::{encrypt_payload, scan_announcements},
+    recipient, types,
+};
 use storage::invoice_signature_message;
 
 #[derive(Clone, CandidType, Serialize)]
@@ -211,7 +215,7 @@ fn pocket_ic_upgrade_preserves_storage_state() {
     let owner = derive_address(&signing_key);
     let mut invoice_id = [0u8; 32];
     rng.fill_bytes(&mut invoice_id);
-        let message = invoice_signature_message(&invoice_id, types::DEFAULT_TAG);
+    let message = invoice_signature_message(&invoice_id, types::DEFAULT_TAG);
     let signature =
         sign_authorization(&message, &signing_key).expect("failed to sign invoice message");
 

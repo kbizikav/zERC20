@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use log::{error, info, warn};
 use tokio::{
     sync::oneshot,

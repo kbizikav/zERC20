@@ -26,7 +26,9 @@ The key variables are:
   every chain.
 - `TOKENS_FILE_PATH` — optional. Defaults to `../config/tokens.json`. Points to
   the shared token metadata file already used by `client-common`.
-- `RELAY_INTERVAL_SECS` / `BROADCAST_INTERVAL_SECS` — poll cadence per job.
+- `RELAY_INTERVAL_SECS` / `BROADCAST_INTERVAL_SECS` — poll cadence per job
+  (can be overridden per chain via `relay_interval_secs` on tokens and
+  `broadcast_interval_secs` on the hub entry).
 - `RELAY_OPTIONS` / `BROADCAST_OPTIONS` — LayerZero options payloads encoded
   as hex. Use `0x` for empty payloads.
 - `RELAY_NATIVE_FEE_BUFFER_BPS` / `BROADCAST_NATIVE_FEE_BUFFER_BPS` — fee

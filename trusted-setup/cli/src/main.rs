@@ -53,14 +53,16 @@ use trusted_setup_common::{
     ptau_path_for_circuit, ptau_url_for_power, CeremonyCircuit, LatestMetadata,
     SUPPORTED_PTAU_POWERS,
 };
-use zkp::groth16::params::Groth16Params;
-use zkp::nova::{
-    constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
-    params::{DeciderParams, FParams, NovaParams, N},
-    root_nova::RootCircuit,
-    withdraw_nova::WithdrawCircuit,
+use zkp::{
+    groth16::params::Groth16Params,
+    nova::{
+        constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
+        params::{DeciderParams, FParams, NovaParams, N},
+        root_nova::RootCircuit,
+        withdraw_nova::WithdrawCircuit,
+    },
+    utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
 };
-use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
 // ============================================================================
 // Constants

@@ -1,9 +1,11 @@
 use super::{CircomCRH, CircomTwoToOneCRH, circom_poseidon_hash};
-use ark_crypto_primitives::crh::{CRHSchemeGadget as CRHGadgetTrait, TwoToOneCRHSchemeGadget};
-use ark_crypto_primitives::sponge::{
-    Absorb,
-    constraints::CryptographicSpongeVar,
-    poseidon::{PoseidonConfig, constraints::PoseidonSpongeVar},
+use ark_crypto_primitives::{
+    crh::{CRHSchemeGadget as CRHGadgetTrait, TwoToOneCRHSchemeGadget},
+    sponge::{
+        Absorb,
+        constraints::CryptographicSpongeVar,
+        poseidon::{PoseidonConfig, constraints::PoseidonSpongeVar},
+    },
 };
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
@@ -129,8 +131,10 @@ mod tests {
 
     use ark_bn254::Fr;
     use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
-    use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
-    use ark_relations::ns;
+    use ark_relations::{
+        gr1cs::{ConstraintSystem, SynthesisError},
+        ns,
+    };
 
     #[test]
     fn poseidon2_var_matches_host() -> Result<(), SynthesisError> {

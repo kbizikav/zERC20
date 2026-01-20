@@ -127,10 +127,8 @@ fn generate_groth16_artifacts<const DEPTH: usize>(
     poseidon3_config: &PoseidonConfig<Fr>,
 ) -> Result<()> {
     let mut rng = StdRng::seed_from_u64(42);
-    let circuit = SingleWithdrawCircuit::<Fr, DEPTH>::new(
-        poseidon2_config.clone(),
-        poseidon3_config.clone(),
-    );
+    let circuit =
+        SingleWithdrawCircuit::<Fr, DEPTH>::new(poseidon2_config.clone(), poseidon3_config.clone());
     let params = Groth16Params::rand(&mut rng, circuit.clone())
         .with_context(|| format!("failed groth16 setup for {prefix}"))?;
 

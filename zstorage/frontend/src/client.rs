@@ -1,4 +1,7 @@
-use crate::{error::ClientError, error::ClientResult, types};
+use crate::{
+    error::{ClientError, ClientResult},
+    types,
+};
 use candid::{Decode, Encode, Principal};
 use ic_agent::Agent;
 
