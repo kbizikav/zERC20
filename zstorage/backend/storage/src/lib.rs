@@ -79,7 +79,7 @@ thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
 }
 
-#[init]
+#[cfg_attr(target_arch = "wasm32", init)]
 fn init(args: Option<InitArgs>) {
     let _ = args;
     STATE.with(|state| {
@@ -92,7 +92,7 @@ fn init(args: Option<InitArgs>) {
     });
 }
 
-#[pre_upgrade]
+#[cfg_attr(target_arch = "wasm32", pre_upgrade)]
 fn pre_upgrade() {
     STATE.with(|state| {
         let state = state.borrow();
@@ -100,7 +100,7 @@ fn pre_upgrade() {
     });
 }
 
-#[post_upgrade]
+#[cfg_attr(target_arch = "wasm32", post_upgrade)]
 fn post_upgrade() {
     let restored: Result<(State,), _> = ic_cdk::storage::stable_restore();
     let state = match restored {
@@ -328,4 +328,5 @@ fn recover_address_from_signature(
         .map_err(|err| format!("failed to recover address: {err}"))
 }
 
+#[cfg(target_arch = "wasm32")]
 ic_cdk::export_candid!();

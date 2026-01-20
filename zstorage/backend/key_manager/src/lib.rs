@@ -44,7 +44,7 @@ pub struct EncryptedViewKeyRequest {
     pub signature: Vec<u8>,
 }
 
-#[init]
+#[cfg_attr(target_arch = "wasm32", init)]
 fn init(args: InitArgs) {
     let key_id_name = args.key_id_name;
     let config = Config { key_id_name };
@@ -57,13 +57,13 @@ fn init(args: InitArgs) {
     });
 }
 
-#[pre_upgrade]
+#[cfg_attr(target_arch = "wasm32", pre_upgrade)]
 fn pre_upgrade() {
     let state = STATE.with(|state| state.borrow().clone());
     ic_cdk::storage::stable_save((state,)).expect("failed to persist state");
 }
 
-#[post_upgrade]
+#[cfg_attr(target_arch = "wasm32", post_upgrade)]
 fn post_upgrade() {
     let (maybe_state,): (Option<State>,) =
         ic_cdk::storage::stable_restore().expect("failed to restore state");
@@ -174,4 +174,5 @@ pub fn context_for_address(address: &Address) -> Vec<u8> {
     context
 }
 
+#[cfg(target_arch = "wasm32")]
 ic_cdk::export_candid!();
