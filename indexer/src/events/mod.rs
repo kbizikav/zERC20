@@ -1,13 +1,14 @@
-use std::convert::TryFrom;
-use std::num::NonZeroU64;
+use std::{convert::TryFrom, num::NonZeroU64};
 
 use alloy::primitives::U256;
 use api_types::indexer::IndexedEvent;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use thiserror::Error;
 
-use client_common::contracts::{ContractError, z_erc20::ZErc20Contract};
-use client_common::tokens::TokenMetadata;
+use client_common::{
+    contracts::{ContractError, z_erc20::ZErc20Contract},
+    tokens::TokenMetadata,
+};
 use log::warn;
 
 pub const BLOCK_SPAN_RECOMMENDED: u64 = 5_000;

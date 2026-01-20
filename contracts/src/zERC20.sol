@@ -78,7 +78,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         address expected = address(endpoint);
         address actual = address(zERC20(newImplementation).endpoint());
-        if (actual != expected) revert EndpointMismatch(expected, actual);
+        require(actual == expected, EndpointMismatch(expected, actual));
     }
 
     /// @notice Hash chain committing every transfer's destination and value pair.

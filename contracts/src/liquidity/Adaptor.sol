@@ -134,11 +134,12 @@ contract Adaptor is
         require(UNDERLYING_TOKEN != address(0) && ZERC20_TOKEN != address(0), ZeroAddress());
         address stargateToken = IStargate(STARGATE).token();
         if (IS_NATIVE_UNDERLYING) {
-            if (stargateToken != NATIVE_TOKEN && stargateToken != address(0)) {
-                revert UnderlyingTokenMismatch(UNDERLYING_TOKEN, stargateToken);
-            }
-        } else if (stargateToken != UNDERLYING_TOKEN) {
-            revert UnderlyingTokenMismatch(UNDERLYING_TOKEN, stargateToken);
+            require(
+                stargateToken == NATIVE_TOKEN || stargateToken == address(0),
+                UnderlyingTokenMismatch(UNDERLYING_TOKEN, stargateToken)
+            );
+        } else {
+            require(stargateToken == UNDERLYING_TOKEN, UnderlyingTokenMismatch(UNDERLYING_TOKEN, stargateToken));
         }
         _disableInitializers();
     }
@@ -436,9 +437,10 @@ contract Adaptor is
         BridgeRequest calldata request
     ) private returns (uint256 amountOut) {
         uint256 amountToBridge = _removeStargateDust(amount);
-        if (amountToBridge == 0 || amountToBridge < request.minAmountOut) {
-            revert OutputTooLow(amountToBridge, request.minAmountOut);
-        }
+        require(
+            amountToBridge != 0 && amountToBridge >= request.minAmountOut,
+            OutputTooLow(amountToBridge, request.minAmountOut)
+        );
 
         _debitNativeBalance(user, nativeBridgeFee);
         _debitUnderlyingBalance(user, amountToBridge);

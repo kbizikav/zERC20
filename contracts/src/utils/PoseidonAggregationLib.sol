@@ -28,9 +28,7 @@ library PoseidonAggregationLib {
         returns (uint256)
     {
         uint256 count = leaves.length;
-        if (count > MAX_LEAVES) {
-            revert TooManyLeaves(count, MAX_LEAVES);
-        }
+        require(count <= MAX_LEAVES, TooManyLeaves(count, MAX_LEAVES));
         if (count == 0) {
             return zeroHash[TREE_HEIGHT];
         }

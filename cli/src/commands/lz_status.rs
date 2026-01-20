@@ -5,8 +5,10 @@ use alloy::{
 };
 use anyhow::{Context, Result, anyhow};
 use client_common::{
-    contracts::utils::{NormalProvider, fetch_tx_input, get_address_from_private_key},
-    contracts::z_erc20::zERC20,
+    contracts::{
+        utils::{NormalProvider, fetch_tx_input, get_address_from_private_key},
+        z_erc20::zERC20,
+    },
     layerzero::{
         Destination, Endpoint, HttpLayerZeroClient, LayerZeroClient, LzCompose, ScanMessage, Stage,
         WalletMessagesParams,

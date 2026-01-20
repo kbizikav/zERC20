@@ -8,10 +8,9 @@ use client_common::{indexer::IndexedEvent, prover::DeciderClient};
 use folding_schemes::FoldingScheme;
 use rand::Rng;
 use std::{fs, path::Path};
-use zkp::nova::constants::GLOBAL_TRANSFER_TREE_HEIGHT;
-use zkp::nova::constants::TRANSFER_TREE_HEIGHT;
 use zkp::{
     nova::{
+        constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
         params::NovaParams,
         withdraw_nova::{WithdrawCircuit, WithdrawExternalInputs, dummy_withdraw_ext_input},
     },

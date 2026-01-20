@@ -115,14 +115,20 @@ mod tests {
         burn_address_domain, burn_address_var, compute_burn_address_from_secret, find_pow_nonce,
         secret_from_nonce,
     };
-    use crate::test_utils::truncate_to_160_bits;
-    use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::{circom_poseidon_hash, circom_poseidon3_config};
+    use crate::{
+        test_utils::truncate_to_160_bits,
+        utils::poseidon::{
+            gadgets::CircomCRHParametersVar,
+            utils::{circom_poseidon_hash, circom_poseidon3_config},
+        },
+    };
     use ark_bn254::Fr;
     use ark_ff::PrimeField;
     use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
-    use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
-    use ark_relations::ns;
+    use ark_relations::{
+        gr1cs::{ConstraintSystem, SynthesisError},
+        ns,
+    };
     use hex::decode;
 
     // Precomputed inputs that satisfy the PoW window so tests can avoid the expensive search.

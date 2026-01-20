@@ -63,7 +63,6 @@ pub struct RootProverJob {
     tree_height: u32,
     history_window: u64,
     compile_interval: Duration,
-    submit_interval: Duration,
     nova_params: Arc<NovaParams<RootCircuit<Fr>>>,
     prover: Arc<dyn DeciderClient>,
     submitter_private_key: B256,
@@ -75,22 +74,44 @@ pub struct RootProverJob {
 impl RootProverJob {
     pub async fn run_forever(&self) -> Result<()> {
         let mut last_compile = Instant::now() - self.compile_interval;
-        let mut last_submit = Instant::now() - self.submit_interval;
-        let min_interval = self.compile_interval.min(self.submit_interval);
+        let mut last_submit: Vec<Instant> = self
+            .tokens
+            .iter()
+            .map(|token| Instant::now() - token.submit_interval)
+            .collect();
+        let min_submit_interval = self
+            .tokens
+            .iter()
+            .map(|token| token.submit_interval)
+            .min()
+            .unwrap_or(self.compile_interval);
+        let min_interval = self.compile_interval.min(min_submit_interval);
 
         loop {
             let now = Instant::now();
             let should_compile = now.duration_since(last_compile) >= self.compile_interval;
-            let should_submit = now.duration_since(last_submit) >= self.submit_interval;
+            let mut submit_flags = Vec::with_capacity(self.tokens.len());
+            let mut should_submit_any = false;
+            for (idx, token) in self.tokens.iter().enumerate() {
+                let should_submit = now.duration_since(last_submit[idx]) >= token.submit_interval;
+                if should_submit {
+                    should_submit_any = true;
+                }
+                submit_flags.push(should_submit);
+            }
 
-            if should_compile || should_submit {
-                self.run_cycle(should_compile, should_submit).await;
+            if should_compile || should_submit_any {
+                self.run_cycle(should_compile, &submit_flags).await;
                 let completed = Instant::now();
                 if should_compile {
                     last_compile = completed;
                 }
-                if should_submit {
-                    last_submit = completed;
+                if should_submit_any {
+                    for (idx, should_submit) in submit_flags.iter().enumerate() {
+                        if *should_submit {
+                            last_submit[idx] = completed;
+                        }
+                    }
                 }
             }
 
@@ -99,12 +120,14 @@ impl RootProverJob {
     }
 
     pub async fn run_once(&self) -> Result<()> {
-        self.run_cycle(true, true).await;
+        let submit_flags = vec![true; self.tokens.len()];
+        self.run_cycle(true, &submit_flags).await;
         Ok(())
     }
 
-    async fn run_cycle(&self, do_compile: bool, do_submit: bool) {
-        for token in &self.tokens {
+    async fn run_cycle(&self, do_compile: bool, submit_flags: &[bool]) {
+        for (idx, token) in self.tokens.iter().enumerate() {
+            let do_submit = submit_flags.get(idx).copied().unwrap_or(false);
             if let Err(err) = self.process_token(token, do_compile, do_submit).await {
                 error!(
                     "root prover job failed for token '{}': {err:?}",
@@ -631,6 +654,10 @@ impl RootProverJobBuilder {
                 .with_legacy_tx(token.legacy_tx);
             let verifier_contract = VerifierContract::new(provider.clone(), token.verifier_address)
                 .with_legacy_tx(token.legacy_tx);
+            let submit_interval = token
+                .root_submit_interval_ms
+                .map(Duration::from_millis)
+                .unwrap_or_else(|| self.root_config.submit_interval());
 
             let metadata = token.metadata();
             let lock_key = token.lock_key_with_salt(ROOT_LOCK_SALT);
@@ -640,6 +667,7 @@ impl RootProverJobBuilder {
                 token_contract,
                 verifier_contract,
                 lock_key,
+                submit_interval,
             });
         }
 
@@ -654,8 +682,6 @@ impl RootProverJobBuilder {
         };
 
         let compile_interval = self.root_config.interval();
-        let submit_interval = self.root_config.submit_interval();
-
         Ok(RootProverJob {
             pool: self.pool,
             tokens: contexts,
@@ -663,7 +689,6 @@ impl RootProverJobBuilder {
             tree_height: self.tree_height,
             history_window: self.root_config.history_window,
             compile_interval,
-            submit_interval,
             nova_params,
             prover,
             submitter_private_key: self.root_config.submitter_private_key,
@@ -680,6 +705,7 @@ struct RootTokenContext {
     token_contract: ZErc20Contract,
     verifier_contract: VerifierContract,
     lock_key: i64,
+    submit_interval: Duration,
 }
 
 struct RootProverState {

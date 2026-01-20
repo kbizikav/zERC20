@@ -1,12 +1,16 @@
 use std::convert::TryInto;
 
-use aes_gcm::aead::{Aead, KeyInit};
-use aes_gcm::{Aes256Gcm, Nonce};
+use aes_gcm::{
+    aead::{Aead, KeyInit},
+    Aes256Gcm, Nonce,
+};
 use rand::{CryptoRng, RngCore};
 
-use crate::error::{Result, StealthError};
-use crate::types;
-use crate::types::{AnnouncementInput, DEFAULT_TAG};
+use crate::{
+    error::{Result, StealthError},
+    types,
+    types::{AnnouncementInput, DEFAULT_TAG},
+};
 use ic_vetkeys::{DerivedPublicKey, IbeCiphertext, IbeIdentity, IbeSeed, VetKey};
 
 const SESSION_KEY_LEN: usize = 32; // 256-bit AES-GCM session key

@@ -1,9 +1,13 @@
-use crate::circuits::constants::{ADDRESS_BIT_LENGTH, BYTES31_BIT_LENGTH};
-use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-use crate::utils::tree::gadgets::{
-    hash_chain::hash_chain_var,
-    leaf_hash::leaf_hash_var,
-    merkle::{enforce_bit_length, merkle_root_from_leaf, to_bits_le_limited},
+use crate::{
+    circuits::constants::{ADDRESS_BIT_LENGTH, BYTES31_BIT_LENGTH},
+    utils::{
+        poseidon::gadgets::CircomCRHParametersVar,
+        tree::gadgets::{
+            hash_chain::hash_chain_var,
+            leaf_hash::leaf_hash_var,
+            merkle::{enforce_bit_length, merkle_root_from_leaf, to_bits_le_limited},
+        },
+    },
 };
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;
@@ -63,16 +67,20 @@ where
 #[cfg(test)]
 mod tests {
     use super::root_transition_step;
-    use crate::test_utils::merkle_root_from_path;
-    use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::{
-        circom_poseidon_hash, circom_poseidon2_config, circom_poseidon3_config,
+    use crate::{
+        test_utils::merkle_root_from_path,
+        utils::poseidon::{
+            gadgets::CircomCRHParametersVar,
+            utils::{circom_poseidon_hash, circom_poseidon2_config, circom_poseidon3_config},
+        },
     };
     use ark_bn254::Fr;
     use ark_ff::{PrimeField, Zero};
     use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
-    use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
-    use ark_relations::ns;
+    use ark_relations::{
+        gr1cs::{ConstraintSystem, SynthesisError},
+        ns,
+    };
     use ark_std::vec::Vec;
     use sha2::{Digest, Sha256};
 

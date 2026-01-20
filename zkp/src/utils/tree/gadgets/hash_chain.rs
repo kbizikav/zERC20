@@ -96,8 +96,10 @@ mod tests {
     use ark_bn254::Fr;
     use ark_ff::PrimeField;
     use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
-    use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
-    use ark_relations::ns;
+    use ark_relations::{
+        gr1cs::{ConstraintSystem, SynthesisError},
+        ns,
+    };
     use ark_std::{rand::RngCore, test_rng};
     use hex::decode;
     use sha2::{Digest, Sha256};
