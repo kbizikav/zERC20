@@ -27,10 +27,7 @@ pub struct SingleWithdrawCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
 }
 
 impl<F: PrimeField + Absorb, const DEPTH: usize> SingleWithdrawCircuit<F, DEPTH> {
-    pub fn new(
-        poseidon2_params: PoseidonConfig<F>,
-        poseidon3_params: PoseidonConfig<F>,
-    ) -> Self {
+    pub fn new(poseidon2_params: PoseidonConfig<F>, poseidon3_params: PoseidonConfig<F>) -> Self {
         Self {
             poseidon2_params,
             poseidon3_params,
@@ -74,14 +71,10 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> ConstraintSynthesizer<F>
             siblings,
         } = self;
 
-        let poseidon2_params = CircomCRHParametersVar::new_constant(
-            ns!(cs, "poseidon2_params"),
-            &poseidon2_params,
-        )?;
-        let poseidon3_params = CircomCRHParametersVar::new_constant(
-            ns!(cs, "poseidon3_params"),
-            &poseidon3_params,
-        )?;
+        let poseidon2_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon2_params"), &poseidon2_params)?;
+        let poseidon3_params =
+            CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_params)?;
 
         // ---- public inputs ----
         let merkle_root = FpVar::<F>::new_input(ns!(cs, "merkle_root"), || {

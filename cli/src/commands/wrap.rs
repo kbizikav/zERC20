@@ -58,8 +58,8 @@ pub async fn run(args: &WrapArgs, tokens: &[TokenEntry], private_key: B256) -> R
             .await
             .context("failed to submit native wrap transaction")?
     } else {
-        let underlying =
-            Erc20Contract::new(manager.provider(), underlying_address).with_legacy_tx(entry.legacy_tx);
+        let underlying = Erc20Contract::new(manager.provider(), underlying_address)
+            .with_legacy_tx(entry.legacy_tx);
         let balance = underlying.balance_of(caller).await.with_context(|| {
             format!(
                 "failed to fetch underlying balance at {}",
