@@ -33,5 +33,5 @@ zkp/coverage/
 .ic.env
 canister_ids.json
 
-# local test ledger
+
 test-ledger/

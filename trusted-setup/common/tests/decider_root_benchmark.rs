@@ -10,15 +10,19 @@ use arkworks_phase2::{accumulator::Accumulator, transcript::Transcript};
 use folding_schemes::{
     arith::Arith,
     commitment::{pedersen::Pedersen, CommitmentScheme},
-    folding::nova::{decider_eth::DeciderEthCircuit, get_r1cs},
-    folding::traits::Dummy,
+    folding::{
+        nova::{decider_eth::DeciderEthCircuit, get_r1cs},
+        traits::Dummy,
+    },
     frontend::FCircuit,
     transcript::poseidon::poseidon_canonical_config,
 };
 use rand::{rngs::StdRng, SeedableRng};
 use std::cmp::max;
-use zkp::nova::root_nova::RootCircuit;
-use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
+use zkp::{
+    nova::root_nova::RootCircuit,
+    utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
+};
 
 const PEDERSEN_SEED: u64 = 42;
 

@@ -4,6 +4,7 @@ pragma solidity 0.8.33;
 import {MessagingFee} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
 import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroReceiver.sol";
 import {PausableUpgradeable} from "@openzeppelin/contracts-upgradeable/utils/PausableUpgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {PoseidonAggregationLib} from "./utils/PoseidonAggregationLib.sol";
 import {POSEIDON_ZERO_HASH_COUNT, POSEIDON_MAX_LEAVES} from "./utils/PoseidonAggregationConfig.sol";
 import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
@@ -15,7 +16,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
  *         global root consumed by verifier contracts.
  * @dev Implements the PoseidonT3 tree (height 6 / 64 leaves) and fee semantics consumed by the verifier network.
  */
-contract Hub is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
+contract Hub is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     /// -----------------------------------------------------------------------
     /// Structs / Events
     /// -----------------------------------------------------------------------
@@ -114,7 +115,7 @@ contract Hub is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         address expected = address(endpoint);
         address actual = address(Hub(newImplementation).endpoint());
-        if (actual != expected) revert EndpointMismatch(expected, actual);
+        require(actual == expected, EndpointMismatch(expected, actual));
     }
 
     function transferRoots(uint256 index_) public view returns (uint256) {
@@ -201,7 +202,12 @@ contract Hub is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     /// @dev Implements the `broadcast` step, including fee refund semantics.
     /// @param targetEids LayerZero endpoint IDs that must receive the global root.
     /// @param lzOptions LayerZero execution parameters (gas, native drop, etc.).
-    function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable whenNotPaused {
+    function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions)
+        external
+        payable
+        whenNotPaused
+        nonReentrant
+    {
         _broadcast(targetEids, lzOptions, msg.sender);
     }
 
@@ -212,6 +218,7 @@ contract Hub is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
         external
         payable
         whenNotPaused
+        nonReentrant
     {
         _broadcast(targetEids, lzOptions, refundAddress);
     }

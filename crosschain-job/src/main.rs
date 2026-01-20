@@ -40,6 +40,7 @@ struct Cli {
     relay_private_key: String,
 
     /// Interval in seconds between relayTransferRoot submissions per verifier.
+    /// Can be overridden per token via relay_interval_secs in the tokens config.
     #[arg(
         long,
         env = "RELAY_INTERVAL_SECS",
@@ -62,6 +63,7 @@ struct Cli {
     relay_fee_buffer_bps: u64,
 
     /// Interval in seconds between Hub.broadcast submissions.
+    /// Can be overridden via broadcast_interval_secs in the hub config.
     #[arg(
         long,
         env = "BROADCAST_INTERVAL_SECS",
@@ -611,12 +613,6 @@ async fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    if cli.relay_interval_secs == 0 {
-        bail!("RELAY_INTERVAL_SECS must be greater than zero");
-    }
-    if cli.broadcast_interval_secs == 0 && !cli.once {
-        bail!("BROADCAST_INTERVAL_SECS must be greater than zero");
-    }
     if cli.confirmation_timeout_secs == 0 {
         bail!("CONFIRMATION_TIMEOUT_SECS must be greater than zero");
     }
@@ -630,6 +626,29 @@ async fn main() -> Result<()> {
             "no tokens configured; set TOKENS_COMPRESSED or populate {}",
             cli.tokens_file_path.display()
         );
+    }
+    for token in &tokens {
+        let interval = token.relay_interval_secs.unwrap_or(cli.relay_interval_secs);
+        if interval == 0 {
+            bail!(
+                "relay interval must be greater than zero for token '{}' (chain {})",
+                token.label,
+                token.chain_id
+            );
+        }
+    }
+    if !cli.once {
+        if let Some(hub) = &hub_entry {
+            let interval = hub
+                .broadcast_interval_secs
+                .unwrap_or(cli.broadcast_interval_secs);
+            if interval == 0 {
+                bail!(
+                    "broadcast interval must be greater than zero for hub chain {}",
+                    hub.chain_id
+                );
+            }
+        }
     }
 
     let relay_options = cli.relay_options.clone().into_vec();
@@ -664,7 +683,11 @@ async fn main() -> Result<()> {
                 contract,
                 private_key,
                 lz_options: broadcast_options,
-                interval: Duration::from_secs(cli.broadcast_interval_secs.max(1)),
+                interval: Duration::from_secs(
+                    hub.broadcast_interval_secs
+                        .unwrap_or(cli.broadcast_interval_secs)
+                        .max(1),
+                ),
                 target_eids,
                 fee_buffer_bps: cli.broadcast_fee_buffer_bps,
                 last_broadcast_root: None,
@@ -705,7 +728,12 @@ async fn main() -> Result<()> {
             contract,
             private_key,
             lz_options: relay_options.clone(),
-            interval: Duration::from_secs(cli.relay_interval_secs),
+            interval: Duration::from_secs(
+                token
+                    .relay_interval_secs
+                    .unwrap_or(cli.relay_interval_secs)
+                    .max(1),
+            ),
             fee_buffer_bps: cli.relay_fee_buffer_bps,
             destination,
             confirmation: confirmation.clone(),

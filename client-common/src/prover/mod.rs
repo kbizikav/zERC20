@@ -2,8 +2,7 @@ use std::time::Duration;
 
 use api_types::prover::{CircuitKind, JobRequest, JobStatus, JobStatusResponse};
 use async_trait::async_trait;
-use base64::Engine;
-use base64::engine::general_purpose::STANDARD as BASE64_STANDARD;
+use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use reqwest::{Client, Url};
 use thiserror::Error;
 use tokio::time::{sleep, timeout};

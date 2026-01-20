@@ -1,9 +1,14 @@
-use crate::circuits::{burn_address::burn_address_var, constants::BYTES31_BIT_LENGTH};
-use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-use crate::utils::tree::gadgets::{
-    leaf_hash::leaf_hash_var,
-    merkle::{
-        enforce_bit_length, enforce_strict_less_than, merkle_root_from_leaf, to_bits_le_limited,
+use crate::{
+    circuits::{burn_address::burn_address_var, constants::BYTES31_BIT_LENGTH},
+    utils::{
+        poseidon::gadgets::CircomCRHParametersVar,
+        tree::gadgets::{
+            leaf_hash::leaf_hash_var,
+            merkle::{
+                enforce_bit_length, enforce_strict_less_than, merkle_root_from_leaf,
+                to_bits_le_limited,
+            },
+        },
     },
 };
 use ark_crypto_primitives::sponge::Absorb;
@@ -114,19 +119,23 @@ where
 #[cfg(test)]
 mod tests {
     use super::{single_withdraw, withdraw_step};
-    use crate::circuits::burn_address::{
-        burn_address_domain, compute_burn_address_from_secret, secret_from_nonce,
-    };
-    use crate::test_utils::{merkle_root_from_path, truncate_to_160_bits};
-    use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::{
-        circom_poseidon_hash, circom_poseidon2_config, circom_poseidon3_config,
+    use crate::{
+        circuits::burn_address::{
+            burn_address_domain, compute_burn_address_from_secret, secret_from_nonce,
+        },
+        test_utils::{merkle_root_from_path, truncate_to_160_bits},
+        utils::poseidon::{
+            gadgets::CircomCRHParametersVar,
+            utils::{circom_poseidon_hash, circom_poseidon2_config, circom_poseidon3_config},
+        },
     };
     use ark_bn254::Fr;
     use ark_ff::{PrimeField, Zero};
     use ark_r1cs_std::{alloc::AllocVar, boolean::Boolean, eq::EqGadget, fields::fp::FpVar};
-    use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
-    use ark_relations::ns;
+    use ark_relations::{
+        gr1cs::{ConstraintSystem, SynthesisError},
+        ns,
+    };
     use ark_std::vec::Vec;
     use hex::decode;
 

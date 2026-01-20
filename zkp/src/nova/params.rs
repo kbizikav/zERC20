@@ -3,20 +3,21 @@ use std::io::Cursor;
 use ark_bn254::{Bn254, Fr, G1Projective as G1};
 use ark_groth16::Groth16;
 use ark_grumpkin::Projective as G2;
-use ark_serialize::CanonicalDeserialize;
-use ark_serialize::{CanonicalSerialize as _, Compress, Validate};
-use folding_schemes::folding::nova::PreprocessorParam;
-use folding_schemes::folding::traits::CommittedInstanceOps as _;
-use folding_schemes::transcript::poseidon::poseidon_canonical_config;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize as _, Compress, Validate};
 use folding_schemes::{
     Decider, FoldingScheme,
     commitment::{kzg::KZG, pedersen::Pedersen},
-    folding::nova::{IVCProof, Nova, decider_eth::Decider as DeciderEth},
+    folding::{
+        nova::{IVCProof, Nova, PreprocessorParam, decider_eth::Decider as DeciderEth},
+        traits::CommittedInstanceOps as _,
+    },
     frontend::FCircuit,
+    transcript::poseidon::poseidon_canonical_config,
 };
 use rand::rngs::OsRng;
-use solidity_verifiers::utils::eth::ToEth;
-use solidity_verifiers::{NovaCycleFoldVerifierKey, get_decider_template_for_cyclefold_decider};
+use solidity_verifiers::{
+    NovaCycleFoldVerifierKey, get_decider_template_for_cyclefold_decider, utils::eth::ToEth,
+};
 
 #[derive(thiserror::Error, Debug)]
 pub enum NovaError {

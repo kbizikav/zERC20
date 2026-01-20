@@ -5,13 +5,15 @@ use ark_bn254::{Fr, G1Projective as G1};
 use ark_grumpkin::Projective as G2;
 use ark_serialize::CanonicalDeserialize;
 use folding_schemes::{folding::nova::IVCProof, frontend::FCircuit};
-use zkp::nova::{
-    constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
-    params::{DeciderParams, FParams, NovaParams},
-    root_nova::RootCircuit,
-    withdraw_nova::WithdrawCircuit,
+use zkp::{
+    nova::{
+        constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
+        params::{DeciderParams, FParams, NovaParams},
+        root_nova::RootCircuit,
+        withdraw_nova::WithdrawCircuit,
+    },
+    utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
 };
-use zkp::utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config};
 
 use crate::{config::CircuitEnablement, errors::ProverError};
 

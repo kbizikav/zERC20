@@ -252,7 +252,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         address expected = address(endpoint);
         address actual = address(Verifier(newImplementation).endpoint());
-        if (actual != expected) revert EndpointMismatch(expected, actual);
+        require(actual == expected, EndpointMismatch(expected, actual));
     }
 
     /// -----------------------------------------------------------------------

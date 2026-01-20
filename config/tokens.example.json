@@ -12,7 +12,9 @@
       "deployed_block_number": 0,
       "rpc_urls": [
         "http://127.0.0.1:8545"
-      ]
+      ],
+      "root_submit_interval_ms": 10000,
+      "relay_interval_secs": 300
     }
   ],
   "hub": {
@@ -23,6 +25,7 @@
     "legacy_tx": false,
     "rpc_urls": [
       "http://127.0.0.1:8545"
-    ]
+    ],
+    "broadcast_interval_secs": 600
   }
 }

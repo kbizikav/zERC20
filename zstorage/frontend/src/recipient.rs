@@ -1,5 +1,4 @@
-use rand::rngs::OsRng;
-use rand::RngCore;
+use rand::{rngs::OsRng, RngCore};
 
 use crate::error::{Result, StealthError};
 use ic_vetkeys::{DerivedPublicKey, EncryptedVetKey, TransportSecretKey, VetKey};

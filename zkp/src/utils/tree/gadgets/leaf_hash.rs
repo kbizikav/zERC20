@@ -24,16 +24,18 @@ pub fn leaf_hash_var<F: PrimeField + Absorb>(
 
 #[cfg(test)]
 mod tests {
-    use crate::utils::poseidon::circom_poseidon_hash;
-    use crate::utils::poseidon::gadgets::CircomCRHParametersVar;
-    use crate::utils::poseidon::utils::circom_poseidon3_config;
+    use crate::utils::poseidon::{
+        circom_poseidon_hash, gadgets::CircomCRHParametersVar, utils::circom_poseidon3_config,
+    };
 
     use super::leaf_hash_var;
     use ark_bn254::Fr;
     use ark_ff::PrimeField;
     use ark_r1cs_std::{alloc::AllocVar, eq::EqGadget, fields::fp::FpVar};
-    use ark_relations::gr1cs::{ConstraintSystem, SynthesisError};
-    use ark_relations::ns;
+    use ark_relations::{
+        gr1cs::{ConstraintSystem, SynthesisError},
+        ns,
+    };
     use ark_std::{rand::RngCore, test_rng};
     use hex::decode;
 

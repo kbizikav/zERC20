@@ -1,13 +1,13 @@
 use candid::{CandidType, Deserialize};
-use ic_cdk::api::{canister_self, time};
-use ic_cdk::management_canister::{
-    vetkd_derive_key, vetkd_public_key, VetKDCurve, VetKDDeriveKeyArgs, VetKDKeyId,
-    VetKDPublicKeyArgs,
+use ic_cdk::{
+    api::{canister_self, time},
+    management_canister::{
+        vetkd_derive_key, vetkd_public_key, VetKDCurve, VetKDDeriveKeyArgs, VetKDKeyId,
+        VetKDPublicKeyArgs,
+    },
 };
 use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
-use std::cell::RefCell;
-use std::collections::BTreeMap;
-use std::convert::TryFrom;
+use std::{cell::RefCell, collections::BTreeMap, convert::TryFrom};
 
 pub mod authorization;
 use authorization::{authorization_message, recover_address_from_signature, Address};

@@ -8,21 +8,21 @@ use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use folding_schemes::FoldingScheme;
 use rand::{SeedableRng, rngs::StdRng};
 
-use zkp::circuits::burn_address::{
-    compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce,
-};
-use zkp::groth16::{params::Groth16Params, withdraw::SingleWithdrawCircuit};
-use zkp::nova::{
-    constants::TRANSFER_TREE_HEIGHT,
-    params::NovaParams,
-    root_nova::{RootCircuit, RootExternalInputs},
-    withdraw_nova::{
-        WITHDRAW_STATE_LEN, WithdrawCircuit, WithdrawExternalInputs, dummy_withdraw_ext_input,
+use zkp::{
+    circuits::burn_address::{compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce},
+    groth16::{params::Groth16Params, withdraw::SingleWithdrawCircuit},
+    nova::{
+        constants::TRANSFER_TREE_HEIGHT,
+        params::NovaParams,
+        root_nova::{RootCircuit, RootExternalInputs},
+        withdraw_nova::{
+            WITHDRAW_STATE_LEN, WithdrawCircuit, WithdrawExternalInputs, dummy_withdraw_ext_input,
+        },
     },
-};
-use zkp::utils::{
-    poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
-    tree::{gadgets::leaf_hash::compute_leaf_hash, merkle_tree::MerkleProof},
+    utils::{
+        poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
+        tree::{gadgets::leaf_hash::compute_leaf_hash, merkle_tree::MerkleProof},
+    },
 };
 
 fn bench_root_nova_step(c: &mut Criterion) {
