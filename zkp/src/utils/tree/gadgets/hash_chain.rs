@@ -67,10 +67,7 @@ pub fn hash_chain_var<F: PrimeField>(
     Boolean::le_bits_to_fp(&new_hash_bits)
 }
 
-fn fp_var_be_bytes<F: PrimeField>(
-    var: &FpVar<F>,
-    target_len: usize,
-) -> ByteSplitResult<F> {
+fn fp_var_be_bytes<F: PrimeField>(var: &FpVar<F>, target_len: usize) -> ByteSplitResult<F> {
     let bytes_le = var.to_bytes_le()?;
     let mut bytes_be: Vec<_> = bytes_le.into_iter().rev().collect();
     if bytes_be.len() < target_len {
