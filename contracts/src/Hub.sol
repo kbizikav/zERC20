@@ -114,7 +114,7 @@ contract Hub is OAppUpgradeable, PausableUpgradeable, UUPSUpgradeable {
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         address expected = address(endpoint);
         address actual = address(Hub(newImplementation).endpoint());
-        if (actual != expected) revert EndpointMismatch(expected, actual);
+        require(actual == expected, EndpointMismatch(expected, actual));
     }
 
     function transferRoots(uint256 index_) public view returns (uint256) {
