@@ -269,7 +269,7 @@ impl Storage {
     ) -> Result<()> {
         let full_key = self.key(key);
         let total_size = bytes.len();
-        let num_parts = (total_size + part_size - 1) / part_size;
+        let num_parts = total_size.div_ceil(part_size);
 
         log::info!(
             "Starting multipart upload: {} ({} bytes, {} parts)",
@@ -1470,6 +1470,7 @@ async fn submit(
 }
 
 /// Process submission in background (heavy verification work)
+#[allow(clippy::too_many_arguments)]
 async fn process_submission(
     state: &web::Data<AppState>,
     ceremony_id: &str,

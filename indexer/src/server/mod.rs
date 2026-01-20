@@ -476,7 +476,7 @@ async fn tree_index_by_root(
         error!(
             "failed to lookup tree index for token '{}' and root {}: {err:?}",
             token.label,
-            format!("{:#x}", params.transfer_root)
+            format_args!("{:#x}", params.transfer_root)
         );
         ErrorInternalServerError("failed to lookup transfer root")
     })?;

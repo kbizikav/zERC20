@@ -23,6 +23,7 @@ use zkp::{
 
 use crate::commands::invoice::NUM_BATCH_INVOICES;
 
+#[allow(clippy::too_many_arguments)]
 pub async fn batch_teleport_proof<const DEPTH: usize>(
     artifacts_dir: &Path,
     decider: &dyn DeciderClient,

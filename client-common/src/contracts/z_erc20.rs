@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use crate::contracts::{
     ContractError, ContractResult,
     utils::{NormalProvider, get_provider_with_signer, send_call_with_legacy, uint256_as_u64},

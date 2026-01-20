@@ -287,10 +287,8 @@ fn decode_send_call(bytes: &[u8]) -> Result<zERC20::sendCall> {
         return Ok(call);
     }
 
-    if bytes.len() > 4 {
-        if let Ok(call) = zERC20::sendCall::abi_decode(&bytes[4..]) {
-            return Ok(call);
-        }
+    if bytes.len() > 4 && let Ok(call) = zERC20::sendCall::abi_decode(&bytes[4..]) {
+        return Ok(call);
     }
 
     Err(anyhow!("zERC20::sendCall decode failed"))
@@ -327,14 +325,11 @@ async fn summarize_send(
 
     if let Some(raw) = source_payload(message) {
         let mut summary = decode_send_payload(raw)?;
-        if let Some(entry) = token_entry {
-            if let Ok(provider) = entry.provider() {
-                if let Some(rate) =
-                    fetch_decimal_conversion_rate(&provider, entry.token_address).await
-                {
-                    apply_decimal_conversion(&mut summary, rate);
-                }
-            }
+        if let Some(entry) = token_entry
+            && let Ok(provider) = entry.provider()
+            && let Some(rate) = fetch_decimal_conversion_rate(&provider, entry.token_address).await
+        {
+            apply_decimal_conversion(&mut summary, rate);
         }
         return Ok(Some(summary));
     }
@@ -359,10 +354,8 @@ fn find_token_for_message<'a>(
         .map(str::to_lowercase);
 
     tokens.iter().find(|t| {
-        if let Some(eid) = src_eid {
-            if t.eid == Some(eid) {
-                return true;
-            }
+        if let Some(eid) = src_eid && t.eid == Some(eid) {
+            return true;
         }
         if let Some(chain) = src_chain.as_deref() {
             return t.label.to_lowercase() == chain;
@@ -395,7 +388,7 @@ async fn fetch_compose_followups(
         let Ok(Some(response)) = client.tx_messages(hash).await else {
             continue;
         };
-        let Some(message) = response.data.get(0) else {
+        let Some(message) = response.data.first() else {
             continue;
         };
 
@@ -439,12 +432,11 @@ async fn fetch_compose_followups(
 
         let mut amount_received_ld = send_summary.as_ref().and_then(|s| s.amount_received_ld);
 
-        if let Some(entry) = token_entry {
-            if let Ok(provider) = entry.provider() {
-                if let Some(received) = fetch_oft_sent_amounts(&provider, hash).await {
-                    amount_received_ld = Some(received);
-                }
-            }
+        if let Some(entry) = token_entry
+            && let Ok(provider) = entry.provider()
+            && let Some(received) = fetch_oft_sent_amounts(&provider, hash).await
+        {
+            amount_received_ld = Some(received);
         }
 
         out.push(ComposeFollowUp {

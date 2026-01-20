@@ -221,6 +221,7 @@ pub struct RootJobConfig {
 }
 
 impl RootJobConfig {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         interval_ms: u64,
         submit_interval_ms: u64,

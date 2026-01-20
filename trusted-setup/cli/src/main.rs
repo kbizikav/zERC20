@@ -816,9 +816,7 @@ async fn contribute(args: ContributeArgs, shutdown: &AtomicBool) -> Result<()> {
             .map_err(|e| arkworks_phase2::error::Error::Custom(format!("signing failed: {}", e)))?;
 
         // Convert to 65-byte format (r, s, v)
-        let sig_bytes: [u8; 65] = signature.as_bytes().try_into().map_err(|_| {
-            arkworks_phase2::error::Error::Custom("invalid signature length".to_string())
-        })?;
+        let sig_bytes: [u8; 65] = signature.as_bytes();
 
         Ok(sig_bytes)
     };
@@ -1715,6 +1713,7 @@ const MULTIPART_THRESHOLD: usize = 100 * 1024 * 1024;
 const MULTIPART_PART_SIZE: usize = 1024 * 1024 * 1024;
 
 /// Upload bytes using multipart upload via Coordinator API.
+#[allow(clippy::too_many_arguments)]
 async fn upload_multipart(
     client: &reqwest::Client,
     base_url: &Url,
@@ -1726,7 +1725,7 @@ async fn upload_multipart(
     shutdown: &AtomicBool,
 ) -> Result<()> {
     let total_size = body.len();
-    let num_parts = (total_size + MULTIPART_PART_SIZE - 1) / MULTIPART_PART_SIZE;
+    let num_parts = total_size.div_ceil(MULTIPART_PART_SIZE);
 
     println!(
         "Using multipart upload for {} ({} bytes, {} parts)",
@@ -1949,6 +1948,7 @@ async fn upload_multipart(
 }
 
 /// Upload bytes using simple PUT or multipart upload depending on size.
+#[allow(clippy::too_many_arguments)]
 async fn upload_bytes_smart(
     client: &reqwest::Client,
     base_url: &Url,

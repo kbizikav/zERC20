@@ -160,6 +160,8 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
         deployed_block_number: 0,
         rpc_urls: vec![rpc_url.clone()],
         legacy_tx: false,
+        relay_interval_secs: None,
+        root_submit_interval_ms: None,
     };
 
     let tree_job_config = TreeJobConfig::default();

@@ -21,7 +21,6 @@ use commands::{
     shared::{parse_address, parse_b256, parse_bytes, parse_u256},
     transfer, unwrap, wrap,
 };
-use hex;
 use reqwest::Url;
 
 #[derive(Parser, Debug)]
