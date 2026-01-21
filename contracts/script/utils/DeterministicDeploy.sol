@@ -2,9 +2,12 @@
 pragma solidity 0.8.33;
 
 import {Script} from "forge-std/Script.sol";
+import {CREATE3} from "solady-0.1.8/src/utils/CREATE3.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
-/// @notice Shared helpers for deterministic CREATE2 deployments across scripts.
+/// @notice Shared helpers for deterministic CREATE3 deployments across scripts.
+/// @dev CREATE3 addresses depend only on deployer address and salt, not on init code,
+///      enabling identical addresses across chains even when constructor arguments differ.
 abstract contract DeterministicDeployer is Script {
     bytes32 internal constant DEFAULT_DEPLOY_SALT = keccak256("zerc20.deploy.default");
 
@@ -24,14 +27,38 @@ abstract contract DeterministicDeployer is Script {
         return keccak256(abi.encodePacked(baseSalt, label));
     }
 
-    /// @dev Deploys a proxy and runs the initializer in a single call.
-    ///      The proxy init data remains empty to keep the CREATE2 init code stable.
+    /// @dev Deploys a contract using CREATE3. The address depends only on msg.sender and salt.
+    /// @param baseSalt Base salt shared across related deployments.
+    /// @param label Human-readable label to derive unique salt.
+    /// @param creationCode Bytecode including constructor arguments (abi.encodePacked(type(C).creationCode, abi.encode(args))).
+    /// @return deployed The address of the deployed contract.
+    function _deploy3(bytes32 baseSalt, string memory label, bytes memory creationCode)
+        internal
+        returns (address deployed)
+    {
+        bytes32 salt = _deriveSalt(baseSalt, label);
+        deployed = CREATE3.deployDeterministic(creationCode, salt);
+    }
+
+    /// @dev Predicts the CREATE3 address for a given salt without deploying.
+    /// @param baseSalt Base salt shared across related deployments.
+    /// @param label Human-readable label to derive unique salt.
+    /// @return predicted The address where the contract would be deployed.
+    function _predictAddress(bytes32 baseSalt, string memory label) internal view returns (address predicted) {
+        bytes32 salt = _deriveSalt(baseSalt, label);
+        predicted = CREATE3.predictDeterministicAddress(salt);
+    }
+
+    /// @dev Deploys a proxy using CREATE3 and runs the initializer in a single call.
     function _deployProxyAndInit(
         bytes32 baseSalt,
         string memory label,
         address implementation,
         bytes memory initCalldata
     ) internal returns (address proxy) {
-        proxy = address(new ERC1967Proxy{salt: _deriveSalt(baseSalt, label)}(implementation, initCalldata));
+        bytes memory proxyCreationCode = abi.encodePacked(
+            type(ERC1967Proxy).creationCode, abi.encode(implementation, initCalldata)
+        );
+        proxy = _deploy3(baseSalt, label, proxyCreationCode);
     }
 }

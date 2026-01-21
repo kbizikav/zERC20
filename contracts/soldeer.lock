@@ -86,7 +86,7 @@ integrity = "6172bc8002602c9cca3e14416d2f4e158ea76021101c45ee414e6524e9e4f445"
 name = "lz-address-book"
 version = "1.0.0"
 git = "https://github.com/LayerZero-Labs/lz-address-book.git"
-rev = "ea3e016155d678fa3e14f1af67f13447c927a5b3"
+rev = "7cd089aff4f20da303cd8d11a6985a0e15260371"
 
 [[dependencies]]
 name = "poseidon-solidity"
@@ -94,3 +94,10 @@ version = "0.0.5"
 url = "https://soldeer-revisions.s3.amazonaws.com/poseidon-solidity/0_0_5_04-07-2024_06:57:44_contracts.zip"
 checksum = "c622cf4f348014da6947d3ddeba267317f1ca3701466f92e0be64a7726c3b31c"
 integrity = "fecc3410994eebc6edf14e86fd388c31d8095c4abbba4a5772e5287f381df2fd"
+
+[[dependencies]]
+name = "solady"
+version = "0.1.8"
+url = "https://soldeer-revisions.s3.amazonaws.com/solady/0_1_8_11-02-2025_13:02:52_solady.zip"
+checksum = "8c3d658db05db932d765051cf6708f61bcc9b435ad1e4fe9478c2d6e58f83560"
+integrity = "bfc4beccbeb725fec034908835064d56f4f3cdc79782928956eaf67694a520ff"

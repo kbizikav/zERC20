@@ -57,9 +57,10 @@ contract DeployLiquidity is DeterministicDeployer {
         bytes32 baseSalt = _loadBaseSalt();
         console2.log("Deploying LiquidityManager at block", block.number);
 
-        LiquidityManager implementation = new LiquidityManager{salt: _deriveSalt(baseSalt, "LIQUIDITY_MANAGER_IMPL")}(
-            cfg.underlyingToken, cfg.zerc20Token
-        );
+        bytes memory implCode =
+            abi.encodePacked(type(LiquidityManager).creationCode, abi.encode(cfg.underlyingToken, cfg.zerc20Token));
+        LiquidityManager implementation =
+            LiquidityManager(payable(_deploy3(baseSalt, "LIQUIDITY_MANAGER_IMPL", implCode)));
         bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (cfg.fee, cfg.owner));
         LiquidityManager manager = LiquidityManager(
             payable(_deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
@@ -83,9 +84,10 @@ contract DeployLiquidity is DeterministicDeployer {
 
         if (cfg.stargate != address(0)) {
             if (cfg.lzEndpoint == address(0)) revert LzEndpointRequired();
-            Adaptor adaptorImplementation = new Adaptor{salt: _deriveSalt(baseSalt, "ADAPTOR_IMPL")}(
-                address(manager), cfg.stargate, cfg.lzEndpoint
+            bytes memory adaptorImplCode = abi.encodePacked(
+                type(Adaptor).creationCode, abi.encode(address(manager), cfg.stargate, cfg.lzEndpoint)
             );
+            Adaptor adaptorImplementation = Adaptor(payable(_deploy3(baseSalt, "ADAPTOR_IMPL", adaptorImplCode)));
             bytes memory adaptorInitData = abi.encodeCall(Adaptor.initialize, (cfg.owner));
             Adaptor adaptor = Adaptor(
                 payable(_deployProxyAndInit(baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData))
