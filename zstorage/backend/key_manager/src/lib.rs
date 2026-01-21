@@ -6,7 +6,9 @@ use ic_cdk::{
         VetKDPublicKeyArgs,
     },
 };
-use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
+#[cfg(target_arch = "wasm32")]
+use ic_cdk_macros::{init, post_upgrade, pre_upgrade};
+use ic_cdk_macros::{query, update};
 use std::{cell::RefCell, collections::BTreeMap, convert::TryFrom};
 
 pub mod authorization;
@@ -45,6 +47,7 @@ pub struct EncryptedViewKeyRequest {
 }
 
 #[cfg_attr(target_arch = "wasm32", init)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn init(args: InitArgs) {
     let key_id_name = args.key_id_name;
     let config = Config { key_id_name };
@@ -58,12 +61,14 @@ fn init(args: InitArgs) {
 }
 
 #[cfg_attr(target_arch = "wasm32", pre_upgrade)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn pre_upgrade() {
     let state = STATE.with(|state| state.borrow().clone());
     ic_cdk::storage::stable_save((state,)).expect("failed to persist state");
 }
 
 #[cfg_attr(target_arch = "wasm32", post_upgrade)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn post_upgrade() {
     let (maybe_state,): (Option<State>,) =
         ic_cdk::storage::stable_restore().expect("failed to restore state");
