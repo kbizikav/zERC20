@@ -25,17 +25,17 @@ pragma solidity >=0.7.0 <0.9.0;
 
 contract WithdrawGlobalGroth16Verifier {
     // Scalar field size
-    uint256 constant r    = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
+    uint256 constant r = 21888242871839275222246405745257275088548364400416034343698204186575808495617;
     // Base field size
-    uint256 constant q   = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
+    uint256 constant q = 21888242871839275222246405745257275088696311157297823662689037894645226208583;
 
     // Verification Key data
-    uint256 constant alphax  = 10314683402145919335415264089338013869151872735661243528435829273762895412475;
-    uint256 constant alphay  = 15311410802386913807174485311770598542990692773058369166097347676916826427424;
-    uint256 constant betax1  = 8742476040979126669529512667270167370972734897784767815803986702043271844587;
-    uint256 constant betax2  = 21546977338313367449764778081974431327514198880463503495700342085596869133184;
-    uint256 constant betay1  = 9289809140465907199790286310535739942219483053026485452107542051245760617369;
-    uint256 constant betay2  = 10645240371221413259645920038475973272479052146228783657329287031421083633145;
+    uint256 constant alphax = 10314683402145919335415264089338013869151872735661243528435829273762895412475;
+    uint256 constant alphay = 15311410802386913807174485311770598542990692773058369166097347676916826427424;
+    uint256 constant betax1 = 8742476040979126669529512667270167370972734897784767815803986702043271844587;
+    uint256 constant betax2 = 21546977338313367449764778081974431327514198880463503495700342085596869133184;
+    uint256 constant betay1 = 9289809140465907199790286310535739942219483053026485452107542051245760617369;
+    uint256 constant betay2 = 10645240371221413259645920038475973272479052146228783657329287031421083633145;
     uint256 constant gammax1 = 19786488175694835941529082486176010093671788452701050737945948286615958246569;
     uint256 constant gammax2 = 20330634461338860209244322586166193708999379153762374339780730602203574324967;
     uint256 constant gammay1 = 5928072313096986966179943778308363878908435360419431578510684278352903202909;
@@ -45,27 +45,30 @@ contract WithdrawGlobalGroth16Verifier {
     uint256 constant deltay1 = 8810824702403597757041960647441338188287452861929357829520560151016180636116;
     uint256 constant deltay2 = 20423055301853288990931997049485455849638502515255059322630657921443113246087;
 
-    
     uint256 constant IC0x = 7203537062446394984424852619130461885336363817341366214486103536568309864752;
     uint256 constant IC0y = 2431748114442638221632879236164411742011225035836423616070122131073989731977;
-    
+
     uint256 constant IC1x = 9192111895064560111275494872045506074671417372877180107609134801852536738875;
     uint256 constant IC1y = 12697085020506524998556708021752158197921816696880313311767285571629069258113;
-    
+
     uint256 constant IC2x = 14951080794276048900106223758223052956328495508567489399826735085145673064528;
     uint256 constant IC2y = 390622832849440855343691644063875600105764133109956546387215420576261427719;
-    
+
     uint256 constant IC3x = 10671369181184151204621043631176026647655048832740999963310157245142935365511;
     uint256 constant IC3y = 10117742016679023047255505953659730901565183020778022664222402276709540522438;
-    
-    
+
     // Memory data
     uint16 constant pVk = 0;
     uint16 constant pPairing = 128;
 
     uint16 constant pLastMem = 896;
 
-    function verifyProof(uint[2] calldata _pA, uint[2][2] calldata _pB, uint[2] calldata _pC, uint[3] calldata _pubSignals) public view returns (bool) {
+    function verifyProof(
+        uint256[2] calldata _pA,
+        uint256[2][2] calldata _pB,
+        uint256[2] calldata _pC,
+        uint256[3] calldata _pubSignals
+    ) public view returns (bool) {
         assembly {
             function checkField(v) {
                 if iszero(lt(v, r)) {
@@ -73,7 +76,7 @@ contract WithdrawGlobalGroth16Verifier {
                     return(0, 0x20)
                 }
             }
-            
+
             // G1 function to multiply a G1 value(x,y) to value in an address
             function g1_mulAccC(pR, x, y, s) {
                 let success
@@ -108,8 +111,7 @@ contract WithdrawGlobalGroth16Verifier {
                 mstore(add(_pVk, 32), IC0y)
 
                 // Compute the linear combination vk_x
-                
-                
+
                 g1_mulAccC(_pVk, IC1x, IC1y, calldataload(add(pubSignals, 0)))
                 g1_mulAccC(_pVk, IC2x, IC2y, calldataload(add(pubSignals, 32)))
                 g1_mulAccC(_pVk, IC3x, IC3y, calldataload(add(pubSignals, 64)))
@@ -138,7 +140,6 @@ contract WithdrawGlobalGroth16Verifier {
                 mstore(add(_pPairing, 384), mload(add(pMem, pVk)))
                 mstore(add(_pPairing, 416), mload(add(pMem, add(pVk, 32))))
 
-
                 // gamma2
                 mstore(add(_pPairing, 448), gammax1)
                 mstore(add(_pPairing, 480), gammax2)
@@ -155,7 +156,6 @@ contract WithdrawGlobalGroth16Verifier {
                 mstore(add(_pPairing, 704), deltay1)
                 mstore(add(_pPairing, 736), deltay2)
 
-
                 let success := staticcall(sub(gas(), 2000), 8, _pPairing, 768, _pPairing, 0x20)
 
                 isOk := and(success, mload(_pPairing))
@@ -165,21 +165,20 @@ contract WithdrawGlobalGroth16Verifier {
             mstore(0x40, add(pMem, pLastMem))
 
             // Validate that all evaluations ∈ F
-            
+
             checkField(calldataload(add(_pubSignals, 0)))
-            
+
             checkField(calldataload(add(_pubSignals, 32)))
-            
+
             checkField(calldataload(add(_pubSignals, 64)))
-            
+
             checkField(calldataload(add(_pubSignals, 96)))
-            
 
             // Validate all evaluations
             let isValid := checkPairing(_pA, _pB, _pC, _pubSignals, pMem)
 
             mstore(0, isValid)
-            
+
             return(0, 0x20)
         }
     }
