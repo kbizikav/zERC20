@@ -68,7 +68,7 @@ USDC-backed token with 6 decimals.
 
 ### Config File
 
-See `config/tokens.json` for the full zUSD configuration.
+See `config/tokens.zusdc.testnet.json` for the full zUSD configuration.
 
 ---
 
@@ -123,7 +123,7 @@ Deployed at blocks: 38631667 (Verifier/Token), 38632109 (Liquidity/Adaptor)
 
 ### Config File
 
-See `config/tokens.zETH.json` for the full zETH configuration.
+See `config/tokens.zeth.testnet.json` for the full zETH configuration.
 
 ---
 
@@ -146,7 +146,7 @@ Not yet deployed.
 
 | Token | Underlying | Sentinel/Address |
 |-------|------------|------------------|
-| zUSD | USDC | Per-chain USDC addresses (see `config/config.zUSD.json`) |
+| zUSD | USDC | Per-chain USDC addresses (see `contracts/config/stargate/config.zUSDC.json`) |
 | zETH | Native ETH | `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE` (ERC-7528) |
 
 ### Verification Status
