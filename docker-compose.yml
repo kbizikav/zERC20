@@ -55,5 +55,18 @@ services:
       RUST_LOG: info
     command: []
 
+  fee-manager:
+    build:
+      context: .
+      dockerfile: docker/fee-manager.Dockerfile
+    restart: unless-stopped
+    environment:
+      TOKENS_COMPRESSED: "${TOKENS_COMPRESSED:?TOKENS_COMPRESSED must be set in .env}"
+      FEE_MANAGER_PRIVATE_KEY: "${FEE_MANAGER_PRIVATE_KEY:?FEE_MANAGER_PRIVATE_KEY must be set in .env}"
+      FEE_MANAGER_INTERVAL_SECS: "${FEE_MANAGER_INTERVAL_SECS:-3600}"
+      FEE_MANAGER_K_BPS: "${FEE_MANAGER_K_BPS:-1000}"
+      RUST_LOG: info
+    command: []
+
 volumes:
   postgres-data:

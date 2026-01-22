@@ -19,7 +19,13 @@ The scripts consume environment variables through `vm.env*` helpers. Place the v
 - `PRIVATE_KEY`: Hex-encoded private key for the broadcaster account (also used as the default delegate when overrides are omitted)
 - `RPC_URL`: RPC endpoint that matches the target chain passed to `--rpc-url` (used for Hub deployment in the examples below)
 - `VERIFIER_RPC`: RPC endpoint for the verifier/token chain (used only by the CLI flag in the example command)
-- `DEPLOY_SALT` (string, optional): Overrides the base salt used for deterministic deployments
+- `DEPLOY_SALT` (string, optional): Overrides the base salt used for deterministic deployments.
+  **Important**: When deploying multiple token types (e.g., zUSD and zETH), use different salts to avoid address collisions:
+  ```bash
+  export DEPLOY_SALT=zUSD   # for zUSD deployment
+  export DEPLOY_SALT=zETH   # for zETH deployment
+  ```
+  If unset, all deployments use the same default salt and will collide.
 
 ### Hub deployment (`DeployHub`)
 - `HUB_EID` (uint32): LayerZero endpoint ID for the chain hosting the Hub (for reference/logging)
@@ -158,6 +164,21 @@ forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-ur
 forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-url <OP_RPC> --broadcast -vvvv
 ```
 
+**Deploying additional token types (e.g., zETH)**
+
+To deploy a second token type without address collisions, set a unique `DEPLOY_SALT`:
+```bash
+export PRIVATE_KEY=0x...
+export HUB_EID=40245
+export TOKEN_NAME=zETH
+export TOKEN_SYMBOL=zETH
+export TOKEN_DECIMALS=18
+export DEPLOY_SALT=zETH   # Different salt to avoid collisions with zUSD
+
+forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-url <ARB_RPC> --broadcast -vvvv
+forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-url <OP_RPC> --broadcast -vvvv
+```
+
 ### 3) Deploy LiquidityManager + Adaptor (Arb Sepolia, then OP Sepolia)
 Use the shipped per-chain config files to select the underlying token and Stargate address:
 - `config/config.zUSD.json` (USDC)
@@ -172,16 +193,39 @@ forge script script/DeployLiquidity.s.sol:DeployLiquidity --rpc-url <ARB_RPC> --
 forge script script/DeployLiquidity.s.sol:DeployLiquidity --rpc-url <OP_RPC> --broadcast -vvvv
 ```
 
-### 4) Wire Hub/Verifier/Token peers (recommended helper)
+### 4) Wire Hub/Verifier/Token peers
+
 Create `../config/tokens.json` (copy `../config/tokens.example.json`) and fill in `hub_address`, token/verifier addresses,
-`chain_id`, and `eid`. Then run:
+`chain_id`, and `eid`.
+
+**Option A: Direct forge commands (recommended)**
+
+Run each script directly with forge for reliable broadcasting:
 ```bash
 export PRIVATE_KEY=0x...
-python3 ./run_set_peers.py --file ../config/tokens.json --broadcast -vvvv
+
+# SetHubPeers (on Hub chain)
+export HUB_ADDRESS=0x... VERIFIER_ADDRESSES=0x...,0x... VERIFIER_EIDS=40231,40232 TOKEN_ADDRESSES=0x...,0x... TOKEN_CHAIN_IDS=421614,11155420
+forge script script/SetPeers.s.sol:SetHubPeers --rpc-url <HUB_RPC> --broadcast -vv
+
+# SetVerifierPeers (on each verifier chain)
+export HUB_ADDRESS=0x... HUB_EID=40245 VERIFIER_ADDRESS=0x...
+forge script script/SetPeers.s.sol:SetVerifierPeers --rpc-url <VERIFIER_RPC> --broadcast -vv
+
+# SetTokenPeers (on each token chain)
+export TOKEN_ADDRESS=0x... PEER_ADDRESSES=0x... PEER_EIDS=40232
+forge script script/SetPeers.s.sol:SetTokenPeers --rpc-url <TOKEN_RPC> --broadcast -vv
 ```
 
-If you see a `dry-run` directory under `contracts/broadcast/SetPeers.s.sol/.../dry-run`, you ran a simulation only. Ensure
-`--broadcast` is passed to the python helper as shown above.
+**Option B: Python helper**
+
+```bash
+export PRIVATE_KEY=0x...
+python3 ./run_set_peers.py --file ../config/tokens.json -- --broadcast -vv
+```
+
+**Note**: The python helper may produce simulation-only output (saved to `dry-run/` directories). If transactions are not
+broadcast, use Option A with direct forge commands instead.
 
 Crosschain Unwrap Smoke Test (Adaptor.unwrapAndBridge)
 ------------------------------------------------------
