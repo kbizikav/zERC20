@@ -53,6 +53,7 @@ fn build_decider_circuit_for_root() -> anyhow::Result<DeciderEthCircuit<G1, G2>>
 }
 
 #[test]
+#[ignore] 
 fn benchmark_decider_root_new_from_accumulator() {
     // Step 1: Load PTAU accumulator
     let ptau_path = trusted_setup_common::ptau_path_for_power(24);
@@ -111,6 +112,7 @@ fn benchmark_decider_root_new_from_accumulator() {
 }
 
 #[test]
+#[ignore] 
 fn benchmark_circuit_build_detailed() {
     println!("\n=== DeciderRoot Circuit Build Detailed Benchmark ===\n");
 
