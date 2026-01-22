@@ -414,7 +414,7 @@ def main() -> None:
         extra_list = ", ".join(sorted(extra))
         raise ConfigError(f"dvn-config has unknown chains: {extra_list}")
 
-    base_forge_args = forge_args if forge_args else ["--broadcast"]
+    base_forge_args = forge_args if forge_args else ["--broadcast", "--slow"]
 
     print(f"Running verifier<->hub config for {len(tokens)} chain(s)")
     if hub_policy is None:
