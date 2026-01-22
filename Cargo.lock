@@ -3637,6 +3637,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "fee-manager"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "clap",
+ "client-common",
+ "dotenvy",
+ "env_logger",
+ "hex",
+ "log",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
 name = "ff"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

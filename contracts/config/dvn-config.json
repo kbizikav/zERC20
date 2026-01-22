@@ -1,0 +1,42 @@
+{
+  "tokens_file": "../../config/tokens.json",
+  "chains": {
+    "arb-sepolia": {
+      "verifier_hub": {
+        "confirmations": 1,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 1,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
+    },
+    "op-sepolia": {
+      "verifier_hub": {
+        "confirmations": 1,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 1,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
+    }
+  },
+  "hub": {
+    "verifier_hub": {
+      "confirmations": 1,
+      "required_dvns": ["LayerZero Labs", "Nethermind"],
+      "optional_dvns": [],
+      "optional_threshold": 0
+    }
+  }
+}
+
