@@ -1,6 +1,9 @@
 use std::{env, path::Path, time::Duration};
 
-use alloy::primitives::{B256, U256};
+use alloy::{
+    primitives::{Address, B256, U256, address},
+    providers::Provider,
+};
 use anyhow::{Context, Result, bail};
 use clap::Parser;
 use client_common::{
@@ -13,6 +16,9 @@ use client_common::{
 };
 use log::{error, info, warn};
 use tokio::time::{self, MissedTickBehavior};
+
+/// ERC-7528 native token address convention
+const NATIVE_TOKEN: Address = address!("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee");
 
 #[derive(Parser, Debug)]
 #[command(
@@ -61,13 +67,21 @@ struct Cli {
     once: bool,
 }
 
+/// Represents the underlying token type for a LiquidityManager.
+enum UnderlyingToken {
+    /// Native token (ETH) - use provider.get_balance()
+    Native(NormalProvider),
+    /// ERC20 token - use balanceOf()
+    Erc20(Erc20Contract),
+}
+
 /// Per-chain context for fee management operations.
 struct ChainContext {
     label: String,
     #[allow(dead_code)]
     chain_id: u64,
     liquidity_manager: LiquidityManagerContract,
-    underlying_token: Erc20Contract,
+    underlying: UnderlyingToken,
 }
 
 /// Main job that updates fee parameters across all chains.
@@ -184,17 +198,27 @@ impl FeeManagerJob {
     /// Liquidity is defined as `balance - feeSurplus` to match the on-chain incentive curve
     /// (see contracts/src/liquidity/LiquidityManager.sol lines 232-250).
     async fn fetch_liquidity(&self, chain: &ChainContext) -> Result<U256> {
-        let balance = chain
-            .underlying_token
-            .balance_of(chain.liquidity_manager.address())
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to fetch balance for {} at {:?}",
-                    chain.label,
-                    chain.liquidity_manager.address()
-                )
-            })?;
+        let lm_address = chain.liquidity_manager.address();
+
+        // Fetch balance based on underlying token type
+        let balance = match &chain.underlying {
+            UnderlyingToken::Native(provider) => {
+                provider.get_balance(lm_address).await.with_context(|| {
+                    format!(
+                        "failed to fetch native balance for {} at {:?}",
+                        chain.label, lm_address
+                    )
+                })?
+            }
+            UnderlyingToken::Erc20(token) => {
+                token.balance_of(lm_address).await.with_context(|| {
+                    format!(
+                        "failed to fetch ERC20 balance for {} at {:?}",
+                        chain.label, lm_address
+                    )
+                })?
+            }
+        };
 
         let fee_surplus = chain
             .liquidity_manager
@@ -301,12 +325,18 @@ async fn main() -> Result<()> {
     let mut chains = Vec::with_capacity(tokens_with_lm.len());
     for token in &tokens_with_lm {
         match build_chain_context(token).await {
-            Ok(ctx) => {
+            Ok((ctx, underlying_address)) => {
+                let underlying_type = if underlying_address == NATIVE_TOKEN {
+                    "Native (ETH)"
+                } else {
+                    "ERC20"
+                };
                 info!(
-                    "[{}] LiquidityManager: {:?}, Underlying: {:?}",
+                    "[{}] LiquidityManager: {:?}, Underlying: {:?} ({})",
                     ctx.label,
                     ctx.liquidity_manager.address(),
-                    ctx.underlying_token.address()
+                    underlying_address,
+                    underlying_type
                 );
                 chains.push(ctx);
             }
@@ -357,7 +387,7 @@ async fn main() -> Result<()> {
     Ok(())
 }
 
-async fn build_chain_context(token: &TokenEntry) -> Result<ChainContext> {
+async fn build_chain_context(token: &TokenEntry) -> Result<(ChainContext, Address)> {
     let lm_address = token
         .liquidity_manager_address
         .ok_or_else(|| anyhow::anyhow!("liquidity_manager_address is None"))?;
@@ -379,15 +409,24 @@ async fn build_chain_context(token: &TokenEntry) -> Result<ChainContext> {
             )
         })?;
 
-    let underlying_token =
-        Erc20Contract::new(provider, underlying_address).with_legacy_tx(token.legacy_tx);
+    // Check if underlying is native token (ETH) or ERC20
+    let underlying = if underlying_address == NATIVE_TOKEN {
+        UnderlyingToken::Native(provider)
+    } else {
+        UnderlyingToken::Erc20(
+            Erc20Contract::new(provider, underlying_address).with_legacy_tx(token.legacy_tx),
+        )
+    };
 
-    Ok(ChainContext {
-        label: token.label.clone(),
-        chain_id: token.chain_id,
-        liquidity_manager,
-        underlying_token,
-    })
+    Ok((
+        ChainContext {
+            label: token.label.clone(),
+            chain_id: token.chain_id,
+            liquidity_manager,
+            underlying,
+        },
+        underlying_address,
+    ))
 }
 
 fn build_provider(rpc_urls: &[String]) -> Result<NormalProvider> {
