@@ -198,7 +198,8 @@ def join_by_comma(values: Sequence[str]) -> str:
 def run_forge(target: str, rpc_url: str, forge_args: Sequence[str], env_overrides: dict[str, str]) -> None:
     env = os.environ.copy()
     env.update(env_overrides)
-    cmd = ["forge", "script", f"{SET_PEERS_SCRIPT}:{target}", "--rpc-url", rpc_url, *forge_args]
+    private_key = os.environ.get("PRIVATE_KEY", "")
+    cmd = ["forge", "script", f"{SET_PEERS_SCRIPT}:{target}", "--rpc-url", rpc_url, "--private-key", private_key, *forge_args]
     subprocess.run(cmd, cwd=SCRIPT_DIR, env=env, check=True)
 
 
