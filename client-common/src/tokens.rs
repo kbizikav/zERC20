@@ -1,5 +1,6 @@
 use std::{
     collections::hash_map::DefaultHasher,
+    env,
     hash::{Hash, Hasher},
     io::Read,
 };
@@ -214,9 +215,42 @@ pub fn load_tokens_from_compressed(payload: &str) -> Result<TokensFile> {
     parse_tokens_config(&json).context("invalid tokens payload from TOKENS_COMPRESSED")
 }
 
+/// Expands environment variable placeholders in the format `${VAR}`.
+///
+/// Returns an error if a referenced environment variable is not defined.
+fn expand_env_vars(contents: &str) -> Result<String> {
+    let mut result = String::with_capacity(contents.len());
+    let mut chars = contents.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '$' && chars.peek() == Some(&'{') {
+            chars.next(); // consume '{'
+            let mut var_name = String::new();
+            loop {
+                match chars.next() {
+                    Some('}') => break,
+                    Some(c) => var_name.push(c),
+                    None => bail!("unclosed environment variable placeholder: ${{{var_name}"),
+                }
+            }
+            if var_name.is_empty() {
+                bail!("empty environment variable name in placeholder");
+            }
+            let value = env::var(&var_name)
+                .with_context(|| format!("environment variable '{var_name}' is not defined"))?;
+            result.push_str(&value);
+        } else {
+            result.push(ch);
+        }
+    }
+
+    Ok(result)
+}
+
 pub fn parse_tokens_config(contents: &str) -> Result<TokensFile> {
+    let expanded = expand_env_vars(contents).context("failed to expand environment variables")?;
     let mut file: TokensFile =
-        serde_json::from_str(contents).context("failed to parse tokens config JSON")?;
+        serde_json::from_str(&expanded).context("failed to parse tokens config JSON")?;
     file.normalize_entries()
         .context("invalid tokens config entries")?;
     Ok(file)
