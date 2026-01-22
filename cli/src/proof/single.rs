@@ -34,7 +34,7 @@ pub fn single_teleport_proof<const DEPTH: usize>(
     let siblings: [Option<Fr>; DEPTH] = merkle_proof
         .siblings
         .into_iter()
-        .map(|s| Some(s))
+        .map(Some)
         .collect::<Vec<_>>()
         .try_into()
         .map_err(|_| anyhow::anyhow!("invalid number of siblings in global Merkle proof"))?;

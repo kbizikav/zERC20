@@ -67,7 +67,7 @@ impl<F: PrimeField + Absorb> TwoToOneCRHScheme for CircomTwoToOneCRH<F> {
             return Err(Error::IncorrectInputLength(parameters.rate));
         }
 
-        let inputs = [left_input.borrow().clone(), right_input.borrow().clone()];
+        let inputs = [*left_input.borrow(), *right_input.borrow()];
         Ok(circom_poseidon_hash(parameters, &inputs))
     }
 }

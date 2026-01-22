@@ -78,7 +78,7 @@ async fn build_invoice_receive_context(
         let burn_address = burn_payload
             .burn_address()
             .context("failed to derive burn address for single invoice")?;
-        burn_address_to_secret_and_tweak.insert(burn_address, secret_and_tweak.clone());
+        burn_address_to_secret_and_tweak.insert(burn_address, secret_and_tweak);
     } else {
         for sub_id in 0..NUM_BATCH_INVOICES {
             let secret_and_tweak = SecretAndTweak::batch_invoice(
@@ -96,7 +96,7 @@ async fn build_invoice_receive_context(
                     sub_id
                 )
             })?;
-            burn_address_to_secret_and_tweak.insert(burn_address, secret_and_tweak.clone());
+            burn_address_to_secret_and_tweak.insert(burn_address, secret_and_tweak);
         }
     }
 

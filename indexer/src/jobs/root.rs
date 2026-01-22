@@ -343,7 +343,7 @@ impl RootProverJob {
                 let state_snapshot = nova.state();
                 let ivc_proof = nova.ivc_proof();
                 if let Err(err) = self.nova_params.verify(ivc_proof.clone()) {
-                    let state_index = state_snapshot.get(0).copied().unwrap_or_else(Fr::zero);
+                    let state_index = state_snapshot.first().copied().unwrap_or_else(Fr::zero);
                     let state_hash_chain = state_snapshot.get(1).copied().unwrap_or_else(Fr::zero);
                     let state_root = state_snapshot.get(2).copied().unwrap_or_else(Fr::zero);
                     let db_hash_chain = tree.hash_chain_at(current_index).await.ok().flatten();

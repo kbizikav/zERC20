@@ -244,8 +244,7 @@ where
         if !verified {
             return Err(NovaError::DeciderProofError(
                 "Decider Proof Verification Failed".to_string(),
-            )
-            .into());
+            ));
         }
 
         // generate calldata from the proof

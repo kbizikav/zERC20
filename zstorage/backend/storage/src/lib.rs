@@ -3,7 +3,9 @@ use std::{cell::RefCell, collections::BTreeMap};
 use alloy_primitives::{utils::eip191_message, Signature, B256};
 use candid::{CandidType, Deserialize};
 use ic_cdk::api::time;
-use ic_cdk_macros::{init, post_upgrade, pre_upgrade, query, update};
+#[cfg(target_arch = "wasm32")]
+use ic_cdk_macros::{init, post_upgrade, pre_upgrade};
+use ic_cdk_macros::{query, update};
 use sha3::{Digest, Keccak256};
 
 const MAX_CIPHERTEXT_BYTES: usize = 16 * 1024;
@@ -60,6 +62,7 @@ struct State {
 }
 
 #[derive(Clone, CandidType, Deserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 struct AnnouncementV1 {
     id: u64,
     ibe_ciphertext: Vec<u8>,
@@ -69,6 +72,7 @@ struct AnnouncementV1 {
 }
 
 #[derive(Clone, CandidType, Deserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 struct StateV1 {
     announcements: Vec<AnnouncementV1>,
     next_id: u64,
@@ -79,7 +83,8 @@ thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
 }
 
-#[init]
+#[cfg_attr(target_arch = "wasm32", init)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn init(args: Option<InitArgs>) {
     let _ = args;
     STATE.with(|state| {
@@ -92,7 +97,8 @@ fn init(args: Option<InitArgs>) {
     });
 }
 
-#[pre_upgrade]
+#[cfg_attr(target_arch = "wasm32", pre_upgrade)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn pre_upgrade() {
     STATE.with(|state| {
         let state = state.borrow();
@@ -100,7 +106,8 @@ fn pre_upgrade() {
     });
 }
 
-#[post_upgrade]
+#[cfg_attr(target_arch = "wasm32", post_upgrade)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn post_upgrade() {
     let restored: Result<(State,), _> = ic_cdk::storage::stable_restore();
     let state = match restored {
@@ -276,6 +283,7 @@ fn normalize_tag(tag: &str) -> String {
     }
 }
 
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn migrate_state(state: StateV1) -> State {
     let announcements = state
         .announcements
@@ -328,4 +336,5 @@ fn recover_address_from_signature(
         .map_err(|err| format!("failed to recover address: {err}"))
 }
 
+#[cfg(target_arch = "wasm32")]
 ic_cdk::export_candid!();

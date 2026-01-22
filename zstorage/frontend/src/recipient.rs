@@ -23,12 +23,11 @@ pub fn decrypt_vet_key(
     derived_public_key: &[u8],
     transport_secret: &TransportSecretKey,
 ) -> Result<VetKey> {
-    let encrypted =
-        EncryptedVetKey::deserialize(encrypted_key).map_err(|e| StealthError::Transport(e))?;
+    let encrypted = EncryptedVetKey::deserialize(encrypted_key).map_err(StealthError::Transport)?;
     let derived = DerivedPublicKey::deserialize(derived_public_key)
         .map_err(|_| StealthError::Transport("invalid derived public key".into()))?;
     let vet_key = encrypted
         .decrypt_and_verify(transport_secret, &derived, &[])
-        .map_err(|e| StealthError::Transport(e))?;
+        .map_err(StealthError::Transport)?;
     Ok(vet_key)
 }

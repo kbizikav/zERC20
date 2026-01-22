@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use alloy::{
     network::Ethereum,
     primitives::{Address, B256, Bytes, U256},
@@ -376,8 +378,8 @@ impl VerifierContract {
                         transfer_root: evt.transferRoot,
                         general_recipient: GeneralRecipient {
                             chain_id: evt.gr.chainId,
-                            address: evt.gr.recipient.into(),
-                            tweak: evt.gr.tweak.into(),
+                            address: evt.gr.recipient,
+                            tweak: evt.gr.tweak,
                         },
                     });
                 }

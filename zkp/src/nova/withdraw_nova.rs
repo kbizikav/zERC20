@@ -78,7 +78,7 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<WithdrawExternalInputs<F, DEPTH
             let leaf_index = FpVar::<F>::new_variable(cs.clone(), || Ok(value.leaf_index), mode)?;
             let siblings = <[FpVar<F>; DEPTH] as AllocVar<[F; DEPTH], F>>::new_variable(
                 cs,
-                || Ok(value.siblings.clone()),
+                || Ok(value.siblings),
                 mode,
             )?;
             Ok(Self {
@@ -233,7 +233,7 @@ mod tests {
             .iter()
             .map(|(_, address)| *address)
             .collect::<Vec<_>>();
-        let values = vec![
+        let values = [
             U256::from(1000u64),
             U256::from(2000u64),
             U256::from(3000u64),

@@ -212,10 +212,10 @@ impl HubRelayDestination {
     ) -> Result<bool> {
         let deadline = Instant::now() + confirmation.timeout;
         loop {
-            if let Some(current) = self.current_tree_index().await? {
-                if current >= expected_index {
-                    return Ok(true);
-                }
+            if let Some(current) = self.current_tree_index().await?
+                && current >= expected_index
+            {
+                return Ok(true);
             }
 
             if Instant::now() >= deadline {
@@ -324,14 +324,14 @@ impl RelayJob {
         }
 
         if let Some(dest) = &self.destination {
-            if let Some(current_index) = dest.current_tree_index().await? {
-                if current_index >= latest_proved_index {
-                    info!(
-                        "skipping relayTransferRoot for '{}' (chain {}) because hub already has index {}",
-                        self.label, self.chain_id, current_index
-                    );
-                    return Ok(());
-                }
+            if let Some(current_index) = dest.current_tree_index().await?
+                && current_index >= latest_proved_index
+            {
+                info!(
+                    "skipping relayTransferRoot for '{}' (chain {}) because hub already has index {}",
+                    self.label, self.chain_id, current_index
+                );
+                return Ok(());
             }
         } else {
             let up_to_date = self
@@ -637,17 +637,17 @@ async fn main() -> Result<()> {
             );
         }
     }
-    if !cli.once {
-        if let Some(hub) = &hub_entry {
-            let interval = hub
-                .broadcast_interval_secs
-                .unwrap_or(cli.broadcast_interval_secs);
-            if interval == 0 {
-                bail!(
-                    "broadcast interval must be greater than zero for hub chain {}",
-                    hub.chain_id
-                );
-            }
+    if !cli.once
+        && let Some(hub) = &hub_entry
+    {
+        let interval = hub
+            .broadcast_interval_secs
+            .unwrap_or(cli.broadcast_interval_secs);
+        if interval == 0 {
+            bail!(
+                "broadcast interval must be greater than zero for hub chain {}",
+                hub.chain_id
+            );
         }
     }
 
@@ -946,7 +946,7 @@ fn parse_hex_blob(input: &str) -> Result<Vec<u8>> {
         return Ok(Vec::new());
     }
     let without_prefix = normalized.strip_prefix("0x").unwrap_or(normalized);
-    if without_prefix.len() % 2 != 0 {
+    if !without_prefix.len().is_multiple_of(2) {
         bail!("hex string must have even length: {input}");
     }
     hex::decode(without_prefix).with_context(|| format!("failed to decode hex payload: {input}"))
