@@ -1,5 +1,5 @@
 {
-  "tokens_file": "../../config/tokens.zusdc.testnet.json",
+  "tokens_file": "../../../../config/deployed/testnet/tokens.zusdc.testnet.json",
   "chains": {
     "sepolia": {
       "verifier_hub": {

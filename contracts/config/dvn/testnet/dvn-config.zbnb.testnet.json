@@ -1,5 +1,5 @@
 {
-  "tokens_file": "../../config/tokens.zbnb.testnet.json",
+  "tokens_file": "../../../../config/deployed/testnet/tokens.zbnb.testnet.json",
   "chains": {
     "sepolia": {
       "verifier_hub": {

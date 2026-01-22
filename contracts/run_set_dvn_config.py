@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -146,12 +147,27 @@ def normalize_list(value: Any, name: str) -> list[str]:
     return items
 
 
+def expand_env_vars(value: str) -> str:
+    """Expand ${VAR} patterns with environment variable values."""
+    def replace(match: re.Match[str]) -> str:
+        var_name = match.group(1)
+        env_value = os.environ.get(var_name)
+        if env_value is None:
+            raise ConfigError(f"environment variable '{var_name}' is not set")
+        return env_value
+    return re.sub(r'\$\{(\w+)\}', replace, value)
+
+
 def first_rpc_url(value: Any) -> str | None:
     if isinstance(value, list):
-        return normalize_str(value[0]) if value else None
-    if isinstance(value, str):
-        return normalize_str(value)
-    return None
+        url = normalize_str(value[0]) if value else None
+    elif isinstance(value, str):
+        url = normalize_str(value)
+    else:
+        url = None
+    if url:
+        url = expand_env_vars(url)
+    return url
 
 
 def parse_policy(entry: Any, label: str) -> DvnPolicy:

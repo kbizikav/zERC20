@@ -14,6 +14,8 @@ envs/
 # config files
 config/*
 !config/tokens.example.json
+!config/deployed/
+!config/deployed/**
 frontend-app/public/config/*.json
 !frontend-app/public/config/.gitkeep
 
