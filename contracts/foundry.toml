@@ -9,6 +9,9 @@ via_ir = false
 fs_permissions = [{ access = "read", path = "./config" }]
 ignored_warnings_from = ["dependencies/"]
 
+[profile.ci]
+ignored_warnings_from = ["dependencies/"]
+
 [lint]
 ignore = ["src/verifiers/*"]
 
