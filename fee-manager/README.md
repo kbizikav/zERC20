@@ -20,7 +20,8 @@ This ensures that:
 
 ## Prerequisites
 
-- Rust toolchain (edition 2024) and `cargo` available in `PATH`.
+- Rust nightly toolchain (edition 2024 requires nightly) and `cargo` available in `PATH`.
+  Use `cargo +nightly run -p fee-manager` or set nightly as default with `rustup default nightly`.
 - Access to RPC endpoints for every chain with a LiquidityManager, listed in
   `../config/tokens.json` or a user-provided file with the same schema.
 - A funded Ethereum-compatible private key with `FEE_MANAGER_ROLE` permission
@@ -48,20 +49,24 @@ cp fee-manager/.env.example fee-manager/.env
 ### tokens.json Requirements
 
 Each token entry must include:
-- `liquidity_manager_address`: Address of the LiquidityManager contract
-- `rpc_urls`: Array of RPC endpoints (primary + fallbacks)
-- `chain_id`: Chain identifier
 - `label`: Human-readable chain name (for logging)
-- `legacy_tx`: Set to `true` for chains requiring legacy transactions (e.g., BNB)
+- `token_address`: Address of the zERC20 token contract
+- `verifier_address`: Address of the Verifier contract
+- `liquidity_manager_address`: Address of the LiquidityManager contract
+- `chain_id`: Chain identifier
+- `deployed_block_number`: Block number when the contract was deployed (required)
+- `rpc_urls`: Array of RPC endpoints (primary + fallbacks)
+- `legacy_tx`: (optional) Set to `true` for chains requiring legacy transactions (e.g., BNB)
 
 Example entry:
 ```json
 {
-  "label": "arbitrum-sepolia",
-  "token_address": "0x...",
-  "verifier_address": "0x...",
-  "liquidity_manager_address": "0x...",
+  "label": "arb-sepolia-eth",
+  "token_address": "0x64007Dd4818A530FDD3580341F02354e596772C6",
+  "verifier_address": "0x0BD8923125B2c6A0093723f66D4B1EEa75aA0c5E",
+  "liquidity_manager_address": "0xBDE0a0929388865C6b6f883513e9bbe38CfBb46c",
   "chain_id": 421614,
+  "deployed_block_number": 10097248,
   "rpc_urls": ["https://sepolia-rollup.arbitrum.io/rpc"],
   "legacy_tx": false
 }
@@ -71,10 +76,10 @@ Example entry:
 
 ### Local Development
 
-From the repository root:
+From the repository root (requires Rust nightly for edition 2024):
 
 ```bash
-cargo run -p fee-manager
+cargo +nightly run -p fee-manager
 ```
 
 ### Single Execution (Smoke Test)
@@ -82,7 +87,15 @@ cargo run -p fee-manager
 Use `--once` flag to run the update logic once and exit:
 
 ```bash
-cargo run -p fee-manager -- --once
+cargo +nightly run -p fee-manager -- --once
+```
+
+Example with explicit config file:
+```bash
+RUST_LOG=info \
+FEE_MANAGER_PRIVATE_KEY=0x... \
+TOKENS_FILE_PATH=config/tokens.zETH.json \
+cargo +nightly run -p fee-manager -- --once
 ```
 
 ### Docker
@@ -110,6 +123,17 @@ docker compose up -d
    on the `LiquidityManager` contract.
 
 4. **Sleep**: Wait for the configured interval before repeating.
+
+## Native ETH Support
+
+The fee-manager automatically detects whether a LiquidityManager uses native ETH
+or an ERC20 token as the underlying asset:
+
+- **Native ETH**: Detected via the ERC-7528 sentinel address `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`.
+  Balance is fetched using `provider.get_balance()`.
+- **ERC20 tokens**: Balance is fetched using `balanceOf()` on the underlying token contract.
+
+The underlying token address is read from each `LiquidityManager.underlyingToken()` at startup.
 
 ## FeeParams Structure
 
