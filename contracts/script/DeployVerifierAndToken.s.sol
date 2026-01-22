@@ -95,7 +95,9 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         address endpoint = cfg.endpoint;
         bytes32 baseSalt = _loadBaseSalt();
 
-        zERC20 tokenImpl = new zERC20{salt: _deriveSalt(baseSalt, "TOKEN_IMPL")}(endpoint, cfg.tokenDecimals);
+        bytes memory tokenImplCode =
+            abi.encodePacked(type(zERC20).creationCode, abi.encode(endpoint, cfg.tokenDecimals));
+        zERC20 tokenImpl = zERC20(_deploy3(baseSalt, "TOKEN_IMPL", tokenImplCode));
         bytes memory tokenInit = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
         zERC20 token = zERC20(_deployProxyAndInit(baseSalt, "TOKEN_PROXY", address(tokenImpl), tokenInit));
         console2.log("Token implementation deployed at", address(tokenImpl));
@@ -118,36 +120,32 @@ contract DeployVerifierAndToken is DeterministicDeployer {
     }
 
     function _deployRootDecider(bytes32 baseSalt) private returns (address rootDecider) {
-        RootNovaDecider instance = new RootNovaDecider{salt: _deriveSalt(baseSalt, "ROOT_DECIDER")}();
-        rootDecider = address(instance);
+        bytes memory code = type(RootNovaDecider).creationCode;
+        rootDecider = _deploy3(baseSalt, "ROOT_DECIDER", code);
         console2.log("  RootDecider deployed at", rootDecider);
     }
 
     function _deployWithdrawGlobalDecider(bytes32 baseSalt) private returns (address withdrawGlobal) {
-        WithdrawGlobalNovaDecider instance =
-            new WithdrawGlobalNovaDecider{salt: _deriveSalt(baseSalt, "WITHDRAW_GLOBAL_DECIDER")}();
-        withdrawGlobal = address(instance);
+        bytes memory code = type(WithdrawGlobalNovaDecider).creationCode;
+        withdrawGlobal = _deploy3(baseSalt, "WITHDRAW_GLOBAL_DECIDER", code);
         console2.log("  WithdrawGlobalDecider deployed at", withdrawGlobal);
     }
 
     function _deployWithdrawLocalDecider(bytes32 baseSalt) private returns (address withdrawLocal) {
-        WithdrawLocalNovaDecider instance =
-            new WithdrawLocalNovaDecider{salt: _deriveSalt(baseSalt, "WITHDRAW_LOCAL_DECIDER")}();
-        withdrawLocal = address(instance);
+        bytes memory code = type(WithdrawLocalNovaDecider).creationCode;
+        withdrawLocal = _deploy3(baseSalt, "WITHDRAW_LOCAL_DECIDER", code);
         console2.log("  WithdrawLocalDecider deployed at", withdrawLocal);
     }
 
     function _deployWithdrawGlobalGroth16(bytes32 baseSalt) private returns (address withdrawGlobalGroth16) {
-        WithdrawGlobalGroth16Verifier instance =
-            new WithdrawGlobalGroth16Verifier{salt: _deriveSalt(baseSalt, "WITHDRAW_GLOBAL_GROTH16")}();
-        withdrawGlobalGroth16 = address(instance);
+        bytes memory code = type(WithdrawGlobalGroth16Verifier).creationCode;
+        withdrawGlobalGroth16 = _deploy3(baseSalt, "WITHDRAW_GLOBAL_GROTH16", code);
         console2.log("  WithdrawGlobalGroth16Verifier deployed at", withdrawGlobalGroth16);
     }
 
     function _deployWithdrawLocalGroth16(bytes32 baseSalt) private returns (address withdrawLocalGroth16) {
-        WithdrawLocalGroth16Verifier instance =
-            new WithdrawLocalGroth16Verifier{salt: _deriveSalt(baseSalt, "WITHDRAW_LOCAL_GROTH16")}();
-        withdrawLocalGroth16 = address(instance);
+        bytes memory code = type(WithdrawLocalGroth16Verifier).creationCode;
+        withdrawLocalGroth16 = _deploy3(baseSalt, "WITHDRAW_LOCAL_GROTH16", code);
         console2.log("  WithdrawLocalGroth16Verifier deployed at", withdrawLocalGroth16);
     }
 
@@ -159,7 +157,8 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         address delegate,
         VerifierDeps memory deps
     ) private returns (Verifier verifier) {
-        Verifier verifierImpl = new Verifier{salt: _deriveSalt(baseSalt, "VERIFIER_IMPL")}(endpoint);
+        bytes memory verifierImplCode = abi.encodePacked(type(Verifier).creationCode, abi.encode(endpoint));
+        Verifier verifierImpl = Verifier(_deploy3(baseSalt, "VERIFIER_IMPL", verifierImplCode));
         VerifierArgs memory args = VerifierArgs({
             token: address(token),
             hubEid: hubEid,

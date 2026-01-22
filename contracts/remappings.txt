@@ -11,4 +11,5 @@
 forge-std/=dependencies/forge-std-1.14.0/src
 lz-address-book/=dependencies/lz-address-book-1.0.0/src
 poseidon-solidity/contracts=dependencies/poseidon-solidity-0.0.5/
+solady-0.1.8/=dependencies/solady-0.1.8/
 solidity-bytes-utils/=dependencies/gnsps-solidity-bytes-utils-0.8.4/
