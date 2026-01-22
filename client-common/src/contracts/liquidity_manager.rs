@@ -191,6 +191,11 @@ impl LiquidityManagerContract {
         Ok((params.targetLiquidity, params.k))
     }
 
+    pub async fn fee_surplus(&self) -> ContractResult<U256> {
+        let surplus = self.contract_with_provider().feeSurplus().call().await?;
+        Ok(surplus)
+    }
+
     pub async fn set_fee_params(
         &self,
         private_key: B256,

@@ -94,28 +94,28 @@ impl FeeManagerJob {
 
     async fn execute_once(&self) -> Result<()> {
         info!(
-            "Fetching underlying balances across {} chains...",
+            "Fetching liquidity (balance - feeSurplus) across {} chains...",
             self.chains.len()
         );
 
-        // Step 1: Fetch balances from all chains
+        // Step 1: Fetch liquidity from all chains
         // Only proceed with update if all chains succeed
-        let mut balances: Vec<(&ChainContext, U256)> = Vec::with_capacity(self.chains.len());
-        let mut total_balance = U256::ZERO;
+        let mut liquidities: Vec<(&ChainContext, U256)> = Vec::with_capacity(self.chains.len());
+        let mut total_liquidity = U256::ZERO;
         let mut failed_chains: Vec<&str> = Vec::new();
 
         for chain in &self.chains {
-            match self.fetch_balance(chain).await {
-                Ok(balance) => {
-                    info!("[{}] underlying balance: {} (raw)", chain.label, balance);
-                    total_balance = total_balance.saturating_add(balance);
-                    balances.push((chain, balance));
+            match self.fetch_liquidity(chain).await {
+                Ok(liquidity) => {
+                    info!(
+                        "[{}] liquidity: {} (balance - feeSurplus)",
+                        chain.label, liquidity
+                    );
+                    total_liquidity = total_liquidity.saturating_add(liquidity);
+                    liquidities.push((chain, liquidity));
                 }
                 Err(err) => {
-                    error!(
-                        "[{}] failed to fetch underlying balance: {err:?}",
-                        chain.label
-                    );
+                    error!("[{}] failed to fetch liquidity: {err:?}", chain.label);
                     failed_chains.push(&chain.label);
                 }
             }
@@ -124,27 +124,27 @@ impl FeeManagerJob {
         // Skip update if any chain failed, as the target would be inaccurate
         if !failed_chains.is_empty() {
             warn!(
-                "Skipping fee parameter update: failed to fetch balances for {} chain(s): {}",
+                "Skipping fee parameter update: failed to fetch liquidity for {} chain(s): {}",
                 failed_chains.len(),
                 failed_chains.join(", ")
             );
             return Ok(());
         }
 
-        if balances.is_empty() {
+        if liquidities.is_empty() {
             warn!("No chains configured; skipping fee parameter update");
             return Ok(());
         }
 
         // Step 2: Calculate target liquidity per chain
-        let chain_count = U256::from(balances.len());
-        let target_liquidity = total_balance / chain_count;
+        let chain_count = U256::from(liquidities.len());
+        let target_liquidity = total_liquidity / chain_count;
         let k = U256::from(self.k_bps);
 
         info!(
             "Total liquidity: {} across {} chains",
-            total_balance,
-            balances.len()
+            total_liquidity,
+            liquidities.len()
         );
         info!(
             "Target per chain: {} (k: {} bps)",
@@ -154,7 +154,7 @@ impl FeeManagerJob {
         // Step 3: Update fee params on each chain
         let mut updated_count = 0;
         let mut skipped_count = 0;
-        for (chain, _balance) in balances {
+        for (chain, _liquidity) in liquidities {
             match self.update_fee_params(chain, target_liquidity, k).await {
                 Ok(Some(tx_hash)) => {
                     info!("[{}] setFeeParams tx confirmed: {:?}", chain.label, tx_hash);
@@ -180,7 +180,10 @@ impl FeeManagerJob {
         Ok(())
     }
 
-    async fn fetch_balance(&self, chain: &ChainContext) -> Result<U256> {
+    /// Fetch effective liquidity for a chain.
+    /// Liquidity is defined as `balance - feeSurplus` to match the on-chain incentive curve
+    /// (see contracts/src/liquidity/LiquidityManager.sol lines 232-250).
+    async fn fetch_liquidity(&self, chain: &ChainContext) -> Result<U256> {
         let balance = chain
             .underlying_token
             .balance_of(chain.liquidity_manager.address())
@@ -192,7 +195,16 @@ impl FeeManagerJob {
                     chain.liquidity_manager.address()
                 )
             })?;
-        Ok(balance)
+
+        let fee_surplus = chain
+            .liquidity_manager
+            .fee_surplus()
+            .await
+            .with_context(|| format!("failed to fetch feeSurplus for {}", chain.label))?;
+
+        // liquidity = balance - feeSurplus
+        let liquidity = balance.saturating_sub(fee_surplus);
+        Ok(liquidity)
     }
 
     async fn update_fee_params(
