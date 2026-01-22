@@ -51,3 +51,8 @@ Follow these steps to bring up the indexer, crosschain job, and decider-prover, 
 
 5. Exercise the CLI  
    Use the CLI to send transfers and receive funds; see `cli/README.md` for commands and options.
+
+## Contract-only testnet verification
+
+If you only need to deploy contracts and do a quick on-chain smoke test (Hub + Verifier/zERC20 + Liquidity/Adaptor),
+follow `contracts/README.md`.

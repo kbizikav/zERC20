@@ -42,21 +42,26 @@ RPC_URL=https://base-sepolia.example
 VERIFIER_RPC=https://optimism-sepolia.example
 DEPLOY_SALT=my-optional-salt
 
+# LayerZero V2 EIDs (from lz-address-book):
+# - Base Sepolia (chainid 84532):        40245
+# - Arbitrum Sepolia (chainid 421614):   40231
+# - Optimism Sepolia (chainid 11155420): 40232
 HUB_EID=40245
 # HUB_DELEGATE=0xYourDelegate # optional; defaults to PRIVATE_KEY holder
 
 TOKEN_NAME=zUSD
 TOKEN_SYMBOL=zUSD
 HUB_EID=40245
+# TOKEN_DECIMALS=6 # e.g. zUSD/USDC-style tokens (LiquidityManager requires decimals match underlying)
 # VERIFIER_DELEGATE=0xYourVerifierDelegate # optional; defaults to PRIVATE_KEY holder
 # LIQUIDITY_MANAGER=0x0000000000000000000000000000000000000000
 
 # Peer configuration scripts
 # HUB_ADDRESS=0xHubOnThisChain
 # VERIFIER_ADDRESSES=0xVerifierA,0xVerifierB
-# VERIFIER_EIDS=40246,40247
+# VERIFIER_EIDS=40231,40232
 # TOKEN_ADDRESSES=0xTokenA,0xTokenB
-# TOKEN_CHAIN_IDS=84532,421614
+# TOKEN_CHAIN_IDS=421614,11155420
 # VERIFIER_ADDRESS=0xVerifierOnThisChain
 ```
 
@@ -109,7 +114,7 @@ Required env:
 
 Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
 - `LIQUIDITY_TARGET` (uint256): Target liquidity level that drives rewards/fees (defaults to 1_000_000e6).
-- `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `0`, which disables curve-based incentives.
+- `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `1_000` (you can set `0` to disable curve-based incentives).
 - `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
 - `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
 - Defaults can also be sourced from `config/chain-config.json` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence for those values.
@@ -122,6 +127,185 @@ forge script script/DeployLiquidity.s.sol:DeployLiquidity \
   --broadcast \
   -vvvv
 ```
+
+Testnet Walkthrough (Base Sepolia Hub + Arb/OP Sepolia Verifiers)
+---------------------------------------------------------------
+This is a minimal “audit pre-check” flow to ensure deployments, peer wiring, and the `Adaptor.unwrapAndBridge` path work end-to-end.
+
+### Networks / IDs
+- Base Sepolia: `chainid=84532`, LayerZero `EID=40245` (Hub)
+- Arbitrum Sepolia: `chainid=421614`, LayerZero `EID=40231` (Verifier + zERC20)
+- Optimism Sepolia: `chainid=11155420`, LayerZero `EID=40232` (Verifier + zERC20)
+
+### 1) Deploy Hub (Base Sepolia)
+```bash
+cd contracts
+export PRIVATE_KEY=0x...
+export HUB_EID=40245
+forge script script/DeployHub.s.sol:DeployHub --rpc-url <BASE_RPC> --broadcast -vvvv
+```
+
+### 2) Deploy Verifier + zERC20 (Arb Sepolia, then OP Sepolia)
+For USDC-style tokens, set `TOKEN_DECIMALS=6` (LiquidityManager requires decimals match the underlying token).
+```bash
+export PRIVATE_KEY=0x...
+export HUB_EID=40245
+export TOKEN_NAME=zUSD
+export TOKEN_SYMBOL=zUSD
+export TOKEN_DECIMALS=6
+
+forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-url <ARB_RPC> --broadcast -vvvv
+forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-url <OP_RPC> --broadcast -vvvv
+```
+
+### 3) Deploy LiquidityManager + Adaptor (Arb Sepolia, then OP Sepolia)
+Use the shipped per-chain config files to select the underlying token and Stargate address:
+- `config/config.zUSD.json` (USDC)
+- `config/config.zETH.json` (native ETH)
+
+```bash
+export PRIVATE_KEY=0x...
+export ZERC20=<zERC20 token proxy address>
+export CHAIN_CONFIG_PATH=config/config.zUSD.json
+
+forge script script/DeployLiquidity.s.sol:DeployLiquidity --rpc-url <ARB_RPC> --broadcast -vvvv
+forge script script/DeployLiquidity.s.sol:DeployLiquidity --rpc-url <OP_RPC> --broadcast -vvvv
+```
+
+### 4) Wire Hub/Verifier/Token peers (recommended helper)
+Create `../config/tokens.json` (copy `../config/tokens.example.json`) and fill in `hub_address`, token/verifier addresses,
+`chain_id`, and `eid`. Then run:
+```bash
+export PRIVATE_KEY=0x...
+python3 ./run_set_peers.py --file ../config/tokens.json --broadcast -vvvv
+```
+
+If you see a `dry-run` directory under `contracts/broadcast/SetPeers.s.sol/.../dry-run`, you ran a simulation only. Ensure
+`--broadcast` is passed to the python helper as shown above.
+
+Crosschain Unwrap Smoke Test (Adaptor.unwrapAndBridge)
+------------------------------------------------------
+This verifies `wrap -> unwrap -> Stargate sendToken -> destination receipt`.
+
+### Known pitfalls
+- `quoteFee(...)` returning `(amount, 0, 0)` means the unwrap fee is >= amount (commonly because the LiquidityManager is
+  under-collateralized). Add more underlying liquidity (wrap more) before retrying.
+- Ensure zERC20 allowance is set before calling `unwrapAndBridge`. If `allowance == 0`, the tx will revert early.
+- `extraOptions` (destination execution gas) is different from the source-chain transaction `gasLimit`. If you suspect a
+  source-chain gas issue, pass `cast send --gas-limit <N>` explicitly, but do not expect it to fix destination execution
+  failures.
+- Explorers/Tenderly may show “execution reverted” even when the tx is `success`; `Adaptor` uses `try/catch` and will
+  keep funds credited inside the adaptor when bridging fails.
+- When bridging fails, recover funds with `Adaptor.withdraw(...)` (see below).
+- You do NOT need to pre-fund LiquidityManager on the destination chain for this smoke test: Stargate delivers the
+  underlying directly to the destination receiver. (Stargate itself must have liquidity for the chosen asset.)
+- Do not paste private keys or explorer API keys into shared logs/threads. Use environment variables.
+
+### 1) Wrap underlying into zERC20 (source chain)
+```bash
+cast send <UNDERLYING> "approve(address,uint256)" <LIQUIDITY_MANAGER_PROXY> <AMOUNT> --rpc-url <SRC_RPC> --private-key $PRIVATE_KEY
+cast send <LIQUIDITY_MANAGER_PROXY> "wrap(uint256,address)" <AMOUNT> <RECEIVER> --rpc-url <SRC_RPC> --private-key $PRIVATE_KEY
+```
+
+### 2) Approve adaptor + quote fees
+`extraOptions` controls destination execution gas. A safe default for basic receipt is 500k LZ receive gas:
+`0x0003010011010000000000000000000000000007a120` (gas=500,000).
+```bash
+export EXTRA=0x0003010011010000000000000000000000000007a120
+export ZAMOUNT=$(cast call <ZERC20> "balanceOf(address)(uint256)" <RECEIVER> --rpc-url <SRC_RPC> | awk '{print $1}')
+cast send <ZERC20> "approve(address,uint256)" <ADAPTOR_PROXY> $ZAMOUNT --rpc-url <SRC_RPC> --private-key $PRIVATE_KEY
+
+cast call <ADAPTOR_PROXY> \
+  "quoteFee(uint256,(uint32,address,uint256,bytes,bytes,bytes))((uint256,uint256,uint256))" \
+  $ZAMOUNT "(<DST_EID>,<RECEIVER>,0,$EXTRA,0x,0x)" \
+  --rpc-url <SRC_RPC>
+```
+Use the 2nd return value (`nativeBridgeFee`) as `--value` in the next step.
+
+### 3) Unwrap and bridge
+```bash
+cast send <ADAPTOR_PROXY> \
+  "unwrapAndBridge(uint256,(uint32,address,uint256,bytes,bytes,bytes))" \
+  $ZAMOUNT "(<DST_EID>,<RECEIVER>,0,$EXTRA,0x,0x)" \
+  --value <NATIVE_BRIDGE_FEE_WEI> \
+  --rpc-url <SRC_RPC> \
+  --private-key $PRIVATE_KEY
+```
+
+### 4) If the bridge fails, withdraw credited balances
+```bash
+cast call <ADAPTOR_PROXY> "underlyingTokenBalances(address)(uint256)" <RECEIVER> --rpc-url <SRC_RPC>
+cast call <ADAPTOR_PROXY> "nativeBalances(address)(uint256)" <RECEIVER> --rpc-url <SRC_RPC>
+
+cast send <ADAPTOR_PROXY> "withdraw(address,uint256)" <UNDERLYING> <AMOUNT> --rpc-url <SRC_RPC> --private-key $PRIVATE_KEY
+cast send <ADAPTOR_PROXY> "withdraw(address,uint256)" 0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE <WEI> --rpc-url <SRC_RPC> --private-key $PRIVATE_KEY
+```
+
+Contract Verification (Etherscan / Arbiscan / Basescan)
+-------------------------------------------------------
+Some explorers have migrated to Etherscan API v2. If verification fails with messages about deprecated v1 endpoints,
+avoid forcing `--verifier-url` and rely on `--chain-id` routing:
+```bash
+forge verify-contract --chain-id <CHAIN_ID> --watch <CONTRACT_ADDRESS> <PATH:CONTRACT> --constructor-args <ABI_ENCODED_ARGS>
+```
+
+Notes:
+- Verify the **implementation** contracts (not the proxies).
+- Ensure `ETHERSCAN_API_KEY` (or pass `--etherscan-api-key`) is set in your shell.
+
+Example (Adaptor implementation):
+```bash
+ARGS=$(cast abi-encode "constructor(address,address,address)" <LIQUIDITY_MANAGER_PROXY> <STARGATE> 0x6EDCE65403992e310A62460808c4b910D972f10f)
+forge verify-contract --chain-id <CHAIN_ID> --watch <ADAPTOR_IMPL> src/liquidity/Adaptor.sol:Adaptor --constructor-args "$ARGS"
+```
+
+Other common implementation constructors:
+```bash
+# Hub (Base Sepolia)
+ARGS=$(cast abi-encode "constructor(address)" 0x6EDCE65403992e310A62460808c4b910D972f10f)
+forge verify-contract --chain-id 84532 --watch <HUB_IMPL> src/Hub.sol:Hub --constructor-args "$ARGS"
+
+# Verifier (Arb/OP Sepolia)
+ARGS=$(cast abi-encode "constructor(address)" 0x6EDCE65403992e310A62460808c4b910D972f10f)
+forge verify-contract --chain-id 421614 --watch <VERIFIER_IMPL> src/Verifier.sol:Verifier --constructor-args "$ARGS"
+forge verify-contract --chain-id 11155420 --watch <VERIFIER_IMPL> src/Verifier.sol:Verifier --constructor-args "$ARGS"
+
+# zERC20 (Arb/OP Sepolia)
+ARGS=$(cast abi-encode "constructor(address,uint8)" 0x6EDCE65403992e310A62460808c4b910D972f10f 6)
+forge verify-contract --chain-id 421614 --watch <ZERC20_IMPL> src/zERC20.sol:zERC20 --constructor-args "$ARGS"
+forge verify-contract --chain-id 11155420 --watch <ZERC20_IMPL> src/zERC20.sol:zERC20 --constructor-args "$ARGS"
+
+# LiquidityManager (per chain)
+ARGS=$(cast abi-encode "constructor(address,address)" <UNDERLYING> <ZERC20_PROXY>)
+forge verify-contract --chain-id 421614 --watch <LIQUIDITY_MANAGER_IMPL> src/liquidity/LiquidityManager.sol:LiquidityManager --constructor-args "$ARGS"
+forge verify-contract --chain-id 11155420 --watch <LIQUIDITY_MANAGER_IMPL> src/liquidity/LiquidityManager.sol:LiquidityManager --constructor-args "$ARGS"
+```
+
+Audit-pre checklist (functions not exercised in the walkthrough)
+---------------------------------------------------------------
+This repo has ZKP-heavy paths that are hard to exercise without proof generation. The walkthrough above mainly covers
+deployment + peer wiring + the “unwrap and bridge” happy path. If you want additional lightweight checks without proofs,
+these are the main public/external entrypoints that were NOT covered:
+
+- `Hub`
+  - Not exercised: `broadcast(...)`, `quoteBroadcast(...)`, `updateToken(...)`, `activateEmergency()`, `deactivateEmergency()`
+  - View-only you can call anytime: `getTokenInfos()`, `getTransferRootsAndIndices()`, `currentAggregationRoot()`, `aggSeq()`
+- `Verifier`
+  - Not exercised: `reserveHashChain()` (no proof needed, but writes), `proveTransferRoot(...)` (needs Nova proof),
+    `relayTransferRoot(...)` (needs proved root), `teleport(...)` / `singleTeleport(...)` (need proofs),
+    `setVerifiers(...)`, `activateEmergency()` / `deactivateEmergency()`
+  - View-only you can call anytime: `quoteRelay(...)`, `isUpToDate()`, `latestAggSeq()`, `globalTransferRoots(...)`
+- `zERC20`
+  - Not exercised: OFT send/receive flows (e.g. `send(...)` / compose-based flows)
+  - Exercised indirectly via LiquidityManager: `mint(...)` (wrap), `burn(...)` (unwrap)
+  - Admin setters exercised by scripts: `setVerifier(...)`, `setMinter(...)`
+- `Adaptor`
+  - Not exercised: `lzCompose(...)` (the common path when zERC20 arrives via OFT + compose), `decodeBridgeRequest(...)`,
+    `bridgeZerc20Self(...)`
+  - Exercised: `quoteFee(...)`, `unwrapAndBridge(...)`, `withdraw(...)`, balance views
+- `LiquidityManager`
+  - Not exercised: `unwrap(...)`, `quoteWrapReward(...)`, `quoteUnwrapFee(...)`, `setFeeParams(...)`, `withdrawRewards(...)`
+  - Exercised: `wrap(...)`
 
 Registering the Token on the Hub
 --------------------------------
@@ -150,9 +334,9 @@ After every hub/verifier pair has been deployed and registered, wire the LayerZe
 # Step 1: run on the hub chain (all verifiers at once)
 export HUB_ADDRESS=0xHubOnThisChain
 export VERIFIER_ADDRESSES=0xVerifierA,0xVerifierB
-export VERIFIER_EIDS=40246,40247
+export VERIFIER_EIDS=40231,40232
 export TOKEN_ADDRESSES=0xTokenA,0xTokenB
-export TOKEN_CHAIN_IDS=84532,421614
+export TOKEN_CHAIN_IDS=421614,11155420
 forge script script/SetPeers.s.sol:SetHubPeers \
   --rpc-url $HUB_RPC \
   --broadcast \
