@@ -211,13 +211,11 @@ contract SetDvnConfig is Script {
         }
     }
 
-    function _needsConfigUpdate(
-        address oapp,
-        address endpoint,
-        address lib,
-        uint32 remoteEid,
-        UlnConfig memory desired
-    ) private view returns (bool) {
+    function _needsConfigUpdate(address oapp, address endpoint, address lib, uint32 remoteEid, UlnConfig memory desired)
+        private
+        view
+        returns (bool)
+    {
         bytes memory current;
         // getConfig can revert when the lib is not registered or the EID has no default ULN config.
         // Treat that as "needs update" so we can apply the desired config instead of failing.
