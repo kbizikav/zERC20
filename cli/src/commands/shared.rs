@@ -17,7 +17,7 @@ use stealth_client::client::StealthCanisterClient;
 
 use crate::CommonArgs;
 
-pub fn find_token_by_chain<'a>(tokens: &'a [TokenEntry], chain_id: u64) -> Result<&'a TokenEntry> {
+pub fn find_token_by_chain(tokens: &[TokenEntry], chain_id: u64) -> Result<&TokenEntry> {
     let mut matches = tokens.iter().filter(|token| token.chain_id == chain_id);
     match (matches.next(), matches.next()) {
         (None, _) => bail!("no tokens configured for chain id {}", chain_id,),

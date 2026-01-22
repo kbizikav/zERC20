@@ -1,0 +1,24 @@
+[default.extend-words]
+Groth = "Groth"
+groth = "groth"
+GROTH = "GROTH"
+Groth16 = "Groth16"
+groth16 = "groth16"
+GROTH16 = "GROTH16"
+convertion = "convertion"
+
+[default.extend-identifiers]
+smove = "smove"
+SMOVE = "SMOVE"
+convertion = "convertion"
+groth = "groth"
+Groth = "Groth"
+GROTH = "GROTH"
+
+[files]
+extend-exclude = [
+  "**/*.bin",
+  "**/abi/*.json",
+  "frontend/src/config/chains.json",
+  "redis-test-certs/*",
+]

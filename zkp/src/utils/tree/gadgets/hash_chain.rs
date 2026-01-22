@@ -6,6 +6,8 @@ use ark_relations::gr1cs::SynthesisError;
 use ark_std::vec::Vec;
 use sha2::{Digest as _, Sha256};
 
+type ByteSplitResult<F> = Result<(Vec<UInt8<F>>, Vec<UInt8<F>>), SynthesisError>;
+
 pub fn hash_chain(prev: U256, from: Address, to: Address, value: U256) -> U256 {
     let mut digest: [u8; 32] = Sha256::digest(
         [
@@ -65,10 +67,7 @@ pub fn hash_chain_var<F: PrimeField>(
     Boolean::le_bits_to_fp(&new_hash_bits)
 }
 
-fn fp_var_be_bytes<F: PrimeField>(
-    var: &FpVar<F>,
-    target_len: usize,
-) -> Result<(Vec<UInt8<F>>, Vec<UInt8<F>>), SynthesisError> {
+fn fp_var_be_bytes<F: PrimeField>(var: &FpVar<F>, target_len: usize) -> ByteSplitResult<F> {
     let bytes_le = var.to_bytes_le()?;
     let mut bytes_be: Vec<_> = bytes_le.into_iter().rev().collect();
     if bytes_be.len() < target_len {

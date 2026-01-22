@@ -160,6 +160,8 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
         deployed_block_number: 0,
         rpc_urls: vec![rpc_url.clone()],
         legacy_tx: false,
+        relay_interval_secs: None,
+        root_submit_interval_ms: None,
     };
 
     let tree_job_config = TreeJobConfig::default();
@@ -184,6 +186,10 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
         .parent()
         .expect("crate directory should have parent")
         .join("nova_artifacts");
+    if !artifacts_dir.join("root_nova_pp.bin").exists() {
+        eprintln!("skipping test: nova artifacts not found ({artifacts_dir:?})");
+        return Ok(());
+    }
     let root_job_config = RootJobConfig {
         interval_ms: 1_000,
         submit_interval_ms: 1_000,

@@ -156,6 +156,8 @@ async fn run_single_case(anvil_bin: &str, transfer_count: usize) -> Result<PerfR
         deployed_block_number: 0,
         rpc_urls: vec![rpc_url.clone()],
         legacy_tx: false,
+        relay_interval_secs: None,
+        root_submit_interval_ms: None,
     };
 
     let event_job = EventSyncJobBuilder::new(

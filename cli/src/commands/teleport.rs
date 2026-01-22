@@ -33,6 +33,7 @@ pub enum RedeemResult {
 
 /// Redeem eligible teleport transfers by generating the necessary proofs and submitting
 /// the corresponding transactions.
+#[allow(clippy::too_many_arguments)]
 pub async fn redeem_transfers(
     common_args: &CommonArgs,
     verifier: &VerifierContract,

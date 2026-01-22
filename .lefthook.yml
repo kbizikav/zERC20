@@ -1,0 +1,12 @@
+pre-commit:
+  parallel: true
+  commands:
+    cargo-fmt:
+      glob: "*.rs"
+      run: rustfmt --edition 2021 --emit files {staged_files}
+      stage_fixed: true
+    cargo-clippy:
+      glob: "*.rs"
+      run: cargo clippy --tests -- -D warnings -D "clippy::perf" -D "clippy::correctness"
+    check-typos:
+      run: typos {staged_files}

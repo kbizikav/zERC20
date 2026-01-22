@@ -70,9 +70,7 @@ impl<F: PrimeField> AllocVar<RootExternalInputs<F>, F> for RootExternalInputsVar
             let siblings = <[FpVar<F>; TRANSFER_TREE_HEIGHT] as AllocVar<
                 [F; TRANSFER_TREE_HEIGHT],
                 F,
-            >>::new_variable(
-                cs.clone(), || Ok(value.siblings.clone()), mode
-            )?;
+            >>::new_variable(cs.clone(), || Ok(value.siblings), mode)?;
             Ok(Self {
                 is_dummy,
                 from_address,

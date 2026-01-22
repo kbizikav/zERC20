@@ -180,11 +180,11 @@ fn recipient_address_string(burn: &FullBurnAddress) -> String {
 }
 
 fn write_results(path: &PathBuf, transfers: &[ScannedTransfer]) -> Result<()> {
-    if let Some(parent) = path.parent() {
-        if !parent.as_os_str().is_empty() {
-            fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create directory {}", parent.display()))?;
-        }
+    if let Some(parent) = path.parent()
+        && !parent.as_os_str().is_empty()
+    {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create directory {}", parent.display()))?;
     }
     let mut existing: Vec<ScannedTransfer> = if path.exists() {
         let metadata = fs::metadata(path)
