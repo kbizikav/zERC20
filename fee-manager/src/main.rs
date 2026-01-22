@@ -321,37 +321,28 @@ async fn main() -> Result<()> {
 
     let private_key = parse_private_key(&cli.private_key)?;
 
-    // Build chain contexts
+    // Build chain contexts - fail fast if any chain is unreachable
+    // This ensures targetLiquidity is always computed across all configured chains.
+    // If a chain's RPC is down at startup, the operator must fix it before restarting.
     let mut chains = Vec::with_capacity(tokens_with_lm.len());
     for token in &tokens_with_lm {
-        match build_chain_context(token).await {
-            Ok((ctx, underlying_address)) => {
-                let underlying_type = if underlying_address == NATIVE_TOKEN {
-                    "Native (ETH)"
-                } else {
-                    "ERC20"
-                };
-                info!(
-                    "[{}] LiquidityManager: {:?}, Underlying: {:?} ({})",
-                    ctx.label,
-                    ctx.liquidity_manager.address(),
-                    underlying_address,
-                    underlying_type
-                );
-                chains.push(ctx);
-            }
-            Err(err) => {
-                error!(
-                    "failed to build chain context for '{}': {err:?}",
-                    token.label
-                );
-                // Continue with other chains
-            }
-        }
-    }
+        let (ctx, underlying_address) = build_chain_context(token)
+            .await
+            .with_context(|| format!("failed to build chain context for '{}'", token.label))?;
 
-    if chains.is_empty() {
-        bail!("no valid chain contexts could be built");
+        let underlying_type = if underlying_address == NATIVE_TOKEN {
+            "Native (ETH)"
+        } else {
+            "ERC20"
+        };
+        info!(
+            "[{}] LiquidityManager: {:?}, Underlying: {:?} ({})",
+            ctx.label,
+            ctx.liquidity_manager.address(),
+            underlying_address,
+            underlying_type
+        );
+        chains.push(ctx);
     }
 
     let job = FeeManagerJob {
