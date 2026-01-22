@@ -80,14 +80,10 @@ struct FeeManagerJob {
 
 impl FeeManagerJob {
     async fn run(self) {
-        // Execute once immediately
-        if let Err(err) = self.execute_once().await {
-            error!("initial fee parameter update failed: {err:?}");
-        }
-
         let mut ticker = time::interval(self.interval);
         ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
+        // The first tick() fires immediately, so the initial execution happens here
         loop {
             ticker.tick().await;
             if let Err(err) = self.execute_once().await {
@@ -100,8 +96,10 @@ impl FeeManagerJob {
         info!("Fetching underlying balances across {} chains...", self.chains.len());
 
         // Step 1: Fetch balances from all chains
+        // Only proceed with update if all chains succeed
         let mut balances: Vec<(&ChainContext, U256)> = Vec::with_capacity(self.chains.len());
         let mut total_balance = U256::ZERO;
+        let mut failed_chains: Vec<&str> = Vec::new();
 
         for chain in &self.chains {
             match self.fetch_balance(chain).await {
@@ -118,13 +116,23 @@ impl FeeManagerJob {
                         "[{}] failed to fetch underlying balance: {err:?}",
                         chain.label
                     );
-                    // Continue with other chains
+                    failed_chains.push(&chain.label);
                 }
             }
         }
 
+        // Skip update if any chain failed, as the target would be inaccurate
+        if !failed_chains.is_empty() {
+            warn!(
+                "Skipping fee parameter update: failed to fetch balances for {} chain(s): {}",
+                failed_chains.len(),
+                failed_chains.join(", ")
+            );
+            return Ok(());
+        }
+
         if balances.is_empty() {
-            warn!("No balances fetched successfully; skipping fee parameter update");
+            warn!("No chains configured; skipping fee parameter update");
             return Ok(());
         }
 
@@ -141,13 +149,20 @@ impl FeeManagerJob {
         info!("Target per chain: {} (k: {} bps)", target_liquidity, self.k_bps);
 
         // Step 3: Update fee params on each chain
+        let mut updated_count = 0;
+        let mut skipped_count = 0;
         for (chain, _balance) in balances {
             match self.update_fee_params(chain, target_liquidity, k).await {
-                Ok(tx_hash) => {
+                Ok(Some(tx_hash)) => {
                     info!(
                         "[{}] setFeeParams tx confirmed: {:?}",
                         chain.label, tx_hash
                     );
+                    updated_count += 1;
+                }
+                Ok(None) => {
+                    // Skipped due to no change
+                    skipped_count += 1;
                 }
                 Err(err) => {
                     error!(
@@ -160,8 +175,8 @@ impl FeeManagerJob {
         }
 
         info!(
-            "Fee parameter update complete. Next update in {} seconds.",
-            self.interval.as_secs()
+            "Fee parameter update complete: {} updated, {} skipped (unchanged). Next update in {} seconds.",
+            updated_count, skipped_count, self.interval.as_secs()
         );
         Ok(())
     }
@@ -186,10 +201,25 @@ impl FeeManagerJob {
         chain: &ChainContext,
         target_liquidity: U256,
         k: U256,
-    ) -> Result<B256> {
+    ) -> Result<Option<B256>> {
+        // Fetch current feeParams and check for changes
+        let (current_target, current_k) = chain
+            .liquidity_manager
+            .fee_params()
+            .await
+            .with_context(|| format!("failed to fetch current feeParams for {}", chain.label))?;
+
+        if current_target == target_liquidity && current_k == k {
+            info!(
+                "[{}] feeParams unchanged (target: {}, k: {}), skipping",
+                chain.label, target_liquidity, k
+            );
+            return Ok(None);
+        }
+
         info!(
-            "[{}] Updating feeParams (target: {}, k: {})",
-            chain.label, target_liquidity, k
+            "[{}] Updating feeParams (target: {} -> {}, k: {} -> {})",
+            chain.label, current_target, target_liquidity, current_k, k
         );
 
         let pending = chain
@@ -211,7 +241,7 @@ impl FeeManagerJob {
             );
         }
 
-        Ok(receipt.transaction_hash)
+        Ok(Some(receipt.transaction_hash))
     }
 }
 
@@ -224,6 +254,11 @@ async fn main() -> Result<()> {
 
     if cli.interval_secs == 0 {
         bail!("FEE_MANAGER_INTERVAL_SECS must be greater than zero");
+    }
+
+    // Solidity requires k <= 10_000 (see contracts/src/libraries/IncentiveLib.sol:186)
+    if cli.k_bps > 10_000 {
+        bail!("FEE_MANAGER_K_BPS must be <= 10000 (100%), got {}", cli.k_bps);
     }
 
     let tokens = load_tokens_config(&cli.tokens_file_path)?;
@@ -384,7 +419,7 @@ fn load_tokens_config_from_env() -> Result<Option<Vec<TokenEntry>>> {
 fn parse_private_key(input: &str) -> Result<B256> {
     let normalized = input.trim().strip_prefix("0x").unwrap_or(input.trim());
     let bytes = hex::decode(normalized)
-        .with_context(|| format!("failed to decode private key hex: {input}"))?;
+        .context("failed to decode private key: invalid hex format")?;
     if bytes.len() != 32 {
         bail!("private key must be 32 bytes, got {}", bytes.len());
     }
