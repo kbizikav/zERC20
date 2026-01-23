@@ -17,13 +17,13 @@
     },
     "arb-sepolia": {
       "verifier_hub": {
-        "confirmations": 3072,
+        "confirmations": 1,
         "required_dvns": ["LayerZero Labs", "Nethermind"],
         "optional_dvns": [],
         "optional_threshold": 0
       },
       "token": {
-        "confirmations": 3072,
+        "confirmations": 1,
         "required_dvns": ["LayerZero Labs", "Nethermind"],
         "optional_dvns": [],
         "optional_threshold": 0
