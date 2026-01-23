@@ -13,7 +13,7 @@ use clap::{Args, Parser, Subcommand};
 use client_common::{
     indexer::HttpIndexerClient,
     prover::HttpDeciderClient,
-    tokens::{HubEntry, TokenEntry, TokensFile},
+    tokens::{HubEntry, TokenEntry, parse_tokens_config},
 };
 use commands::{
     balance, invoice, lz_status, private_transfer, quote_unwrap, receive_transfer,
@@ -441,17 +441,10 @@ struct LoadedTokens {
 fn load_tokens_config(path: &Path) -> Result<LoadedTokens> {
     let contents = fs::read_to_string(path)
         .with_context(|| format!("failed to read tokens config {}", path.display()))?;
-    let mut tokens_file: TokensFile =
-        serde_json::from_str(&contents).context("failed to parse tokens config JSON")?;
-    tokens_file.normalize().context("invalid tokens config")?;
-    let mut tokens = tokens_file.tokens;
-    for token in tokens.iter_mut() {
-        token
-            .normalize()
-            .with_context(|| format!("invalid token entry '{}'", token.label))?;
-    }
+    let tokens_file = parse_tokens_config(&contents)
+        .with_context(|| format!("invalid tokens config {}", path.display()))?;
     Ok(LoadedTokens {
-        tokens,
+        tokens: tokens_file.tokens,
         hub: tokens_file.hub,
     })
 }
