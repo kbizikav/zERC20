@@ -11,7 +11,7 @@
       "eid": 40161,
       "layerzero_endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
       "rpc_urls": [
-        "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+        "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
       "root_submit_interval_ms": 10000,
       "relay_interval_secs":1800,
