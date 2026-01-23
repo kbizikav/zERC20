@@ -26,6 +26,7 @@ services:
     environment:
       DATABASE_URL: postgres://postgres:password@postgres:5432/postgres
       TOKENS_COMPRESSED: "${TOKENS_COMPRESSED:?TOKENS_COMPRESSED must be set in .env}"
+      ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
       DECIDER_PROVER_URL: http://host.docker.internal:8081
       ROOT_SUBMITTER_PRIVATE_KEY: "${ROOT_SUBMITTER_PRIVATE_KEY:?ROOT_SUBMITTER_PRIVATE_KEY must be set in .env}"
       IS_SYNC: "true"
@@ -47,6 +48,7 @@ services:
     restart: unless-stopped
     environment:
       TOKENS_COMPRESSED: "${TOKENS_COMPRESSED:?TOKENS_COMPRESSED must be set in .env}"
+      ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
       RELAY_PRIVATE_KEY: "${RELAY_PRIVATE_KEY:?RELAY_PRIVATE_KEY must be set in .env}"
       RELAY_INTERVAL_SECS: "60"
       BROADCAST_INTERVAL_SECS: "60"
@@ -62,6 +64,7 @@ services:
     restart: unless-stopped
     environment:
       TOKENS_COMPRESSED: "${TOKENS_COMPRESSED:?TOKENS_COMPRESSED must be set in .env}"
+      ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
       FEE_MANAGER_PRIVATE_KEY: "${FEE_MANAGER_PRIVATE_KEY:?FEE_MANAGER_PRIVATE_KEY must be set in .env}"
       FEE_MANAGER_INTERVAL_SECS: "${FEE_MANAGER_INTERVAL_SECS:-3600}"
       FEE_MANAGER_K_BPS: "${FEE_MANAGER_K_BPS:-1000}"
