@@ -8,6 +8,7 @@ Before making a private transfer, understand what the Frontend supports:
 
 - **Sender-generated burn addresses**: The sender needs to know the recipient's withdrawal address
 - The recipient's address is hidden from on-chain observers, but known to the sender
+- **Burn address mechanism**: When you send to a burn address, the tokens are cryptographically burned and can only be withdrawn by someone who knows the corresponding secret
 
 For maximum privacy where even the sender doesn't know the withdrawal address, use the [CLI](../cli/private-transfer.md).
 
@@ -24,17 +25,19 @@ If you know the recipient's address:
 5. Enter the amount of zERC20 to send
 6. Click "Send Privately"
 
-![Private Send Form](../../assets/frontend_how_to/private-send-form.png)
+<figure><img src="../../assets/frontend_how_to/private-send-form.png" alt="Private Send Form" width="480"><figcaption>Private Send Form</figcaption></figure>
 
 The transfer will process in three steps:
 
-![Transfer Progress](../../assets/frontend_how_to/transfer-progress.png)
+1. **Generate**: The system generates a burn address and encrypted announcement
+2. **Store**: The encrypted announcement is stored on-chain or off-chain for the recipient to scan later
+3. **Transfer**: Your tokens are sent to the burn address
+
+<figure><img src="../../assets/frontend_how_to/transfer-progress.png" alt="Transfer Progress" width="480"><figcaption>Transfer Progress</figcaption></figure>
 
 Once completed, you'll see a success message:
 
-![Transfer Success](../../assets/frontend_how_to/transfer-success.png)
-
-The system generates an encrypted announcement, stores it, and transfers your tokens.
+<figure><img src="../../assets/frontend_how_to/transfer-success.png" alt="Transfer Success" width="480"><figcaption>Transfer Success</figcaption></figure>
 
 ### To a Burn Address
 
@@ -44,23 +47,31 @@ If someone provides you with a burn address:
 2. Send zERC20 to the provided burn address
 3. Done — the recipient handles the withdrawal
 
-You can send from any supported chain.
+You can send from any supported chain. This method is useful when the recipient wants to maintain privacy even from the sender.
 
 ## Creating a Burn Address for Others
 
-To let someone pay you (or pay on behalf of a recipient):
+The "Pay with mobile" feature allows you to create a burn address that others can pay to. This is useful for:
+
+- Receiving payments without revealing your withdrawal address to payers
+- Creating payment requests that can be shared via QR code
+- Allowing someone else to pay on behalf of a recipient
+
+To create a burn address:
 
 1. Go to the Send page
 2. Enter the recipient's withdrawal address and amount
 3. Check the **"Pay with mobile"** option
 4. Click "Pay with mobile"
 
-![Pay with Mobile Form](../../assets/frontend_how_to/pay-with-mobile-form.png)
+<figure><img src="../../assets/frontend_how_to/pay-with-mobile-form.png" alt="Pay with Mobile Form" width="480"><figcaption>Pay with Mobile Form</figcaption></figure>
 
 5. A QR code will be generated containing the burn address
 6. Share the QR code with anyone who needs to pay
 
-![Pay with Mobile QR](../../assets/frontend_how_to/pay-with-mobile-qr.png)
+<figure><img src="../../assets/frontend_how_to/pay-with-mobile-qr.png" alt="Pay with Mobile QR" width="360"><figcaption>Pay with Mobile QR</figcaption></figure>
+
+The payer simply scans the QR code and sends the exact amount to the displayed burn address. Once the payment is confirmed on-chain, the recipient can withdraw the funds.
 
 ## Receiving and Withdrawing
 
