@@ -1,3 +1,0 @@
-# Stealth Payments
-
-<!-- TODO -->

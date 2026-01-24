@@ -1,3 +1,0 @@
-# Key Features
-
-<!-- TODO -->

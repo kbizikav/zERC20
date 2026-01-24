@@ -58,6 +58,15 @@
 - Coordinates with the LiquidityManager for unwrapping and uses Stargate as the transport, while ensuring surplus fees and refunds remain attributable to the initiating user.
 - Supports cross-chain unwraps where liquidity or unwrap fees are more favorable on another chain (e.g., Chain B). Users on Chain A send zERC20 via OFT `send` with adaptor call arguments embedded in `lzCompose`, the Adaptor unwraps into underlying on Chain B, then forwards the underlying back to Chain A via Stargate.
 
+### Fee Manager (`fee-manager/`)
+
+- Off-chain service that periodically adjusts `targetLiquidity` on all `LiquidityManager` contracts across chains to maintain balanced liquidity distribution.
+- Computes `targetLiquidity = total_underlying_balance / number_of_chains`, where `underlying_balance = balance - feeSurplus` for each chain.
+- Calls `setFeeParams({ targetLiquidity, k })` on each `LiquidityManager` contract to update incentive parameters.
+- Requires `FEE_MANAGER_ROLE` on each `LiquidityManager` contract for authorization.
+- Automatically detects whether the underlying asset is native ETH (via ERC-7528 sentinel address `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`) or an ERC20 token.
+- Configurable via environment variables: `FEE_MANAGER_PRIVATE_KEY` (required), `FEE_MANAGER_INTERVAL_SECS` (default 3600), `FEE_MANAGER_K_BPS` (default 1000, i.e., 10%).
+
 ## Key Flows
 
 ### Private Proof Of Burn Lifecycle
