@@ -10,7 +10,7 @@ use crate::contracts::{
     verifier::VerifierContract,
 };
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct AggregationTreeState {
     pub latest_agg_seq: u64,
     pub aggregation_root: U256,

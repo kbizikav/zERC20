@@ -1,5 +1,10 @@
 {
   "chains": {
+    "11155111": {
+      "label": "sepolia-eth",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "stargate": "0x9Cc7e185162Aa5D1425ee924D97a87A0a34A0706"
+    },
     "421614": {
       "label": "arb-sepolia-eth",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
@@ -10,15 +15,20 @@
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       "stargate": "0xa31dCc5C71E25146b598bADA33E303627D7fC97e"
     },
+    "1": {
+      "label": "eth",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
+      "stargate": "0x77b2043768d28E9C9aB44E1aBfC95944bcE57931"
+    },
     "42161": {
       "label": "arb-mainnet-eth",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
       "stargate": "0xA45B5130f36CDcA45667738e2a258AB09f4A5f7F"
     },
-    "10": {
-      "label": "op-mainnet-eth",
+    "8453": {
+      "label": "base-mainnet-eth",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE",
-      "stargate": "0xe8CDF27AcD73a434D661C84887215F7598e7d0d3"
+      "stargate": "0xdc181Bd607330aeeBEF6ea62e03e5e1Fb4B6F7C7"
     }
   }
 }

@@ -1,0 +1,66 @@
+{
+  "tokens": [
+    {
+      "label": "sepolia",
+      "token_address": "0xADAb5CaB352fb1eBF24CD951de224f9e952C82Ed",
+      "verifier_address": "0xD19b79cE0C2821158aDBDEf9cC8c8D858c9ef0Cc",
+      "liquidity_manager_address": "0x5a09Cc328fA6bB32f3d6fC54906106ddD49a2D7c",
+      "adaptor_address": "0x588F07b52E50E8600F654c63176818403F6E3EB6",
+      "chain_id": 11155111,
+      "deployed_block_number": 10098448,
+      "eid": 40161,
+      "layerzero_endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+      "rpc_urls": [
+        "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
+      "legacy_tx": false
+    },
+    {
+      "label": "arb-sepolia",
+      "token_address": "0xADAb5CaB352fb1eBF24CD951de224f9e952C82Ed",
+      "verifier_address": "0xD19b79cE0C2821158aDBDEf9cC8c8D858c9ef0Cc",
+      "liquidity_manager_address": "0x5a09Cc328fA6bB32f3d6fC54906106ddD49a2D7c",
+      "adaptor_address": "0x588F07b52E50E8600F654c63176818403F6E3EB6",
+      "chain_id": 421614,
+      "deployed_block_number": 235732829,
+      "eid": 40231,
+      "layerzero_endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+      "rpc_urls": [
+        "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
+      "legacy_tx": false
+    },
+    {
+      "label": "op-sepolia",
+      "token_address": "0xADAb5CaB352fb1eBF24CD951de224f9e952C82Ed",
+      "verifier_address": "0xD19b79cE0C2821158aDBDEf9cC8c8D858c9ef0Cc",
+      "liquidity_manager_address": "0x5a09Cc328fA6bB32f3d6fC54906106ddD49a2D7c",
+      "adaptor_address": "0x588F07b52E50E8600F654c63176818403F6E3EB6",
+      "chain_id": 11155420,
+      "eid": 40232,
+      "layerzero_endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+      "deployed_block_number": 38639580,
+      "rpc_urls": [
+        "https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
+      "legacy_tx": false
+    }
+  ],
+  "hub": {
+    "hub_address": "0xD18b503B335656C05dC516366C0C8FD6e3b13856",
+    "chain_id": 84532,
+    "eid": 40245,
+    "layerzero_endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+    "rpc_urls": [
+      "https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    ],
+    "broadcast_interval_secs": 1800,
+    "legacy_tx": false
+  }
+}
