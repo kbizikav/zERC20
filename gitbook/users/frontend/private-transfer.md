@@ -2,16 +2,6 @@
 
 This guide explains how to send and receive private transfers using the zERC20 web application.
 
-## Understanding Privacy
-
-Before making a private transfer, understand what the Frontend supports:
-
-- **Sender-generated burn addresses**: The sender needs to know the recipient's withdrawal address
-- The recipient's address is hidden from on-chain observers, but known to the sender
-- **Burn address mechanism**: When you send to a burn address, the tokens are cryptographically burned and can only be withdrawn by someone who knows the corresponding secret
-
-For maximum privacy where even the sender doesn't know the withdrawal address, use the [CLI](../cli/private-transfer.md).
-
 ## Sending a Private Payment
 
 ### To a Known Address
