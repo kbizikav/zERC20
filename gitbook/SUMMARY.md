@@ -10,6 +10,7 @@
 * [Using Frontend](users/frontend/getting-started.md)
   * [Getting Started](users/frontend/getting-started.md)
   * [Private Transfer](users/frontend/private-transfer.md)
+  * [Scan Receives](users/frontend/scan-receives.md)
 * [Using the CLI](users/cli/getting-started.md)
 * [FAQ](users/faq.md)
 

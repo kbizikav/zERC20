@@ -18,12 +18,23 @@ For maximum privacy where even the sender doesn't know the withdrawal address, u
 If you know the recipient's address:
 
 1. Visit the [Frontend](https://v2.testnet.app.zerc20.io/)
-2. Navigate to the Send page
-3. Enter the recipient's Ethereum address
-4. Enter the amount of zERC20 to send
-5. Confirm the transaction in your wallet
+2. Click the "Private Send" tab
+3. Select the recipient chain from the dropdown
+4. Enter the recipient's Ethereum address
+5. Enter the amount of zERC20 to send
+6. Click "Send Privately"
 
-The system generates a burn address, transfers your tokens, and notifies the recipient.
+![Private Send Form](../../assets/frontend_how_to/private-send-form.png)
+
+The transfer will process in three steps:
+
+![Transfer Progress](../../assets/frontend_how_to/transfer-progress.png)
+
+Once completed, you'll see a success message:
+
+![Transfer Success](../../assets/frontend_how_to/transfer-success.png)
+
+The system generates an encrypted announcement, stores it, and transfers your tokens.
 
 ### To a Burn Address
 

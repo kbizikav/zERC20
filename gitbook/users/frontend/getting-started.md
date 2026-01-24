@@ -6,6 +6,8 @@ This guide walks you through using the zERC20 web application.
 
 Visit the [zERC20 Frontend](https://v2.testnet.app.zerc20.io/).
 
+![Dashboard Overview](../../assets/frontend_how_to/dashboard-overview.png)
+
 ## Step 2: Connect Your Wallet
 
 1. Click "Connect Wallet"
@@ -16,13 +18,28 @@ Visit the [zERC20 Frontend](https://v2.testnet.app.zerc20.io/).
 
 zERC20 tokens are ERC-20 wrapper tokens backed 1:1 by underlying assets.
 
-### Option A: Deposit
+You can select the token type and chain from the dropdowns at the top of the page:
 
-1. Navigate to the Deposit page
+![Token Selector](../../assets/frontend_how_to/token-selector.png)
+![Chain Selector](../../assets/frontend_how_to/chain-selector.png)
+
+### Option A: Wrap Tokens
+
+1. Click the "Wrap / Unwrap" button
 2. Select the token you want to wrap (USDC, ETH, BNB, etc.)
 3. Enter the amount
-4. Confirm the transaction in your wallet
-5. Receive an equivalent amount of zERC20 tokens
+
+![Wrap Modal](../../assets/frontend_how_to/wrap-modal.png)
+
+4. Click "Wrap USDC to zUSDC" (or the appropriate token)
+5. Confirm the transaction in your wallet
+6. Receive an equivalent amount of zERC20 tokens
+
+![Wrap Modal with Amount](../../assets/frontend_how_to/wrap-modal-input.png)
+
+After wrapping, your balance will be updated:
+
+![Dashboard After Wrap](../../assets/frontend_how_to/dashboard-after-wrap.png)
 
 ### Option B: Buy on a DEX
 
@@ -32,7 +49,9 @@ Purchase zERC20 directly on decentralized exchanges like Uniswap.
 
 ## Step 4: Make a Private Transfer
 
-See [Private Transfer Guide](private-transfer.md) for detailed instructions.
+See [Private Transfer Guide](private-transfer.md) for detailed instructions on sending.
+
+See [Scan Receives Guide](scan-receives.md) for instructions on receiving transfers.
 
 ## Important Notes
 
