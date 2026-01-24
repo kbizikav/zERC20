@@ -13,6 +13,8 @@
       "rpc_urls": [
         "https://eth-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     },
     {
@@ -28,6 +30,8 @@
       "rpc_urls": [
         "https://arb-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     },
     {
@@ -43,6 +47,8 @@
       "rpc_urls": [
         "https://base-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     }
   ],
@@ -53,6 +59,8 @@
     "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
     "rpc_urls": [
       "https://base-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
-    ]
+    ],
+    "broadcast_interval_secs": 1800,
+    "legacy_tx": true
   }
 }
