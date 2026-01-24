@@ -20,7 +20,7 @@ See [Contract Addresses](../reference/addresses.md) for deployment addresses on 
 
 ### Standard ERC-20 Interface
 
-```solidity
+```javascript
 interface IERC20 {
     function balanceOf(address account) external view returns (uint256);
     function transfer(address to, uint256 amount) external returns (bool);
@@ -57,7 +57,7 @@ const burnAddress = computeBurnAddress(chainId, recipientAddress, tweak, secret)
 
 Standard ERC-20 transfer to the burn address:
 
-```solidity
+```javascript
 IERC20(zERC20).transfer(burnAddress, amount);
 ```
 

@@ -25,7 +25,7 @@ An upgradeable ERC-20 that tracks all transfers in a hash chain for ZKP verifica
 
 ### Functions
 
-```solidity
+```javascript
 // Called by Verifier after successful proof verification
 function teleport(address to, uint256 value) external onlyVerifier;
 
@@ -36,7 +36,7 @@ function burn(address from, uint256 amount) external onlyLiquidityAuthority;
 
 ### Events
 
-```solidity
+```javascript
 event IndexedTransfer(uint256 indexed index, address indexed from, address indexed to, uint256 value);
 event Teleport(address indexed to, uint256 value);
 ```
@@ -61,7 +61,7 @@ LayerZero OApp that verifies ZK proofs and manages teleports.
 
 ### Functions
 
-```solidity
+```javascript
 // Reserve a hash chain checkpoint for proof anchoring
 function reserveHashChain(uint256 index) external;
 
@@ -92,7 +92,7 @@ function relayTransferRoot() external payable;
 
 ### State
 
-```solidity
+```javascript
 mapping(uint256 => bytes32) public reservedHashChains;     // index → hashChain snapshot
 mapping(uint256 => bytes32) public provedTransferRoots;    // index → merkle root
 mapping(bytes32 => uint256) public totalTeleported;        // recipientHash → total minted
@@ -103,7 +103,7 @@ mapping(uint256 => bytes32) public globalTransferRoots;    // aggSeq → global 
 
 Binds withdrawals to a specific destination:
 
-```solidity
+```javascript
 struct GeneralRecipient {
     uint256 chainId;
     address addr;
@@ -130,7 +130,7 @@ Central aggregator for cross-chain transfer roots.
 
 ### Functions
 
-```solidity
+```javascript
 // Register a new token (owner only)
 function registerToken(
     uint256 chainId,
@@ -148,7 +148,7 @@ function quoteBroadcast(uint32[] calldata targetEids) external view returns (uin
 
 ### Events
 
-```solidity
+```javascript
 event AggregationRootUpdated(
     uint256 aggSeq,
     bytes32 globalRoot,
@@ -171,7 +171,7 @@ Manages liquidity entry/exit with incentive curves.
 
 ### Functions
 
-```solidity
+```javascript
 // Wrap underlying → zERC20
 function wrap(address receiver, uint256 amount) external returns (uint256 reward);
 
@@ -212,7 +212,7 @@ This eliminates manual parameter tuning and automatically adjusts incentives as 
 
 ### FeeParams Structure
 
-```solidity
+```javascript
 struct FeeParams {
     uint256 targetLiquidity;  // Liquidity level where incentives fade to zero
     uint256 k;                // Incentive strength coefficient (basis points)
@@ -240,7 +240,7 @@ The Fee Manager automatically detects whether a LiquidityManager uses native ETH
 
 The Fee Manager requires `FEE_MANAGER_ROLE` on each LiquidityManager:
 
-```solidity
+```javascript
 liquidityManager.grantRole(FEE_MANAGER_ROLE, feeManagerAddress);
 ```
 

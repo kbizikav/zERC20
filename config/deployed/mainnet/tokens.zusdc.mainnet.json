@@ -11,8 +11,10 @@
       "eid": 30101,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "rpc_urls": [
-        "https://eth-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
+        "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     },
     {
@@ -26,8 +28,10 @@
       "eid": 30110,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "rpc_urls": [
-        "https://arb-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
+        "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     },
     {
@@ -41,8 +45,10 @@
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "deployed_block_number": 41153969,
       "rpc_urls": [
-        "https://base-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
+        "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     }
   ],
@@ -52,7 +58,9 @@
     "eid": 30184,
     "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
     "rpc_urls": [
-      "https://base-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
-    ]
+      "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    ],
+    "broadcast_interval_secs": 1800,
+    "legacy_tx": true
   }
 }

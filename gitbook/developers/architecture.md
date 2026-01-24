@@ -8,31 +8,6 @@ This document explains how zERC20 is architected across on-chain contracts, off-
 - **Scalability**: Poseidon Merkle trees and IVC batch thousands of transfers into one proof
 - **Cross-chain**: LayerZero-based hub aggregates roots across all chains
 
-## System Components
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                         User Applications                           │
-│                    (Frontend / CLI / Wallets)                       │
-└──────────────────────────┬──────────────────────────────────────────┘
-                           │
-        ┌──────────────────┼──────────────────┐
-        ▼                  ▼                  ▼
-┌───────────────┐  ┌───────────────┐  ┌───────────────┐
-│   Indexer     │  │ Decider Prover│  │  ICP Storage  │
-│  (Postgres)   │  │   (ZK Proofs) │  │  (Stealth)    │
-└───────┬───────┘  └───────┬───────┘  └───────────────┘
-        │                  │
-        └────────┬─────────┘
-                 ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                      On-Chain Contracts                             │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────────────┐    │
-│  │  zERC20  │  │ Verifier │  │   Hub    │  │ LiquidityManager │    │
-│  └──────────┘  └──────────┘  └──────────┘  └──────────────────┘    │
-└─────────────────────────────────────────────────────────────────────┘
-```
-
 ## On-Chain Contracts
 
 | Contract | Purpose |

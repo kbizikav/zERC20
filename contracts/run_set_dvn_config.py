@@ -93,7 +93,31 @@ def parse_args() -> tuple[Path, list[str]]:
     return config_path, forge_args
 
 
-def ensure_private_key() -> None:
+SIGNER_FLAGS = {
+    "--private-key",
+    "--mnemonic",
+    "--mnemonic-indexes",
+    "--mnemonic-derivation-path",
+    "--mnemonic-passphrase",
+    "--ledger",
+    "--trezor",
+    "--keystore",
+    "--keystore-password",
+    "--keystore-account",
+}
+
+
+def has_signer_flag(forge_args: Sequence[str]) -> bool:
+    for arg in forge_args:
+        flag = arg.split("=", 1)[0]
+        if flag in SIGNER_FLAGS:
+            return True
+    return False
+
+
+def ensure_private_key(forge_args: Sequence[str]) -> None:
+    if has_signer_flag(forge_args):
+        return
     if not os.environ.get("PRIVATE_KEY"):
         raise ConfigError("PRIVATE_KEY environment variable must be set for forge broadcast")
 
@@ -350,8 +374,10 @@ def join_by_comma(values: Sequence[str]) -> str:
 def run_forge(target: str, rpc_url: str, forge_args: Sequence[str], env_overrides: dict[str, str]) -> None:
     env = os.environ.copy()
     env.update(env_overrides)
-    private_key = os.environ.get("PRIVATE_KEY", "")
-    cmd = ["forge", "script", f"{SET_DVN_SCRIPT}:{target}", "--rpc-url", rpc_url, "--private-key", private_key, *forge_args]
+    cmd = ["forge", "script", f"{SET_DVN_SCRIPT}:{target}", "--rpc-url", rpc_url]
+    if not has_signer_flag(forge_args):
+        ensure_private_key(forge_args)
+    cmd.extend(forge_args)
     subprocess.run(cmd, cwd=SCRIPT_DIR, env=env, check=True)
 
 
@@ -398,7 +424,7 @@ def main() -> None:
         raise ConfigError(f"config file not found at {config_path}")
 
     ensure_command_available("forge")
-    ensure_private_key()
+    ensure_private_key(forge_args)
 
     tokens_path, chain_policies, hub_policy = parse_dvn_config(config_path)
     hub, tokens = parse_tokens(tokens_path)

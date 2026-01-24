@@ -60,7 +60,7 @@
     "rpc_urls": [
       "https://base-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
     ],
-    "broadcast_interval_secs": 900,
+    "broadcast_interval_secs": 1800,
     "legacy_tx": false
   }
 }

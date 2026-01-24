@@ -21,9 +21,6 @@
   * [Contract Spec](developers/specs/contract-spec.md)
   * [ZKP Spec](developers/specs/zkp-spec.md)
   * [ICP Storage Spec](developers/specs/icp-storage-spec.md)
-* [Deployment](developers/deployment/README.md)
-  * [Contract Deployment](developers/deployment/contracts.md)
-  * [Node setup](developers/deployment/indexer.md)
 
 ## Reference
 

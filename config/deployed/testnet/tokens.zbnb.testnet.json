@@ -75,7 +75,7 @@
     "rpc_urls": [
       "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
     ],
-    "broadcast_interval_secs": 600,
+    "broadcast_interval_secs": 1800,
     "legacy_tx": true
   }
 }
