@@ -5,63 +5,102 @@ This guide walks you through installing and using the zERC20 command-line interf
 ## Installation
 
 ```bash
-cargo install zerc20-cli
+git clone https://github.com/kbizikav/zERC20.git
+cd zERC20
+cargo install --path cli
 ```
 
 ## Configuration
 
-Set up your wallet and RPC endpoints:
+### Environment Variables
+
+Load environment variables from `.env` (see `.env.example` in the cli directory):
 
 ```bash
-# Configure your private key (or use environment variable)
-export ZERC20_PRIVATE_KEY=your_private_key
+# Token configuration
+export TOKENS_FILE_PATH=../config/tokens.json
 
-# Or use a keystore file
-zerc20 config --keystore /path/to/keystore.json
+# Internet Computer endpoints (required)
+export IC_REPLICA_URL=<IC_URL>
+export KEY_MANAGER_CANISTER_ID=<CANISTER_ID>
+export STORAGE_CANISTER_ID=<CANISTER_ID>
+
+# Required for receiving funds
+export NOVA_ARTIFACTS_DIR=/path/to/nova_artifacts
 ```
-
-## Get zERC20 Tokens
-
-### Option A: Deposit
-
-Wrap underlying tokens to get zERC20:
-
-```bash
-# Deposit USDC to get zUSDC
-zerc20 deposit --token USDC --amount 100
-
-# Deposit ETH to get zETH
-zerc20 deposit --token ETH --amount 1
-```
-
-### Option B: Buy on a DEX
-
-Purchase zERC20 directly on decentralized exchanges like Uniswap.
-
-> Check [Supported Chains](../../reference/chains.md) and [Contract Addresses](../../reference/addresses.md) for token addresses on each chain.
 
 ## Basic Commands
 
+### Issue an Invoice
+
+Generate a burn address to receive payments:
+
 ```bash
-# Check your balance
-zerc20 balance
+zerc20-cli invoice issue --chain-id <CHAIN_ID>
+```
 
-# View pending incoming transfers
-zerc20 scan
+### List Invoices
 
-# Get help
-zerc20 --help
+View your invoices:
+
+```bash
+zerc20-cli invoice ls --chain-id <CHAIN_ID>
+```
+
+### Transfer
+
+Send zERC20 to a burn address:
+
+```bash
+zerc20-cli transfer \
+  --chain-id <CHAIN_ID> \
+  --to <BURN_ADDRESS> \
+  --amount <AMOUNT_IN_WEI>
+```
+
+### Check Invoice Status
+
+```bash
+zerc20-cli invoice status --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>
+```
+
+### Receive Funds
+
+Generate proofs and receive:
+
+```bash
+zerc20-cli invoice receive --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>
+```
+
+## Quick Start Example
+
+```bash
+# 1. Issue an invoice
+zerc20-cli invoice issue --chain-id 1
+
+# 2. List invoices to get the invoice ID and burn address
+zerc20-cli invoice ls --chain-id 1
+
+# 3. Send funds to the burn address
+zerc20-cli transfer \
+  --chain-id 1 \
+  --to 0x1234567890abcdef1234567890abcdef12345678 \
+  --amount 1000000000000000000
+
+# 4. Check status
+zerc20-cli invoice status --chain-id 1 --invoice-id inv-01
+
+# 5. Receive
+zerc20-cli invoice receive --chain-id 1 --invoice-id inv-01
 ```
 
 ## Important Notes
 
-- **Crosschain Capability**: You can send on one chain and withdraw on another
+- **Crosschain Capability**: You can send on one chain and receive on another
 - **Processing Time**: Private transfers typically take 30 minutes to 1 hour on mainnet
 - **Testnet Limitations**: On testnets, transfers may take longer due to LayerZero instability
 
 ## Next Steps
 
-- [Private Transfer (CLI)](private-transfer.md) — Send and receive privately
-- [Invoice Flow](invoice.md) — Create invoices for receiving payments
-- [Receiving Funds](receive.md) — Detailed guide for receiving transfers
 - [FAQ](../faq.md) — Common questions and troubleshooting
+- [CLI README](https://github.com/kbizikav/zERC20/tree/main/cli) — Full CLI documentation

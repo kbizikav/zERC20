@@ -11,11 +11,6 @@
   * [Getting Started](users/frontend/getting-started.md)
   * [Private Transfer](users/frontend/private-transfer.md)
 * [Using the CLI](users/cli/getting-started.md)
-  * [Getting Started](users/cli/getting-started.md)
-  * [Private Transfer](users/cli/private-transfer.md)
-  * [Invoice Flow](users/cli/invoice.md)
-  * [Receiving Funds](users/cli/receive.md)
-* [Cross-chain Transfers](users/cross-chain.md)
 * [FAQ](users/faq.md)
 
 ## For Developers
@@ -32,7 +27,6 @@
 
 ## Reference
 
-* [Supported Chains](reference/chains.md)
 * [Contract Addresses](reference/addresses.md)
 * [External Links](reference/links.md)
 * [Glossary](reference/glossary.md)

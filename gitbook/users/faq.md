@@ -88,9 +88,9 @@ The tokens are permanently locked unless the intended recipient of that burn add
    - Verify the original transaction was confirmed on the source chain
    - Check the burn address balance on a block explorer
 
-3. **Rescan for transfers**
-   - Frontend: Refresh the page or click "Scan"
-   - CLI: Run `zerc20 scan --force`
+3. **Check invoice status**
+   - Frontend: Refresh the page
+   - CLI: Run `zerc20-cli invoice status --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>`
 
 4. **Verify burn address**
    - Confirm the sender used the correct burn address

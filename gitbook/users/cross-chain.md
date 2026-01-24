@@ -1,3 +1,0 @@
-# Cross-Chain Transfers
-
-<!-- TODO -->
