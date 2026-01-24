@@ -7,7 +7,7 @@ This page explains the mechanism behind zERC20's private transfers and what priv
 ```
 ┌─────────────┐      zERC20       ┌──────────────┐       ZK Proof        ┌─────────────┐
 │   Sender    │ ───────────────▶  │ Burn Address │  ───────────────────▶ │  Recipient  │
-│  (public)   │    (on-chain)     │  (no key)    │    (unlinkable)       │  (private)  │
+│  (public)   │    (on-chain)     │   (public)   │    (unlinkable)       │  (private)  │
 └─────────────┘                   └──────────────┘                       └─────────────┘
 ```
 
@@ -26,6 +26,8 @@ The recipient generates a **zero-knowledge proof** that demonstrates:
 - The burn address received a specific amount of tokens
 
 Using this proof, the recipient can withdraw the same amount to any address of their choice. The proof reveals nothing about which burn address corresponds to which withdrawal.
+
+> We call this withdrawal process **"teleport"** because tokens effectively disappear from one address and reappear at another with no traceable link.
 
 ## What Is Private?
 
