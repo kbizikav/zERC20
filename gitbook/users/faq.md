@@ -30,7 +30,7 @@ Currently supported wrapper tokens include:
 - zETH (wrapped ETH)
 - zBNB (wrapped BNB)
 
-Check [Supported Chains](../reference/chains.md) for the full list.
+Check the frontend for the full list of supported chains.
 
 ### Privacy
 

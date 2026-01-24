@@ -159,7 +159,7 @@ RPC_URL=https://...
 TOKENS_FILE_PATH=./config/tokens.json
 ```
 
-See [Deployment Guide](deployment/README.md) for full setup instructions.
+See the Docker Compose configuration above for setup instructions.
 
 ## Security Considerations
 

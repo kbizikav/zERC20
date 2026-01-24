@@ -49,7 +49,7 @@ After wrapping, your balance will be updated:
 
 Purchase zERC20 directly on decentralized exchanges like Uniswap.
 
-> Check [Supported Chains](../../reference/chains.md) and [Contract Addresses](../../reference/addresses.md) for token addresses on each chain.
+> Check [Contract Addresses](../../reference/addresses.md) for token addresses on each chain.
 
 ### Unwrapping zERC20 Tokens
 
