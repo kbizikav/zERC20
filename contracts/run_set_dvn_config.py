@@ -377,7 +377,6 @@ def run_forge(target: str, rpc_url: str, forge_args: Sequence[str], env_override
     cmd = ["forge", "script", f"{SET_DVN_SCRIPT}:{target}", "--rpc-url", rpc_url]
     if not has_signer_flag(forge_args):
         ensure_private_key(forge_args)
-        cmd.extend(["--private-key", os.environ["PRIVATE_KEY"]])
     cmd.extend(forge_args)
     subprocess.run(cmd, cwd=SCRIPT_DIR, env=env, check=True)
 
