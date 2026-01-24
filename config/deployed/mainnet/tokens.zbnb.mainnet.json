@@ -2,72 +2,82 @@
   "tokens": [
     {
       "label": "bnb-mainnet",
-      "token_address": "0xb28f71f731073cbcC0EbF9B51219B11323cf94D0",
-      "verifier_address": "0x3fAf73640F0B20F91d5454f79273f7f6C848DD07",
+      "token_address": "0x3431cf9278411A7DEfC0CB651D8D055C22536e3d",
+      "verifier_address": "0x37f9bD67E8Cc588EB825fF531844F1561D1339CC",
       "liquidity_manager_address": null,
       "adaptor_address": null,
       "chain_id": 56,
       "eid": 30102,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-      "deployed_block_number": 75342217,
+      "deployed_block_number": 77124154,
       "rpc_urls": [
         "https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": true
     },
     {
       "label": "eth-mainnet",
-      "token_address": "0x70A12172999a04738f65ef982Aa42d4A10cC04F3",
-      "verifier_address": "0x20abbC2F77C20EB65db1924BaCC43d84B5f6e17b",
-      "liquidity_manager_address": "0xBA96dB62E8D36307d53251785Df7172426Faf491",
-      "adaptor_address": "0xFa55F90b966fB21C4a09bd99b2b05A956e84816c",
+      "token_address": "0x3431cf9278411A7DEfC0CB651D8D055C22536e3d",
+      "verifier_address": "0x37f9bD67E8Cc588EB825fF531844F1561D1339CC",
+      "liquidity_manager_address": null,
+      "adaptor_address": null,
       "chain_id": 1,
-      "deployed_block_number": 24291174,
+      "deployed_block_number": 24303917,
       "eid": 30101,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "rpc_urls": [
         "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     },
     {
       "label": "arb-mainnet",
-      "token_address": "0x70A12172999a04738f65ef982Aa42d4A10cC04F3",
-      "verifier_address": "0x20abbC2F77C20EB65db1924BaCC43d84B5f6e17b",
-      "liquidity_manager_address": "0xBA96dB62E8D36307d53251785Df7172426Faf491",
-      "adaptor_address": "0xFa55F90b966fB21C4a09bd99b2b05A956e84816c",
+      "token_address": "0x3431cf9278411A7DEfC0CB651D8D055C22536e3d",
+      "verifier_address": "0x37f9bD67E8Cc588EB825fF531844F1561D1339CC",
+      "liquidity_manager_address": null,
+      "adaptor_address": null,
       "chain_id": 42161,
-      "deployed_block_number": 424080737,
+      "deployed_block_number": 424691453,
       "eid": 30110,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "rpc_urls": [
         "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     },
     {
       "label": "base-mainnet",
-      "token_address": "0x70A12172999a04738f65ef982Aa42d4A10cC04F3",
-      "verifier_address": "0x20abbC2F77C20EB65db1924BaCC43d84B5f6e17b",
-      "liquidity_manager_address": "0xBA96dB62E8D36307d53251785Df7172426Faf491",
-      "adaptor_address": "0xFa55F90b966fB21C4a09bd99b2b05A956e84816c",
+      "token_address": "0x3431cf9278411A7DEfC0CB651D8D055C22536e3d",
+      "verifier_address": "0x37f9bD67E8Cc588EB825fF531844F1561D1339CC",
+      "liquidity_manager_address": null,
+      "adaptor_address": null,
       "chain_id": 8453,
       "eid": 30184,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-      "deployed_block_number": 41153969,
+      "deployed_block_number": 41230390,
       "rpc_urls": [
         "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs":900,
       "legacy_tx": false
     }
   ],
   "hub": {
-    "hub_address": "0xA0cf86aECc67F8c5F70e1A63CF5C6FCDdaDFBd8B",
+    "hub_address": "0x9Eb6B19c5aC4E666ba59C53ae7ECdAf7f7e07911",
     "chain_id": 56,
     "eid": 30102,
     "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
     "rpc_urls": [
-      "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    ]
+      "https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    ],
+    "broadcast_interval_secs": 1800,
+    "is_legacy_tx": true
   }
 }
