@@ -1,3 +1,0 @@
-# ICP Canister Deployment
-
-<!-- TODO -->

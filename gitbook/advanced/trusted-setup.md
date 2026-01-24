@@ -1,3 +1,0 @@
-# Trusted Setup Ceremony
-
-<!-- TODO -->
