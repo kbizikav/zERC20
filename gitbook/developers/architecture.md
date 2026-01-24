@@ -45,17 +45,19 @@ Every transfer (mint/transfer/burn) appends to the SHA-256 hash chain and emits 
 
 ### 2. Root Proving
 
-```
-Indexer (event sync) → Postgres → Merkle tree → Nova IVC → Decider proof → Verifier.proveTransferRoot()
-```
+<div align="center">
+  <img src="../assets/design/merkle_tree.png" alt="Merkle Tree and Hash Chain" width="700">
+</div>
 
-The indexer maintains Poseidon Merkle trees and periodically proves new transfer roots on-chain.
+The indexer maintains Poseidon Merkle trees and periodically proves new transfer roots on-chain using IVC proofs.
 
 ### 3. Cross-chain Aggregation
 
-```
-Verifier.relayTransferRoot() → Hub → Hub.broadcast() → All Verifiers receive globalRoot
-```
+<div align="center">
+  <img src="../assets/design/crosschain.png" alt="Cross-chain Architecture" width="700">
+</div>
+
+Each chain's Verifier relays its transfer root to the Hub, which aggregates them and broadcasts the global root back to all Verifiers.
 
 ### 4. Private Transfer
 

@@ -1,3 +1,7 @@
+<div align="center" style="background: #1a1a2e; padding: 20px; border-radius: 8px;">
+  <img src="assets/design/logo.png" alt="zERC20 Logo" width="600">
+</div>
+
 # Introduction
 
 **zERC20** is a fully ERC-20 compliant crosschain private transfer token. Users can perform private transfers directly from standard wallets like MetaMask—no special software required. From an external observer's perspective, private transfers are indistinguishable from regular transfers.

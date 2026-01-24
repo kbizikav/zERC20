@@ -4,12 +4,9 @@ This page explains the mechanism behind zERC20's private transfers and what priv
 
 ## Private Transfer Flow
 
-```
-┌─────────────┐      zERC20       ┌──────────────┐       ZK Proof        ┌─────────────┐
-│   Sender    │ ───────────────▶  │ Burn Address │  ───────────────────▶ │  Recipient  │
-│  (public)   │    (on-chain)     │   (public)   │    (unlinkable)       │  (private)  │
-└─────────────┘                   └──────────────┘                       └─────────────┘
-```
+<div align="center">
+  <img src="../assets/design/burn_address.png" alt="Burn Address Flow" width="400">
+</div>
 
 ### Step 1: Generate a Burn Address
 
@@ -22,6 +19,7 @@ The sender transfers zERC20 to the burn address using any standard wallet (MetaM
 ### Step 3: Withdraw with Zero-Knowledge Proof
 
 The recipient generates a **zero-knowledge proof** that demonstrates:
+
 - They know the secret used to derive the burn address
 - The burn address received a specific amount of tokens
 
@@ -43,10 +41,10 @@ The transaction sending zERC20 to a burn address **is publicly visible**. Howeve
 
 ### 3. Who Knows What?
 
-| Scenario | Sender Knows | Recipient Knows | On-chain Observers Know |
-|----------|--------------|-----------------|------------------------|
-| Recipient generates burn address | Only the burn address | Sender's address | Sender sent to an unknown address |
-| Sender generates burn address | Recipient's withdrawal address | Sender's address | Sender sent to an unknown address |
+| Scenario                         | Sender Knows                   | Recipient Knows  | On-chain Observers Know           |
+| -------------------------------- | ------------------------------ | ---------------- | --------------------------------- |
+| Recipient generates burn address | Only the burn address          | Sender's address | Sender sent to an unknown address |
+| Sender generates burn address    | Recipient's withdrawal address | Sender's address | Sender sent to an unknown address |
 
 - **Recipient-generated burn address**: The sender only knows the burn address, not where funds will be withdrawn. This provides maximum privacy for the recipient.
 - **Sender-generated burn address**: The sender must know the recipient's withdrawal address to generate the burn address. The recipient's address remains private from on-chain observers, but not from the sender.
@@ -59,9 +57,9 @@ Transfer and withdrawal amounts **are visible on-chain**. Unique or unusual amou
 
 **Mitigation strategies:**
 
-| Strategy | Description |
-|----------|-------------|
-| **Batch withdrawals** | Combine multiple incoming transfers into a single withdrawal. Only the total amount is exposed on-chain. |
+| Strategy                | Description                                                                                                                             |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| **Batch withdrawals**   | Combine multiple incoming transfers into a single withdrawal. Only the total amount is exposed on-chain.                                |
 | **Partial withdrawals** | Withdraw less than the full amount received. For example, if you received 123.456789 zUSDC, withdraw 123 zUSDC and leave the remainder. |
 
 ## Crosschain Transfers
