@@ -4,6 +4,7 @@ import { AppProviders } from './providers/AppProviders';
 import { useWallet } from './providers/WalletProvider';
 import { Tabs } from '@components/Tabs';
 import { useRuntimeConfig } from '@config/ConfigContext';
+import { createViteEnvProvider } from '@config/appConfig';
 import { configureWasmLocator, getZerc20Contract, loadTokens, useStorageStore } from '@zerc20/sdk';
 import type { NormalizedTokens } from '@zerc20/sdk';
 import { ConvertPanel, PrivateReceivePanel, PrivateSendPanel, ScanReceivingsPanel } from '@features/index';
@@ -395,7 +396,8 @@ function AppContent(): JSX.Element {
       try {
         setError(undefined);
         setLoadingMessage('Loading token metadata…');
-        const loadedTokens = await loadTokens(runtime.tokensCompressed);
+        const envProvider = createViteEnvProvider(import.meta.env);
+        const loadedTokens = await loadTokens(runtime.tokensCompressed, { envProvider });
         if (cancelled) return;
         setTokens(loadedTokens);
         setLoadingMessage('');
