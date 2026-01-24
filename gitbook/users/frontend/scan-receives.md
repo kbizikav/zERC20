@@ -8,7 +8,7 @@ This guide explains how to scan for and receive private transfers using the zERC
 2. Connect your wallet
 3. Click the "Private Receive" tab
 
-![Private Receive Tab](../../assets/frontend_how_to/private-receive-tab.png)
+<figure><img src="../../assets/frontend_how_to/private-receive-tab.png" alt="Private Receive Tab" width="563"><figcaption>Private Receive Tab</figcaption></figure>
 
 ## Scanning for Incoming Transfers
 
@@ -17,18 +17,19 @@ To check for incoming private transfers:
 1. Click the "Scan for Receive" button
 2. The system will request your view key and scan for announcements
 
-![Scanning Progress](../../assets/frontend_how_to/scanning-progress.png)
+<figure><img src="../../assets/frontend_how_to/scanning-progress.png" alt="Scanning Progress" width="480"><figcaption>Scanning Progress</figcaption></figure>
 
 The scanning process:
-- Requests your view key from your wallet
+- Requests your view key from your wallet (this key allows decryption of announcements addressed to you)
 - Searches for encrypted announcements across all supported chains
 - Decrypts announcements addressed to your wallet
+- Does not reveal your private key or spending capability
 
 ## Viewing Received Transfers
 
 After scanning, you'll see a list of incoming transfers:
 
-![Announcement List](../../assets/frontend_how_to/announcement-list.png)
+<figure><img src="../../assets/frontend_how_to/announcement-list.png" alt="Announcement List" width="563"><figcaption>Announcement List</figcaption></figure>
 
 Each announcement shows:
 - **ID**: Unique identifier for the transfer
@@ -39,7 +40,7 @@ Each announcement shows:
 
 Click on an announcement to view its details:
 
-![Announcement Detail](../../assets/frontend_how_to/announcement-detail.png)
+<figure><img src="../../assets/frontend_how_to/announcement-detail.png" alt="Announcement Detail" width="480"><figcaption>Announcement Detail</figcaption></figure>
 
 The detail view shows:
 - **Announcement ID**: Unique identifier
@@ -56,15 +57,17 @@ Once you have eligible transfers:
 1. Click on the announcement with pending value
 2. Click the "REDEEM" button
 
-![Redeem Detail](../../assets/frontend_how_to/redeem-detail.png)
+<figure><img src="../../assets/frontend_how_to/redeem-detail.png" alt="Redeem Detail" width="480"><figcaption>Redeem Detail</figcaption></figure>
 
-3. Wait for the proof generation process
+3. Wait for the proof generation process (this creates a zero-knowledge proof that you are entitled to withdraw the funds)
 
-![Redeem Progress](../../assets/frontend_how_to/redeem-progress.png)
+<figure><img src="../../assets/frontend_how_to/redeem-progress.png" alt="Redeem Progress" width="480"><figcaption>Proof generation and transaction in progress</figcaption></figure>
 
 4. Wait for the transaction to complete
 
-![Redeem Success](../../assets/frontend_how_to/redeem-success.png)
+<figure><img src="../../assets/frontend_how_to/redeem-success.png" alt="Redeem Success" width="480"><figcaption>Redeem Success</figcaption></figure>
+
+The funds will be transferred to your connected wallet address.
 
 ## Troubleshooting
 
@@ -73,6 +76,7 @@ Once you have eligible transfers:
 If scanning shows no results:
 - Ensure you're connected with the correct wallet
 - Wait for the transfer to be confirmed on-chain (may take a few minutes)
+- Check that the sender used the correct recipient address
 
 ## Next Steps
 
