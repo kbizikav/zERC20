@@ -55,7 +55,7 @@ The transaction sending zERC20 to a burn address **is publicly visible**. Howeve
 
 ### 4. Amount Privacy Considerations
 
-Transfer and withdrawal amounts **are visible on-chain**. Unique or unusual amounts (e.g., 123.456789 USDC) could potentially be used to correlate transactions.
+Transfer and withdrawal amounts **are visible on-chain**. Unique or unusual amounts (e.g., 123.456789 zUSDC) could potentially be used to correlate transactions.
 
 **Mitigation strategies:**
 

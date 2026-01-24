@@ -57,11 +57,10 @@ zERC20 itself doesn't expose IP addresses, but:
 
 **How long do private transfers take?**
 
-| Transfer Type | Typical Time |
-|---------------|--------------|
-| Same chain | ~5 minutes |
-| Cross-chain | 30 minutes to 1 hour |
-| Testnet (cross-chain) | May be longer due to LayerZero instability |
+| Network | Typical Time |
+|---------|--------------|
+| Mainnet | 30 minutes to 1 hour |
+| Testnet | May be longer due to LayerZero instability |
 
 **Can I cancel a transfer?**
 
@@ -105,70 +104,10 @@ The tokens are permanently locked unless the intended recipient of that burn add
 
 The "stuck" tokens represent the burned supply that backs the minted withdrawal.
 
-### Withdrawal transaction fails
-
-**Symptoms:** The withdrawal transaction reverts or fails.
-
-**Solutions:**
-
-1. **Check proof generation**
-   - Ensure the ZKP was generated correctly
-   - Try regenerating the proof: CLI `zerc20 withdraw --regenerate-proof`
-
-2. **Verify chain state**
-   - The Merkle root may not be synced yet
-   - Wait 10-15 minutes and retry
-
-3. **Check gas settings**
-   - ZKP verification requires significant gas (~500k-1M)
-   - Ensure sufficient gas limit
-
-4. **Cross-chain root sync**
-   - For cross-chain withdrawals, the global root must be synced
-   - Check if the aggregation sequence is current
-
-### Frontend not loading transfers
-
-**Symptoms:** The Frontend shows no pending transfers despite confirmed deposits.
-
-**Solutions:**
-
-1. **Clear browser cache**
-   - Cached state may be stale
-   - Try incognito/private browsing mode
-
-2. **Check wallet connection**
-   - Ensure the correct wallet is connected
-   - Try disconnecting and reconnecting
-
-3. **Indexer sync**
-   - The indexer may be catching up with recent blocks
-   - Wait a few minutes and refresh
-
-### CLI command errors
-
-**"Insufficient funds" error**
-
-Ensure you have:
-- Enough zERC20 for the transfer
-- Enough native token (ETH, BNB, etc.) for gas
-
-**"Proof generation failed" error**
-
-- Check that the burn address was generated correctly
-- Verify you're using the correct secret/tweak values
-- Try with `--verbose` flag for detailed logs
-
-**"Network error" error**
-
-- Check your internet connection
-- Verify the RPC endpoint is responsive
-- Try a different RPC provider
-
 ---
 
 ## Still Need Help?
 
-- Check the [CLI Guide](cli-guide.md) for command reference
+- Check the [CLI Guide](cli/getting-started.md) for command reference
 - Review [How zERC20 Works](../overview/how-it-works.md) for technical details
-- Open an issue on [GitHub](https://github.com/piatoss3612/zERC20/issues)
+- Join our [Discord](https://discord.gg/U3twJUfzmE) for community support
