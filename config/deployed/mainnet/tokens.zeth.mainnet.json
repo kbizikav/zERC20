@@ -2,16 +2,16 @@
   "tokens": [
     {
       "label": "eth-mainnet",
-      "token_address": "0x66639EF03D81A71e19728aF59fDF5ef9bCb7b480",
-      "verifier_address": "0xb9D10E8755742362EBBCf06Ac2DEb1d35791549E",
+      "token_address": "0x8023ee23ba4cfE4b190e98522c49C4dB522E274E",
+      "verifier_address": "0x7Cd54Ac7d58E1F565ed610D4F49E60aF4be122F9",
       "liquidity_manager_address": null,
       "adaptor_address": null,
       "chain_id": 1,
-      "deployed_block_number": 24291646,
+      "deployed_block_number": 24303336,
       "eid": 30101,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "rpc_urls": [
-        "https://eth-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
+        "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
@@ -19,8 +19,8 @@
     },
     {
       "label": "arb-mainnet",
-      "token_address": "0x66639EF03D81A71e19728aF59fDF5ef9bCb7b480",
-      "verifier_address": "0xb9D10E8755742362EBBCf06Ac2DEb1d35791549E",
+      "token_address": "0x8023ee23ba4cfE4b190e98522c49C4dB522E274E",
+      "verifier_address": "0x7Cd54Ac7d58E1F565ed610D4F49E60aF4be122F9",
       "liquidity_manager_address": null,
       "adaptor_address": null,
       "chain_id": 42161,
@@ -28,7 +28,7 @@
       "eid": 30110,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "rpc_urls": [
-        "https://arb-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
+        "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
@@ -36,8 +36,8 @@
     },
     {
       "label": "base-mainnet",
-     "token_address": "0x66639EF03D81A71e19728aF59fDF5ef9bCb7b480",
-      "verifier_address": "0xb9D10E8755742362EBBCf06Ac2DEb1d35791549E",
+      "token_address": "0x8023ee23ba4cfE4b190e98522c49C4dB522E274E",
+      "verifier_address": "0x7Cd54Ac7d58E1F565ed610D4F49E60aF4be122F9",
       "liquidity_manager_address": null,
       "adaptor_address": null,
       "chain_id": 8453,
@@ -45,7 +45,7 @@
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "deployed_block_number": 41153969,
       "rpc_urls": [
-        "https://base-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
+        "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
@@ -58,7 +58,7 @@
     "eid": 30184,
     "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
     "rpc_urls": [
-      "https://base-mainnet.g.alchemy.com/v2/_t1yDJJCOVTM7A-oypsjG"
+      "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
     ],
     "broadcast_interval_secs": 1800,
     "legacy_tx": true
