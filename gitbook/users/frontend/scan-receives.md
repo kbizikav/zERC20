@@ -54,10 +54,17 @@ The detail view shows:
 Once you have eligible transfers:
 
 1. Click on the announcement with pending value
-2. Select your destination chain
-3. Enter the withdrawal address (can be any address you control)
-4. Click "Withdraw"
-5. Confirm the transaction in your wallet
+2. Click the "REDEEM" button
+
+![Redeem Detail](../../assets/frontend_how_to/redeem-detail.png)
+
+3. Wait for the proof generation process
+
+![Redeem Progress](../../assets/frontend_how_to/redeem-progress.png)
+
+4. Wait for the transaction to complete
+
+![Redeem Success](../../assets/frontend_how_to/redeem-success.png)
 
 ## Troubleshooting
 
@@ -66,14 +73,6 @@ Once you have eligible transfers:
 If scanning shows no results:
 - Ensure you're connected with the correct wallet
 - Wait for the transfer to be confirmed on-chain (may take a few minutes)
-- On testnets, LayerZero message delivery can be delayed
-
-### "No Redeemable Transfers"
-
-This means the announcement exists but:
-- The transfer hasn't been finalized yet
-- The funds have already been withdrawn
-- There was an issue with the transfer
 
 ## Next Steps
 

@@ -60,40 +60,4 @@ To let someone pay you (or pay on behalf of a recipient):
 
 ## Receiving and Withdrawing
 
-After someone sends zERC20 to your burn address:
-
-1. Visit the [Frontend](https://v2.testnet.app.zerc20.io/)
-2. Connect the wallet associated with your burn address
-3. View incoming transfers in the "Receive" section
-4. Click "Withdraw" and choose:
-   - Destination chain
-   - Withdrawal address (can be any address you control)
-5. Confirm the withdrawal
-
-The frontend automatically scans for incoming transfers when you connect your wallet.
-
-## Protecting Amount Privacy
-
-Since amounts are visible on-chain, consider these strategies:
-
-### Batch Withdrawals
-
-Combine multiple incoming transfers into a single withdrawal:
-
-1. In the Receive section, select multiple pending transfers
-2. Click "Withdraw" to combine them
-3. Only the total amount is exposed on-chain
-
-### Partial Withdrawals
-
-Withdraw less than the full amount to obscure the original transfer amount.
-
-## Privacy Checklist
-
-Before making a private transfer:
-
-- [ ] **Amount**: Is the amount generic enough? Consider rounding.
-- [ ] **Timing**: Are you withdrawing immediately after receiving? Consider waiting.
-- [ ] **Address reuse**: Are you withdrawing to a fresh address? Consider using a new one.
-- [ ] **Batching**: Can you combine multiple transfers? Reduces fingerprinting.
-- [ ] **Chain**: Are you withdrawing on a different chain? Adds another layer of privacy.
+See [Scan Receives](scan-receives.md) for detailed instructions on receiving and withdrawing private transfers.

@@ -47,6 +47,24 @@ Purchase zERC20 directly on decentralized exchanges like Uniswap.
 
 > Check [Supported Chains](../../reference/chains.md) and [Contract Addresses](../../reference/addresses.md) for token addresses on each chain.
 
+### Unwrapping zERC20 Tokens
+
+To convert zERC20 tokens back to the underlying asset:
+
+1. Click the "Wrap / Unwrap" button
+2. Select the "UNWRAP" tab
+3. Enter the amount to unwrap
+
+**Same Chain Unwrap:**
+
+![Unwrap Same Chain](../../assets/frontend_how_to/unwrap-same-chain.png)
+
+**Cross-Chain Unwrap:**
+
+Select "Different Chain" to unwrap and bridge to another chain in one transaction:
+
+![Unwrap Cross Chain](../../assets/frontend_how_to/unwrap-cross-chain.png)
+
 ## Step 4: Make a Private Transfer
 
 See [Private Transfer Guide](private-transfer.md) for detailed instructions on sending.
