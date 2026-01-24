@@ -51,12 +51,16 @@ You can send from any supported chain.
 To let someone pay you (or pay on behalf of a recipient):
 
 1. Go to the Send page
-2. Enter the recipient's withdrawal address
+2. Enter the recipient's withdrawal address and amount
 3. Check the **"Pay with mobile"** option
-4. A burn address will be generated for that recipient
-5. Share this burn address with anyone who needs to pay
+4. Click "Pay with mobile"
 
-> Note: With this method, you (the burn address creator) will know the recipient's withdrawal address.
+![Pay with Mobile Form](../../assets/frontend_how_to/pay-with-mobile-form.png)
+
+5. A QR code will be generated containing the burn address
+6. Share the QR code with anyone who needs to pay
+
+![Pay with Mobile QR](../../assets/frontend_how_to/pay-with-mobile-qr.png)
 
 ## Receiving and Withdrawing
 
