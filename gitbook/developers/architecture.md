@@ -85,19 +85,3 @@ Generates ZKP → Verifier.teleport() → zERC20 mints to recipient
 | ICP Canisters | Stores encrypted data; cannot decrypt without recipient's key |
 
 **For maximum privacy**: Run your own indexer instance to avoid sender-recipient linkage leaks.
-
-## Repository Structure
-
-```
-zERC20/
-├── contracts/          # Solidity contracts
-├── zkp/                # Rust ZK circuits
-├── indexer/            # Event indexer + Merkle tree service
-├── decider-prover/     # Nova proof finalization
-├── cli/                # Command-line interface
-├── frontend/           # React + Vite web app
-├── zstorage/           # ICP canisters for stealth messaging
-├── client-common/      # Shared Rust SDK
-├── api-types/          # HTTP type schemas
-└── config/             # Token configuration
-```

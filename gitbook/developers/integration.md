@@ -4,11 +4,11 @@ This guide covers how to integrate zERC20 into your application.
 
 ## Overview
 
-zERC20 can be integrated at multiple levels:
+This guide covers three tips for integrating zERC20:
 
-1. **Token Integration**: Use zERC20 as a standard ERC-20 token
-2. **Oracle Integration**: Use zERC20's Transfer Merkle Tree as an on-chain oracle
-3. **Full Stack**: Run your own indexer for maximum privacy
+1. **Token Integration**: Use zERC20 as a standard ERC-20 token in your DeFi protocols, wallets, or dApps
+2. **Oracle Integration**: Leverage zERC20's Transfer Merkle Tree as an on-chain oracle to verify transfer history with ZK proofs
+3. **Self-Hosted Indexer**: Run your own indexer node for maximum privacy, avoiding sender-recipient linkage exposure
 
 ## Token Integration
 
