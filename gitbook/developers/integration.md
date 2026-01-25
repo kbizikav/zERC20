@@ -7,7 +7,7 @@ This guide covers how to integrate zERC20 into your application.
 zERC20 can be integrated at multiple levels:
 
 1. **Token Integration**: Use zERC20 as a standard ERC-20 token
-2. **Private Transfers**: Enable stealth payments in your app
+2. **Oracle Integration**: Use zERC20's Transfer Merkle Tree as an on-chain oracle
 3. **Full Stack**: Run your own indexer for maximum privacy
 
 ## Token Integration
@@ -29,112 +29,190 @@ interface IERC20 {
 }
 ```
 
-## Private Transfer Integration
+## zERC20 as Oracle
 
-To enable private transfers in your application:
+zERC20 maintains a complete history of all transfers as a Merkle tree, using a ZK-friendly Poseidon hash function. External developers can leverage this Transfer Merkle Tree as an on-chain oracle for transfer history verification.
 
-### 1. Generate Burn Address
+### Leaf Structure
 
-Use the client libraries to generate burn addresses for recipients.
+Each leaf in the Transfer Merkle Tree represents a single transfer:
 
-**Rust**:
-```rust
-use client_common::payment::{compute_burn_address, find_pow_nonce};
-
-let (secret, nonce) = find_pow_nonce(chain_id, recipient_address, tweak)?;
-let burn_address = compute_burn_address(chain_id, recipient_address, tweak, secret)?;
+```
+leaf_hash = Poseidon3(from, to, value)
 ```
 
-**TypeScript**:
-```typescript
-import { computeBurnAddress, findPowNonce } from '@zerc20/sdk';
+| Field   | Type      | Description                                    |
+| ------- | --------- | ---------------------------------------------- |
+| `from`  | `address` | Sender address (converted to field element)    |
+| `to`    | `address` | Recipient address (converted to field element) |
+| `value` | `uint256` | Transfer amount (converted to field element)   |
 
-const { secret, nonce } = await findPowNonce(chainId, recipientAddress, tweak);
-const burnAddress = computeBurnAddress(chainId, recipientAddress, tweak, secret);
+### Tree Structure
+
+There are two types of Merkle roots:
+
+| Root Type                | Description                        | Tree Height |
+| ------------------------ | ---------------------------------- | ----------- |
+| **Local Transfer Root**  | Per-chain transfer Merkle root     | 40          |
+| **Global Transfer Root** | Cross-chain aggregated Merkle root | 46 (40 + 6) |
+
+The Global Transfer Tree is constructed by aggregating Local Transfer Roots from all chains using an Aggregation Tree (height 6, supporting up to 64 chains).
+
+```
+Global Transfer Tree Structure:
+
+         [Global Root]
+              │
+    ┌─────────┴─────────┐
+    │  Aggregation Tree │  (height: 6)
+    │   (up to 64 chains)│
+    └─────────┬─────────┘
+              │
+   ┌──────────┼──────────┐
+   │          │          │
+[Chain 0]  [Chain 1]  [Chain N]
+   │          │          │
+[Local     [Local     [Local
+ Transfer   Transfer   Transfer
+ Root]      Root]      Root]
+   │          │          │
+[Transfer  [Transfer  [Transfer
+ Tree]      Tree]      Tree]
+ (h:40)     (h:40)     (h:40)
 ```
 
-### 2. Transfer to Burn Address
+### Reading Merkle Roots from Contract
 
-Standard ERC-20 transfer to the burn address:
+External contracts can query the proven Merkle roots from the Verifier contract:
 
 ```javascript
-IERC20(zERC20).transfer(burnAddress, amount);
+interface IVerifier {
+    /// @notice Get the local transfer root for a given index
+    /// @param index The tree index (increments with each proof)
+    /// @return The local transfer Merkle root
+    function provedTransferRoots(uint64 index) external view returns (uint256);
+
+    /// @notice Get the global transfer root for a given index
+    /// @param index The aggregation sequence number
+    /// @return The global transfer Merkle root
+    function globalTransferRoots(uint64 index) external view returns (uint256);
+}
 ```
 
-### 3. Publish Announcement (Optional)
+**Example Usage:**
 
-If using sender-initiated flow, publish encrypted payload to ICP storage:
+Merkle proof verification can be performed either **on-chain in a smart contract** or **off-chain using ZKP circuits**. Choose the approach that best fits your use case:
 
-```typescript
-import { StealthClient } from '@zerc20/sdk';
+- **On-chain verification**: Suitable for simple membership proofs where gas costs are acceptable
+- **ZKP verification**: Ideal for privacy-preserving applications or complex logic that would be expensive on-chain
 
-const client = new StealthClient(icpUrl, keyManagerId, storageId);
-await client.publishAnnouncement(recipientAddress, encryptedPayload);
+```javascript
+// On-chain verification example
+contract MyContract {
+    IVerifier public verifier;
+
+    function verifyLocalTransfer(
+        uint64 treeIndex,
+        bytes32[] calldata siblings,
+        uint64 leafIndex,
+        address from,
+        address to,
+        uint256 value
+    ) external view returns (bool) {
+        uint256 expectedRoot = verifier.provedTransferRoots(treeIndex);
+        // Verify Merkle proof against expectedRoot using Poseidon hash
+        // ...
+    }
+}
 ```
 
-### 4. Recipient Withdrawal
+### Poseidon Hash Compatibility
 
-Recipients use CLI or Frontend to scan for transfers and generate ZK proofs.
+The Poseidon hash used in zERC20 is fully compatible with [circomlib's Poseidon library](https://github.com/iden3/circomlib/blob/master/circuits/poseidon.circom):
 
-## API Integration
+| Usage     | circomlib Template | Description                 |
+| --------- | ------------------ | --------------------------- |
+| Leaf hash | `Poseidon(3)`      | `Poseidon(from, to, value)` |
+| Node hash | `Poseidon(2)`      | `Poseidon(left, right)`     |
 
-### Indexer API
+This compatibility allows developers to build custom ZK circuits using circomlib that can verify membership proofs against zERC20's Transfer Merkle Tree.
 
-The indexer provides HTTP endpoints for querying transfers and Merkle proofs.
+### Obtaining Merkle Proofs
 
-**Base URL**: Configured per deployment
+#### Local Transfer Merkle Proof
 
-**Endpoints**:
+Query the indexer node to obtain Local Transfer Merkle proofs:
 
+**Endpoint:** `POST /proofs`
+
+**Request:**
+
+```json
+{
+  "chain_id": 1,
+  "token_address": "0x...",
+  "target_index": 100,
+  "leaf_indices": [42, 43, 44]
+}
 ```
-GET /transfers?address={burnAddress}
-  → Returns transfers to a burn address
 
-GET /merkle-proof?index={leafIndex}
-  → Returns Merkle proof for a leaf
+**Response:**
 
-GET /status
-  → Returns indexer sync status
-```
-
-### Decider Prover API
-
-For batch withdrawals, proofs must be finalized by the decider prover.
-
-```
-POST /prove
-  Content-Type: application/json
+```json
+[
   {
-    "circuit_kind": "WithdrawLocal",
-    "ivc_proof": "<base64>"
+    "target_index": 100,
+    "leaf_index": 42,
+    "root": "0x...",
+    "hash_chain": "0x...",
+    "siblings": ["0x...", "0x...", ...]
   }
-  → Returns finalized proof
+]
 ```
 
-## SDK Libraries
+| Field          | Description                                   |
+| -------------- | --------------------------------------------- |
+| `target_index` | The tree index (snapshot) to prove against    |
+| `leaf_index`   | The position of the leaf in the tree          |
+| `root`         | The Merkle root at the target index           |
+| `hash_chain`   | The hash chain value at the target index      |
+| `siblings`     | Array of 40 sibling hashes for the proof path |
 
-### Rust SDK
+**Supporting Endpoint - Get Tree Index:**
 
-**Crate**: `client-common`
+`GET /tree-index?chain_id={chainId}&token_address={address}&transfer_root={root}`
 
-```rust
-use client_common::{
-    payment::{FullBurnAddress, compute_burn_address},
-    indexer::IndexerClient,
-    decider::DeciderClient,
-};
+Returns the tree index for a given Merkle root.
+
+#### Global Transfer Merkle Proof
+
+Global Merkle proofs are constructed by concatenating:
+
+1. **Local Transfer Merkle Proof** (40 siblings)
+2. **Aggregation Tree Proof** (6 siblings)
+
+**Construction Algorithm:**
+
+```
+1. Fetch local_merkle_proof from indexer (40 siblings)
+2. Determine aggregation_index from chain_id position in Hub contract
+3. Compute aggregation_merkle_proof from Hub's AggregationRootUpdated event
+4. Concatenate: global_proof = local_proof ++ aggregation_proof (46 siblings)
+5. Compute global_leaf_index:
+   global_leaf_index = (aggregation_index << 40) + local_leaf_index
 ```
 
-### TypeScript SDK
+**Aggregation State from Hub Contract:**
 
-**Package**: `@zerc20/sdk`
+The `AggregationRootUpdated` event from the Hub contract provides the snapshot of all local roots:
 
-```typescript
-import {
-  computeBurnAddress,
-  IndexerClient,
-  StealthClient,
-} from '@zerc20/sdk';
+```javascript
+event AggregationRootUpdated(
+    uint64 indexed aggSeq,
+    uint256 root,
+    uint256[] snapshot,
+    uint64[] transferTreeIndices
+);
 ```
 
 ## Running Your Own Indexer
@@ -160,27 +238,3 @@ TOKENS_FILE_PATH=./config/tokens.json
 ```
 
 See the Docker Compose configuration above for setup instructions.
-
-## Security Considerations
-
-### Indexer Privacy
-
-The hosted indexer can observe:
-- Sender address
-- Burn address
-- Transfer value
-- Recipient address (when they query)
-
-**Mitigation**: Run your own indexer or use Tor/VPN when querying.
-
-### Amount Fingerprinting
-
-Unique amounts can link deposits and withdrawals.
-
-**Mitigation**: Use round amounts, batch withdrawals, or partial withdrawals.
-
-### Timing Analysis
-
-Immediate withdrawals after deposits can be correlated.
-
-**Mitigation**: Introduce delays between deposit and withdrawal.

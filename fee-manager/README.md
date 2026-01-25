@@ -14,6 +14,7 @@ targetLiquidity = total_underlying_balance / number_of_chains
 ```
 
 This ensures that:
+
 - Liquidity is encouraged to be evenly distributed across chains
 - Fee/reward incentives automatically adjust as liquidity flows between chains
 - Manual parameter tuning is eliminated
@@ -37,18 +38,19 @@ cp fee-manager/.env.example fee-manager/.env
 
 ### Environment Variables
 
-| Variable | Required | Default | Description |
-|----------|----------|---------|-------------|
-| `FEE_MANAGER_PRIVATE_KEY` | Yes | - | Hex-encoded 32-byte private key with `FEE_MANAGER_ROLE` |
-| `TOKENS_FILE_PATH` | No | `../config/tokens.json` | Path to token metadata file |
-| `TOKENS_COMPRESSED` | No | - | Base64+gzip encoded tokens config (overrides file path) |
-| `FEE_MANAGER_INTERVAL_SECS` | No | `3600` | Interval between fee parameter updates (seconds) |
-| `FEE_MANAGER_K_BPS` | No | `1000` | Incentive coefficient k in basis points (1 = 0.01%) |
-| `RUST_LOG` | No | `info` | Log level (trace, debug, info, warn, error) |
+| Variable                    | Required | Default                 | Description                                             |
+| --------------------------- | -------- | ----------------------- | ------------------------------------------------------- |
+| `FEE_MANAGER_PRIVATE_KEY`   | Yes      | -                       | Hex-encoded 32-byte private key with `FEE_MANAGER_ROLE` |
+| `TOKENS_FILE_PATH`          | No       | `../config/tokens.json` | Path to token metadata file                             |
+| `TOKENS_COMPRESSED`         | No       | -                       | Base64+gzip encoded tokens config (overrides file path) |
+| `FEE_MANAGER_INTERVAL_SECS` | No       | `3600`                  | Interval between fee parameter updates (seconds)        |
+| `FEE_MANAGER_K_BPS`         | No       | `1000`                  | Incentive coefficient k in basis points (1 = 0.01%)     |
+| `RUST_LOG`                  | No       | `info`                  | Log level (trace, debug, info, warn, error)             |
 
 ### tokens.json Requirements
 
 Each token entry must include:
+
 - `label`: Human-readable chain name (for logging)
 - `token_address`: Address of the zERC20 token contract
 - `verifier_address`: Address of the Verifier contract
@@ -59,6 +61,7 @@ Each token entry must include:
 - `legacy_tx`: (optional) Set to `true` for chains requiring legacy transactions (e.g., BNB)
 
 Example entry:
+
 ```json
 {
   "label": "arb-sepolia-eth",
@@ -91,6 +94,7 @@ cargo +nightly run -p fee-manager -- --once
 ```
 
 Example with explicit config file:
+
 ```bash
 RUST_LOG=info \
 FEE_MANAGER_PRIVATE_KEY=0x... \
@@ -137,7 +141,7 @@ The underlying token address is read from each `LiquidityManager.underlyingToken
 
 ## FeeParams Structure
 
-```solidity
+```javascript
 struct FeeParams {
     uint256 targetLiquidity;  // Target liquidity where incentives fade to zero
     uint256 k;                // Incentive strength coefficient (basis points)
@@ -155,13 +159,14 @@ struct FeeParams {
 The private key used must have `FEE_MANAGER_ROLE` on each `LiquidityManager`.
 This role can be granted by the contract owner:
 
-```solidity
+```javascript
 liquidityManager.grantRole(FEE_MANAGER_ROLE, feeManagerAddress);
 ```
 
 ## Logging
 
 The fee-manager logs:
+
 - Current underlying balance per chain
 - Calculated total liquidity and per-chain target
 - Transaction hashes for each `setFeeParams` call
