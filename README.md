@@ -20,15 +20,22 @@ Before starting any node, make sure the Nova artifacts and Solidity verifiers ex
 
 Follow these steps to bring up the indexer, crosschain job, and decider-prover, then exercise the CLI end-to-end:
 
-1. Prepare token metadata  
-   Copy `config/tokens.example.json` to `config/tokens.json` and fill it with the chains/tokens you want to use. You can point to contracts you deploy yourself or to an already-deployed environment.
+1. Prepare token metadata
+   Use a token configuration file from `config/deployed/` for your target environment (e.g., `config/deployed/mainnet/` or `config/deployed/testnet/`). Alternatively, copy `config/tokens.example.json` and fill it with your own deployed contracts.
 
 2. Configure root environment
-   Copy `.env.example` at the repo root to `.env`, then set `ROOT_SUBMITTER_PRIVATE_KEY`, `RELAY_PRIVATE_KEY`, and `TOKENS_FILE_PATH`. These keys must control accounts with enough testnet ETH on the EVM chains listed in `config/tokens.json`.
+   Copy `.env.example` at the repo root to `.env`, then set the following environment variables:
+   - `ALCHEMY_KEY` - Alchemy API key for RPC access
+   - `ROOT_SUBMITTER_PRIVATE_KEY` - Key for submitting roots on-chain
+   - `RELAY_PRIVATE_KEY` - Key for cross-chain relay operations
+   - `FEE_MANAGER_PRIVATE_KEY` - Key for fee manager operations
+   - `TOKENS_FILE_PATH` - Path to token configuration file
+
+   These keys must control accounts with enough ETH on the EVM chains listed in your tokens configuration.
 
    ```bash
-   # Point to your tokens configuration file
-   TOKENS_FILE_PATH=./config/tokens.json
+   # Example: Point to mainnet token configuration
+   TOKENS_FILE_PATH=./config/deployed/mainnet/tokens.json
    ```
 
 3. Start indexer and crosschain job  
@@ -40,7 +47,16 @@ Follow these steps to bring up the indexer, crosschain job, and decider-prover, 
 
    Health check the indexer at `curl http://localhost:8080/healthz`.
 
-4. Run the decider-prover  
+4. Start the decider-prover PostgreSQL
+   The decider-prover requires its own PostgreSQL instance. Start it with:
+
+   ```bash
+   docker compose -f docker-compose.decider.yml up -d
+   ```
+
+   This runs PostgreSQL on port 5433 (separate from the indexer's database on 5432).
+
+5. Run the decider-prover
    In `decider-prover/`, copy `.env.example` to `.env`, then start the server:
 
    ```bash
@@ -49,7 +65,9 @@ Follow these steps to bring up the indexer, crosschain job, and decider-prover, 
 
    Health check at `curl http://localhost:8081/healthz`.
 
-5. Exercise the CLI  
+   > **Note:** The decider-prover must run directly on the host, not in Docker. It crashes during proof generation when containerized.
+
+6. Exercise the CLI
    Use the CLI to send transfers and receive funds; see `cli/README.md` for commands and options.
 
 ## Contract-only testnet verification
