@@ -622,10 +622,7 @@ async fn main() -> Result<()> {
 
     let (tokens, hub_entry) = load_tokens_config(&cli.tokens_file_path)?;
     if tokens.is_empty() {
-        bail!(
-            "no tokens configured in {}",
-            cli.tokens_file_path.display()
-        );
+        bail!("no tokens configured in {}", cli.tokens_file_path.display());
     }
     for token in &tokens {
         let interval = token.relay_interval_secs.unwrap_or(cli.relay_interval_secs);
