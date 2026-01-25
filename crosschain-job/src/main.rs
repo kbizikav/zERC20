@@ -520,8 +520,10 @@ impl BroadcastJob {
         let tx_hash = *pending.tx_hash();
 
         if is_selective {
-            let missing_labels: Vec<&str> =
-                missing_targets.iter().map(|(label, _)| label.as_str()).collect();
+            let missing_labels: Vec<&str> = missing_targets
+                .iter()
+                .map(|(label, _)| label.as_str())
+                .collect();
             info!(
                 "submitted selective Hub.broadcast to missing targets {:?} (tx={tx_hash:#x}, eids={:?}, fee={} wei, buffer_bps={})",
                 missing_labels, broadcast_eids, fee_with_buffer, self.fee_buffer_bps
