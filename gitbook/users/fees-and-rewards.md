@@ -109,18 +109,6 @@ The interface shows:
 
 Compare these to find the most cost-effective option.
 
-
-## Summary
-
-| Scenario | What Happens |
-|----------|--------------|
-| Wrap on low-liquidity chain | Earn reward from fee surplus |
-| Wrap on high-liquidity chain | No reward |
-| Unwrap from low-liquidity chain | Pay fee (added to surplus) |
-| Unwrap from high-liquidity chain | No fee |
-| Cross-chain unwrap | Bridge to chain with lower fees |
-| zBNB wrap/unwrap | No fees or rewards (single-chain token) |
-
 ## Related
 
 - [Getting Started](frontend/getting-started.md) — Basic wrap/unwrap instructions
