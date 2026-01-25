@@ -23,12 +23,12 @@ Follow these steps to bring up the indexer, crosschain job, and decider-prover, 
 1. Prepare token metadata  
    Copy `config/tokens.example.json` to `config/tokens.json` and fill it with the chains/tokens you want to use. You can point to contracts you deploy yourself or to an already-deployed environment.
 
-2. Configure root environment  
-   Copy `.env.example` at the repo root to `.env`, then set `ROOT_SUBMITTER_PRIVATE_KEY` and `RELAY_PRIVATE_KEY`. These keys must control accounts with enough testnet ETH on the EVM chains listed in `config/tokens.json`. Next, compress the token config and set `TOKENS_COMPRESSED`:
+2. Configure root environment
+   Copy `.env.example` at the repo root to `.env`, then set `ROOT_SUBMITTER_PRIVATE_KEY`, `RELAY_PRIVATE_KEY`, and `TOKENS_FILE_PATH`. These keys must control accounts with enough testnet ETH on the EVM chains listed in `config/tokens.json`.
 
    ```bash
-   ./scripts/encode_tokens.sh                 # reads config/tokens.json by default
-   # paste the printed value into TOKENS_COMPRESSED in your .env
+   # Point to your tokens configuration file
+   TOKENS_FILE_PATH=./config/tokens.json
    ```
 
 3. Start indexer and crosschain job  

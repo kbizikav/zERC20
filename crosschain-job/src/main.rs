@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, path::Path, str::FromStr, time::Duration};
+use std::{collections::HashMap, path::Path, str::FromStr, time::Duration};
 
 use alloy::{
     network::Ethereum,
@@ -14,7 +14,7 @@ use client_common::{
         verifier::VerifierContract,
     },
     layerzero::{HttpLayerZeroClient, LayerZeroClient},
-    tokens::{HubEntry, TokenEntry, load_tokens_from_compressed, load_tokens_from_path},
+    tokens::{HubEntry, TokenEntry, load_tokens_from_path},
 };
 use log::{debug, error, info, warn};
 use reqwest::Url;
@@ -623,7 +623,7 @@ async fn main() -> Result<()> {
     let (tokens, hub_entry) = load_tokens_config(&cli.tokens_file_path)?;
     if tokens.is_empty() {
         bail!(
-            "no tokens configured; set TOKENS_COMPRESSED or populate {}",
+            "no tokens configured in {}",
             cli.tokens_file_path.display()
         );
     }
@@ -894,28 +894,8 @@ fn build_provider(rpc_urls: &[String]) -> Result<client_common::contracts::utils
 }
 
 fn load_tokens_config(path: &Path) -> Result<(Vec<TokenEntry>, Option<HubEntry>)> {
-    if let Some(tokens) = load_tokens_config_from_env()? {
-        return Ok(tokens);
-    }
     let tokens_file = load_tokens_from_path(path)?;
     Ok((tokens_file.tokens, tokens_file.hub))
-}
-
-fn load_tokens_config_from_env() -> Result<Option<(Vec<TokenEntry>, Option<HubEntry>)>> {
-    match env::var("TOKENS_COMPRESSED") {
-        Ok(value) => {
-            if value.trim().is_empty() {
-                bail!("TOKENS_COMPRESSED is set but empty");
-            }
-            let tokens_file = load_tokens_from_compressed(&value)
-                .context("failed to parse TOKENS_COMPRESSED payload")?;
-            Ok(Some((tokens_file.tokens, tokens_file.hub)))
-        }
-        Err(env::VarError::NotPresent) => Ok(None),
-        Err(env::VarError::NotUnicode(_)) => {
-            bail!("TOKENS_COMPRESSED contains invalid unicode")
-        }
-    }
 }
 
 fn build_layerzero_probe(cli: &Cli) -> Result<Option<LayerZeroProbe>> {

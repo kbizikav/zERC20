@@ -2,7 +2,6 @@ use std::{
     collections::hash_map::DefaultHasher,
     env,
     hash::{Hash, Hasher},
-    io::Read,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -11,8 +10,6 @@ use std::{fs, path::Path};
 use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
 use alloy::primitives::Address;
 use anyhow::{Context, Result, anyhow, bail};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use flate2::read::GzDecoder;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -197,22 +194,6 @@ pub fn load_tokens_from_path(path: impl AsRef<Path>) -> Result<TokensFile> {
         .with_context(|| format!("failed to read tokens config {}", path_ref.display()))?;
     parse_tokens_config(&contents)
         .with_context(|| format!("invalid tokens config {}", path_ref.display()))
-}
-
-pub fn load_tokens_from_compressed(payload: &str) -> Result<TokensFile> {
-    let normalized: String = payload.chars().filter(|ch| !ch.is_whitespace()).collect();
-    if normalized.is_empty() {
-        return Err(anyhow!("TOKENS_COMPRESSED payload is empty"));
-    }
-    let decoded = STANDARD
-        .decode(normalized.as_bytes())
-        .context("failed to base64-decode TOKENS_COMPRESSED payload")?;
-    let mut decoder = GzDecoder::new(decoded.as_slice());
-    let mut json = String::new();
-    decoder
-        .read_to_string(&mut json)
-        .context("failed to decompress TOKENS_COMPRESSED payload")?;
-    parse_tokens_config(&json).context("invalid tokens payload from TOKENS_COMPRESSED")
 }
 
 /// Expands environment variable placeholders in the format `${VAR}`.

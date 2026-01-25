@@ -42,7 +42,6 @@ cp fee-manager/.env.example fee-manager/.env
 | --------------------------- | -------- | ----------------------- | ------------------------------------------------------- |
 | `FEE_MANAGER_PRIVATE_KEY`   | Yes      | -                       | Hex-encoded 32-byte private key with `FEE_MANAGER_ROLE` |
 | `TOKENS_FILE_PATH`          | No       | `../config/tokens.json` | Path to token metadata file                             |
-| `TOKENS_COMPRESSED`         | No       | -                       | Base64+gzip encoded tokens config (overrides file path) |
 | `FEE_MANAGER_INTERVAL_SECS` | No       | `3600`                  | Interval between fee parameter updates (seconds)        |
 | `FEE_MANAGER_K_BPS`         | No       | `1000`                  | Incentive coefficient k in basis points (1 = 0.01%)     |
 | `RUST_LOG`                  | No       | `info`                  | Log level (trace, debug, info, warn, error)             |
