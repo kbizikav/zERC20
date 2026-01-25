@@ -6,7 +6,7 @@ This guide walks you through using the zERC20 web application.
 
 Visit the [zERC20 Frontend](https://v2.testnet.app.zerc20.io/).
 
-<figure><img src="../../assets/frontend_how_to/dashboard-overview.png" alt="Dashboard Overview" width="563"><figcaption>Dashboard Overview</figcaption></figure>
+<figure><img src="../../assets/frontend_how_to/dashboard-overview.png" alt="Dashboard Overview" width="560"><figcaption>Dashboard Overview</figcaption></figure>
 
 ## Step 2: Connect Your Wallet
 
@@ -22,9 +22,9 @@ zERC20 tokens are ERC-20 wrapper tokens backed 1:1 by underlying assets. These t
 
 You can select the token type and chain from the dropdowns at the top of the page:
 
-<figure><img src="../../assets/frontend_how_to/token-selector.png" alt="Token Selector" width="200"><figcaption>Token Selector</figcaption></figure>
-
-<figure><img src="../../assets/frontend_how_to/chain-selector.png" alt="Chain Selector" width="200"><figcaption>Chain Selector</figcaption></figure>
+| Token Selector | Chain Selector |
+|:--------------:|:--------------:|
+| <img src="../../assets/frontend_how_to/token-selector.png" alt="Token Selector" width="200"> | <img src="../../assets/frontend_how_to/chain-selector.png" alt="Chain Selector" width="200"> |
 
 ### Option A: Wrap Tokens
 
@@ -41,9 +41,11 @@ Wrapping converts your standard tokens (USDC, ETH, etc.) into zERC20 tokens at a
 6. Confirm the transaction in your wallet
 7. Receive an equivalent amount of zERC20 tokens
 
+> **Wrap Rewards**: If the chain has low liquidity, you may receive bonus tokens as a reward for adding liquidity. See [Fees and Rewards](../fees-and-rewards.md) for details.
+
 After wrapping, your balance will be updated:
 
-<figure><img src="../../assets/frontend_how_to/dashboard-after-wrap.png" alt="Dashboard After Wrap" width="563"><figcaption>Dashboard showing updated zERC20 balance</figcaption></figure>
+<figure><img src="../../assets/frontend_how_to/dashboard-after-wrap.png" alt="Dashboard After Wrap" width="560"><figcaption>Dashboard showing updated zERC20 balance</figcaption></figure>
 
 ### Option B: Buy on a DEX
 
@@ -73,6 +75,8 @@ Select "Different Chain" to unwrap and bridge to another chain in one transactio
 <figure><img src="../../assets/frontend_how_to/unwrap-cross-chain.png" alt="Unwrap Cross Chain" width="480"><figcaption>Unwrap with cross-chain bridge to a different network</figcaption></figure>
 
 You can preview the cross-chain fee before confirming the transaction.
+
+> **Fee Optimization**: If unwrap fees are high on your current chain due to low liquidity, cross-chain unwrap lets you access liquidity from another chain with lower fees. The frontend shows fee comparisons so you can choose the best option. See [Fees and Rewards](../fees-and-rewards.md) for details.
 
 ## Step 4: Make a Private Transfer
 

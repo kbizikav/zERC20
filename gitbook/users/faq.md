@@ -53,6 +53,26 @@ zERC20 itself doesn't expose IP addresses, but:
 - Your RPC provider can see your IP when you submit transactions
 - Consider using a VPN or Tor for additional IP privacy
 
+### Fees and Rewards
+
+**Why am I being charged a fee to unwrap?**
+
+Fees are charged when unwrapping on chains with low liquidity. The fee incentivizes balanced liquidity across chains. If fees are high, consider using cross-chain unwrap to access liquidity from another chain with lower fees.
+
+**How can I avoid high unwrap fees?**
+
+Use **cross-chain unwrap** to unwrap via a different chain with more liquidity. The frontend shows fee comparisons for all available options.
+
+**Why did I receive bonus tokens when wrapping?**
+
+When a chain has low liquidity, you earn rewards for adding liquidity by wrapping. These rewards come from fees collected from previous unwraps.
+
+**Where do I see current fees?**
+
+Open the Wrap/Unwrap modal in the frontend and enter an amount. The interface displays the expected fee or reward before you confirm.
+
+See [Fees and Rewards](fees-and-rewards.md) for detailed information.
+
 ### Transfers
 
 **How long do private transfers take?**

@@ -59,7 +59,7 @@ To create a burn address:
 5. A QR code will be generated containing the burn address
 6. Share the QR code with anyone who needs to pay
 
-<figure><img src="../../assets/frontend_how_to/pay-with-mobile-qr.png" alt="Pay with Mobile QR" width="360"><figcaption>Pay with Mobile QR</figcaption></figure>
+<figure><img src="../../assets/frontend_how_to/pay-with-mobile-qr.png" alt="Pay with Mobile QR" width="320"><figcaption>Pay with Mobile QR</figcaption></figure>
 
 The payer simply scans the QR code and sends the exact amount to the displayed burn address. Once the payment is confirmed on-chain, the recipient can withdraw the funds.
 

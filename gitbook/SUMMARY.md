@@ -11,6 +11,7 @@
   * [Private Transfer](users/frontend/private-transfer.md)
   * [Scan Receives](users/frontend/scan-receives.md)
 * [Using the CLI](users/cli/getting-started.md)
+* [Fees and Rewards](users/fees-and-rewards.md)
 * [FAQ](users/faq.md)
 
 ## For Developers
