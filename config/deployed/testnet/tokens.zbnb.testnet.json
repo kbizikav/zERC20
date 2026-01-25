@@ -55,7 +55,7 @@
       "label": "bnb-testnet",
       "token_address": "0x28240ADC769046793a139b815dad6618b7Eb2499",
       "verifier_address": "0xb0A159eBF38b8cb539DE40836176d46C717Ff0cd",
-      "liquidity_manager_address": null,
+      "liquidity_manager_address": "0xD05c2d006841F08826c3C531CC1a0AF997846222",
       "adaptor_address": null,
       "chain_id": 97,
       "eid": 40102,
