@@ -1,0 +1,23 @@
+# PostgreSQL for decider prover
+# NOTE: Do not add the decider prover itself to docker compose.
+#       It crashes during proof generation, so run it directly on the host.
+services:
+  postgres-decider:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: postgres
+    ports:
+      - "127.0.0.1:5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    volumes:
+      - postgres-decider-data:/var/lib/postgresql/data
+
+volumes:
+  postgres-decider-data:

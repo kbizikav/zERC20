@@ -7,7 +7,7 @@ use std::{
 
 use alloy::primitives::B256;
 use anyhow::{Context, Result, anyhow};
-use client_common::tokens::{TokenEntry, load_tokens_from_compressed, load_tokens_from_path};
+use client_common::tokens::{TokenEntry, load_tokens_from_path};
 use reqwest::Url;
 use serde::Deserialize;
 
@@ -331,28 +331,8 @@ fn default_decider_prover_poll_interval_ms() -> u64 {
 }
 
 fn load_tokens(path: impl AsRef<Path>) -> Result<Vec<TokenEntry>> {
-    if let Some(tokens) = load_tokens_from_env()? {
-        return Ok(tokens);
-    }
     let tokens_file = load_tokens_from_path(path)?;
     Ok(tokens_file.tokens)
-}
-
-fn load_tokens_from_env() -> Result<Option<Vec<TokenEntry>>> {
-    match env::var("TOKENS_COMPRESSED") {
-        Ok(value) => {
-            if value.trim().is_empty() {
-                return Err(anyhow!("TOKENS_COMPRESSED is set but empty"));
-            }
-            let tokens_file = load_tokens_from_compressed(&value)
-                .context("failed to parse TOKENS_COMPRESSED payload")?;
-            Ok(Some(tokens_file.tokens))
-        }
-        Err(env::VarError::NotPresent) => Ok(None),
-        Err(env::VarError::NotUnicode(_)) => {
-            Err(anyhow!("TOKENS_COMPRESSED contains invalid unicode"))
-        }
-    }
 }
 
 fn parse_hex_b256(value: &str) -> Result<B256> {

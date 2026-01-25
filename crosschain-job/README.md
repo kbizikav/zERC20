@@ -46,11 +46,6 @@ needs an RPC URL list, verifier address, and chain identifier. The optional
 automatically disabled. Set `hub.legacy_tx=true` when the hub chain requires
 legacy transactions (e.g., BNB).
 
-You can skip the JSON file entirely by exporting `TOKENS_COMPRESSED`, which
-accepts the same Base64+gzip payload produced by `scripts/encode_tokens.sh`
-(`VITE_TOKENS_COMPRESSED` in the frontend). When set, this variable overrides
-`TOKENS_FILE_PATH`.
-
 ## Running
 
 From the repository root:
