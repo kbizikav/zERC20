@@ -95,7 +95,7 @@ struct Cli {
         long,
         env = "CONFIRMATION_TIMEOUT_SECS",
         value_name = "SECONDS",
-        default_value_t = 120
+        default_value_t = 2400
     )]
     confirmation_timeout_secs: u64,
 
@@ -104,7 +104,7 @@ struct Cli {
         long,
         env = "CONFIRMATION_POLL_INTERVAL_SECS",
         value_name = "SECONDS",
-        default_value_t = 5
+        default_value_t = 60
     )]
     confirmation_poll_interval_secs: u64,
 
@@ -489,10 +489,20 @@ impl BroadcastJob {
             return Ok(());
         }
 
+        // Determine which EIDs to broadcast to:
+        // - If root changed, broadcast to all targets
+        // - If root is the same but some targets are missing, broadcast only to missing targets
+        let (broadcast_eids, is_selective) = if root_changed {
+            (self.target_eids.clone(), false)
+        } else {
+            let missing_eids: Vec<u32> = missing_targets.iter().map(|(_, eid)| *eid).collect();
+            (missing_eids, true)
+        };
+
         let options = Bytes::copy_from_slice(&self.lz_options);
         let quote = self
             .contract
-            .quote_broadcast(self.target_eids.clone(), options.clone())
+            .quote_broadcast(broadcast_eids.clone(), options.clone())
             .await
             .context("failed to quote broadcast fee")?;
 
@@ -501,7 +511,7 @@ impl BroadcastJob {
             .contract
             .broadcast(
                 self.private_key,
-                self.target_eids.clone(),
+                broadcast_eids.clone(),
                 options,
                 fee_with_buffer,
             )
@@ -509,19 +519,34 @@ impl BroadcastJob {
             .context("failed to submit Hub.broadcast transaction")?;
         let tx_hash = *pending.tx_hash();
 
-        info!(
-            "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
-            self.target_eids, fee_with_buffer, self.fee_buffer_bps
-        );
+        if is_selective {
+            let missing_labels: Vec<&str> =
+                missing_targets.iter().map(|(label, _)| label.as_str()).collect();
+            info!(
+                "submitted selective Hub.broadcast to missing targets {:?} (tx={tx_hash:#x}, eids={:?}, fee={} wei, buffer_bps={})",
+                missing_labels, broadcast_eids, fee_with_buffer, self.fee_buffer_bps
+            );
+        } else {
+            info!(
+                "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
+                broadcast_eids, fee_with_buffer, self.fee_buffer_bps
+            );
+        }
 
         let receipt = wait_for_receipt(pending)
             .await
             .context("Hub.broadcast transaction reverted or missing receipt")?;
 
         if let Some(event) = parse_broadcast_receipt(&self.contract, &receipt) {
+            let target_labels: Vec<&str> = self
+                .destinations
+                .iter()
+                .filter(|d| broadcast_eids.contains(&d.eid))
+                .map(|d| d.label.as_str())
+                .collect();
             info!(
-                "Hub.broadcast confirmed (agg_seq={}, snapshot_len={}, root={:#x})",
-                event.agg_seq, event.snapshot_len, event.root
+                "Hub.broadcast confirmed (agg_seq={}, snapshot_len={}, root={:#x}, targets={:?})",
+                event.agg_seq, event.snapshot_len, event.root, target_labels
             );
             self.last_broadcast_root = Some(event.root);
             self.last_broadcast_seq = Some(event.agg_seq);
@@ -539,18 +564,18 @@ impl BroadcastJob {
         Ok(())
     }
 
-    async fn destinations_missing(&self, agg_seq: u64, root: U256) -> Result<Vec<String>> {
+    async fn destinations_missing(&self, agg_seq: u64, root: U256) -> Result<Vec<(String, u32)>> {
         let mut missing = Vec::new();
         for dest in &self.destinations {
             match dest.has_root(agg_seq, root).await {
                 Ok(true) => continue,
-                Ok(false) => missing.push(dest.label.clone()),
+                Ok(false) => missing.push((dest.label.clone(), dest.eid)),
                 Err(err) => {
                     warn!(
                         "failed to check global root on verifier '{}' (chain {}, eid {}): {err:?}",
                         dest.label, dest.chain_id, dest.eid
                     );
-                    missing.push(dest.label.clone());
+                    missing.push((dest.label.clone(), dest.eid));
                 }
             }
         }
