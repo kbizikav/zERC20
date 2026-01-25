@@ -66,9 +66,9 @@ Suppose a chain has:
 - Target liquidity: 100,000 USDC
 - Incentive strength: 10%
 
-**Unwrap 10,000 USDC**: You would pay a fee because liquidity is below target. The fee depends on how far below target the liquidity is.
+**Wrap 1,000 USDC**: You would earn a reward of 49.5 USDC (4.95%) for adding liquidity to an under-supplied chain.
 
-**Wrap 10,000 USDC**: You would earn a reward for adding liquidity to an under-supplied chain.
+**Unwrap 1,000 USDC**: You would pay a fee of 50.5 USDC (5.05%) because liquidity is below target.
 
 ## Fee Accumulation
 
