@@ -1,5 +1,5 @@
 <div align="center" style="background: #1a1a2e; padding: 20px; border-radius: 8px;">
-  <img src="assets/design/logo.png" alt="zERC20 Logo" width="600">
+  <img src="assets/design/logo.png" width="600">
 </div>
 
 # Introduction

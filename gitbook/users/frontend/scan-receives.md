@@ -8,7 +8,7 @@ This guide explains how to scan for and receive private transfers using the zERC
 2. Connect your wallet
 3. Click the "Private Receive" tab
 
-<figure><img src="../../assets/frontend_how_to/private-receive-tab.png" alt="Private Receive Tab" width="563"><figcaption>Private Receive Tab</figcaption></figure>
+<figure><img src="../../assets/frontend_how_to/private-receive-tab.png" alt="Private Receive Tab" width="560"><figcaption>Private Receive Tab</figcaption></figure>
 
 ## Scanning for Incoming Transfers
 
@@ -29,7 +29,7 @@ The scanning process:
 
 After scanning, you'll see a list of incoming transfers:
 
-<figure><img src="../../assets/frontend_how_to/announcement-list.png" alt="Announcement List" width="563"><figcaption>Announcement List</figcaption></figure>
+<figure><img src="../../assets/frontend_how_to/announcement-list.png" alt="Announcement List" width="560"><figcaption>Announcement List</figcaption></figure>
 
 Each announcement shows:
 - **ID**: Unique identifier for the transfer

@@ -27,6 +27,26 @@ A token that represents another token at a 1:1 ratio. zUSDC is a wrapper for USD
 ### Underlying Token
 The original token that backs a zERC20 wrapper. USDC is the underlying token for zUSDC.
 
+## Fees and Liquidity
+
+### Unwrap Fee
+A fee charged when converting zERC20 back to the underlying token on chains with low liquidity. Fees are higher when liquidity is further below the target level. No fee is charged when liquidity is at or above target.
+
+### Wrap Reward
+A bonus received when wrapping underlying tokens into zERC20 on chains with low liquidity. Rewards incentivize users to add liquidity where it is needed. Paid from the accumulated fee surplus.
+
+### Target Liquidity
+The ideal amount of underlying tokens that should be held on each chain. Set automatically by the Fee Manager to equal the average liquidity across all chains.
+
+### Fee Surplus
+The accumulated fees from unwraps, used to pay wrap rewards. When the surplus is depleted, wrap rewards are reduced.
+
+### Cross-Chain Unwrap
+Unwrapping zERC20 on a different chain from where you hold it, typically to access better liquidity and lower fees. The process bridges your zERC20, unwraps on the destination chain, and bridges the underlying back.
+
+### Incentive Curve
+The mathematical formula that determines fee and reward rates based on current liquidity relative to target. Uses a linear density function that increases as liquidity drops below target.
+
 ## Technical Terms
 
 ### Merkle Tree
