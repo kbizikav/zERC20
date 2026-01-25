@@ -29,6 +29,64 @@ interface IERC20 {
 }
 ```
 
+### Wrapping and Unwrapping
+
+Use the `LiquidityManager` contract to convert between the underlying token and zERC20.
+
+```javascript
+interface ILiquidityManager {
+    /// @notice Wrap underlying tokens to receive zERC20
+    /// @param amount Amount of underlying tokens to wrap
+    /// @param receiver Address to receive the zERC20 tokens
+    /// @return amountOut Amount of zERC20 tokens received (includes reward)
+    function wrap(uint256 amount, address receiver) external payable returns (uint256 amountOut);
+
+    /// @notice Wrap with slippage protection
+    /// @param amount Amount of underlying tokens to wrap
+    /// @param minOut Minimum zERC20 tokens to receive (reverts if less)
+    /// @param receiver Address to receive the zERC20 tokens
+    /// @return amountOut Amount of zERC20 tokens received
+    function wrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
+        external
+        payable
+        returns (uint256 amountOut);
+
+    /// @notice Unwrap zERC20 to receive underlying tokens
+    /// @param amount Amount of zERC20 tokens to unwrap
+    /// @param receiver Address to receive the underlying tokens
+    /// @return amountOut Amount of underlying tokens received (minus fee)
+    function unwrap(uint256 amount, address receiver) external returns (uint256 amountOut);
+
+    /// @notice Unwrap with slippage protection
+    /// @param amount Amount of zERC20 tokens to unwrap
+    /// @param minOut Minimum underlying tokens to receive (reverts if less)
+    /// @param receiver Address to receive the underlying tokens
+    /// @return amountOut Amount of underlying tokens received
+    function unwrapWithMinOut(uint256 amount, uint256 minOut, address receiver)
+        external
+        returns (uint256 amountOut);
+
+    /// @notice Get the reward amount for wrapping
+    function quoteWrapReward(uint256 amount) external view returns (uint256 rewardAmount);
+
+    /// @notice Get the fee amount for unwrapping
+    function quoteUnwrapFee(uint256 amount) external view returns (uint256 feeAmount);
+}
+```
+
+**Example Usage:**
+
+```javascript
+// Wrap: Convert 100 USDC to zUSDC
+IERC20(usdc).approve(address(liquidityManager), 100e6);
+uint256 zAmount = liquidityManager.wrap(100e6, msg.sender);
+
+// Unwrap: Convert 100 zUSDC back to USDC
+uint256 usdcAmount = liquidityManager.unwrap(100e6, msg.sender);
+```
+
+See [Fees and Rewards](../users/fees-and-rewards.md) for details on wrap rewards and unwrap fees.
+
 ## zERC20 as Oracle
 
 zERC20 maintains a complete history of all transfers as a Merkle tree, using a ZK-friendly Poseidon hash function. External developers can leverage this Transfer Merkle Tree as an on-chain oracle for transfer history verification.

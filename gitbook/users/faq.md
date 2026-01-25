@@ -19,10 +19,6 @@ While both use zero-knowledge proofs for privacy, they differ in key ways:
 | Crosschain | Yes — via LayerZero | No |
 | Wallet UX | Standard MetaMask transfer | Requires deposit/withdraw UI |
 
-**Is zERC20 compliant with regulations?**
-
-zERC20 is a privacy tool. Users are responsible for ensuring their use complies with applicable laws in their jurisdiction.
-
 **What tokens are supported?**
 
 Currently supported wrapper tokens include:
