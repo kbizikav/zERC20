@@ -37,6 +37,14 @@ Fees and rewards are calculated using a linear incentive curve based on two para
 
 > **Note**: zBNB only supports wrap/unwrap on BNB Chain, so there is no cross-chain liquidity balancing and therefore no fees or rewards.
 
+**Target Liquidity (T)** is automatically calculated by a background service:
+
+```
+Target = Total liquidity across all chains / Number of chains
+```
+
+This ensures each chain's target stays aligned with actual liquidity distribution. As liquidity flows between chains, targets adjust automatically.
+
 ### The Formula
 
 The fee/reward rate increases as liquidity drops further below the target:
@@ -61,6 +69,10 @@ Suppose a chain has:
 **Unwrap 10,000 USDC**: You would pay a fee because liquidity is below target. The fee depends on how far below target the liquidity is.
 
 **Wrap 10,000 USDC**: You would earn a reward for adding liquidity to an under-supplied chain.
+
+## Fee Accumulation
+
+Fees collected from unwraps accumulate in a surplus pool. This surplus is used to pay rewards for future wraps. When the surplus is depleted, wrap rewards are reduced accordingly.
 
 ## Cross-Chain Unwrap to Reduce Fees
 
@@ -97,19 +109,6 @@ The interface shows:
 
 Compare these to find the most cost-effective option.
 
-## Fee Accumulation
-
-Fees collected from unwraps accumulate in a surplus pool. This surplus is used to pay rewards for future wraps. When the surplus is depleted, wrap rewards are reduced accordingly.
-
-## Automatic Target Adjustment
-
-A background service (Fee Manager) periodically recalculates the target liquidity for each chain:
-
-```
-Target = Total liquidity across all chains / Number of chains
-```
-
-This ensures targets stay aligned with actual liquidity distribution, automatically adjusting incentives as liquidity flows between chains.
 
 ## Summary
 
