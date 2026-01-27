@@ -20,7 +20,7 @@ An upgradeable ERC-20 that tracks all transfers in a hash chain for ZKP verifica
 ### Key Features
 
 - Emits `IndexedTransfer(index, from, to, value)` for every transfer
-- Maintains truncated SHA-256 hash chain: `hashChain = SHA256(hashChain || to || value)[0:248]`
+- Maintains truncated SHA-256 hash chain: `hashChain = SHA256(hashChain || from || to || value)[0:248]`
 - Exposes `teleport` for Verifier-initiated mints
 
 ### Functions
@@ -29,9 +29,9 @@ An upgradeable ERC-20 that tracks all transfers in a hash chain for ZKP verifica
 // Called by Verifier after successful proof verification
 function teleport(address to, uint256 value) external onlyVerifier;
 
-// Called by LiquidityManager for liquidity operations
-function mint(address to, uint256 amount) external onlyLiquidityAuthority;
-function burn(address from, uint256 amount) external onlyLiquidityAuthority;
+// Called by the configured `minter` (typically LiquidityManager) for deposit/withdraw flows
+function mint(address to, uint256 amount) external onlyMinter;
+function burn(address from, uint256 amount) external onlyMinter;
 ```
 
 ### Events
@@ -62,41 +62,40 @@ LayerZero OApp that verifies ZK proofs and manages teleports.
 ### Functions
 
 ```javascript
-// Reserve a hash chain checkpoint for proof anchoring
-function reserveHashChain(uint256 index) external;
+// Reserve the latest zERC20 (index, hashChain) checkpoint for proof anchoring
+function reserveHashChain() external returns (uint64 index, uint256 hashChain);
 
 // Prove a new transfer root (called by indexer)
-function proveTransferRoot(bytes calldata proof, ...) external;
+function proveTransferRoot(bytes calldata proof) external;
 
 // Batch withdrawal with Nova proof
 function teleport(
-    bytes calldata proof,
-    GeneralRecipient calldata gr,
-    uint256 rootHint,
     bool isGlobal,
-    ...
+    uint64 rootHint,
+    GeneralRecipient calldata gr,
+    bytes calldata proof
 ) external;
 
 // Single withdrawal with Groth16 proof
 function singleTeleport(
-    bytes calldata proof,
-    GeneralRecipient calldata gr,
-    uint256 rootHint,
     bool isGlobal,
-    ...
+    uint64 rootHint,
+    GeneralRecipient calldata gr,
+    bytes calldata proof
 ) external;
 
 // Relay local root to Hub
-function relayTransferRoot() external payable;
+function relayTransferRoot(bytes calldata options) external payable;
+function relayTransferRoot(bytes calldata options, address refundAddress) external payable;
 ```
 
 ### State
 
 ```javascript
-mapping(uint256 => bytes32) public reservedHashChains;     // index → hashChain snapshot
-mapping(uint256 => bytes32) public provedTransferRoots;    // index → merkle root
-mapping(bytes32 => uint256) public totalTeleported;        // recipientHash → total minted
-mapping(uint256 => bytes32) public globalTransferRoots;    // aggSeq → global root
+mapping(uint64 => uint256) public reservedHashChains;     // index → hashChain snapshot (248-bit packed in uint256)
+mapping(uint64 => uint256) public provedTransferRoots;    // index → merkle root (field element)
+mapping(uint64 => uint256) public globalTransferRoots;    // aggSeq → global root (field element)
+mapping(uint256 => uint256) public totalTeleported;       // recipientHash → total minted (cumulative)
 ```
 
 ### GeneralRecipient
@@ -131,29 +130,33 @@ Central aggregator for cross-chain transfer roots.
 ### Functions
 
 ```javascript
-// Register a new token (owner only)
-function registerToken(
-    uint256 chainId,
-    uint32 eid,
-    address verifier,
-    address token
-) external onlyOwner;
+struct TokenInfo {
+    uint64 chainId;
+    uint32 eid;
+    address verifier;
+    address token;
+}
+
+// Register or update token metadata (owner only)
+function registerToken(TokenInfo calldata info) external onlyOwner;
+function updateToken(TokenInfo calldata info) external onlyOwner;
 
 // Broadcast current aggregation to all chains
-function broadcast(uint32[] calldata targetEids) external payable;
+function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external payable;
+function broadcast(uint32[] calldata targetEids, bytes calldata lzOptions, address refundAddress) external payable;
 
 // Estimate broadcast fee
-function quoteBroadcast(uint32[] calldata targetEids) external view returns (uint256);
+function quoteBroadcast(uint32[] calldata targetEids, bytes calldata lzOptions) external view returns (uint256 totalNativeFee);
 ```
 
 ### Events
 
 ```javascript
 event AggregationRootUpdated(
-    uint256 aggSeq,
-    bytes32 globalRoot,
-    bytes32[] leaves,
-    uint256[] treeIndices
+    uint256 indexed root,
+    uint64 indexed aggSeq,
+    uint256[] transferRootsSnapshot,
+    uint64[] transferTreeIndicesSnapshot
 );
 ```
 
@@ -173,10 +176,14 @@ Manages liquidity entry/exit with incentive curves.
 
 ```javascript
 // Wrap underlying → zERC20
-function wrap(address receiver, uint256 amount) external returns (uint256 reward);
+function wrap(uint256 amount, address receiver) external payable returns (uint256 amountOut);
 
 // Unwrap zERC20 → underlying
-function unwrap(address receiver, uint256 amount) external returns (uint256 fee);
+function unwrap(uint256 amount, address receiver) external returns (uint256 amountOut);
+
+// Quote incentive amounts (view)
+function quoteWrapReward(uint256 amount) external view returns (uint256 rewardAmount);
+function quoteUnwrapFee(uint256 amount) external view returns (uint256 feeAmount);
 ```
 
 ### Incentive Curve
