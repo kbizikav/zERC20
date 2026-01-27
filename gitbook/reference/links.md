@@ -7,7 +7,8 @@ This page lists all external URLs referenced in the documentation. If URLs chang
 | Name | URL | Description |
 |------|-----|-------------|
 | Official Website | https://zerc20.io | Official zERC20 website |
-| Frontend (Testnet) | https://v2.testnet.app.zerc20.io/ | Web application for zERC20 |
+| Frontend (Mainnet) | https://app.zerc20.io/ | Web application for zERC20 (Mainnet) |
+| Frontend (Testnet) | https://v2.testnet.app.zerc20.io/ | Web application for zERC20 (Testnet) |
 
 ## Community
 

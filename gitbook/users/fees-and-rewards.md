@@ -33,9 +33,9 @@ Fees and rewards are calculated using a linear incentive curve based on two para
 |-------|------------------------|-------|
 | zUSDC | 10% | Fees/rewards apply across all supported chains |
 | zETH | 10% | Fees/rewards apply across all supported chains |
-| zBNB | — | No fees or rewards (single-chain only) |
+| zBNB | — | No fees or rewards (wrap/unwrap on BNB Chain only) |
 
-> **Note**: zBNB only supports wrap/unwrap on BNB Chain, so there is no cross-chain liquidity balancing and therefore no fees or rewards.
+> **Note (Mainnet)**: zBNB can be transferred across multiple chains (BNB Chain, Ethereum, Arbitrum, Base) as an OFT token. However, wrap/unwrap (converting between BNB and zBNB) is only available on BNB Chain. Since there is no cross-chain liquidity balancing for the underlying asset, no fees or rewards apply. Testnet deployments may have different configurations.
 
 **Target Liquidity (T)** is automatically calculated by a background service:
 
@@ -112,4 +112,4 @@ Compare these to find the most cost-effective option.
 ## Related
 
 - [Getting Started](frontend/getting-started.md) — Basic wrap/unwrap instructions
-- [Contract Spec: IncentiveLib](../developers/specs/contract-spec.md#incentive-curve) — Technical details of the fee curve
+- [Contract Spec: Incentive Curve](../developers/specs/contract-spec.md#incentive-curve) — Technical details of the fee curve

@@ -4,7 +4,9 @@ This guide walks you through using the zERC20 web application.
 
 ## Step 1: Access the Frontend
 
-Visit the [zERC20 Frontend](https://v2.testnet.app.zerc20.io/).
+Visit the [zERC20 Frontend](https://app.zerc20.io/).
+
+> **Testing?** Use the [Testnet Frontend](https://v2.testnet.app.zerc20.io/) for testing with test tokens.
 
 <figure><img src="../../assets/frontend_how_to/dashboard-overview.png" alt="Dashboard Overview" width="560"><figcaption>Dashboard Overview</figcaption></figure>
 

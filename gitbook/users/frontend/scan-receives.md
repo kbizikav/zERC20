@@ -4,7 +4,7 @@ This guide explains how to scan for and receive private transfers using the zERC
 
 ## Accessing Private Receive
 
-1. Visit the [Frontend](https://v2.testnet.app.zerc20.io/)
+1. Visit the [Frontend](https://app.zerc20.io/)
 2. Connect your wallet
 3. Click the "Private Receive" tab
 
