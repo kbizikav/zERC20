@@ -35,7 +35,7 @@ Fees and rewards are calculated using a linear incentive curve based on two para
 | zETH | 10% | Fees/rewards apply across all supported chains |
 | zBNB | — | No fees or rewards (wrap/unwrap on BNB Chain only) |
 
-> **Note (Mainnet)**: zBNB can be transferred across multiple chains (BNB Chain, Ethereum, Arbitrum, Base) as an OFT token. However, wrap/unwrap (converting between BNB and zBNB) is only available on BNB Chain. Since there is no cross-chain liquidity balancing for the underlying asset, no fees or rewards apply. Testnet deployments may have different configurations.
+> **Note**: zBNB can be transferred across multiple chains (BNB Chain, Ethereum, Arbitrum, Base) as an OFT token. However, wrap/unwrap (converting between BNB and zBNB) is only available on BNB Chain. Since there is no cross-chain liquidity balancing for the underlying asset, no fees or rewards apply.
 
 **Target Liquidity (T)** is automatically calculated by a background service:
 

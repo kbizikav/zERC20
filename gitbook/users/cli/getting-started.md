@@ -10,7 +10,7 @@ cd zERC20/cli
 cargo install --path .
 ```
 
-This installs the CLI binary as `cli`. Alternatively, run directly from the repository:
+This installs the CLI binary as `zerc20-cli` (older versions may install as `cli`). Alternatively, run directly from the repository:
 
 ```bash
 cd zERC20/cli
@@ -43,7 +43,7 @@ export NOVA_ARTIFACTS_DIR=/path/to/nova_artifacts
 Generate a burn address to receive payments:
 
 ```bash
-cli invoice issue --chain-id <CHAIN_ID>
+zerc20-cli invoice issue --chain-id <CHAIN_ID>
 ```
 
 ### List Invoices
@@ -51,7 +51,7 @@ cli invoice issue --chain-id <CHAIN_ID>
 View your invoices:
 
 ```bash
-cli invoice ls --chain-id <CHAIN_ID>
+zerc20-cli invoice ls --chain-id <CHAIN_ID>
 ```
 
 ### Transfer
@@ -59,7 +59,7 @@ cli invoice ls --chain-id <CHAIN_ID>
 Send zERC20 to a burn address:
 
 ```bash
-cli transfer \
+zerc20-cli transfer \
   --chain-id <CHAIN_ID> \
   --to <BURN_ADDRESS> \
   --amount <AMOUNT_IN_WEI>
@@ -68,7 +68,7 @@ cli transfer \
 ### Check Invoice Status
 
 ```bash
-cli invoice status --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>
+zerc20-cli invoice status --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>
 ```
 
 ### Receive Funds
@@ -76,29 +76,29 @@ cli invoice status --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>
 Generate proofs and receive:
 
 ```bash
-cli invoice receive --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>
+zerc20-cli invoice receive --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>
 ```
 
 ## Quick Start Example
 
 ```bash
 # 1. Issue an invoice
-cli invoice issue --chain-id 1
+zerc20-cli invoice issue --chain-id 1
 
 # 2. List invoices to get the invoice ID and burn address
-cli invoice ls --chain-id 1
+zerc20-cli invoice ls --chain-id 1
 
 # 3. Send funds to the burn address
-cli transfer \
+zerc20-cli transfer \
   --chain-id 1 \
   --to 0x1234567890abcdef1234567890abcdef12345678 \
   --amount 1000000000000000000
 
 # 4. Check status
-cli invoice status --chain-id 1 --invoice-id inv-01
+zerc20-cli invoice status --chain-id 1 --invoice-id inv-01
 
 # 5. Receive
-cli invoice receive --chain-id 1 --invoice-id inv-01
+zerc20-cli invoice receive --chain-id 1 --invoice-id inv-01
 ```
 
 ## Important Notes

@@ -81,7 +81,7 @@
 | LiquidityManager | `0xD6e9Bbe7777a14eCdec71990aA72fa7A3225eF40` |
 | Adaptor | — |
 
-> **Note (Mainnet)**: zBNB wrap/unwrap is only available on BNB Chain. Other chains support zBNB transfers via LayerZero OFT but do not have LiquidityManager contracts. Testnet deployments may differ—see the Testnet section below.
+> **Note**: zBNB wrap/unwrap is only available on BNB Chain. Other chains support zBNB transfers via LayerZero OFT but do not have LiquidityManager contracts.
 
 #### Ethereum
 

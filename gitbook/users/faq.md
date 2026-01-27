@@ -106,7 +106,7 @@ The tokens are permanently locked unless the intended recipient of that burn add
 
 3. **Check invoice status**
    - Frontend: Refresh the page
-   - CLI: Run `cli invoice status --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>`
+   - CLI: Run `zerc20-cli invoice status --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>`
 
 4. **Verify burn address**
    - Confirm the sender used the correct burn address
