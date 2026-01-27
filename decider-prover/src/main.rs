@@ -10,7 +10,7 @@ use actix_web::{
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use log::{error as log_error, info};
 
-use decider_prover::{
+use zerc20_decider_prover::{
     JobRequest, JobStatusResponse, ProverEngine, ProverError, SubmitJobResponse,
     config::{AppConfig, CircuitEnablement, load_config},
     queue::{EnqueueJobResult, QueueClient},

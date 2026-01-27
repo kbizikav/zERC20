@@ -1,5 +1,5 @@
 [package]
-name = "trusted-setup-coordinator"
+name = "zerc20-trusted-setup-coordinator"
 version = "0.1.0"
 edition = "2021"
 
@@ -41,8 +41,8 @@ tokio = { workspace = true, features = [
 ] }
 url = { workspace = true }
 uuid = { workspace = true }
-zkp = { path = "../../zkp" }
-trusted-setup-common = { path = "../common" }
+zkp = { path = "../../zkp", package = "zerc20-zkp" }
+trusted-setup-common = { path = "../common", package = "zerc20-trusted-setup-common" }
 
 [features]
 default = ["parallel"]

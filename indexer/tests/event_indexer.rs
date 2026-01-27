@@ -22,7 +22,7 @@ use common::{
     },
 };
 use sqlx::migrate::Migrator;
-use tree_indexer::events::{
+use zerc20_tree_indexer::events::{
     BLOCK_SPAN_RECOMMENDED, EventIndexer, EventIndexerConfig, FORWARD_SCAN_OVERLAP_RECOMMENDED,
 };
 

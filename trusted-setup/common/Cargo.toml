@@ -1,5 +1,5 @@
 [package]
-name = "trusted-setup-common"
+name = "zerc20-trusted-setup-common"
 version = "0.1.0"
 edition = "2021"
 
@@ -19,7 +19,7 @@ folding-schemes = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 thiserror = { workspace = true }
-zkp = { path = "../../zkp" }
+zkp = { path = "../../zkp", package = "zerc20-zkp" }
 
 [features]
 default = ["parallel"]

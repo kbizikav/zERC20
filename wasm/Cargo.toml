@@ -1,10 +1,10 @@
 [package]
-name = "zkerc20-wasm"
+name = "zerc20-wasm"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-zkp = { path = "../zkp", default-features = false }
+zkp = { path = "../zkp", package = "zerc20-zkp", default-features = false }
 hex = { workspace = true }
 folding-schemes = { workspace = true }
 ark-ff = { workspace = true }
@@ -14,14 +14,14 @@ anyhow = { workspace = true }
 rand = { workspace = true }
 serde = { workspace = true }
 alloy = { workspace = true }
-client-common = { path = "../client-common" }
+client-common = { path = "../client-common", package = "zerc20-client-common" }
 wasm-bindgen = "0.2"
 serde-wasm-bindgen = "0.6"
 wasm-bindgen-futures = "0.4"
 console_error_panic_hook = "0.1.7"
 web-time = "0.2"
 web-sys = { version = "0.3", features = ["console"] }
-api-types = { path = "../api-types" }
+api-types = { path = "../api-types", package = "zerc20-api-types" }
 reqwest = { workspace = true }
 
 [dev-dependencies]

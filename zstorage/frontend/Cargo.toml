@@ -1,5 +1,5 @@
 [package]
-name = "stealth_client"
+name = "zerc20-stealth-client"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,8 +11,8 @@ default = []
 tokio = ["dep:tokio"]
 
 [dependencies]
-key_manager = { path = "../backend/key_manager" }
-storage = { path = "../backend/storage" }
+key_manager = { path = "../backend/key_manager", package = "zerc20-key-manager" }
+storage = { path = "../backend/storage", package = "zerc20-storage" }
 anyhow.workspace = true
 aes-gcm.workspace = true
 candid.workspace = true
@@ -48,5 +48,6 @@ harness = false
 required-features = ["tokio"]
 
 [[bin]]
-name = "stealth_client"
+name = "zerc20-stealth-client"
+path = "src/bin/stealth_client.rs"
 required-features = ["tokio"]

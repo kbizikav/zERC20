@@ -14,7 +14,7 @@ use folding_schemes::{
 };
 use rand::{SeedableRng, rngs::StdRng};
 
-use zkp::{
+use zerc20_zkp::{
     groth16::withdraw::SingleWithdrawCircuit,
     nova::{
         constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},

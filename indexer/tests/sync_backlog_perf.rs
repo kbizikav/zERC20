@@ -27,7 +27,7 @@ use common::{
 };
 use futures::{StreamExt, stream::FuturesUnordered};
 use sqlx::{PgPool, migrate::Migrator};
-use tree_indexer::{
+use zerc20_tree_indexer::{
     config::{EventJobConfig, TreeJobConfig},
     jobs::{EventSyncJobBuilder, TreeIngestionJobBuilder},
 };

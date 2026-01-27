@@ -11,13 +11,13 @@ use std::{
     process::Command,
     sync::Once,
 };
-use stealth_client::{
+use storage::invoice_signature_message;
+use zerc20_stealth_client::{
     authorization::{derive_address, sign_authorization, unix_time_ns},
     client::StealthCanisterClient,
     encryption::{encrypt_payload, scan_announcements},
     recipient, types,
 };
-use storage::invoice_signature_message;
 
 #[derive(Clone, CandidType, Serialize)]
 struct KeyManagerInitArgs {
@@ -35,8 +35,8 @@ fn pocket_ic_end_to_end_flow() {
         return;
     }
 
-    let key_manager_wasm = load_canister_wasm("key_manager");
-    let storage_wasm = load_canister_wasm("storage");
+    let key_manager_wasm = load_canister_wasm("zerc20_key_manager");
+    let storage_wasm = load_canister_wasm("zerc20_storage");
 
     let mut pic = PocketIcBuilder::new()
         .with_ii_subnet() // needs for vetkey feature
@@ -159,8 +159,8 @@ fn pocket_ic_upgrade_preserves_storage_state() {
         return;
     }
 
-    let key_manager_wasm = load_canister_wasm("key_manager");
-    let storage_wasm = load_canister_wasm("storage");
+    let key_manager_wasm = load_canister_wasm("zerc20_key_manager");
+    let storage_wasm = load_canister_wasm("zerc20_storage");
 
     let mut pic = PocketIcBuilder::new()
         .with_ii_subnet()
@@ -338,9 +338,9 @@ fn ensure_canisters_built() {
                 "wasm32-unknown-unknown",
                 "--release",
                 "-p",
-                "key_manager",
+                "zerc20-key-manager",
                 "-p",
-                "storage",
+                "zerc20-storage",
             ])
             .current_dir(workspace_root())
             .status()

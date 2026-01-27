@@ -5,7 +5,7 @@ use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;
 use key_manager::authorization::authorization_message;
 use rand::{rngs::OsRng, RngCore};
-use stealth_client::{
+use zerc20_stealth_client::{
     authorization::{derive_address, sign_authorization, unix_time_ns},
     client::StealthCanisterClient,
     encryption::{encrypt_payload, scan_announcements},
