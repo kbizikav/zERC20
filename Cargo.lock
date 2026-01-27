@@ -979,15 +979,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
-name = "api-types"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "serde",
- "serde_with",
-]
-
-[[package]]
 name = "arc-swap"
 version = "1.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2579,62 +2570,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a1d728cc89cf3aee9ff92b05e62b19ee65a02b5702cff7d5a377e32c6ae29d8d"
 
 [[package]]
-name = "cli"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "api-types",
- "ark-bn254",
- "ark-ff 0.5.0",
- "ark-serialize 0.5.0",
- "candid",
- "clap",
- "client-common",
- "dotenvy",
- "env_logger",
- "folding-schemes",
- "hex",
- "ic-agent",
- "k256",
- "key_manager",
- "log",
- "num-bigint",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "stealth_client",
- "storage",
- "tokio",
- "zkp",
-]
-
-[[package]]
-name = "client-common"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "api-types",
- "ark-bn254",
- "async-trait",
- "base64 0.22.1",
- "flate2",
- "hex",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "thiserror 2.0.17",
- "tokio",
- "tower",
- "url",
- "uuid",
- "zkp",
-]
-
-[[package]]
 name = "cmake"
 version = "0.1.54"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2929,23 +2864,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
 
 [[package]]
-name = "crosschain-job"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "clap",
- "client-common",
- "dotenvy",
- "env_logger",
- "hex",
- "log",
- "reqwest",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "crunchy"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3169,37 +3087,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bef552e6f588e446098f6ba40d89ac146c8c7b64aade83c051ee00bb5d2bc18d"
 dependencies = [
  "uuid",
-]
-
-[[package]]
-name = "decider-prover"
-version = "0.1.0"
-dependencies = [
- "actix-cors",
- "actix-web",
- "anyhow",
- "api-types",
- "ark-bn254",
- "ark-ff 0.5.0",
- "ark-grumpkin",
- "ark-serialize 0.5.0",
- "base64 0.22.1",
- "chrono",
- "dotenvy",
- "env_logger",
- "envy",
- "folding-schemes",
- "hex",
- "log",
- "pgmq",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.17",
- "tokio",
- "zkp",
 ]
 
 [[package]]
@@ -3634,22 +3521,6 @@ dependencies = [
  "arrayvec 0.7.6",
  "auto_impl",
  "bytes",
-]
-
-[[package]]
-name = "fee-manager"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "clap",
- "client-common",
- "dotenvy",
- "env_logger",
- "hex",
- "log",
- "serde_json",
- "tokio",
 ]
 
 [[package]]
@@ -5064,29 +4935,6 @@ checksum = "505d1856a39b200489082f90d897c3f07c455563880bc5952e38eabf731c83b6"
 dependencies = [
  "digest 0.10.7",
  "sha3-asm",
-]
-
-[[package]]
-name = "key_manager"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "base64 0.22.1",
- "bls12_381",
- "candid",
- "hex",
- "hkdf",
- "ic-cdk",
- "ic-cdk-macros",
- "ic-ledger-types",
- "ic-stable-structures",
- "serde",
- "serde_bytes",
- "sha2 0.10.9",
- "sha3",
- "subtle 2.6.1",
- "thiserror 2.0.17",
 ]
 
 [[package]]
@@ -7825,34 +7673,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2eb9349b6444b326872e140eb1cf5e7c522154d69e7a0ffb0fb81c06b37543f"
 
 [[package]]
-name = "stealth_client"
-version = "0.1.0"
-dependencies = [
- "aes-gcm",
- "alloy-primitives",
- "anyhow",
- "candid",
- "clap",
- "criterion 0.5.1",
- "getrandom 0.2.16",
- "hex",
- "ic-agent",
- "ic-cdk",
- "ic-vetkeys",
- "ic_bls12_381",
- "k256",
- "key_manager",
- "pocket-ic",
- "rand 0.8.5",
- "serde",
- "sha2 0.10.9",
- "sha3",
- "storage",
- "thiserror 2.0.17",
- "tokio",
-]
-
-[[package]]
 name = "stop-token"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7862,23 +7682,6 @@ dependencies = [
  "cfg-if 1.0.4",
  "futures-core",
  "pin-project-lite",
-]
-
-[[package]]
-name = "storage"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "base64 0.22.1",
- "candid",
- "hex",
- "ic-cdk",
- "ic-cdk-macros",
- "ic-stable-structures",
- "serde",
- "serde_bytes",
- "sha3",
 ]
 
 [[package]]
@@ -8501,139 +8304,6 @@ dependencies = [
  "tracing-core",
  "tracing-log",
  "tracing-serde",
-]
-
-[[package]]
-name = "tree-indexer"
-version = "0.1.0"
-dependencies = [
- "actix-cors",
- "actix-web",
- "alloy",
- "anyhow",
- "api-types",
- "ark-bn254",
- "ark-ff 0.5.0",
- "ark-grumpkin",
- "ark-serialize 0.5.0",
- "async-trait",
- "base64 0.22.1",
- "clap",
- "client-common",
- "dotenvy",
- "env_logger",
- "envy",
- "folding-schemes",
- "futures",
- "hex",
- "log",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "reqwest",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.17",
- "tokio",
- "toml",
- "uuid",
- "zkp",
-]
-
-[[package]]
-name = "trusted-setup-cli"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "ark-bn254",
- "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
- "ark-ec",
- "ark-ff 0.5.0",
- "ark-groth16",
- "ark-grumpkin",
- "ark-poly-commit",
- "ark-serialize 0.5.0",
- "ark-std 0.5.0 (git+https://github.com/arkworks-rs/std)",
- "arkworks-phase2",
- "backoff",
- "bytes",
- "clap",
- "ctrlc",
- "dotenvy",
- "env_logger",
- "folding-schemes",
- "futures",
- "hex",
- "indicatif",
- "log",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "tokio",
- "trusted-setup-common",
- "url",
- "uuid",
- "zkp",
-]
-
-[[package]]
-name = "trusted-setup-common"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "ark-bn254",
- "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
- "ark-ec",
- "ark-ff 0.5.0",
- "ark-grumpkin",
- "ark-poly",
- "ark-poly-commit",
- "ark-relations",
- "ark-serialize 0.5.0",
- "arkworks-phase2",
- "folding-schemes",
- "rand 0.8.5",
- "serde",
- "thiserror 2.0.17",
- "zkp",
-]
-
-[[package]]
-name = "trusted-setup-coordinator"
-version = "0.1.0"
-dependencies = [
- "actix-governor",
- "actix-web",
- "anyhow",
- "ark-bn254",
- "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
- "ark-ec",
- "ark-ff 0.5.0",
- "ark-grumpkin",
- "ark-poly-commit",
- "ark-serialize 0.5.0",
- "arkworks-phase2",
- "aws-config",
- "aws-sdk-s3",
- "dotenvy",
- "env_logger",
- "folding-schemes",
- "log",
- "rand 0.8.5",
- "rand_chacha 0.3.1",
- "serde",
- "serde_json",
- "sqlx",
- "thiserror 2.0.17",
- "tokio",
- "trusted-setup-common",
- "url",
- "uuid",
- "zkp",
 ]
 
 [[package]]
@@ -9448,6 +9118,394 @@ dependencies = [
 ]
 
 [[package]]
+name = "zerc20-api-types"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "serde",
+ "serde_with",
+]
+
+[[package]]
+name = "zerc20-cli"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "ark-bn254",
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "candid",
+ "clap",
+ "dotenvy",
+ "env_logger",
+ "folding-schemes",
+ "hex",
+ "ic-agent",
+ "k256",
+ "log",
+ "num-bigint",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "zerc20-api-types",
+ "zerc20-client-common",
+ "zerc20-key-manager",
+ "zerc20-stealth-client",
+ "zerc20-storage",
+ "zerc20-zkp",
+]
+
+[[package]]
+name = "zerc20-client-common"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "ark-bn254",
+ "async-trait",
+ "base64 0.22.1",
+ "flate2",
+ "hex",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.17",
+ "tokio",
+ "tower",
+ "url",
+ "uuid",
+ "zerc20-api-types",
+ "zerc20-zkp",
+]
+
+[[package]]
+name = "zerc20-crosschain-job"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "clap",
+ "dotenvy",
+ "env_logger",
+ "hex",
+ "log",
+ "reqwest",
+ "serde_json",
+ "tokio",
+ "zerc20-client-common",
+]
+
+[[package]]
+name = "zerc20-decider-prover"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-web",
+ "anyhow",
+ "ark-bn254",
+ "ark-ff 0.5.0",
+ "ark-grumpkin",
+ "ark-serialize 0.5.0",
+ "base64 0.22.1",
+ "chrono",
+ "dotenvy",
+ "env_logger",
+ "envy",
+ "folding-schemes",
+ "hex",
+ "log",
+ "pgmq",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.17",
+ "tokio",
+ "zerc20-api-types",
+ "zerc20-zkp",
+]
+
+[[package]]
+name = "zerc20-fee-manager"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "clap",
+ "dotenvy",
+ "env_logger",
+ "hex",
+ "log",
+ "serde_json",
+ "tokio",
+ "zerc20-client-common",
+]
+
+[[package]]
+name = "zerc20-key-manager"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "base64 0.22.1",
+ "bls12_381",
+ "candid",
+ "hex",
+ "hkdf",
+ "ic-cdk",
+ "ic-cdk-macros",
+ "ic-ledger-types",
+ "ic-stable-structures",
+ "serde",
+ "serde_bytes",
+ "sha2 0.10.9",
+ "sha3",
+ "subtle 2.6.1",
+ "thiserror 2.0.17",
+]
+
+[[package]]
+name = "zerc20-stealth-client"
+version = "0.1.0"
+dependencies = [
+ "aes-gcm",
+ "alloy-primitives",
+ "anyhow",
+ "candid",
+ "clap",
+ "criterion 0.5.1",
+ "getrandom 0.2.16",
+ "hex",
+ "ic-agent",
+ "ic-cdk",
+ "ic-vetkeys",
+ "ic_bls12_381",
+ "k256",
+ "pocket-ic",
+ "rand 0.8.5",
+ "serde",
+ "sha2 0.10.9",
+ "sha3",
+ "thiserror 2.0.17",
+ "tokio",
+ "zerc20-key-manager",
+ "zerc20-storage",
+]
+
+[[package]]
+name = "zerc20-storage"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "base64 0.22.1",
+ "candid",
+ "hex",
+ "ic-cdk",
+ "ic-cdk-macros",
+ "ic-stable-structures",
+ "serde",
+ "serde_bytes",
+ "sha3",
+]
+
+[[package]]
+name = "zerc20-tree-indexer"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-web",
+ "alloy",
+ "anyhow",
+ "ark-bn254",
+ "ark-ff 0.5.0",
+ "ark-grumpkin",
+ "ark-serialize 0.5.0",
+ "async-trait",
+ "base64 0.22.1",
+ "clap",
+ "dotenvy",
+ "env_logger",
+ "envy",
+ "folding-schemes",
+ "futures",
+ "hex",
+ "log",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.17",
+ "tokio",
+ "toml",
+ "uuid",
+ "zerc20-api-types",
+ "zerc20-client-common",
+ "zerc20-zkp",
+]
+
+[[package]]
+name = "zerc20-trusted-setup-cli"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "ark-bn254",
+ "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-groth16",
+ "ark-grumpkin",
+ "ark-poly-commit",
+ "ark-serialize 0.5.0",
+ "ark-std 0.5.0 (git+https://github.com/arkworks-rs/std)",
+ "arkworks-phase2",
+ "backoff",
+ "bytes",
+ "clap",
+ "ctrlc",
+ "dotenvy",
+ "env_logger",
+ "folding-schemes",
+ "futures",
+ "hex",
+ "indicatif",
+ "log",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "tokio",
+ "url",
+ "uuid",
+ "zerc20-trusted-setup-common",
+ "zerc20-zkp",
+]
+
+[[package]]
+name = "zerc20-trusted-setup-common"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "ark-bn254",
+ "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-grumpkin",
+ "ark-poly",
+ "ark-poly-commit",
+ "ark-relations",
+ "ark-serialize 0.5.0",
+ "arkworks-phase2",
+ "folding-schemes",
+ "rand 0.8.5",
+ "serde",
+ "thiserror 2.0.17",
+ "zerc20-zkp",
+]
+
+[[package]]
+name = "zerc20-trusted-setup-coordinator"
+version = "0.1.0"
+dependencies = [
+ "actix-governor",
+ "actix-web",
+ "anyhow",
+ "ark-bn254",
+ "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-grumpkin",
+ "ark-poly-commit",
+ "ark-serialize 0.5.0",
+ "arkworks-phase2",
+ "aws-config",
+ "aws-sdk-s3",
+ "dotenvy",
+ "env_logger",
+ "folding-schemes",
+ "log",
+ "rand 0.8.5",
+ "rand_chacha 0.3.1",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "thiserror 2.0.17",
+ "tokio",
+ "url",
+ "uuid",
+ "zerc20-trusted-setup-common",
+ "zerc20-zkp",
+]
+
+[[package]]
+name = "zerc20-wasm"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "ark-bn254",
+ "ark-ff 0.5.0",
+ "ark-serialize 0.5.0",
+ "console_error_panic_hook",
+ "folding-schemes",
+ "hex",
+ "js-sys",
+ "rand 0.8.5",
+ "reqwest",
+ "serde",
+ "serde-wasm-bindgen",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "wasm-bindgen-test",
+ "web-sys",
+ "web-time 0.2.4",
+ "zerc20-api-types",
+ "zerc20-client-common",
+ "zerc20-zkp",
+]
+
+[[package]]
+name = "zerc20-zkp"
+version = "0.1.0"
+dependencies = [
+ "alloy",
+ "anyhow",
+ "ark-bn254",
+ "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
+ "ark-ec",
+ "ark-ff 0.5.0",
+ "ark-groth16",
+ "ark-grumpkin",
+ "ark-r1cs-std 0.5.0 (git+https://github.com/winderica/r1cs-std?rev=ae8283a)",
+ "ark-relations",
+ "ark-serialize 0.5.0",
+ "ark-snark",
+ "ark-std 0.5.0 (git+https://github.com/arkworks-rs/std)",
+ "criterion 0.7.0",
+ "folding-schemes",
+ "getrandom 0.2.16",
+ "hex",
+ "light-poseidon",
+ "num-bigint",
+ "rand 0.8.5",
+ "revm",
+ "serde",
+ "sha2 0.10.9",
+ "solidity-verifiers",
+ "thiserror 2.0.17",
+]
+
+[[package]]
 name = "zerocopy"
 version = "0.8.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9539,64 +9597,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.106",
-]
-
-[[package]]
-name = "zkerc20-wasm"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "api-types",
- "ark-bn254",
- "ark-ff 0.5.0",
- "ark-serialize 0.5.0",
- "client-common",
- "console_error_panic_hook",
- "folding-schemes",
- "hex",
- "js-sys",
- "rand 0.8.5",
- "reqwest",
- "serde",
- "serde-wasm-bindgen",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "wasm-bindgen-test",
- "web-sys",
- "web-time 0.2.4",
- "zkp",
-]
-
-[[package]]
-name = "zkp"
-version = "0.1.0"
-dependencies = [
- "alloy",
- "anyhow",
- "ark-bn254",
- "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
- "ark-ec",
- "ark-ff 0.5.0",
- "ark-groth16",
- "ark-grumpkin",
- "ark-r1cs-std 0.5.0 (git+https://github.com/winderica/r1cs-std?rev=ae8283a)",
- "ark-relations",
- "ark-serialize 0.5.0",
- "ark-snark",
- "ark-std 0.5.0 (git+https://github.com/arkworks-rs/std)",
- "criterion 0.7.0",
- "folding-schemes",
- "getrandom 0.2.16",
- "hex",
- "light-poseidon",
- "num-bigint",
- "rand 0.8.5",
- "revm",
- "serde",
- "sha2 0.10.9",
- "solidity-verifiers",
- "thiserror 2.0.17",
 ]
 
 [[package]]

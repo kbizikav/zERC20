@@ -34,7 +34,7 @@ use common::{
 };
 use reqwest::Url;
 use sqlx::{PgPool, migrate::Migrator};
-use tree_indexer::{
+use zerc20_tree_indexer::{
     config::{EventJobConfig, RootJobConfig, TreeJobConfig},
     jobs::{EventSyncJobBuilder, RootProverJobBuilder, TreeIngestionJobBuilder},
     trees::HISTORY_WINDOW_RECOMMENDED,

@@ -1,5 +1,5 @@
 [package]
-name = "crosschain-job"
+name = "zerc20-crosschain-job"
 version = "0.1.0"
 edition = "2024"
 
@@ -7,7 +7,7 @@ edition = "2024"
 alloy = { workspace = true }
 anyhow = { workspace = true }
 clap = { workspace = true }
-client-common = { path = "../client-common" }
+client-common = { path = "../client-common", package = "zerc20-client-common" }
 dotenvy = { workspace = true }
 env_logger = { workspace = true }
 log = { workspace = true }

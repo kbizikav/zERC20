@@ -5,7 +5,7 @@ use clap::Parser;
 use log::{info, warn};
 use sqlx::{Executor, postgres::PgPoolOptions};
 use tokio::task::JoinError;
-use tree_indexer::{
+use zerc20_tree_indexer::{
     config::IndexerConfig,
     error::Result,
     jobs::{EventSyncJobBuilder, RootProverJobBuilder, TreeIngestionJobBuilder},

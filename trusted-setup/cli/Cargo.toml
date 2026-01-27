@@ -1,5 +1,5 @@
 [package]
-name = "trusted-setup-cli"
+name = "zerc20-trusted-setup-cli"
 version = "0.1.0"
 edition = "2021"
 
@@ -44,8 +44,8 @@ tokio = { workspace = true, features = [
 ] }
 url = { workspace = true }
 uuid = { workspace = true }
-zkp = { path = "../../zkp" }
-trusted-setup-common = { path = "../common" }
+zkp = { path = "../../zkp", package = "zerc20-zkp" }
+trusted-setup-common = { path = "../common", package = "zerc20-trusted-setup-common" }
 alloy = { workspace = true, features = ["signer-local"] }
 
 [features]
