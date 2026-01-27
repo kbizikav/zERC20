@@ -24,7 +24,7 @@
 
 zERC20 tokens are wrapper tokens backed 1:1 by underlying assets (USDC, ETH, BNB, etc.). You can obtain them by:
 
-- **Depositing** the underlying token through the [Frontend](https://v2.testnet.app.zerc20.io/) or CLI
+- **Depositing** the underlying token through the [Frontend](https://app.zerc20.io/) or CLI
 - **Purchasing** on decentralized exchanges like Uniswap
 
 ## Next Steps

@@ -8,7 +8,7 @@ This guide explains how to send and receive private transfers using the zERC20 w
 
 If you know the recipient's address:
 
-1. Visit the [Frontend](https://v2.testnet.app.zerc20.io/)
+1. Visit the [Frontend](https://app.zerc20.io/)
 2. Click the "Private Send" tab
 3. Select the recipient chain from the dropdown
 4. Enter the recipient's Ethereum address

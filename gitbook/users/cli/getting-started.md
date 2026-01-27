@@ -6,8 +6,15 @@ This guide walks you through installing and using the zERC20 command-line interf
 
 ```bash
 git clone https://github.com/kbizikav/zERC20.git
-cd zERC20
-cargo install --path cli
+cd zERC20/cli
+cargo install --path .
+```
+
+This installs the CLI binary as `zerc20-cli` (older versions may install as `cli`). Alternatively, run directly from the repository:
+
+```bash
+cd zERC20/cli
+cargo run -r -- <command> ...
 ```
 
 ## Configuration

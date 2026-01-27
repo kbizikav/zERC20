@@ -78,8 +78,10 @@
 |----------|---------|
 | zERC20 | `0x3431cf9278411A7DEfC0CB651D8D055C22536e3d` |
 | Verifier | `0x37f9bD67E8Cc588EB825fF531844F1561D1339CC` |
-| LiquidityManager | — |
+| LiquidityManager | `0xD6e9Bbe7777a14eCdec71990aA72fa7A3225eF40` |
 | Adaptor | — |
+
+> **Note**: zBNB wrap/unwrap is only available on BNB Chain. Other chains support zBNB transfers via LayerZero OFT but do not have LiquidityManager contracts.
 
 #### Ethereum
 

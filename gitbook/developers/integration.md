@@ -266,10 +266,10 @@ The `AggregationRootUpdated` event from the Hub contract provides the snapshot o
 
 ```javascript
 event AggregationRootUpdated(
+    uint256 indexed root,
     uint64 indexed aggSeq,
-    uint256 root,
-    uint256[] snapshot,
-    uint64[] transferTreeIndices
+    uint256[] transferRootsSnapshot,
+    uint64[] transferTreeIndicesSnapshot
 );
 ```
 
@@ -281,8 +281,8 @@ For maximum privacy, run your own indexer instance to avoid sender-recipient lin
 
 ```bash
 git clone https://github.com/kbizikav/zERC20.git
-cd zERC20/docker
-docker-compose up -d
+cd zERC20
+docker compose up -d
 ```
 
 ### Configuration
