@@ -6,7 +6,7 @@ use serde::Deserialize;
 use std::str::FromStr;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
-use zkerc20_wasm::{JsSingleWithdrawInput, SingleWithdrawWasm, fr_to_hex};
+use zerc20_wasm::{JsSingleWithdrawInput, SingleWithdrawWasm, fr_to_hex};
 use zkp::{
     circuits::burn_address::{compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce},
     nova::constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
