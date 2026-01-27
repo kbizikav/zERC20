@@ -47,6 +47,12 @@ pub struct AnnouncementPage {
 }
 
 #[derive(Clone, CandidType, Deserialize)]
+pub struct AnnouncementPageByTime {
+    pub announcements: Vec<Announcement>,
+    pub next_ts: Option<u64>,
+}
+
+#[derive(Clone, CandidType, Deserialize)]
 pub struct InvoiceSubmission {
     pub invoice_id: Vec<u8>,
     pub signature: Vec<u8>,
@@ -56,7 +62,7 @@ pub struct InvoiceSubmission {
 
 #[derive(Clone, CandidType, Deserialize, Default)]
 struct State {
-    announcements: Vec<Announcement>,
+    announcements_by_tag: BTreeMap<String, Vec<Announcement>>,
     next_id: u64,
     invoices_by_tag: BTreeMap<[u8; 20], BTreeMap<String, Vec<[u8; 32]>>>,
 }
@@ -79,6 +85,14 @@ struct StateV1 {
     invoices: BTreeMap<[u8; 20], Vec<[u8; 32]>>,
 }
 
+#[derive(Clone, CandidType, Deserialize)]
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+struct StateV2 {
+    announcements: Vec<Announcement>,
+    next_id: u64,
+    invoices_by_tag: BTreeMap<[u8; 20], BTreeMap<String, Vec<[u8; 32]>>>,
+}
+
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
 }
@@ -90,7 +104,7 @@ fn init(args: Option<InitArgs>) {
     STATE.with(|state| {
         let mut state = state.borrow_mut();
         *state = State {
-            announcements: Vec::new(),
+            announcements_by_tag: BTreeMap::new(),
             next_id: 0,
             invoices_by_tag: BTreeMap::new(),
         }
@@ -113,9 +127,15 @@ fn post_upgrade() {
     let state = match restored {
         Ok((state,)) => state,
         Err(_) => {
-            let (state,): (StateV1,) =
-                ic_cdk::storage::stable_restore().expect("failed to restore legacy storage state");
-            migrate_state(state)
+            let restored_v2: Result<(StateV2,), _> = ic_cdk::storage::stable_restore();
+            match restored_v2 {
+                Ok((state,)) => migrate_state_v2(state),
+                Err(_) => {
+                    let (state,): (StateV1,) = ic_cdk::storage::stable_restore()
+                        .expect("failed to restore legacy storage state");
+                    migrate_state_v2(migrate_state_v1(state))
+                }
+            }
         }
     };
     STATE.with(|cell| {
@@ -135,9 +155,13 @@ fn submit_announcement(input: AnnouncementInput) -> Result<Announcement, String>
             ciphertext: input.ciphertext.clone(),
             nonce: input.nonce.clone(),
             created_at_ns: time(),
-            tag,
+            tag: tag.clone(),
         };
-        state.announcements.push(announcement.clone());
+        state
+            .announcements_by_tag
+            .entry(tag)
+            .or_default()
+            .push(announcement.clone());
         state.next_id += 1;
         announcement
     });
@@ -152,19 +176,21 @@ fn list_announcements(
 ) -> AnnouncementPage {
     let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT).min(MAX_LIST_LIMIT) as usize;
     let tag = normalize_tag(&tag);
-    let (mut items, next_marker) = STATE.with(|cell| {
+    let (items, next_marker) = STATE.with(|cell| {
         let state = cell.borrow();
+        let Some(announcements) = state.announcements_by_tag.get(&tag) else {
+            return (Vec::new(), None);
+        };
+
+        let start_idx = match start_after {
+            Some(id) => announcements.partition_point(|a| a.id <= id),
+            None => 0,
+        };
+
         let mut collected = Vec::with_capacity(limit);
         let mut next = None;
-        for announcement in state.announcements.iter() {
-            if let Some(start) = start_after {
-                if announcement.id <= start {
-                    continue;
-                }
-            }
-            if announcement.tag != tag {
-                continue;
-            }
+
+        for announcement in announcements[start_idx..].iter() {
             if collected.len() < limit {
                 collected.push(announcement.clone());
             } else {
@@ -176,11 +202,47 @@ fn list_announcements(
     });
 
     AnnouncementPage {
-        announcements: {
-            items.sort_by_key(|a| a.id);
-            items
-        },
+        announcements: items,
         next_id: next_marker,
+    }
+}
+
+#[query]
+fn list_announcements_by_time(
+    start_after_ts: Option<u64>,
+    limit: Option<u32>,
+    tag: String,
+) -> AnnouncementPageByTime {
+    let limit = limit.unwrap_or(DEFAULT_LIST_LIMIT).min(MAX_LIST_LIMIT) as usize;
+    let tag = normalize_tag(&tag);
+    let (items, next_marker) = STATE.with(|cell| {
+        let state = cell.borrow();
+        let Some(announcements) = state.announcements_by_tag.get(&tag) else {
+            return (Vec::new(), None);
+        };
+
+        let start_idx = match start_after_ts {
+            Some(ts) => announcements.partition_point(|a| a.created_at_ns <= ts),
+            None => 0,
+        };
+
+        let mut collected = Vec::with_capacity(limit);
+        let mut next = None;
+
+        for announcement in announcements[start_idx..].iter() {
+            if collected.len() < limit {
+                collected.push(announcement.clone());
+            } else {
+                next = Some(announcement.created_at_ns);
+                break;
+            }
+        }
+        (collected, next)
+    });
+
+    AnnouncementPageByTime {
+        announcements: items,
+        next_ts: next_marker,
     }
 }
 
@@ -188,7 +250,12 @@ fn list_announcements(
 fn get_announcement(id: u64) -> Option<Announcement> {
     STATE.with(|cell| {
         let state = cell.borrow();
-        state.announcements.iter().find(|a| a.id == id).cloned()
+        for announcements in state.announcements_by_tag.values() {
+            if let Some(announcement) = announcements.iter().find(|a| a.id == id) {
+                return Some(announcement.clone());
+            }
+        }
+        None
     })
 }
 
@@ -284,7 +351,7 @@ fn normalize_tag(tag: &str) -> String {
 }
 
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-fn migrate_state(state: StateV1) -> State {
+fn migrate_state_v1(state: StateV1) -> StateV2 {
     let announcements = state
         .announcements
         .into_iter()
@@ -306,10 +373,26 @@ fn migrate_state(state: StateV1) -> State {
             (address, tags)
         })
         .collect();
-    State {
+    StateV2 {
         announcements,
         next_id: state.next_id,
         invoices_by_tag,
+    }
+}
+
+#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
+fn migrate_state_v2(state: StateV2) -> State {
+    let mut announcements_by_tag: BTreeMap<String, Vec<Announcement>> = BTreeMap::new();
+    for announcement in state.announcements {
+        announcements_by_tag
+            .entry(announcement.tag.clone())
+            .or_default()
+            .push(announcement);
+    }
+    State {
+        announcements_by_tag,
+        next_id: state.next_id,
+        invoices_by_tag: state.invoices_by_tag,
     }
 }
 
