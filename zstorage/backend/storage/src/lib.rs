@@ -209,7 +209,7 @@ fn list_announcements(
 
 #[query]
 fn list_announcements_by_time(
-    start_after_ts: Option<u64>,
+    start_from_ts: Option<u64>,
     limit: Option<u32>,
     tag: String,
 ) -> AnnouncementPageByTime {
@@ -221,8 +221,8 @@ fn list_announcements_by_time(
             return (Vec::new(), None);
         };
 
-        let start_idx = match start_after_ts {
-            Some(ts) => announcements.partition_point(|a| a.created_at_ns <= ts),
+        let start_idx = match start_from_ts {
+            Some(ts) => announcements.partition_point(|a| a.created_at_ns < ts),
             None => 0,
         };
 
