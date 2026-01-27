@@ -489,20 +489,14 @@ impl BroadcastJob {
             return Ok(());
         }
 
-        // Determine which EIDs to broadcast to:
-        // - If root changed, broadcast to all targets
-        // - If root is the same but some targets are missing, broadcast only to missing targets
-        let (broadcast_eids, is_selective) = if root_changed {
-            (self.target_eids.clone(), false)
-        } else {
-            let missing_eids: Vec<u32> = missing_targets.iter().map(|(_, eid)| *eid).collect();
-            (missing_eids, true)
-        };
-
+        // Always broadcast to all targets to ensure consistent agg_seq across all verifiers.
+        // Selective broadcast was removed because it could cause convergence issues:
+        // broadcasting to only missing targets advances agg_seq, making previously-synced
+        // verifiers appear out-of-date in the next cycle.
         let options = Bytes::copy_from_slice(&self.lz_options);
         let quote = self
             .contract
-            .quote_broadcast(broadcast_eids.clone(), options.clone())
+            .quote_broadcast(self.target_eids.clone(), options.clone())
             .await
             .context("failed to quote broadcast fee")?;
 
@@ -511,7 +505,7 @@ impl BroadcastJob {
             .contract
             .broadcast(
                 self.private_key,
-                broadcast_eids.clone(),
+                self.target_eids.clone(),
                 options,
                 fee_with_buffer,
             )
@@ -519,21 +513,10 @@ impl BroadcastJob {
             .context("failed to submit Hub.broadcast transaction")?;
         let tx_hash = *pending.tx_hash();
 
-        if is_selective {
-            let missing_labels: Vec<&str> = missing_targets
-                .iter()
-                .map(|(label, _)| label.as_str())
-                .collect();
-            info!(
-                "submitted selective Hub.broadcast to missing targets {:?} (tx={tx_hash:#x}, eids={:?}, fee={} wei, buffer_bps={})",
-                missing_labels, broadcast_eids, fee_with_buffer, self.fee_buffer_bps
-            );
-        } else {
-            info!(
-                "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
-                broadcast_eids, fee_with_buffer, self.fee_buffer_bps
-            );
-        }
+        info!(
+            "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
+            self.target_eids, fee_with_buffer, self.fee_buffer_bps
+        );
 
         let receipt = wait_for_receipt(pending)
             .await
@@ -543,7 +526,6 @@ impl BroadcastJob {
             let target_labels: Vec<&str> = self
                 .destinations
                 .iter()
-                .filter(|d| broadcast_eids.contains(&d.eid))
                 .map(|d| d.label.as_str())
                 .collect();
             info!(
@@ -937,7 +919,7 @@ fn build_layerzero_probe(cli: &Cli) -> Result<Option<LayerZeroProbe>> {
 fn parse_private_key(input: &str) -> Result<B256> {
     let normalized = input.trim().strip_prefix("0x").unwrap_or(input.trim());
     let bytes = hex::decode(normalized)
-        .with_context(|| format!("failed to decode private key hex: {input}"))?;
+        .context("failed to decode private key: invalid hex format")?;
     if bytes.len() != 32 {
         bail!("private key must be 32 bytes, got {}", bytes.len());
     }
@@ -956,12 +938,16 @@ fn parse_hex_blob(input: &str) -> Result<Vec<u8>> {
     hex::decode(without_prefix).with_context(|| format!("failed to decode hex payload: {input}"))
 }
 
+/// Maximum time to wait for a transaction receipt before giving up.
+const RECEIPT_TIMEOUT_SECS: u64 = 300; // 5 minutes
+
 async fn wait_for_receipt(
     pending: PendingTransactionBuilder<Ethereum>,
 ) -> Result<alloy::rpc::types::TransactionReceipt> {
-    let receipt = pending
-        .get_receipt()
+    let timeout_duration = Duration::from_secs(RECEIPT_TIMEOUT_SECS);
+    let receipt = time::timeout(timeout_duration, pending.get_receipt())
         .await
+        .context("timed out waiting for transaction receipt")?
         .context("failed to fetch transaction receipt")?;
     if receipt.status() {
         Ok(receipt)
