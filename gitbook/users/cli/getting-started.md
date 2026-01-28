@@ -17,6 +17,19 @@ cd zERC20/cli
 cargo run -r -- <command> ...
 ```
 
+## Prerequisites
+
+### Circuit Artifacts
+
+Circuit artifacts are required for generating withdrawal proofs. Download them before using the CLI:
+
+```bash
+cargo install --path circuit-setup
+zerc20-circuit-setup download --version 1.0.0
+```
+
+See [Circuit Setup](../../developers/circuit-setup.md) for more details.
+
 ## Configuration
 
 ### Environment Variables
@@ -32,7 +45,7 @@ export IC_REPLICA_URL=<IC_URL>
 export KEY_MANAGER_CANISTER_ID=<CANISTER_ID>
 export STORAGE_CANISTER_ID=<CANISTER_ID>
 
-# Required for receiving funds
+# Required for receiving funds (path to downloaded circuit artifacts)
 export NOVA_ARTIFACTS_DIR=/path/to/nova_artifacts
 ```
 
