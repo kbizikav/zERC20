@@ -945,8 +945,8 @@ fn build_layerzero_probe(cli: &Cli) -> Result<Option<LayerZeroProbe>> {
 
 fn parse_private_key(input: &str) -> Result<B256> {
     let normalized = input.trim().strip_prefix("0x").unwrap_or(input.trim());
-    let bytes = hex::decode(normalized)
-        .context("failed to decode private key: invalid hex format")?;
+    let bytes =
+        hex::decode(normalized).context("failed to decode private key: invalid hex format")?;
     if bytes.len() != 32 {
         bail!("private key must be 32 bytes, got {}", bytes.len());
     }
