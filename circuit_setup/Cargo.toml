@@ -55,3 +55,4 @@ ark-crypto-primitives = { workspace = true }
 folding-schemes = { workspace = true }
 
 zerc20-zkp = { path = "../zkp" }
+alloy = { workspace = true }

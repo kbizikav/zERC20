@@ -9147,12 +9147,14 @@ dependencies = [
 name = "zerc20-circuit-setup"
 version = "0.1.0"
 dependencies = [
+ "alloy",
  "anyhow",
  "ark-bn254",
  "ark-crypto-primitives 0.5.0 (git+https://github.com/winderica/crypto-primitives?rev=af003fc)",
  "ark-ff 0.5.0",
  "aws-config",
  "aws-sdk-s3",
+ "bytes",
  "chrono",
  "clap",
  "dotenvy",
@@ -9160,6 +9162,7 @@ dependencies = [
  "folding-schemes",
  "futures",
  "hex",
+ "indicatif",
  "log",
  "rand 0.8.5",
  "reqwest",

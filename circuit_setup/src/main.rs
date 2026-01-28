@@ -72,6 +72,13 @@ enum Commands {
         #[arg(long, short = 'o')]
         output: Option<PathBuf>,
     },
+
+    /// Test circuit artifacts by generating and verifying dummy proofs
+    Test {
+        /// Local artifacts directory
+        #[arg(long, env = "NOVA_ARTIFACTS_DIR")]
+        artifacts_dir: Option<PathBuf>,
+    },
 }
 
 fn default_artifacts_dir() -> PathBuf {
@@ -95,7 +102,11 @@ async fn main() -> Result<()> {
             artifacts_dir,
         } => {
             let artifacts_dir = artifacts_dir.unwrap_or_else(default_artifacts_dir);
-            log::info!("Generating artifacts version {} in {}", version, artifacts_dir.display());
+            log::info!(
+                "Generating artifacts version {} in {}",
+                version,
+                artifacts_dir.display()
+            );
             commands::generate::generate(&artifacts_dir, &version, seed)?;
         }
 
@@ -105,7 +116,12 @@ async fn main() -> Result<()> {
             prefix,
         } => {
             let artifacts_dir = artifacts_dir.unwrap_or_else(default_artifacts_dir);
-            log::info!("Uploading artifacts from {} to s3://{}/{}", artifacts_dir.display(), bucket, prefix);
+            log::info!(
+                "Uploading artifacts from {} to s3://{}/{}",
+                artifacts_dir.display(),
+                bucket,
+                prefix
+            );
 
             let client = s3::create_s3_client().await?;
             let storage = s3::Storage::new(client, bucket, prefix);
@@ -119,20 +135,36 @@ async fn main() -> Result<()> {
             base_url,
         } => {
             let artifacts_dir = artifacts_dir.unwrap_or_else(default_artifacts_dir);
-            log::info!("Downloading artifacts version {} from {} to {}", version, base_url, artifacts_dir.display());
+            log::info!(
+                "Downloading artifacts version {} from {} to {}",
+                version,
+                base_url,
+                artifacts_dir.display()
+            );
 
             commands::download::download(&artifacts_dir, &version, &base_url).await?;
         }
 
-        Commands::GenerateVerifier { artifacts_dir, output } => {
+        Commands::GenerateVerifier {
+            artifacts_dir,
+            output,
+        } => {
             let artifacts_dir = artifacts_dir.unwrap_or_else(default_artifacts_dir);
             let output_dir = output.as_deref();
             log::info!(
                 "Generating Solidity verifiers from {} to {}",
                 artifacts_dir.display(),
-                output_dir.map(|p| p.display().to_string()).unwrap_or_else(|| artifacts_dir.display().to_string())
+                output_dir
+                    .map(|p| p.display().to_string())
+                    .unwrap_or_else(|| artifacts_dir.display().to_string())
             );
             commands::verifier::generate_verifiers(&artifacts_dir, output_dir)?;
+        }
+
+        Commands::Test { artifacts_dir } => {
+            let artifacts_dir = artifacts_dir.unwrap_or_else(default_artifacts_dir);
+            log::info!("Testing artifacts in {}", artifacts_dir.display());
+            commands::test::test_artifacts(&artifacts_dir)?;
         }
     }
 

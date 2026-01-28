@@ -25,6 +25,9 @@ zerc20-circuit-setup download --version 1.0.0 --base-url https://bucket.s3.amazo
 
 # Generate Solidity verifiers
 zerc20-circuit-setup generate-verifier
+
+# Test artifacts by generating dummy proofs
+zerc20-circuit-setup test
 ```
 
 ## Commands
@@ -112,6 +115,25 @@ zerc20-circuit-setup generate-verifier [--artifacts-dir <DIR>] [--output <DIR>]
 - `WithdrawGlobalNovaDecider.sol`
 - `WithdrawLocalGroth16Verifier.sol`
 - `WithdrawGlobalGroth16Verifier.sol`
+
+### `test`
+
+Test circuit artifacts by generating and verifying dummy proofs. This validates that the artifacts are correctly generated.
+
+```bash
+zerc20-circuit-setup test [--artifacts-dir <DIR>]
+```
+
+| Option | Env Variable | Description |
+|--------|--------------|-------------|
+| `--artifacts-dir` | `NOVA_ARTIFACTS_DIR` | Artifacts directory to test |
+
+**Tests performed:**
+1. Root circuit: Nova step proofs + Decider proof
+2. Withdraw local circuit: Nova step proofs + Decider proof
+3. Withdraw global circuit: Nova step proofs + Decider proof
+4. Withdraw local groth16: Proof generation
+5. Withdraw global groth16: Proof generation
 
 ## Environment Variables
 
