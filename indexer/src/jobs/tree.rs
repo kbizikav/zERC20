@@ -68,8 +68,6 @@ impl TreeIngestionJob {
     }
 
     async fn ingest_token(&self, token: &TreeTokenContext) -> Result<()> {
-        let chain_id_i64 = i64::try_from(token.metadata.chain_id)
-            .context("chain_id exceeds i64 range for tree ingestion")?;
         let token_id: Option<i64> = sqlx::query_scalar(
             r#"
             SELECT id
@@ -78,7 +76,7 @@ impl TreeIngestionJob {
             "#,
         )
         .bind(token.metadata.token_address.as_slice())
-        .bind(chain_id_i64)
+        .bind(token.chain_id_i64)
         .fetch_optional(&self.pool)
         .await
         .with_context(|| format!("failed to locate token '{}'", token.label))?;
@@ -162,18 +160,22 @@ impl TreeIngestionJobBuilder {
             .build_tree_config()
             .context("invalid tree configuration")?;
 
-        let contexts = self
-            .tokens
-            .into_iter()
-            .map(|token| {
-                let metadata = token.metadata();
-                TreeTokenContext {
-                    label: token.label.clone(),
-                    metadata,
-                    lock_key: token.lock_key_with_salt(TREE_LOCK_SALT),
-                }
-            })
-            .collect();
+        let mut contexts = Vec::with_capacity(self.tokens.len());
+        for token in self.tokens {
+            let metadata = token.metadata();
+            let chain_id_i64 = i64::try_from(metadata.chain_id).with_context(|| {
+                format!(
+                    "chain_id {} exceeds i64 range for token '{}'",
+                    metadata.chain_id, token.label
+                )
+            })?;
+            contexts.push(TreeTokenContext {
+                label: token.label.clone(),
+                metadata,
+                chain_id_i64,
+                lock_key: token.lock_key_with_salt(TREE_LOCK_SALT),
+            });
+        }
 
         Ok(TreeIngestionJob {
             pool: self.pool,
@@ -190,6 +192,8 @@ impl TreeIngestionJobBuilder {
 struct TreeTokenContext {
     label: String,
     metadata: TokenMetadata,
+    /// Pre-validated chain_id as i64 for database queries.
+    chain_id_i64: i64,
     lock_key: i64,
 }
 

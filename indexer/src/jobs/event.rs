@@ -116,10 +116,12 @@ impl EventSyncJobBuilder {
 
         let mut contexts = Vec::with_capacity(self.tokens.len());
         for token in self.tokens {
-            let provider = if token.rpc_urls.len() == 1 {
-                get_provider(token.rpc_urls.first().expect("rpc urls not empty")).with_context(
-                    || format!("failed to build provider for token '{}'", token.label),
-                )?
+            let provider = if token.rpc_urls.is_empty() {
+                anyhow::bail!("token '{}' has no RPC URLs configured", token.label);
+            } else if token.rpc_urls.len() == 1 {
+                get_provider(&token.rpc_urls[0]).with_context(|| {
+                    format!("failed to build provider for token '{}'", token.label)
+                })?
             } else {
                 get_provider_with_fallback(&token.rpc_urls).with_context(|| {
                     format!(

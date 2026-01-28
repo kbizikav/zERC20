@@ -78,6 +78,8 @@ pub enum DbMerkleTreeError {
     InvalidBitPathBytes { len: usize },
     #[error("{message}")]
     InvalidConfig { message: &'static str },
+    #[error("internal error: {message}")]
+    InternalError { message: &'static str },
 }
 
 impl DbMerkleTreeError {
@@ -246,10 +248,12 @@ impl DbIncrementalMerkleTree {
     }
 
     pub fn zero_root(&self) -> Fr {
+        // Invariant: zero_hashes is populated during construction based on validated height > 0.
+        // If this ever fails, it indicates a serious bug in tree construction.
         *self
             .zero_hashes
             .last()
-            .expect("zero hashes populated during construction")
+            .expect("zero_hashes must be non-empty after construction with height > 0")
     }
 
     pub async fn append_leaf(
@@ -519,9 +523,10 @@ impl DbIncrementalMerkleTree {
         let mut proofs = self
             .prove_many(target_index, std::slice::from_ref(&leaf_index))
             .await?;
-        Ok(proofs
-            .pop()
-            .expect("prove_many must return one proof for a single leaf"))
+        // Safety: prove_many is called with exactly one leaf, so it must return exactly one proof
+        proofs.pop().ok_or(DbMerkleTreeError::InternalError {
+            message: "prove_many returned empty result for single leaf",
+        })
     }
 
     pub async fn prove_many(
@@ -858,14 +863,17 @@ impl DbIncrementalMerkleTree {
     fn zero_hash_for_path(&self, path: BitPath) -> Fr {
         let remaining = path.len() as usize;
         let total = self.height as usize;
+        // Invariant: path length must not exceed tree height during proof construction.
+        // If this fails, the proof request is invalid or there's a bug in path generation.
         let idx = total
             .checked_sub(remaining)
-            .expect("path length does not exceed height");
+            .expect("path length exceeds tree height - invalid proof request");
+        // Invariant: zero_hashes has height+1 entries, so idx <= height is always valid.
         *self
             .zero_hashes
             .get(idx)
             .or_else(|| self.zero_hashes.last())
-            .expect("zero hashes populated")
+            .expect("zero_hashes must be non-empty after construction")
     }
 }
 
@@ -886,15 +894,19 @@ fn max_leaf_capacity(height: u32) -> u128 {
 }
 
 fn fr_to_bytes(value: Fr) -> [u8; 32] {
-    let bigint = value.into_bigint();
-    let mut bytes = bigint.to_bytes_be();
-    if bytes.len() < 32 {
-        let mut padded = vec![0u8; 32 - bytes.len()];
-        padded.extend_from_slice(&bytes);
-        bytes = padded;
-    }
-    let array: [u8; 32] = bytes.try_into().expect("fr serialization to 32 bytes");
-    array
+    let bytes = value.into_bigint().to_bytes_be();
+    // BN254 Fr elements are at most 32 bytes. If this ever exceeds 32 bytes,
+    // it indicates a field mismatch or serialization bug - fail immediately.
+    assert!(
+        bytes.len() <= 32,
+        "Fr serialization exceeded 32 bytes (got {}), possible field mismatch",
+        bytes.len()
+    );
+    // Pad with leading zeros if shorter than 32 bytes
+    let mut result = [0u8; 32];
+    let start = 32 - bytes.len();
+    result[start..].copy_from_slice(&bytes);
+    result
 }
 
 fn bytes_to_bit_path(bytes: &[u8]) -> Result<BitPath> {
