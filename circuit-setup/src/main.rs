@@ -61,7 +61,7 @@ enum Commands {
         #[arg(long, env = "NOVA_ARTIFACTS_DIR")]
         artifacts_dir: Option<PathBuf>,
 
-        /// Base URL for artifacts (e.g., https://bucket.s3.amazonaws.com/prefix)
+        /// Base URL for artifacts (e.g., <https://bucket.s3.amazonaws.com/prefix>)
         #[arg(long, env = "ARTIFACTS_BASE_URL")]
         base_url: String,
     },
