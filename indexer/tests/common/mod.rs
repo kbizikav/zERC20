@@ -84,7 +84,7 @@ impl Drop for TestDatabase {
 }
 
 fn random_suffix() -> String {
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     (&mut rng)
         .sample_iter(&Alphanumeric)
         .take(10)

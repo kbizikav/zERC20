@@ -151,7 +151,7 @@ mod tests {
 
         // After updates, root should change
         let mut tree = MerkleTree::new(height);
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let index: u64 = rng.gen_range(0..1 << height);
         let leaf_hash = Fr::rand(&mut rng);
 
@@ -164,7 +164,7 @@ mod tests {
 
     #[test]
     fn test_merkle_tree_update_prove_verify() {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let height = 10;
         let mut tree = MerkleTree::new(height);
         let mut leaf_hashes = HashMap::new();

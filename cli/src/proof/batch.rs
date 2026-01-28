@@ -72,7 +72,7 @@ pub async fn batch_teleport_proof<const DEPTH: usize>(
     }
 
     // add dummy steps
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
     let num_dummy_steps = rng.gen_range(1..NUM_BATCH_INVOICES);
     let offset = (1u64 << DEPTH) - 1 - num_dummy_steps as u64;
     for i in 0..num_dummy_steps {

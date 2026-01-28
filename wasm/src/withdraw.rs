@@ -184,7 +184,7 @@ fn prove_with_depth<const DEPTH: usize>(
         .initial_nova(z0_fields)
         .map_err(|err| JsValue::from_str(&err.to_string()))?;
 
-    let mut rng = rand::thread_rng();
+    let mut rng = rand::rng();
 
     for (idx, external) in step_inputs.iter().enumerate() {
         let step_start = Instant::now();
