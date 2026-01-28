@@ -258,7 +258,7 @@ enum SecureRng {
     /// OS-backed RNG - fetches entropy from the OS for each operation.
     Os(OsRng),
     /// Seeded RNG - deterministic, for testing only.
-    Seeded(StdRng),
+    Seeded(Box<StdRng>),
 }
 
 impl RngCore for SecureRng {
@@ -295,7 +295,7 @@ impl CryptoRng for SecureRng {}
 
 fn create_rng(seed: Option<u64>) -> SecureRng {
     match seed {
-        Some(s) => SecureRng::Seeded(StdRng::seed_from_u64(s)),
+        Some(s) => SecureRng::Seeded(Box::new(StdRng::seed_from_u64(s))),
         None => SecureRng::Os(OsRng),
     }
 }
