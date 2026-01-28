@@ -8,7 +8,9 @@ use tokio::task::JoinError;
 use zerc20_tree_indexer::{
     config::IndexerConfig,
     error::Result,
-    jobs::{EventSyncJobBuilder, RootProverJobBuilder, TreeIngestionJobBuilder},
+    jobs::{
+        EventSyncJobBuilder, RootProverJobBuilder, TreeIngestionJobBuilder, cleanup_expired_leases,
+    },
     server,
 };
 
@@ -50,6 +52,18 @@ async fn main() -> Result<()> {
         .connect(&config.database_url)
         .await
         .context("failed to connect to postgres")?;
+
+    // Clean up any stale leases from previous ungraceful shutdowns.
+    // This ensures jobs can acquire locks immediately without waiting for TTL expiration.
+    match cleanup_expired_leases(&pool).await {
+        Ok(count) if count > 0 => {
+            info!("cleaned up {} expired lease(s) from previous run", count);
+        }
+        Ok(_) => {}
+        Err(err) => {
+            warn!("failed to clean up expired leases: {err:?}");
+        }
+    }
 
     let run_sync = env::var("IS_SYNC")
         .map(|value| value.eq_ignore_ascii_case("true"))
