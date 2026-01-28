@@ -1,6 +1,6 @@
 use crate::utils::{
-    address_to_hex_string, anyhow_to_js_error, b256_to_hex_string, fr_to_hex_checked,
-    normalize_hex, parse_address_hex, parse_b256_hex, serde_error_to_js,
+    address_to_hex_string, anyhow_to_js_error, b256_to_hex_string, fr_to_hex, normalize_hex,
+    parse_address_hex, parse_b256_hex, serde_error_to_js,
 };
 use alloy::primitives::Address;
 use anyhow::Context;
@@ -142,7 +142,7 @@ pub fn general_recipient_fr(
     let recipient_address = parse_address_hex(recipient_address_hex).map_err(anyhow_to_js_error)?;
     let tweak = parse_b256_hex(tweak_hex).map_err(anyhow_to_js_error)?;
     let gr = GeneralRecipient::new_evm(chain_id, recipient_address, tweak);
-    Ok(fr_to_hex_checked(gr.to_fr()))
+    Ok(fr_to_hex(&gr.to_fr()))
 }
 
 fn secret_tweak_to_js(secret_and_tweak: SecretAndTweak) -> JsSecretTweak {
@@ -154,7 +154,7 @@ fn secret_tweak_to_js(secret_and_tweak: SecretAndTweak) -> JsSecretTweak {
 
 fn general_recipient_to_js(gr: &GeneralRecipient) -> JsGeneralRecipient {
     let fr_value = gr.to_fr();
-    let fr_hex = fr_to_hex_checked(fr_value);
+    let fr_hex = fr_to_hex(&fr_value);
     let u256_hex = b256_to_hex_string(fr_to_b256(fr_value));
     let recipient_address = Address::from_word(gr.address);
     JsGeneralRecipient {
@@ -237,10 +237,7 @@ mod tests {
             artifacts.general_recipient.tweak,
             b256_to_hex_string(secret_and_tweak.tweak)
         );
-        assert_eq!(
-            artifacts.general_recipient.fr,
-            fr_to_hex_checked(burn.gr.to_fr())
-        );
+        assert_eq!(artifacts.general_recipient.fr, fr_to_hex(&burn.gr.to_fr()));
         Ok(())
     }
 

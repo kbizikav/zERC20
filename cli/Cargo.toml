@@ -1,18 +1,18 @@
 [package]
-name = "cli"
+name = "zerc20-cli"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-client-common = { path = "../client-common" }
-zkp = { path = "../zkp" }
-api-types = { path = "../api-types" }
-stealth_client = { path = "../zstorage/frontend" }
+client-common = { path = "../client-common", package = "zerc20-client-common" }
+zkp = { path = "../zkp", package = "zerc20-zkp" }
+api-types = { path = "../api-types", package = "zerc20-api-types" }
+stealth_client = { path = "../zstorage/frontend", package = "zerc20-stealth-client" }
 ic-agent = { workspace = true }
 candid = "0.10"
 k256 = { version = "0.13", features = ["ecdsa"] }
-key_manager = { path = "../zstorage/backend/key_manager" }
-storage = { path = "../zstorage/backend/storage" }
+key_manager = { path = "../zstorage/backend/key_manager", package = "zerc20-key-manager" }
+storage = { path = "../zstorage/backend/storage", package = "zerc20-storage" }
 anyhow = { workspace = true }
 clap = { workspace = true }
 dotenvy = { workspace = true }

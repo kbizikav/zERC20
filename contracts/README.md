@@ -19,7 +19,13 @@ The scripts consume environment variables through `vm.env*` helpers. Place the v
 - `PRIVATE_KEY`: Hex-encoded private key for the broadcaster account (also used as the default delegate when overrides are omitted)
 - `RPC_URL`: RPC endpoint that matches the target chain passed to `--rpc-url` (used for Hub deployment in the examples below)
 - `VERIFIER_RPC`: RPC endpoint for the verifier/token chain (used only by the CLI flag in the example command)
-- `DEPLOY_SALT` (string, optional): Overrides the base salt used for deterministic deployments
+- `DEPLOY_SALT` (string, optional): Overrides the base salt used for deterministic deployments.
+  **Important**: When deploying multiple token types (e.g., zUSD and zETH), use different salts to avoid address collisions:
+  ```bash
+  export DEPLOY_SALT=zUSD   # for zUSD deployment
+  export DEPLOY_SALT=zETH   # for zETH deployment
+  ```
+  If unset, all deployments use the same default salt and will collide.
 
 ### Hub deployment (`DeployHub`)
 - `HUB_EID` (uint32): LayerZero endpoint ID for the chain hosting the Hub (for reference/logging)
@@ -117,7 +123,7 @@ Optional env (defaults shown in `script/DeployLiquidity.s.sol`):
 - `LIQUIDITY_K` (uint256): Incentive strength coefficient for wrap rewards/unwrap fees, expressed in basis points (1 = 0.01%; 10_000 = 1.0). Defaults to `1_000` (you can set `0` to disable curve-based incentives).
 - `LIQUIDITY_OWNER` (address): Admin/fee manager for the LiquidityManager (defaults to broadcaster).
 - `ADAPTOR_STARGATE` (address): When set, deploys the Adaptor wired to this Stargate instance.
-- Defaults can also be sourced from `config/chain-config.json` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence for those values.
+- Defaults can also be sourced from chain config files in `contracts/config/stargate/` (override with `CHAIN_CONFIG_PATH`), keyed by `block.chainid` with `underlyingToken` and `stargate` entries. Environment variables still take precedence for those values.
   - The LayerZero endpoint address is resolved automatically from `lz-address-book` using `block.chainid` (ensure the chain ID is supported there).
 
 Example:
@@ -158,30 +164,69 @@ forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-ur
 forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-url <OP_RPC> --broadcast -vvvv
 ```
 
+**Deploying additional token types (e.g., zETH)**
+
+To deploy a second token type without address collisions, set a unique `DEPLOY_SALT`:
+```bash
+export PRIVATE_KEY=0x...
+export HUB_EID=40245
+export TOKEN_NAME=zETH
+export TOKEN_SYMBOL=zETH
+export TOKEN_DECIMALS=18
+export DEPLOY_SALT=zETH   # Different salt to avoid collisions with zUSD
+
+forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-url <ARB_RPC> --broadcast -vvvv
+forge script script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken --rpc-url <OP_RPC> --broadcast -vvvv
+```
+
 ### 3) Deploy LiquidityManager + Adaptor (Arb Sepolia, then OP Sepolia)
 Use the shipped per-chain config files to select the underlying token and Stargate address:
-- `config/config.zUSD.json` (USDC)
-- `config/config.zETH.json` (native ETH)
+- `contracts/config/stargate/config.zUSDC.json` (USDC)
+- `contracts/config/stargate/config.zETH.json` (native ETH)
+- `contracts/config/stargate/config.zBNB.json` (BNB)
 
 ```bash
 export PRIVATE_KEY=0x...
 export ZERC20=<zERC20 token proxy address>
-export CHAIN_CONFIG_PATH=config/config.zUSD.json
+export CHAIN_CONFIG_PATH=contracts/config/stargate/config.zUSDC.json
 
 forge script script/DeployLiquidity.s.sol:DeployLiquidity --rpc-url <ARB_RPC> --broadcast -vvvv
 forge script script/DeployLiquidity.s.sol:DeployLiquidity --rpc-url <OP_RPC> --broadcast -vvvv
 ```
 
-### 4) Wire Hub/Verifier/Token peers (recommended helper)
-Create `../config/tokens.json` (copy `../config/tokens.example.json`) and fill in `hub_address`, token/verifier addresses,
-`chain_id`, and `eid`. Then run:
+### 4) Wire Hub/Verifier/Token peers
+
+Use a tokens config file from `../config/` (e.g., `tokens.zusdc.testnet.json`, `tokens.zeth.testnet.json`, `tokens.zbnb.testnet.json`)
+or copy `../config/tokens.example.json` to create your own, filling in `hub_address`, token/verifier addresses, `chain_id`, and `eid`.
+
+**Option A: Direct forge commands (recommended)**
+
+Run each script directly with forge for reliable broadcasting:
 ```bash
 export PRIVATE_KEY=0x...
-python3 ./run_set_peers.py --file ../config/tokens.json --broadcast -vvvv
+
+# SetHubPeers (on Hub chain)
+export HUB_ADDRESS=0x... VERIFIER_ADDRESSES=0x...,0x... VERIFIER_EIDS=40231,40232 TOKEN_ADDRESSES=0x...,0x... TOKEN_CHAIN_IDS=421614,11155420
+forge script script/SetPeers.s.sol:SetHubPeers --rpc-url <HUB_RPC> --broadcast -vv
+
+# SetVerifierPeers (on each verifier chain)
+export HUB_ADDRESS=0x... HUB_EID=40245 VERIFIER_ADDRESS=0x...
+forge script script/SetPeers.s.sol:SetVerifierPeers --rpc-url <VERIFIER_RPC> --broadcast -vv
+
+# SetTokenPeers (on each token chain)
+export TOKEN_ADDRESS=0x... PEER_ADDRESSES=0x... PEER_EIDS=40232
+forge script script/SetPeers.s.sol:SetTokenPeers --rpc-url <TOKEN_RPC> --broadcast -vv
 ```
 
-If you see a `dry-run` directory under `contracts/broadcast/SetPeers.s.sol/.../dry-run`, you ran a simulation only. Ensure
-`--broadcast` is passed to the python helper as shown above.
+**Option B: Python helper**
+
+```bash
+export PRIVATE_KEY=0x...
+python3 ./run_set_peers.py --file ../config/tokens.zusdc.testnet.json -- --broadcast -vv
+```
+
+**Note**: The python helper may produce simulation-only output (saved to `dry-run/` directories). If transactions are not
+broadcast, use Option A with direct forge commands instead.
 
 Crosschain Unwrap Smoke Test (Adaptor.unwrapAndBridge)
 ------------------------------------------------------
@@ -328,7 +373,7 @@ After every hub/verifier pair has been deployed and registered, wire the LayerZe
 1. **Hub chain:** run `SetHubPeers` once to map every remote verifier EID to its address and register the associated token if it has not been registered yet.
 2. **Each verifier chain:** run `SetVerifierPeers` separately so the verifier points back to the hub.
 
-> Shortcut: the repo ships with `./run_set_peers.py` (with a `./run-set-peers.sh` wrapper), which reads `config/tokens.json` (per-entry `eid` required) and exports the required environment variables before running both scripts in order. Provide extra forge flags after `--` (for example `./run_set_peers.py -- --broadcast -vv`) and ensure `PRIVATE_KEY` is set in your shell.
+> Shortcut: the repo ships with `./run_set_peers.py` (with a `./run-set-peers.sh` wrapper), which reads a tokens config file (per-entry `eid` required) and exports the required environment variables before running both scripts in order. Provide extra forge flags after `--` (for example `./run_set_peers.py --file ../config/tokens.zusdc.testnet.json -- --broadcast -vv`) and ensure `PRIVATE_KEY` is set in your shell.
 
 ```bash
 # Step 1: run on the hub chain (all verifiers at once)
@@ -358,17 +403,18 @@ The helper contracts convert the hub address into the required 32-byte format au
 
 Configuring LayerZero DVN / ULN Config
 --------------------------------------
-Use `script/SetDvnConfig.s.sol` to set ULN confirmations + DVN lists per OApp/remote EID. The helper `run_set_dvn_config.py` reads a per-chain JSON file plus `tokens.json` and derives all routes automatically (verifier<->hub + token<->token).
+Use `script/SetDvnConfig.s.sol` to set ULN confirmations + DVN lists per OApp/remote EID. The helper `run_set_dvn_config.py` reads a per-chain JSON file plus a tokens config file and derives all routes automatically (verifier<->hub + token<->token).
+
+DVN config files are located in `contracts/config/dvn/`:
+- Testnet: `contracts/config/dvn/testnet/dvn-config.*.testnet.json`
+- Mainnet: `contracts/config/dvn/mainnet/dvn-config.mainnet.json`
 
 ```bash
-# Copy and edit the template
-cp config/dvn-config.example.json config/dvn-config.json
-
 # Run derived routes (defaults to --broadcast)
-./run_set_dvn_config.py -- --broadcast -vv
+./run_set_dvn_config.py --config contracts/config/dvn/testnet/dvn-config.zusdc.testnet.json -- --broadcast -vv
 ```
 
-The config file points at the `tokens.json` you already use (via `tokens_file`) and supplies two policies per token chain:
+The config file points at a tokens config file (via `tokens_file`, e.g., `../config/tokens.zusdc.testnet.json`) and supplies two policies per token chain:
 `verifier_hub` and `token`. The runner applies `verifier_hub` to both directions between hub and each verifier, and applies `token` to every outgoing token->token route from that chain.
 
 DVN names must match the lz-address-book registry (see `getAvailableDVNs()` in `LZAddressContext` for discovery).

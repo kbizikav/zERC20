@@ -5,7 +5,7 @@ use ark_bn254::Fr;
 use ark_ff::Zero;
 use folding_schemes::FoldingScheme;
 use rand::{SeedableRng, rngs::StdRng};
-use zkp::{
+use zerc20_zkp::{
     nova::{
         constants::TRANSFER_TREE_HEIGHT,
         params::{DeciderParams, NovaParams},

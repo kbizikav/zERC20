@@ -46,17 +46,12 @@ needs an RPC URL list, verifier address, and chain identifier. The optional
 automatically disabled. Set `hub.legacy_tx=true` when the hub chain requires
 legacy transactions (e.g., BNB).
 
-You can skip the JSON file entirely by exporting `TOKENS_COMPRESSED`, which
-accepts the same Base64+gzip payload produced by `scripts/encode_tokens.sh`
-(`VITE_TOKENS_COMPRESSED` in the frontend). When set, this variable overrides
-`TOKENS_FILE_PATH`.
-
 ## Running
 
 From the repository root:
 
 ```bash
-cargo run -p crosschain-job
+cargo run -p zerc20-crosschain-job
 ```
 
 The binary respects CLI arguments in addition to environment overrides. Use
@@ -64,7 +59,7 @@ The binary respects CLI arguments in addition to environment overrides. Use
 time for smoke testing:
 
 ```bash
-cargo run -p crosschain-job -- --once
+cargo run -p zerc20-crosschain-job -- --once
 ```
 
 Press `Ctrl+C` to stop the long-running scheduler. The process logs every

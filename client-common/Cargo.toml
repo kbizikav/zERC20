@@ -1,5 +1,5 @@
 [package]
-name = "client-common"
+name = "zerc20-client-common"
 version = "0.1.0"
 edition = "2024"
 
@@ -9,7 +9,7 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 hex = { workspace = true }
 ark-bn254 = { workspace = true, default-features = false }
-zkp = { path = "../zkp", default-features = false }
+zkp = { path = "../zkp", package = "zerc20-zkp", default-features = false }
 rand = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
@@ -19,6 +19,6 @@ thiserror = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
 uuid = { workspace = true }
-api-types = { path = "../api-types" }
+api-types = { path = "../api-types", package = "zerc20-api-types" }
 url = { workspace = true }
 flate2 = { workspace = true }

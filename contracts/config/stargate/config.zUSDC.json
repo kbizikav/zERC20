@@ -1,0 +1,39 @@
+{
+  "chains": {
+    "11155111": {
+      "label": "sepolia-usdc",
+      "underlyingToken": "0x2F6F07CDcf3588944Bf4C42aC74ff24bF56e7590",
+      "stargate": "0x4985b8fcEA3659FD801a5b857dA1D00e985863F0"
+    },
+    "421614": {
+      "label": "arb-sepolia-usdc",
+      "underlyingToken": "0x3253a335E7bFfB4790Aa4C25C4250d206E9b9773",
+      "stargate": "0x543BdA7c6cA4384FE90B1F5929bb851F52888983"
+    },
+    "11155420": {
+      "label": "op-sepolia-usdc",
+      "underlyingToken": "0x488327236B65C61A6c083e8d811a4E0D3d1D4268",
+      "stargate": "0x314B753272a3C79646b92A87dbFDEE643237033a"
+    },
+    "1": {
+      "label": "mainnet-usdc",
+      "underlyingToken": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+      "stargate": "0xc026395860Db2d07ee33e05fE50ed7bD583189C7"
+    },
+    "42161": {
+      "label": "arb-usdc",
+      "underlyingToken": "0xaf88d065e77c8cC2239327C5EDb3A432268e5831",
+      "stargate": "0xe8CDF27AcD73a434D661C84887215F7598e7d0d3"
+    },
+    "8453": {
+      "label": "base-usdc",
+      "underlyingToken": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
+      "stargate": "0x27a16dc786820B16E5c9028b75B99F6f604b5d26"
+    },
+    "10": {
+      "label": "op-usdc",
+      "underlyingToken": "0x0b2C639c533813f4Aa9D7837CAf62653d097Ff85",
+      "stargate": "0xcE8CcA271Ebc0533920C83d39F417ED6A0abB7D0"
+    }
+  }
+}

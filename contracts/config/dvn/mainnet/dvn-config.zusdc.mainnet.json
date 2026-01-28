@@ -1,0 +1,55 @@
+{
+  "tokens_file": "../../../../config/deployed/mainnet/tokens.zusdc.mainnet.json",
+  "chains": {
+     "eth-mainnet": {
+      "verifier_hub": {
+        "confirmations": 64,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 64,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
+    },
+    "arb-mainnet": {
+      "verifier_hub": {
+        "confirmations": 3072,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 3072,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
+    },
+    "base-mainnet": {
+      "verifier_hub": {
+        "confirmations": 384,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      },
+      "token": {
+        "confirmations": 384,
+        "required_dvns": ["LayerZero Labs", "Nethermind"],
+        "optional_dvns": [],
+        "optional_threshold": 0
+      }
+    }
+  },
+  "hub": {
+    "verifier_hub": {
+      "confirmations": 384,
+      "required_dvns": ["LayerZero Labs", "Nethermind"],
+      "optional_dvns": [],
+      "optional_threshold": 0
+    }
+  }
+}

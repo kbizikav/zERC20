@@ -8,7 +8,7 @@ use std::str::FromStr;
 use wasm_bindgen::JsValue;
 use wasm_bindgen_test::*;
 use web_time::Instant;
-use zkerc20_wasm::{JsExternalInput, WithdrawNovaWasm, fr_to_hex, hex_to_fr, log_timing};
+use zerc20_wasm::{JsExternalInput, WithdrawNovaWasm, fr_to_hex, hex_to_fr, log_timing};
 use zkp::{
     circuits::burn_address::{compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce},
     nova::{

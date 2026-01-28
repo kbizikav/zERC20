@@ -6,7 +6,7 @@ use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use folding_schemes::frontend::FCircuit;
 use rand::{SeedableRng, rngs::StdRng};
 
-use zkp::{
+use zerc20_zkp::{
     groth16::{params::Groth16Params, withdraw::SingleWithdrawCircuit},
     nova::{
         constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},

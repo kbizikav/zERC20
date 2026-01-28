@@ -1,5 +1,5 @@
 [package]
-name = "tree-indexer"
+name = "zerc20-tree-indexer"
 version = "0.1.0"
 edition = "2024"
 
@@ -25,13 +25,13 @@ thiserror = { workspace = true }
 futures = { workspace = true }
 rand_chacha = { workspace = true }
 reqwest = { workspace = true }
-toml = "0.8.19"
+toml = "0.9.8"
 async-trait = { workspace = true }
 sqlx = { workspace = true }
 uuid = { workspace = true }
-zkp = { path = "../zkp" }
+zkp = { path = "../zkp", package = "zerc20-zkp" }
 tokio = { workspace = true, features = ["full"] }
 actix-web = { workspace = true }
 actix-cors = { workspace = true }
-client-common = { path = "../client-common" }
-api-types = { path = "../api-types" }
+client-common = { path = "../client-common", package = "zerc20-client-common" }
+api-types = { path = "../api-types", package = "zerc20-api-types" }

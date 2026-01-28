@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { EnvProvider } from "@zerc20/sdk";
 
 export interface AppConfig {
   indexerUrl: string;
@@ -96,4 +97,23 @@ export function resolveRuntimeConfig(env: ImportMetaEnv): RuntimeConfig {
   };
 
   return { app, tokensCompressed: parsed.VITE_TOKENS_COMPRESSED };
+}
+
+/**
+ * Creates an EnvProvider that resolves environment variables from Vite's import.meta.env.
+ * Supports both direct variable names (e.g., ALCHEMY_KEY) and VITE_ prefixed names.
+ * If ALCHEMY_KEY is requested, it will first check VITE_ALCHEMY_KEY, then ALCHEMY_KEY.
+ */
+export function createViteEnvProvider(env: ImportMetaEnv): EnvProvider {
+  return (key: string): string | undefined => {
+    const viteKey = `VITE_${key}`;
+    const envRecord = env as Record<string, string | undefined>;
+    if (viteKey in envRecord && envRecord[viteKey] !== undefined) {
+      return envRecord[viteKey];
+    }
+    if (key in envRecord && envRecord[key] !== undefined) {
+      return envRecord[key];
+    }
+    return undefined;
+  };
 }

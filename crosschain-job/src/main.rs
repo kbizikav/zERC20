@@ -1,4 +1,4 @@
-use std::{collections::HashMap, env, path::Path, str::FromStr, time::Duration};
+use std::{collections::HashMap, path::Path, str::FromStr, time::Duration};
 
 use alloy::{
     network::Ethereum,
@@ -14,7 +14,7 @@ use client_common::{
         verifier::VerifierContract,
     },
     layerzero::{HttpLayerZeroClient, LayerZeroClient},
-    tokens::{HubEntry, TokenEntry, load_tokens_from_compressed, load_tokens_from_path},
+    tokens::{HubEntry, TokenEntry, load_tokens_from_path},
 };
 use log::{debug, error, info, warn};
 use reqwest::Url;
@@ -95,7 +95,7 @@ struct Cli {
         long,
         env = "CONFIRMATION_TIMEOUT_SECS",
         value_name = "SECONDS",
-        default_value_t = 120
+        default_value_t = 2400
     )]
     confirmation_timeout_secs: u64,
 
@@ -104,7 +104,7 @@ struct Cli {
         long,
         env = "CONFIRMATION_POLL_INTERVAL_SECS",
         value_name = "SECONDS",
-        default_value_t = 5
+        default_value_t = 60
     )]
     confirmation_poll_interval_secs: u64,
 
@@ -234,32 +234,35 @@ struct BroadcastDestination {
 }
 
 impl BroadcastDestination {
-    async fn has_root(&self, agg_seq: u64, root: U256) -> Result<bool> {
+    /// Check if the verifier's latest global root matches the expected root.
+    /// This uses root-based comparison instead of agg_seq to support selective broadcast:
+    /// even if agg_seq differs, verifiers with the same root are considered in sync.
+    async fn has_current_root(&self, expected_root: U256) -> Result<bool> {
         let latest_seq = self
             .verifier
             .latest_agg_seq()
             .await
             .context("failed to fetch verifier latestAggSeq")?;
-        if latest_seq < agg_seq {
+        if latest_seq == 0 {
             return Ok(false);
         }
-        let stored_root = self
+        let latest_root = self
             .verifier
-            .global_transfer_root(agg_seq)
+            .global_transfer_root(latest_seq)
             .await
             .context("failed to fetch verifier globalTransferRoots entry")?;
-        Ok(stored_root == root && stored_root != U256::ZERO)
+        Ok(latest_root == expected_root && latest_root != U256::ZERO)
     }
 
+    /// Wait for the verifier to receive the expected root (regardless of agg_seq).
     async fn wait_for_root(
         &self,
-        agg_seq: u64,
-        root: U256,
+        expected_root: U256,
         confirmation: &ConfirmationSettings,
     ) -> Result<bool> {
         let deadline = Instant::now() + confirmation.timeout;
         loop {
-            if self.has_root(agg_seq, root).await? {
+            if self.has_current_root(expected_root).await? {
                 return Ok(true);
             }
             if Instant::now() >= deadline {
@@ -462,7 +465,7 @@ impl BroadcastJob {
             .await
             .context("failed to compute current aggregation root")?;
         let missing_targets = self
-            .destinations_missing(agg_seq, current_root)
+            .destinations_missing(current_root)
             .await
             .context("failed to evaluate broadcast destinations")?;
 
@@ -489,10 +492,22 @@ impl BroadcastJob {
             return Ok(());
         }
 
+        // Selective broadcast: only send to verifiers that don't have the current root.
+        // This uses root-based comparison (not agg_seq) to avoid convergence issues:
+        // verifiers with the same root are considered in sync even if their agg_seq differs.
+        let (broadcast_eids, is_selective) = if root_changed {
+            // Root changed: broadcast to all targets
+            (self.target_eids.clone(), false)
+        } else {
+            // Root unchanged but some targets missing: broadcast only to missing targets
+            let missing_eids: Vec<u32> = missing_targets.iter().map(|(_, eid)| *eid).collect();
+            (missing_eids, true)
+        };
+
         let options = Bytes::copy_from_slice(&self.lz_options);
         let quote = self
             .contract
-            .quote_broadcast(self.target_eids.clone(), options.clone())
+            .quote_broadcast(broadcast_eids.clone(), options.clone())
             .await
             .context("failed to quote broadcast fee")?;
 
@@ -501,7 +516,7 @@ impl BroadcastJob {
             .contract
             .broadcast(
                 self.private_key,
-                self.target_eids.clone(),
+                broadcast_eids.clone(),
                 options,
                 fee_with_buffer,
             )
@@ -509,23 +524,40 @@ impl BroadcastJob {
             .context("failed to submit Hub.broadcast transaction")?;
         let tx_hash = *pending.tx_hash();
 
-        info!(
-            "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
-            self.target_eids, fee_with_buffer, self.fee_buffer_bps
-        );
+        if is_selective {
+            let missing_labels: Vec<&str> = missing_targets
+                .iter()
+                .map(|(label, _)| label.as_str())
+                .collect();
+            info!(
+                "submitted selective Hub.broadcast to missing targets {:?} (tx={tx_hash:#x}, eids={:?}, fee={} wei, buffer_bps={})",
+                missing_labels, broadcast_eids, fee_with_buffer, self.fee_buffer_bps
+            );
+        } else {
+            info!(
+                "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
+                broadcast_eids, fee_with_buffer, self.fee_buffer_bps
+            );
+        }
 
         let receipt = wait_for_receipt(pending)
             .await
             .context("Hub.broadcast transaction reverted or missing receipt")?;
 
         if let Some(event) = parse_broadcast_receipt(&self.contract, &receipt) {
+            let target_labels: Vec<&str> = self
+                .destinations
+                .iter()
+                .filter(|d| broadcast_eids.contains(&d.eid))
+                .map(|d| d.label.as_str())
+                .collect();
             info!(
-                "Hub.broadcast confirmed (agg_seq={}, snapshot_len={}, root={:#x})",
-                event.agg_seq, event.snapshot_len, event.root
+                "Hub.broadcast confirmed (agg_seq={}, snapshot_len={}, root={:#x}, targets={:?})",
+                event.agg_seq, event.snapshot_len, event.root, target_labels
             );
             self.last_broadcast_root = Some(event.root);
             self.last_broadcast_seq = Some(event.agg_seq);
-            self.confirm_destinations(event.agg_seq, event.root, tx_hash)
+            self.confirm_destinations(event.root, &broadcast_eids, tx_hash)
                 .await;
         } else {
             warn!("Hub.broadcast receipt did not contain AggregationRootUpdated event");
@@ -539,37 +571,41 @@ impl BroadcastJob {
         Ok(())
     }
 
-    async fn destinations_missing(&self, agg_seq: u64, root: U256) -> Result<Vec<String>> {
+    async fn destinations_missing(&self, current_root: U256) -> Result<Vec<(String, u32)>> {
         let mut missing = Vec::new();
         for dest in &self.destinations {
-            match dest.has_root(agg_seq, root).await {
+            match dest.has_current_root(current_root).await {
                 Ok(true) => continue,
-                Ok(false) => missing.push(dest.label.clone()),
+                Ok(false) => missing.push((dest.label.clone(), dest.eid)),
                 Err(err) => {
                     warn!(
                         "failed to check global root on verifier '{}' (chain {}, eid {}): {err:?}",
                         dest.label, dest.chain_id, dest.eid
                     );
-                    missing.push(dest.label.clone());
+                    missing.push((dest.label.clone(), dest.eid));
                 }
             }
         }
         Ok(missing)
     }
 
-    async fn confirm_destinations(&self, agg_seq: u64, root: U256, tx_hash: B256) {
+    async fn confirm_destinations(&self, root: U256, broadcast_eids: &[u32], tx_hash: B256) {
         for dest in &self.destinations {
-            match dest.wait_for_root(agg_seq, root, &self.confirmation).await {
+            // Only confirm destinations that were included in this broadcast
+            if !broadcast_eids.contains(&dest.eid) {
+                continue;
+            }
+            match dest.wait_for_root(root, &self.confirmation).await {
                 Ok(true) => {
                     info!(
-                        "verifier '{}' (eid {}) confirmed agg_seq {} (root={root:#x})",
-                        dest.label, dest.eid, agg_seq
+                        "verifier '{}' (eid {}) confirmed root {root:#x}",
+                        dest.label, dest.eid
                     );
                 }
                 Ok(false) => {
                     warn!(
-                        "verifier '{}' (eid {}) did not ingest agg_seq {} before timeout; will rebroadcast",
-                        dest.label, dest.eid, agg_seq
+                        "verifier '{}' (eid {}) did not receive root {root:#x} before timeout; will rebroadcast",
+                        dest.label, dest.eid
                     );
                     if let Some(probe) = &self.lz_probe {
                         probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
@@ -577,8 +613,8 @@ impl BroadcastJob {
                 }
                 Err(err) => {
                     warn!(
-                        "failed to confirm agg_seq {} on verifier '{}' (chain {}, eid {}): {err:?}",
-                        agg_seq, dest.label, dest.chain_id, dest.eid
+                        "failed to confirm root on verifier '{}' (chain {}, eid {}): {err:?}",
+                        dest.label, dest.chain_id, dest.eid
                     );
                 }
             }
@@ -622,10 +658,7 @@ async fn main() -> Result<()> {
 
     let (tokens, hub_entry) = load_tokens_config(&cli.tokens_file_path)?;
     if tokens.is_empty() {
-        bail!(
-            "no tokens configured; set TOKENS_COMPRESSED or populate {}",
-            cli.tokens_file_path.display()
-        );
+        bail!("no tokens configured in {}", cli.tokens_file_path.display());
     }
     for token in &tokens {
         let interval = token.relay_interval_secs.unwrap_or(cli.relay_interval_secs);
@@ -894,28 +927,8 @@ fn build_provider(rpc_urls: &[String]) -> Result<client_common::contracts::utils
 }
 
 fn load_tokens_config(path: &Path) -> Result<(Vec<TokenEntry>, Option<HubEntry>)> {
-    if let Some(tokens) = load_tokens_config_from_env()? {
-        return Ok(tokens);
-    }
     let tokens_file = load_tokens_from_path(path)?;
     Ok((tokens_file.tokens, tokens_file.hub))
-}
-
-fn load_tokens_config_from_env() -> Result<Option<(Vec<TokenEntry>, Option<HubEntry>)>> {
-    match env::var("TOKENS_COMPRESSED") {
-        Ok(value) => {
-            if value.trim().is_empty() {
-                bail!("TOKENS_COMPRESSED is set but empty");
-            }
-            let tokens_file = load_tokens_from_compressed(&value)
-                .context("failed to parse TOKENS_COMPRESSED payload")?;
-            Ok(Some((tokens_file.tokens, tokens_file.hub)))
-        }
-        Err(env::VarError::NotPresent) => Ok(None),
-        Err(env::VarError::NotUnicode(_)) => {
-            bail!("TOKENS_COMPRESSED contains invalid unicode")
-        }
-    }
 }
 
 fn build_layerzero_probe(cli: &Cli) -> Result<Option<LayerZeroProbe>> {
@@ -932,8 +945,8 @@ fn build_layerzero_probe(cli: &Cli) -> Result<Option<LayerZeroProbe>> {
 
 fn parse_private_key(input: &str) -> Result<B256> {
     let normalized = input.trim().strip_prefix("0x").unwrap_or(input.trim());
-    let bytes = hex::decode(normalized)
-        .with_context(|| format!("failed to decode private key hex: {input}"))?;
+    let bytes =
+        hex::decode(normalized).context("failed to decode private key: invalid hex format")?;
     if bytes.len() != 32 {
         bail!("private key must be 32 bytes, got {}", bytes.len());
     }
@@ -952,12 +965,16 @@ fn parse_hex_blob(input: &str) -> Result<Vec<u8>> {
     hex::decode(without_prefix).with_context(|| format!("failed to decode hex payload: {input}"))
 }
 
+/// Maximum time to wait for a transaction receipt before giving up.
+const RECEIPT_TIMEOUT_SECS: u64 = 300; // 5 minutes
+
 async fn wait_for_receipt(
     pending: PendingTransactionBuilder<Ethereum>,
 ) -> Result<alloy::rpc::types::TransactionReceipt> {
-    let receipt = pending
-        .get_receipt()
+    let timeout_duration = Duration::from_secs(RECEIPT_TIMEOUT_SECS);
+    let receipt = time::timeout(timeout_duration, pending.get_receipt())
         .await
+        .context("timed out waiting for transaction receipt")?
         .context("failed to fetch transaction receipt")?;
     if receipt.status() {
         Ok(receipt)

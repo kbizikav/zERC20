@@ -82,10 +82,6 @@ pub fn address_to_hex_string(value: Address) -> String {
     format!("{:#x}", value)
 }
 
-pub fn fr_to_hex_checked(value: Fr) -> String {
-    fr_to_hex(&value)
-}
-
 pub fn parse_u256_hex(value: &str) -> Result<U256> {
     let trimmed = value.trim();
     if trimmed.is_empty() {

@@ -12,10 +12,13 @@ use crate::contracts::{
 };
 
 sol!(
-    #[sol(rpc)]
+    #[sol(rpc, all_derives)]
     LiquidityManager,
     "abi/LiquidityManager.json",
 );
+
+// Re-export IncentiveLib::FeeParams for use in set_fee_params
+use IncentiveLib::FeeParams;
 
 #[derive(Debug, Clone)]
 pub struct WrappedEvent {
@@ -181,5 +184,31 @@ impl LiquidityManagerContract {
             .get_block_number()
             .await
             .map_err(|err| ContractError::transport("get_block_number", err))
+    }
+
+    pub async fn fee_params(&self) -> ContractResult<(U256, U256)> {
+        let params = self.contract_with_provider().feeParams().call().await?;
+        Ok((params.targetLiquidity, params.k))
+    }
+
+    pub async fn fee_surplus(&self) -> ContractResult<U256> {
+        let surplus = self.contract_with_provider().feeSurplus().call().await?;
+        Ok(surplus)
+    }
+
+    pub async fn set_fee_params(
+        &self,
+        private_key: B256,
+        target_liquidity: U256,
+        k: U256,
+    ) -> ContractResult<PendingTransactionBuilder<Ethereum>> {
+        let signer = get_provider_with_signer(&self.provider, private_key);
+        let contract = LiquidityManager::new(self.address, signer.clone());
+        let params = FeeParams {
+            targetLiquidity: target_liquidity,
+            k,
+        };
+        let call = contract.setFeeParams(params).with_cloned_provider();
+        send_call_with_legacy(call, &signer, self.legacy_tx).await
     }
 }

@@ -53,9 +53,10 @@ fn build_decider_circuit_for_root() -> anyhow::Result<DeciderEthCircuit<G1, G2>>
 }
 
 #[test]
+#[ignore]
 fn benchmark_decider_root_new_from_accumulator() {
     // Step 1: Load PTAU accumulator
-    let ptau_path = trusted_setup_common::ptau_path_for_power(24);
+    let ptau_path = zerc20_trusted_setup_common::ptau_path_for_power(24);
     if !ptau_path.exists() {
         println!("PTAU file not found at {:?}", ptau_path);
         println!("Please download it first. Skipping test.");
@@ -111,6 +112,7 @@ fn benchmark_decider_root_new_from_accumulator() {
 }
 
 #[test]
+#[ignore]
 fn benchmark_circuit_build_detailed() {
     println!("\n=== DeciderRoot Circuit Build Detailed Benchmark ===\n");
 

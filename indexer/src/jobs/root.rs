@@ -305,7 +305,10 @@ impl RootProverJob {
                     .with_context(|| format!("failed to initialise nova for '{}'", token.label))?,
                 );
             }
-            let nova = nova.as_mut().expect("nova initialised above");
+            // Safety: nova is guaranteed to be Some by the if-block above
+            let nova = nova
+                .as_mut()
+                .ok_or_else(|| anyhow!("internal error: nova not initialised"))?;
 
             let mut aborted_chunk = false;
             for event in events {
@@ -637,10 +640,12 @@ impl RootProverJobBuilder {
     pub fn into_job(self) -> Result<RootProverJob> {
         let mut contexts = Vec::with_capacity(self.tokens.len());
         for token in self.tokens {
-            let provider = if token.rpc_urls.len() == 1 {
-                get_provider(token.rpc_urls.first().expect("rpc urls not empty")).with_context(
-                    || format!("failed to build provider for token '{}'", token.label),
-                )?
+            let provider = if token.rpc_urls.is_empty() {
+                anyhow::bail!("token '{}' has no RPC URLs configured", token.label);
+            } else if token.rpc_urls.len() == 1 {
+                get_provider(&token.rpc_urls[0]).with_context(|| {
+                    format!("failed to build provider for token '{}'", token.label)
+                })?
             } else {
                 get_provider_with_fallback(&token.rpc_urls).with_context(|| {
                     format!(
@@ -1214,16 +1219,19 @@ fn load_nova_from_ivc(
 }
 
 fn fr_to_bytes(value: Fr) -> [u8; 32] {
-    let mut bytes = value.into_bigint().to_bytes_be();
-    if bytes.len() < 32 {
-        let mut padded = vec![0u8; 32 - bytes.len()];
-        padded.extend_from_slice(&bytes);
-        bytes = padded;
-    }
-    bytes
-        .as_slice()
-        .try_into()
-        .expect("field element serialization to 32 bytes")
+    let bytes = value.into_bigint().to_bytes_be();
+    // BN254 Fr elements are at most 32 bytes. If this ever exceeds 32 bytes,
+    // it indicates a field mismatch or serialization bug - fail immediately.
+    assert!(
+        bytes.len() <= 32,
+        "Fr serialization exceeded 32 bytes (got {}), possible field mismatch",
+        bytes.len()
+    );
+    // Pad with leading zeros if shorter than 32 bytes
+    let mut result = [0u8; 32];
+    let start = 32 - bytes.len();
+    result[start..].copy_from_slice(&bytes);
+    result
 }
 
 async fn wait_for_receipt(

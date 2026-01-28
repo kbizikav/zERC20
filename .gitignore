@@ -12,8 +12,6 @@ nova_artifacts/
 envs/
 
 # config files
-config/*
-!config/tokens.example.json
 frontend-app/public/config/*.json
 !frontend-app/public/config/.gitkeep
 
@@ -33,5 +31,7 @@ zkp/coverage/
 .ic.env
 canister_ids.json
 
-
 test-ledger/
+
+# honkit
+gitbook/_book

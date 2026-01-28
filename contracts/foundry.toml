@@ -10,9 +10,6 @@ fs_permissions = [{ access = "read", path = "./config" }]
 ignored_warnings_from = ["dependencies/"]
 
 [profile.ci]
-ignored_warnings_from = ["dependencies/"]
-
-[profile.ci]
 src = "src"
 out = "out"
 libs = ["dependencies"]
@@ -21,6 +18,7 @@ optimizer = true
 optimizer_runs = 200
 via_ir = false
 fs_permissions = [{ access = "read", path = "./config" }]
+ignored_warnings_from = ["dependencies/"]
 
 [lint]
 ignore = ["src/verifiers/*"]

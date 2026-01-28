@@ -1,13 +1,32 @@
 use std::{sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result, bail};
-use log::{error, warn};
+use log::{debug, error, warn};
 use sqlx::{PgPool, postgres::PgQueryResult};
 use tokio::{sync::oneshot, task::JoinHandle, time::sleep};
 use uuid::Uuid;
 
 const LEASE_TTL: Duration = Duration::from_secs(30);
 const RENEW_FRACTION: u32 = 3; // renew every LEASE_TTL / 3
+
+/// Clean up any expired leases from the database.
+///
+/// Call this at startup to remove stale leases that may have been left behind
+/// due to ungraceful shutdowns (e.g., SIGKILL, runtime panic, or Drop during shutdown).
+/// This ensures that new job instances can acquire locks immediately without waiting
+/// for TTL expiration.
+pub async fn cleanup_expired_leases(pool: &PgPool) -> Result<u64> {
+    let result = sqlx::query("DELETE FROM leases WHERE expires_at < now()")
+        .execute(pool)
+        .await
+        .context("failed to clean up expired leases")?;
+    Ok(result.rows_affected())
+}
+
+/// Converts a Duration to i64 milliseconds, returning an error if the value is too large.
+fn duration_to_millis_i64(d: Duration) -> Result<i64> {
+    i64::try_from(d.as_millis()).context("duration exceeds i64 milliseconds range")
+}
 
 static SESSION_HOLDER: OnceLock<Uuid> = OnceLock::new();
 
@@ -58,7 +77,7 @@ impl LeaseGuard {
 
 pub async fn try_acquire_lock(pool: &PgPool, key: i64) -> Result<Option<LeaseGuard>> {
     let holder = session_holder();
-    let ttl_ms = i64::try_from(LEASE_TTL.as_millis()).expect("lease ttl too large");
+    let ttl_ms = duration_to_millis_i64(LEASE_TTL)?;
     let row = sqlx::query_scalar::<_, bool>(
         r#"
         INSERT INTO leases (lease_key, holder, expires_at, updated_at)
@@ -122,7 +141,7 @@ async fn spawn_renewal(
 }
 
 async fn renew_lease(pool: &PgPool, lease_key: i64, holder: Uuid, ttl: Duration) -> Result<()> {
-    let ttl_ms = i64::try_from(ttl.as_millis()).expect("lease ttl too large");
+    let ttl_ms = duration_to_millis_i64(ttl)?;
     let renewed: Option<bool> = sqlx::query_scalar(
         r#"
         UPDATE leases
@@ -158,6 +177,16 @@ async fn release_lease(pool: &PgPool, lease_key: i64, holder: Uuid) -> Result<Pg
 impl Drop for LeaseGuard {
     fn drop(&mut self) {
         if self.stop_tx.is_some() {
+            // Note: release() was not called explicitly. During runtime shutdown,
+            // the spawned cleanup task below may not complete, leaving a stale lease
+            // that will persist until TTL expiration (30 seconds).
+            // Using debug! to avoid log noise during normal task cancellation.
+            debug!(
+                "LeaseGuard for key {} dropped without explicit release(); \
+                cleanup may not complete if runtime is shutting down",
+                self.lease_key
+            );
+
             let pool = self.pool.clone();
             let key = self.lease_key;
             let holder = self.holder;
