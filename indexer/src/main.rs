@@ -8,7 +8,9 @@ use tokio::task::JoinError;
 use zerc20_tree_indexer::{
     config::IndexerConfig,
     error::Result,
-    jobs::{EventSyncJobBuilder, RootProverJobBuilder, TreeIngestionJobBuilder, cleanup_expired_leases},
+    jobs::{
+        EventSyncJobBuilder, RootProverJobBuilder, TreeIngestionJobBuilder, cleanup_expired_leases,
+    },
     server,
 };
 
