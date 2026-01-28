@@ -249,7 +249,7 @@ impl Storage {
                         .upload_id(upload_id)
                         .send()
                         .await;
-                    return Err(e).context("failed to upload part")?;
+                    return Err(e).context("failed to upload part");
                 }
             }
         }
