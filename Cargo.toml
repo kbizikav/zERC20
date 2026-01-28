@@ -49,7 +49,7 @@ ark-snark = { version = "0.5.0", default-features = false }
 light-poseidon = "0.4.0"
 num-bigint = "0.4.3"
 anyhow = "1.0.100"
-rand = "0.8.5"
+rand = "0.9.2"
 rand_chacha = "0.3.1"
 getrandom = { version = "0.2.16", features = ["js"] }
 ark-std = "0.5.0"
