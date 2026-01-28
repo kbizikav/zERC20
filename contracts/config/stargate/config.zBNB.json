@@ -3,6 +3,10 @@
     "97": {
       "label": "bnb-testnet",
       "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
+    },
+    "56": {
+      "label": "bnb",
+      "underlyingToken": "0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE"
     }
   }
 }

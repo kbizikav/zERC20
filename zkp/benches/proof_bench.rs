@@ -8,7 +8,7 @@ use criterion::{BatchSize, Criterion, criterion_group, criterion_main};
 use folding_schemes::FoldingScheme;
 use rand::{SeedableRng, rngs::StdRng};
 
-use zkp::{
+use zerc20_zkp::{
     circuits::burn_address::{compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce},
     groth16::{params::Groth16Params, withdraw::SingleWithdrawCircuit},
     nova::{

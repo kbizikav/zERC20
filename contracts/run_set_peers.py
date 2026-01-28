@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -79,7 +80,31 @@ def parse_args() -> tuple[Path, list[str]]:
     return tokens_path, forge_args
 
 
-def ensure_private_key() -> None:
+SIGNER_FLAGS = {
+    "--private-key",
+    "--mnemonic",
+    "--mnemonic-indexes",
+    "--mnemonic-derivation-path",
+    "--mnemonic-passphrase",
+    "--ledger",
+    "--trezor",
+    "--keystore",
+    "--keystore-password",
+    "--keystore-account",
+}
+
+
+def has_signer_flag(forge_args: Sequence[str]) -> bool:
+    for arg in forge_args:
+        flag = arg.split("=", 1)[0]
+        if flag in SIGNER_FLAGS:
+            return True
+    return False
+
+
+def ensure_private_key(forge_args: Sequence[str]) -> None:
+    if has_signer_flag(forge_args):
+        return
     if not os.environ.get("PRIVATE_KEY"):
         raise ConfigError("PRIVATE_KEY environment variable must be set for forge broadcast")
 
@@ -108,12 +133,27 @@ def normalize_bool(value: Any) -> bool:
     return False
 
 
+def expand_env_vars(value: str) -> str:
+    """Expand ${VAR} patterns with environment variable values."""
+    def replace(match: re.Match[str]) -> str:
+        var_name = match.group(1)
+        env_value = os.environ.get(var_name)
+        if env_value is None:
+            raise ConfigError(f"environment variable '{var_name}' is not set")
+        return env_value
+    return re.sub(r'\$\{(\w+)\}', replace, value)
+
+
 def first_rpc_url(value: Any) -> str | None:
     if isinstance(value, list):
-        return normalize_str(value[0]) if value else None
-    if isinstance(value, str):
-        return normalize_str(value)
-    return None
+        url = normalize_str(value[0]) if value else None
+    elif isinstance(value, str):
+        url = normalize_str(value)
+    else:
+        url = None
+    if url:
+        url = expand_env_vars(url)
+    return url
 
 
 def parse_config(tokens_path: Path) -> tuple[HubConfig, list[TokenConfig]]:
@@ -198,7 +238,10 @@ def join_by_comma(values: Sequence[str]) -> str:
 def run_forge(target: str, rpc_url: str, forge_args: Sequence[str], env_overrides: dict[str, str]) -> None:
     env = os.environ.copy()
     env.update(env_overrides)
-    cmd = ["forge", "script", f"{SET_PEERS_SCRIPT}:{target}", "--rpc-url", rpc_url, *forge_args]
+    cmd = ["forge", "script", f"{SET_PEERS_SCRIPT}:{target}", "--rpc-url", rpc_url]
+    if not has_signer_flag(forge_args):
+        ensure_private_key(forge_args)
+    cmd.extend(forge_args)
     subprocess.run(cmd, cwd=SCRIPT_DIR, env=env, check=True)
 
 
@@ -208,7 +251,7 @@ def main() -> None:
         raise ConfigError(f"tokens file not found at {tokens_path}")
 
     ensure_command_available("forge")
-    ensure_private_key()
+    ensure_private_key(forge_args)
 
     hub, tokens = parse_config(tokens_path)
     base_forge_args = forge_args if forge_args else ["--broadcast"]

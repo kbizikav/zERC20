@@ -133,6 +133,8 @@ pub async fn run_http_server(
 
     HttpServer::new(move || {
         App::new()
+            // NOTE: Permissive CORS is acceptable for internal use only.
+            // If exposing this API externally, restrict origins appropriately.
             .wrap(Cors::permissive())
             .app_data(shared_state.clone())
             .route("/healthz", web::get().to(health))
@@ -155,6 +157,9 @@ async fn health() -> impl Responder {
     HttpResponse::Ok().finish()
 }
 
+/// Returns status for all configured tokens.
+/// Uses partial success: if one token fails, others are still returned.
+/// Failed tokens have `None` for their index fields (check logs for details).
 async fn tokens_status(state: Data<AppState>) -> actix_web::Result<Json<Vec<TokenStatusResponse>>> {
     let contexts = state.token_contexts();
     let futures = contexts.into_iter().map(|token| {
@@ -166,50 +171,53 @@ async fn tokens_status(state: Data<AppState>) -> actix_web::Result<Json<Vec<Toke
             let tree_synced_index = fetch_tree_synced_index(&state.pool, token.id).await;
             let ivc_generated_index = fetch_ivc_generated_index(&state.pool, token.id).await;
 
-            match (events_synced_index, tree_synced_index, ivc_generated_index) {
-                (Ok(events_synced_index), Ok(tree_synced_index), Ok(ivc_generated_index)) => {
-                    Ok(TokenStatusResponse {
-                        label: token.label.clone(),
-                        chain_id: token.chain_id,
-                        token_address: token.token_address,
-                        verifier_address: token.verifier_address,
-                        onchain_reserved_index: reserved_index,
-                        onchain_proved_index: proved_index,
-                        events_synced_index,
-                        tree_synced_index,
-                        ivc_generated_index,
-                    })
+            // Log errors but don't fail the whole request - return None for failed indices
+            let events_synced_index = match events_synced_index {
+                Ok(v) => v,
+                Err(err) => {
+                    warn!(
+                        "failed to fetch events_synced_index for token '{}': {err:?}",
+                        token.label
+                    );
+                    None
                 }
-                (events_res, tree_res, ivc_res) => {
-                    let err = events_res
-                        .err()
-                        .or_else(|| tree_res.err())
-                        .or_else(|| ivc_res.err());
-                    Err((
-                        token.label.clone(),
-                        err.unwrap_or_else(|| sqlx::Error::Protocol("unknown status error".into())),
-                    ))
+            };
+            let tree_synced_index = match tree_synced_index {
+                Ok(v) => v,
+                Err(err) => {
+                    warn!(
+                        "failed to fetch tree_synced_index for token '{}': {err:?}",
+                        token.label
+                    );
+                    None
                 }
+            };
+            let ivc_generated_index = match ivc_generated_index {
+                Ok(v) => v,
+                Err(err) => {
+                    warn!(
+                        "failed to fetch ivc_generated_index for token '{}': {err:?}",
+                        token.label
+                    );
+                    None
+                }
+            };
+
+            TokenStatusResponse {
+                label: token.label.clone(),
+                chain_id: token.chain_id,
+                token_address: token.token_address,
+                verifier_address: token.verifier_address,
+                onchain_reserved_index: reserved_index,
+                onchain_proved_index: proved_index,
+                events_synced_index,
+                tree_synced_index,
+                ivc_generated_index,
             }
         }
     });
 
-    let results = futures::future::join_all(futures).await;
-
-    let mut statuses = Vec::with_capacity(results.len());
-    for res in results {
-        match res {
-            Ok(status) => statuses.push(status),
-            Err((label, err)) => {
-                error!(
-                    "failed to load status indices for token '{}': {err:?}",
-                    label
-                );
-                return Err(ErrorInternalServerError("failed to load token status"));
-            }
-        }
-    }
-
+    let statuses = futures::future::join_all(futures).await;
     Ok(Json(statuses))
 }
 
@@ -296,6 +304,9 @@ async fn events_by_recipient(
     Ok(Json(events))
 }
 
+/// Maximum number of recipients allowed in a single /all-events request.
+const MAX_RECIPIENTS: usize = 100;
+
 async fn all_events(
     state: Data<AppState>,
     query: Query<AllEventsQuery>,
@@ -303,6 +314,13 @@ async fn all_events(
     let params = query.into_inner();
     if params.recipients.is_empty() {
         return Ok(Json(Vec::new()));
+    }
+    if params.recipients.len() > MAX_RECIPIENTS {
+        return Err(ErrorBadRequest(format!(
+            "too many recipients: {} exceeds maximum of {}",
+            params.recipients.len(),
+            MAX_RECIPIENTS
+        )));
     }
 
     let limit = params.limit.unwrap_or(100);
@@ -396,6 +414,9 @@ async fn all_events(
     Ok(Json(events))
 }
 
+/// Maximum number of leaf indices allowed in a single /proofs request.
+const MAX_LEAF_INDICES: usize = 100;
+
 async fn prove_many(
     state: Data<AppState>,
     request: Json<ProveManyRequest>,
@@ -412,6 +433,13 @@ async fn prove_many(
 
     if request.leaf_indices.is_empty() {
         return Ok(Json(Vec::new()));
+    }
+    if request.leaf_indices.len() > MAX_LEAF_INDICES {
+        return Err(ErrorBadRequest(format!(
+            "too many leaf_indices: {} exceeds maximum of {}",
+            request.leaf_indices.len(),
+            MAX_LEAF_INDICES
+        )));
     }
 
     let tree = DbIncrementalMerkleTree::new(
@@ -676,6 +704,9 @@ fn map_merkle_error(err: DbMerkleTreeError) -> actix_web::Error {
         | DbMerkleTreeError::InvalidConfig { .. } => ErrorBadRequest(err.to_string()),
         DbMerkleTreeError::U64ToI64 { .. } | DbMerkleTreeError::I64ToU64 { .. } => {
             ErrorInternalServerError("integer conversion error during merkle operation")
+        }
+        DbMerkleTreeError::InternalError { .. } => {
+            ErrorInternalServerError("internal merkle tree error")
         }
     }
 }

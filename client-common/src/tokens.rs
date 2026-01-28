@@ -1,7 +1,7 @@
 use std::{
     collections::hash_map::DefaultHasher,
+    env,
     hash::{Hash, Hasher},
-    io::Read,
 };
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -10,8 +10,6 @@ use std::{fs, path::Path};
 use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
 use alloy::primitives::Address;
 use anyhow::{Context, Result, anyhow, bail};
-use base64::{Engine as _, engine::general_purpose::STANDARD};
-use flate2::read::GzDecoder;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -198,25 +196,42 @@ pub fn load_tokens_from_path(path: impl AsRef<Path>) -> Result<TokensFile> {
         .with_context(|| format!("invalid tokens config {}", path_ref.display()))
 }
 
-pub fn load_tokens_from_compressed(payload: &str) -> Result<TokensFile> {
-    let normalized: String = payload.chars().filter(|ch| !ch.is_whitespace()).collect();
-    if normalized.is_empty() {
-        return Err(anyhow!("TOKENS_COMPRESSED payload is empty"));
+/// Expands environment variable placeholders in the format `${VAR}`.
+///
+/// Returns an error if a referenced environment variable is not defined.
+fn expand_env_vars(contents: &str) -> Result<String> {
+    let mut result = String::with_capacity(contents.len());
+    let mut chars = contents.chars().peekable();
+
+    while let Some(ch) = chars.next() {
+        if ch == '$' && chars.peek() == Some(&'{') {
+            chars.next(); // consume '{'
+            let mut var_name = String::new();
+            loop {
+                match chars.next() {
+                    Some('}') => break,
+                    Some(c) => var_name.push(c),
+                    None => bail!("unclosed environment variable placeholder: ${{{var_name}"),
+                }
+            }
+            if var_name.is_empty() {
+                bail!("empty environment variable name in placeholder");
+            }
+            let value = env::var(&var_name)
+                .with_context(|| format!("environment variable '{var_name}' is not defined"))?;
+            result.push_str(&value);
+        } else {
+            result.push(ch);
+        }
     }
-    let decoded = STANDARD
-        .decode(normalized.as_bytes())
-        .context("failed to base64-decode TOKENS_COMPRESSED payload")?;
-    let mut decoder = GzDecoder::new(decoded.as_slice());
-    let mut json = String::new();
-    decoder
-        .read_to_string(&mut json)
-        .context("failed to decompress TOKENS_COMPRESSED payload")?;
-    parse_tokens_config(&json).context("invalid tokens payload from TOKENS_COMPRESSED")
+
+    Ok(result)
 }
 
 pub fn parse_tokens_config(contents: &str) -> Result<TokensFile> {
+    let expanded = expand_env_vars(contents).context("failed to expand environment variables")?;
     let mut file: TokensFile =
-        serde_json::from_str(contents).context("failed to parse tokens config JSON")?;
+        serde_json::from_str(&expanded).context("failed to parse tokens config JSON")?;
     file.normalize_entries()
         .context("invalid tokens config entries")?;
     Ok(file)

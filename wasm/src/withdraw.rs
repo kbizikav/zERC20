@@ -2,7 +2,7 @@ use crate::utils::{anyhow_to_js_error, fr_to_hex, hex_to_fr, log_timing, parse_u
 use ark_bn254::Fr;
 use ark_serialize::CanonicalSerialize;
 use folding_schemes::FoldingScheme;
-use rand::{SeedableRng, rngs::StdRng};
+use rand::rngs::OsRng;
 use serde::{Deserialize, Serialize};
 use wasm_bindgen::prelude::*;
 use web_time::Instant;
@@ -315,7 +315,7 @@ fn prove_single_with_depth<const DEPTH: usize>(
         .public_inputs()
         .map_err(|err| JsValue::from_str(&err.to_string()))?;
 
-    let mut rng = StdRng::seed_from_u64(42);
+    let mut rng = OsRng;
     let proof_bytes = params
         .generate_proof(&mut rng, circuit, &public_inputs)
         .map_err(|err| JsValue::from_str(&err.to_string()))?;

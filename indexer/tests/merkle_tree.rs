@@ -6,7 +6,7 @@ use alloy::primitives::{Address, U256};
 use anyhow::{Context, Result};
 use common::TestDatabase;
 use sqlx::migrate::Migrator;
-use tree_indexer::trees::{
+use zerc20_tree_indexer::trees::{
     DbIncrementalMerkleTree, DbMerkleTreeConfig, DbMerkleTreeError, HISTORY_WINDOW_RECOMMENDED,
 };
 use zkp::utils::{

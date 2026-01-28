@@ -4,6 +4,38 @@ import { ungzip } from 'pako';
 
 import { normalizeHex, toBigInt } from '../utils/hex.js';
 
+/**
+ * Function type for providing environment variable values.
+ * Returns undefined if the variable is not set.
+ */
+export type EnvProvider = (key: string) => string | undefined;
+
+const ENV_VAR_PATTERN = /\$\{([^}]+)\}/g;
+
+/**
+ * Expands environment variables in a string using the ${VAR_NAME} syntax.
+ * @param value - The string potentially containing ${VAR_NAME} placeholders
+ * @param envProvider - Function to resolve environment variable values
+ * @returns The string with all environment variables expanded
+ * @throws Error if an environment variable is referenced but not defined
+ */
+export function expandEnvVars(value: string, envProvider: EnvProvider): string {
+  return value.replace(ENV_VAR_PATTERN, (match, varName: string) => {
+    const envValue = envProvider(varName);
+    if (envValue === undefined) {
+      throw new Error(`Environment variable '${varName}' is not defined`);
+    }
+    return envValue;
+  });
+}
+
+/**
+ * Checks if a string contains environment variable placeholders.
+ */
+export function hasEnvVars(value: string): boolean {
+  return ENV_VAR_PATTERN.test(value);
+}
+
 export interface TokenEntry {
   label: string;
   tokenAddress: string;
@@ -48,7 +80,7 @@ function parseBigInt(value: MaybeString, label: string): bigint {
   }
 }
 
-function normalizeRpcUrls(urls: unknown, label: string): string[] {
+function normalizeRpcUrls(urls: unknown, label: string, envProvider?: EnvProvider): string[] {
   if (!Array.isArray(urls) || urls.length === 0) {
     throw new Error(`${label} must configure at least one rpc url`);
   }
@@ -56,7 +88,11 @@ function normalizeRpcUrls(urls: unknown, label: string): string[] {
     if (typeof url !== 'string' || url.trim().length === 0) {
       throw new Error(`${label} contains invalid rpc url`);
     }
-    return url.trim();
+    let trimmed = url.trim();
+    if (envProvider && hasEnvVars(trimmed)) {
+      trimmed = expandEnvVars(trimmed, envProvider);
+    }
+    return trimmed;
   });
 }
 
@@ -136,7 +172,7 @@ function getOptionalBooleanField(
   return undefined;
 }
 
-export function normalizeTokensFile(file: TokensFile): TokensFile {
+export function normalizeTokensFile(file: TokensFile, envProvider?: EnvProvider): TokensFile {
   if (!Array.isArray(file.tokens) || file.tokens.length === 0) {
     throw new Error('tokens array must be non-empty');
   }
@@ -178,6 +214,7 @@ export function normalizeTokensFile(file: TokensFile): TokensFile {
       rpcUrls: normalizeRpcUrls(
         getValueField<unknown>(record, ['rpcUrls', 'rpc_urls'], `${label}.rpcUrls`),
         label,
+        envProvider,
       ),
       legacyTx:
         getOptionalBooleanField(record, ['legacyTx', 'legacy_tx'], `${label}.legacyTx`) ?? false,
@@ -189,7 +226,7 @@ export function normalizeTokensFile(file: TokensFile): TokensFile {
     file.hub = {
       hubAddress: toHexAddress(getStringField(record, ['hubAddress', 'hub_address'], 'hub.hubAddress')),
       chainId: parseBigInt(getValueField<MaybeString>(record, ['chainId', 'chain_id'], 'hub.chainId'), 'hub.chainId'),
-      rpcUrls: normalizeRpcUrls(getValueField<unknown>(record, ['rpcUrls', 'rpc_urls'], 'hub.rpcUrls'), 'hub'),
+      rpcUrls: normalizeRpcUrls(getValueField<unknown>(record, ['rpcUrls', 'rpc_urls'], 'hub.rpcUrls'), 'hub', envProvider),
       legacyTx: getOptionalBooleanField(record, ['legacyTx', 'legacy_tx'], 'hub.legacyTx') ?? false,
     };
   }
@@ -205,8 +242,8 @@ function cloneTokensFile(file: TokensFile): TokensFile {
   };
 }
 
-function asNormalizedTokens(file: TokensFile): NormalizedTokens {
-  const normalized = normalizeTokensFile(cloneTokensFile(file));
+function asNormalizedTokens(file: TokensFile, envProvider?: EnvProvider): NormalizedTokens {
+  const normalized = normalizeTokensFile(cloneTokensFile(file), envProvider);
   return {
     raw: file,
     tokens: normalized.tokens,
@@ -234,6 +271,11 @@ export interface LoadTokensOptions {
   cache?: Map<string, Promise<NormalizedTokens>>;
   decoder?: TextDecoder;
   decompress?: (data: Uint8Array) => Uint8Array | ArrayBuffer;
+  /**
+   * Optional function to resolve environment variables in rpcUrls.
+   * If provided, placeholders like ${VAR_NAME} will be expanded.
+   */
+  envProvider?: EnvProvider;
 }
 
 function decodeTokensPayload(bytes: Uint8Array, decoder?: TextDecoder): TokensFile {
@@ -246,8 +288,8 @@ function decodeTokensPayload(bytes: Uint8Array, decoder?: TextDecoder): TokensFi
   }
 }
 
-export function normalizeTokens(file: TokensFile): NormalizedTokens {
-  return asNormalizedTokens(file);
+export function normalizeTokens(file: TokensFile, envProvider?: EnvProvider): NormalizedTokens {
+  return asNormalizedTokens(file, envProvider);
 }
 
 export function clearTokensCache(cache?: Map<string, Promise<NormalizedTokens>>, key?: string): void {
@@ -276,7 +318,7 @@ export function loadTokensFromCompressed(
     const normalizedBytes =
       decompressed instanceof Uint8Array ? decompressed : new Uint8Array(decompressed as ArrayBufferLike);
     const parsed = decodeTokensPayload(normalizedBytes, options.decoder);
-    return asNormalizedTokens(parsed);
+    return asNormalizedTokens(parsed, options.envProvider);
   });
 
   cache.set(cacheKey, promise);

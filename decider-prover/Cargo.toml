@@ -1,8 +1,8 @@
 [package]
-name = "decider-prover"
+name = "zerc20-decider-prover"
 version = "0.1.0"
 edition = "2024"
-default-run = "decider-prover"
+default-run = "zerc20-decider-prover"
 
 [dependencies]
 envy = { workspace = true }
@@ -21,11 +21,11 @@ anyhow = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
-zkp = { path = "../zkp" }
+zkp = { path = "../zkp", package = "zerc20-zkp" }
 tokio = { workspace = true, features = ["full"] }
 actix-web = { workspace = true }
 actix-cors = { workspace = true }
-api-types = { path = "../api-types" }
+api-types = { path = "../api-types", package = "zerc20-api-types" }
 pgmq = "0.31.0"
 sqlx = { workspace = true }
 chrono = "0.4.38"
