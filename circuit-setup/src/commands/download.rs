@@ -9,11 +9,7 @@ use tokio::io::AsyncWriteExt;
 use crate::manifest::{sha256_file, Manifest};
 
 /// Download artifacts from a public URL and verify hashes.
-pub async fn download(
-    artifacts_dir: &Path,
-    version: &str,
-    base_url: &str,
-) -> Result<()> {
+pub async fn download(artifacts_dir: &Path, version: &str, base_url: &str) -> Result<()> {
     std::fs::create_dir_all(artifacts_dir)
         .with_context(|| format!("failed to create {}", artifacts_dir.display()))?;
 
@@ -24,11 +20,12 @@ pub async fn download(
     let manifest_url = format!("{}/{}/manifest.json", base_url, version);
     log::info!("Downloading manifest from {}...", manifest_url);
 
-    let manifest_bytes = download_bytes(&client, &manifest_url).await
+    let manifest_bytes = download_bytes(&client, &manifest_url)
+        .await
         .context("failed to download manifest.json")?;
 
-    let manifest: Manifest = serde_json::from_slice(&manifest_bytes)
-        .context("failed to parse manifest.json")?;
+    let manifest: Manifest =
+        serde_json::from_slice(&manifest_bytes).context("failed to parse manifest.json")?;
 
     // Verify version matches
     if manifest.version != version {
@@ -78,14 +75,20 @@ pub async fn download(
                     continue;
                 }
                 _ => {
-                    log::info!("[{}/{}] Re-downloading {} (hash mismatch)", i + 1, total, local_filename);
+                    log::info!(
+                        "[{}/{}] Re-downloading {} (hash mismatch)",
+                        i + 1,
+                        total,
+                        local_filename
+                    );
                 }
             }
         }
 
         log::info!("[{}/{}] Downloading {}...", i + 1, total, local_filename);
 
-        download_file_with_progress(&client, &file_url, &local_path, local_filename).await
+        download_file_with_progress(&client, &file_url, &local_path, local_filename)
+            .await
             .with_context(|| format!("failed to download {}", file_url))?;
 
         downloaded_count += 1;
@@ -132,7 +135,8 @@ pub async fn download(
 
 /// Download bytes from a URL.
 async fn download_bytes(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
-    let response = client.get(url)
+    let response = client
+        .get(url)
         .send()
         .await
         .with_context(|| format!("failed to fetch {}", url))?;
@@ -141,7 +145,9 @@ async fn download_bytes(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> 
         anyhow::bail!("HTTP {} for {}", response.status(), url);
     }
 
-    let bytes = response.bytes().await
+    let bytes = response
+        .bytes()
+        .await
         .with_context(|| format!("failed to read response from {}", url))?;
 
     Ok(bytes.to_vec())
@@ -154,7 +160,8 @@ async fn download_file_with_progress(
     local_path: &Path,
     filename: &str,
 ) -> Result<()> {
-    let response: Response = client.get(url)
+    let response: Response = client
+        .get(url)
         .send()
         .await
         .with_context(|| format!("failed to fetch {}", url))?;
@@ -174,7 +181,8 @@ async fn download_file_with_progress(
     );
     pb.set_message(filename.to_string());
 
-    let mut file = tokio::fs::File::create(local_path).await
+    let mut file = tokio::fs::File::create(local_path)
+        .await
         .with_context(|| format!("failed to create {}", local_path.display()))?;
 
     let mut stream = response.bytes_stream();
@@ -184,7 +192,8 @@ async fn download_file_with_progress(
         let chunk_result: std::result::Result<bytes::Bytes, reqwest::Error> = chunk_result;
         let chunk = chunk_result
             .map_err(|e| anyhow::anyhow!("failed to read chunk from {}: {}", url, e))?;
-        file.write_all(&chunk).await
+        file.write_all(&chunk)
+            .await
             .with_context(|| format!("failed to write to {}", local_path.display()))?;
         downloaded += chunk.len() as u64;
         pb.set_position(downloaded);
@@ -218,7 +227,9 @@ fn get_expected_hash(manifest: &Manifest, filename: &str) -> Result<String> {
         (circuit, artifact)
     };
 
-    let circuit_artifacts = manifest.circuits.get(&circuit_name)
+    let circuit_artifacts = manifest
+        .circuits
+        .get(&circuit_name)
         .with_context(|| format!("circuit '{}' not found in manifest", circuit_name))?;
 
     let hash = match artifact_type.as_str() {
@@ -226,12 +237,18 @@ fn get_expected_hash(manifest: &Manifest, filename: &str) -> Result<String> {
         "nova_vp" => &circuit_artifacts.nova_vp.sha256,
         "decider_pp" => &circuit_artifacts.decider_pp.sha256,
         "decider_vp" => &circuit_artifacts.decider_vp.sha256,
-        "groth16_pk" => circuit_artifacts.groth16_pk.as_ref()
+        "groth16_pk" => circuit_artifacts
+            .groth16_pk
+            .as_ref()
             .with_context(|| format!("groth16_pk not found for circuit '{}'", circuit_name))?
-            .sha256.as_str(),
-        "groth16_vk" => circuit_artifacts.groth16_vk.as_ref()
+            .sha256
+            .as_str(),
+        "groth16_vk" => circuit_artifacts
+            .groth16_vk
+            .as_ref()
             .with_context(|| format!("groth16_vk not found for circuit '{}'", circuit_name))?
-            .sha256.as_str(),
+            .sha256
+            .as_str(),
         _ => anyhow::bail!("unknown artifact type: {}", artifact_type),
     };
 

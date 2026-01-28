@@ -133,10 +133,7 @@ fn test_root_circuit(artifacts_dir: &Path, f_params: FParams<RootCircuit<Fr>>) -
     let _proof = decider_params
         .generate_decider_proof(nova)
         .context("failed to generate root decider proof")?;
-    println!(
-        "    Decider proof: {:.2}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("    Decider proof: {:.2}s", start.elapsed().as_secs_f64());
 
     Ok(())
 }
@@ -185,10 +182,7 @@ fn test_withdraw_nova_circuit<const DEPTH: usize>(
     let _proof = decider_params
         .generate_decider_proof(nova)
         .with_context(|| format!("failed to generate {} decider proof", prefix))?;
-    println!(
-        "    Decider proof: {:.2}s",
-        start.elapsed().as_secs_f64()
-    );
+    println!("    Decider proof: {:.2}s", start.elapsed().as_secs_f64());
 
     Ok(())
 }

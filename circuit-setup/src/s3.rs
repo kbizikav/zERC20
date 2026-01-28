@@ -65,7 +65,10 @@ impl Storage {
                     Ok(false)
                 } else {
                     Err(err).with_context(|| {
-                        format!("failed to check existence of s3://{}/{}", self.bucket, full_key)
+                        format!(
+                            "failed to check existence of s3://{}/{}",
+                            self.bucket, full_key
+                        )
                     })
                 }
             }

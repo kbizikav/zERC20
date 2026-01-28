@@ -22,8 +22,9 @@ pub fn generate_verifiers(artifacts_dir: &Path, output_dir: Option<&Path>) -> Re
 
     // Create output directory if it doesn't exist
     if !output_dir.exists() {
-        fs::create_dir_all(output_dir)
-            .with_context(|| format!("failed to create output directory {}", output_dir.display()))?;
+        fs::create_dir_all(output_dir).with_context(|| {
+            format!("failed to create output directory {}", output_dir.display())
+        })?;
         log::info!("Created output directory: {}", output_dir.display());
     }
 
@@ -75,7 +76,10 @@ pub fn generate_verifiers(artifacts_dir: &Path, output_dir: Option<&Path>) -> Re
         output_dir,
     )?;
 
-    log::info!("All Solidity verifiers generated in {}", output_dir.display());
+    log::info!(
+        "All Solidity verifiers generated in {}",
+        output_dir.display()
+    );
 
     Ok(())
 }
@@ -142,10 +146,8 @@ fn generate_groth16_verifier(
     let pk_path = artifacts_dir.join(format!("{}_groth16_pk.bin", prefix));
     let vk_path = artifacts_dir.join(format!("{}_groth16_vk.bin", prefix));
 
-    let pk = fs::read(&pk_path)
-        .with_context(|| format!("failed to read {}", pk_path.display()))?;
-    let vk = fs::read(&vk_path)
-        .with_context(|| format!("failed to read {}", vk_path.display()))?;
+    let pk = fs::read(&pk_path).with_context(|| format!("failed to read {}", pk_path.display()))?;
+    let vk = fs::read(&vk_path).with_context(|| format!("failed to read {}", vk_path.display()))?;
 
     let params = Groth16Params::from_bytes(pk, vk)
         .with_context(|| format!("failed to deserialize groth16 params for {}", prefix))?;

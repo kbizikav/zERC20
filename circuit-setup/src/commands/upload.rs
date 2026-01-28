@@ -20,8 +20,8 @@ pub async fn upload(artifacts_dir: &Path, storage: &Storage, version: &str) -> R
     // Load or create manifest
     let manifest_path = artifacts_dir.join("manifest.json");
     let manifest = if manifest_path.exists() {
-        let existing_manifest = Manifest::load(&manifest_path)
-            .context("failed to load manifest.json")?;
+        let existing_manifest =
+            Manifest::load(&manifest_path).context("failed to load manifest.json")?;
 
         // Verify version matches
         if existing_manifest.version != version {
@@ -120,17 +120,41 @@ fn create_manifest_from_artifacts(artifacts_dir: &Path, version: &str) -> Result
         manifest.add_circuit(
             "withdraw_local",
             CircuitArtifacts {
-                nova_pp: create_artifact_entry(version, "withdraw_local_nova_pp.bin", artifacts_dir)?,
-                nova_vp: create_artifact_entry(version, "withdraw_local_nova_vp.bin", artifacts_dir)?,
-                decider_pp: create_artifact_entry(version, "withdraw_local_decider_pp.bin", artifacts_dir)?,
-                decider_vp: create_artifact_entry(version, "withdraw_local_decider_vp.bin", artifacts_dir)?,
+                nova_pp: create_artifact_entry(
+                    version,
+                    "withdraw_local_nova_pp.bin",
+                    artifacts_dir,
+                )?,
+                nova_vp: create_artifact_entry(
+                    version,
+                    "withdraw_local_nova_vp.bin",
+                    artifacts_dir,
+                )?,
+                decider_pp: create_artifact_entry(
+                    version,
+                    "withdraw_local_decider_pp.bin",
+                    artifacts_dir,
+                )?,
+                decider_vp: create_artifact_entry(
+                    version,
+                    "withdraw_local_decider_vp.bin",
+                    artifacts_dir,
+                )?,
                 groth16_pk: if has_groth16 {
-                    Some(create_artifact_entry(version, "withdraw_local_groth16_pk.bin", artifacts_dir)?)
+                    Some(create_artifact_entry(
+                        version,
+                        "withdraw_local_groth16_pk.bin",
+                        artifacts_dir,
+                    )?)
                 } else {
                     None
                 },
                 groth16_vk: if has_groth16 {
-                    Some(create_artifact_entry(version, "withdraw_local_groth16_vk.bin", artifacts_dir)?)
+                    Some(create_artifact_entry(
+                        version,
+                        "withdraw_local_groth16_vk.bin",
+                        artifacts_dir,
+                    )?)
                 } else {
                     None
                 },
@@ -149,17 +173,41 @@ fn create_manifest_from_artifacts(artifacts_dir: &Path, version: &str) -> Result
         manifest.add_circuit(
             "withdraw_global",
             CircuitArtifacts {
-                nova_pp: create_artifact_entry(version, "withdraw_global_nova_pp.bin", artifacts_dir)?,
-                nova_vp: create_artifact_entry(version, "withdraw_global_nova_vp.bin", artifacts_dir)?,
-                decider_pp: create_artifact_entry(version, "withdraw_global_decider_pp.bin", artifacts_dir)?,
-                decider_vp: create_artifact_entry(version, "withdraw_global_decider_vp.bin", artifacts_dir)?,
+                nova_pp: create_artifact_entry(
+                    version,
+                    "withdraw_global_nova_pp.bin",
+                    artifacts_dir,
+                )?,
+                nova_vp: create_artifact_entry(
+                    version,
+                    "withdraw_global_nova_vp.bin",
+                    artifacts_dir,
+                )?,
+                decider_pp: create_artifact_entry(
+                    version,
+                    "withdraw_global_decider_pp.bin",
+                    artifacts_dir,
+                )?,
+                decider_vp: create_artifact_entry(
+                    version,
+                    "withdraw_global_decider_vp.bin",
+                    artifacts_dir,
+                )?,
                 groth16_pk: if has_groth16 {
-                    Some(create_artifact_entry(version, "withdraw_global_groth16_pk.bin", artifacts_dir)?)
+                    Some(create_artifact_entry(
+                        version,
+                        "withdraw_global_groth16_pk.bin",
+                        artifacts_dir,
+                    )?)
                 } else {
                     None
                 },
                 groth16_vk: if has_groth16 {
-                    Some(create_artifact_entry(version, "withdraw_global_groth16_vk.bin", artifacts_dir)?)
+                    Some(create_artifact_entry(
+                        version,
+                        "withdraw_global_groth16_vk.bin",
+                        artifacts_dir,
+                    )?)
                 } else {
                     None
                 },
@@ -197,7 +245,9 @@ async fn upload_file_with_progress(
 
     // For S3 upload, we show progress during the upload
     // The actual progress tracking happens inside storage.upload_file
-    storage.upload_file_with_progress(s3_path, local_path, &pb).await?;
+    storage
+        .upload_file_with_progress(s3_path, local_path, &pb)
+        .await?;
 
     pb.finish_and_clear();
 

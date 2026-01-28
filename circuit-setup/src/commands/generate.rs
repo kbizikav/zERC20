@@ -24,7 +24,10 @@ use crate::manifest::{create_artifact_entry, CircuitArtifacts, Manifest};
 pub fn generate(artifacts_dir: &Path, version: &str, seed: Option<u64>) -> Result<()> {
     // Warn about fixed seed
     if let Some(s) = seed {
-        log::warn!("Using fixed seed {}. This is NOT recommended for production use!", s);
+        log::warn!(
+            "Using fixed seed {}. This is NOT recommended for production use!",
+            s
+        );
         log::warn!("Fixed seeds make the setup deterministic and may compromise security.");
     }
 
@@ -110,10 +113,26 @@ pub fn generate(artifacts_dir: &Path, version: &str, seed: Option<u64>) -> Resul
         CircuitArtifacts {
             nova_pp: create_artifact_entry(version, "withdraw_local_nova_pp.bin", artifacts_dir)?,
             nova_vp: create_artifact_entry(version, "withdraw_local_nova_vp.bin", artifacts_dir)?,
-            decider_pp: create_artifact_entry(version, "withdraw_local_decider_pp.bin", artifacts_dir)?,
-            decider_vp: create_artifact_entry(version, "withdraw_local_decider_vp.bin", artifacts_dir)?,
-            groth16_pk: Some(create_artifact_entry(version, "withdraw_local_groth16_pk.bin", artifacts_dir)?),
-            groth16_vk: Some(create_artifact_entry(version, "withdraw_local_groth16_vk.bin", artifacts_dir)?),
+            decider_pp: create_artifact_entry(
+                version,
+                "withdraw_local_decider_pp.bin",
+                artifacts_dir,
+            )?,
+            decider_vp: create_artifact_entry(
+                version,
+                "withdraw_local_decider_vp.bin",
+                artifacts_dir,
+            )?,
+            groth16_pk: Some(create_artifact_entry(
+                version,
+                "withdraw_local_groth16_pk.bin",
+                artifacts_dir,
+            )?),
+            groth16_vk: Some(create_artifact_entry(
+                version,
+                "withdraw_local_groth16_vk.bin",
+                artifacts_dir,
+            )?),
         },
     );
 
@@ -123,10 +142,26 @@ pub fn generate(artifacts_dir: &Path, version: &str, seed: Option<u64>) -> Resul
         CircuitArtifacts {
             nova_pp: create_artifact_entry(version, "withdraw_global_nova_pp.bin", artifacts_dir)?,
             nova_vp: create_artifact_entry(version, "withdraw_global_nova_vp.bin", artifacts_dir)?,
-            decider_pp: create_artifact_entry(version, "withdraw_global_decider_pp.bin", artifacts_dir)?,
-            decider_vp: create_artifact_entry(version, "withdraw_global_decider_vp.bin", artifacts_dir)?,
-            groth16_pk: Some(create_artifact_entry(version, "withdraw_global_groth16_pk.bin", artifacts_dir)?),
-            groth16_vk: Some(create_artifact_entry(version, "withdraw_global_groth16_vk.bin", artifacts_dir)?),
+            decider_pp: create_artifact_entry(
+                version,
+                "withdraw_global_decider_pp.bin",
+                artifacts_dir,
+            )?,
+            decider_vp: create_artifact_entry(
+                version,
+                "withdraw_global_decider_vp.bin",
+                artifacts_dir,
+            )?,
+            groth16_pk: Some(create_artifact_entry(
+                version,
+                "withdraw_global_groth16_pk.bin",
+                artifacts_dir,
+            )?),
+            groth16_vk: Some(create_artifact_entry(
+                version,
+                "withdraw_global_groth16_vk.bin",
+                artifacts_dir,
+            )?),
         },
     );
 
