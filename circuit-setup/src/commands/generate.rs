@@ -5,7 +5,10 @@ use anyhow::{Context, Result};
 use ark_bn254::Fr;
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;
 use folding_schemes::frontend::FCircuit;
-use rand::{rngs::StdRng, SeedableRng};
+use rand::{
+    rngs::{OsRng, StdRng},
+    CryptoRng, RngCore, SeedableRng,
+};
 
 use zerc20_zkp::{
     groth16::{params::Groth16Params, withdraw::SingleWithdrawCircuit},
@@ -188,7 +191,7 @@ where
     C: FCircuit<Fr>,
     FParams<C>: Clone,
 {
-    let mut rng = create_rng(seed)?;
+    let mut rng = create_rng(seed);
 
     let nova_params = NovaParams::<C>::rand(f_params.clone(), &mut rng)?;
     let decider_params = DeciderParams::<C>::rand(&mut rng, &nova_params)?;
@@ -223,7 +226,7 @@ fn generate_groth16_artifacts<const DEPTH: usize>(
     poseidon3_config: &PoseidonConfig<Fr>,
     seed: Option<u64>,
 ) -> Result<()> {
-    let mut rng = create_rng(seed)?;
+    let mut rng = create_rng(seed);
     let circuit =
         SingleWithdrawCircuit::<Fr, DEPTH>::new(poseidon2_config.clone(), poseidon3_config.clone());
     let params = Groth16Params::rand(&mut rng, circuit)
@@ -250,12 +253,49 @@ fn write_bytes(path: &Path, bytes: &[u8]) -> Result<()> {
     Ok(())
 }
 
-fn create_rng(seed: Option<u64>) -> Result<StdRng> {
-    match seed {
-        Some(s) => Ok(StdRng::seed_from_u64(s)),
-        None => {
-            log::info!("Collecting entropy for secure random generation...");
-            Ok(StdRng::from_entropy())
+/// A cryptographically secure RNG that can be either OS-backed or seeded.
+enum SecureRng {
+    /// OS-backed RNG - fetches entropy from the OS for each operation.
+    Os(OsRng),
+    /// Seeded RNG - deterministic, for testing only.
+    Seeded(StdRng),
+}
+
+impl RngCore for SecureRng {
+    fn next_u32(&mut self) -> u32 {
+        match self {
+            SecureRng::Os(r) => r.next_u32(),
+            SecureRng::Seeded(r) => r.next_u32(),
         }
+    }
+
+    fn next_u64(&mut self) -> u64 {
+        match self {
+            SecureRng::Os(r) => r.next_u64(),
+            SecureRng::Seeded(r) => r.next_u64(),
+        }
+    }
+
+    fn fill_bytes(&mut self, dest: &mut [u8]) {
+        match self {
+            SecureRng::Os(r) => r.fill_bytes(dest),
+            SecureRng::Seeded(r) => r.fill_bytes(dest),
+        }
+    }
+
+    fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+        match self {
+            SecureRng::Os(r) => r.try_fill_bytes(dest),
+            SecureRng::Seeded(r) => r.try_fill_bytes(dest),
+        }
+    }
+}
+
+impl CryptoRng for SecureRng {}
+
+fn create_rng(seed: Option<u64>) -> SecureRng {
+    match seed {
+        Some(s) => SecureRng::Seeded(StdRng::seed_from_u64(s)),
+        None => SecureRng::Os(OsRng),
     }
 }
