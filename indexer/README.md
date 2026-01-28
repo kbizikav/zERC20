@@ -1,23 +1,35 @@
 # Tree Indexer
 
-`tree-indexer` runs two coordinated jobs in a single Tokio runtime:
+`zerc20-tree-indexer` runs three coordinated jobs and an HTTP server in a single Tokio runtime:
 
-- **Event sync job** – pulls `IndexedTransfer` events for every configured token and stores
-  them in Postgres using the existing indexer logic.
-- **Tree ingestion job** – watches for newly indexed, contiguous events and appends them into
-  the partitioned Merkle tree tables.
+- **Event sync job** – Pulls `IndexedTransfer` events for every configured token and stores them in PostgreSQL.
+- **Tree ingestion job** – Watches for newly indexed, contiguous events and appends them into the partitioned Merkle tree tables.
+- **Root prover job** – Compiles IVC proofs for processed events and submits proved transfer roots to the verifier contract.
+- **HTTP server** – Provides REST API endpoints for querying tree state and generating Merkle proofs.
 
-Run both jobs together via:
+## Quick Start
 
 ```bash
-cargo run -p tree-indexer -- --tokens ../config/tokens.json
+# Set up environment
+cp indexer/.env.example indexer/.env
+# Edit .env with your DATABASE_URL and other settings
+
+# Run database migrations
+sqlx database setup
+
+# Start the indexer with all jobs enabled
+IS_SYNC=true cargo run -p zerc20-tree-indexer
 ```
 
-Use `--once` to execute a single iteration of each job (helpful in cron or test scripts).
+Use `--once` to execute a single iteration of each job (helpful for testing or cron scripts):
+
+```bash
+IS_SYNC=true cargo run -p zerc20-tree-indexer -- --once
+```
 
 ## Database Setup
 
-Make sure the Postgres database defined by `DATABASE_URL` exists and has the latest schema before starting the indexer:
+Ensure the PostgreSQL database defined by `DATABASE_URL` exists and has the latest schema:
 
 ```bash
 sqlx database setup
@@ -25,29 +37,29 @@ sqlx database setup
 
 This creates the database if needed and runs all pending migrations.
 
-## Configuration Inputs
+## Configuration
 
 ### Token Metadata (`tokens.json`)
 
-Provide optional hub metadata and token definitions in JSON (default path `../config/tokens.json` or `TOKENS_FILE_PATH` env). The `hub` block is ignored by the indexer if omitted:
+Provide token definitions in JSON (default path `../config/tokens.json` or `TOKENS_FILE_PATH` env):
 
 ```json
 {
   "hub": {
     "hub_address": "0x0000000000000000000000000000000000000001",
-    "chain_id": 5,
-    "rpc_urls": ["https://eth-goerli.g.alchemy.com/v2/YOUR_KEY"]
+    "chain_id": 11155111,
+    "rpc_urls": ["https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY"]
   },
   "tokens": [
     {
-      "label": "goerli-test",
+      "label": "sepolia-test",
       "token_address": "0x1111111111111111111111111111111111111111",
       "verifier_address": "0x2222222222222222222222222222222222222222",
-      "chain_id": 5,
+      "chain_id": 11155111,
       "deployed_block_number": 12345678,
       "rpc_urls": [
-        "https://eth-goerli.g.alchemy.com/v2/YOUR_KEY",
-        "https://goerli.infura.io/v3/YOUR_PROJECT_ID"
+        "https://eth-sepolia.g.alchemy.com/v2/YOUR_KEY",
+        "https://sepolia.infura.io/v3/YOUR_PROJECT_ID"
       ]
     },
     {
@@ -62,19 +74,74 @@ Provide optional hub metadata and token definitions in JSON (default path `../co
 }
 ```
 
-Each token must include at least one RPC URL (string or array). Duplicate labels or addresses are allowed but will map to distinct advisory locks.
+Each token must include at least one RPC URL (string or array). The `hub` block is optional and only used by the crosschain-job.
 
 ### Environment Variables
 
-Set the runtime parameters through environment variables (see `.env.example`):
+See `.env.example` for the complete list with detailed descriptions. Key variables:
 
-- `DATABASE_URL` – Postgres connection string
-- `EVENT_INTERVAL_MS` – poll frequency for event sync (default `5000`)
-- `EVENT_BLOCK_SPAN` – block span per RPC batch (default `5000`)
-- `EVENT_FORWARD_SCAN_OVERLAP` – overlap blocks to catch reorg gaps (default `10`)
-- `TREE_INTERVAL_MS` – poll frequency for tree ingestion (default `2000`)
-- `TREE_HEIGHT` – Merkle tree height (default `64`)
-- `TREE_HISTORY_WINDOW` – retained history window for proofs (default `100`)
-- `TREE_BATCH_SIZE` – leaf append batch size (default `128`)
+#### Job Control
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `IS_SYNC` | `false` | Set to `true` to enable background sync jobs |
+| `LISTEN_ADDR` | `localhost:8080` | HTTP server bind address |
 
-Use `.env` during development or pass variables directly when invoking the binary.
+#### Event Indexer
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `EVENT_INTERVAL_MS` | `5000` | Poll frequency for event sync |
+| `EVENT_BLOCK_SPAN` | `5000` | Block span per RPC batch |
+| `EVENT_FORWARD_SCAN_OVERLAP` | `10` | Overlap blocks for reorg protection |
+
+#### Tree Ingestion
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `TREE_INTERVAL_MS` | `2000` | Poll frequency for tree ingestion |
+| `TREE_HEIGHT` | `64` | Merkle tree height (must match verifier) |
+| `TREE_HISTORY_WINDOW` | `100` | Retained snapshots for proof generation |
+| `TREE_BATCH_SIZE` | `128` | Events per database transaction |
+
+#### Root Prover
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ROOT_INTERVAL_MS` | `5000` | Poll frequency for IVC compilation |
+| `ROOT_SUBMIT_INTERVAL_MS` | `10000` | Poll frequency for proof submission |
+| `DECIDER_PROVER_URL` | `http://127.0.0.1:8081` | Decider prover service URL |
+| `DECIDER_PROVER_TIMEOUT_SECS` | `120` | Timeout for Groth16 proof generation |
+| `ROOT_SUBMITTER_PRIVATE_KEY` | - | Private key for on-chain submissions |
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                     zerc20-tree-indexer                     │
+├─────────────────┬─────────────────┬─────────────────────────┤
+│  Event Sync Job │ Tree Ingestion  │     Root Prover Job     │
+│                 │      Job        │                         │
+│  RPC ──► Events │ Events ──► Tree │ Tree ──► IVC ──► Submit │
+│         (DB)    │         (DB)    │              (On-chain) │
+└─────────────────┴─────────────────┴─────────────────────────┘
+                            │
+                    ┌───────┴───────┐
+                    │  HTTP Server  │
+                    │  (REST API)   │
+                    └───────────────┘
+```
+
+## HTTP API
+
+When the server is running, the following endpoints are available:
+
+- `GET /health` – Health check
+- `GET /tokens` – List configured tokens
+- `GET /tokens/{label}/state` – Get tree state for a token
+- `GET /tokens/{label}/proof?leaf_index={n}&target_index={m}` – Generate Merkle proof
+
+## Troubleshooting
+
+| Symptom | Likely Cause | Solution |
+|---------|--------------|----------|
+| Jobs not running | `IS_SYNC` not set | Set `IS_SYNC=true` |
+| "provider rejected block range" | RPC rate limit | Reduce `EVENT_BLOCK_SPAN` |
+| "tree state ahead of events" | Database inconsistency | Check event indexer logs |
+| Proof generation fails | History window too small | Increase `TREE_HISTORY_WINDOW` |

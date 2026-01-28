@@ -17,6 +17,7 @@ const VALUE_BYTES: usize = 32;
 const EVENTS_TABLE: &str = "indexed_transfer_events";
 const STATE_TABLE: &str = "event_indexer_state";
 const TOKENS_TABLE: &str = "tokens";
+const ADVANCE_BATCH_SIZE: i64 = 512;
 
 pub type Result<T> = std::result::Result<T, EventIndexerError>;
 
@@ -191,6 +192,18 @@ impl EventIndexer {
                         continue;
                     }
 
+                    // Log a hint if this might be an unrecognized block range error pattern.
+                    // This helps operators identify new patterns that should be added.
+                    if current_span > 1 && is_potential_unrecognized_block_range_error(&err) {
+                        warn!(
+                            "unrecognized error during block range query [{from}, {to}] for token_id {} - \
+                            this may be a new block range limit pattern that should be added to \
+                            is_invalid_block_range_error(): {}",
+                            self.partitions.token_id(),
+                            err
+                        );
+                    }
+
                     return Err(EventIndexerError::contract(
                         "get_indexed_transfer_events",
                         err,
@@ -349,11 +362,42 @@ impl EventIndexerPartitions {
     }
 }
 
+/// Detects whether a contract error indicates that the requested block range was too large.
+///
+/// Different RPC providers return different error messages when a block range query exceeds
+/// their limits. This function matches known patterns to enable adaptive span reduction.
+///
+/// Known patterns (case-insensitive):
+/// - "invalid block range" - Generic provider error
+/// - "block range params" - Some providers use this phrasing
+/// - "block range is too large" - Explicit size rejection
+/// - "exceed maximum block range" - Alchemy, Infura style
+/// - "query returned more than" - Result size limits
+/// - "too many results" - Generic result limit
+/// - "eth_getLogs" + "limit" - Log query specific limits
+/// - "range too large" - Shortened variant
+///
+/// If you encounter a new error pattern that should trigger span reduction,
+/// add it here and document the provider that uses it.
 fn is_invalid_block_range_error(err: &ContractError) -> bool {
     let message = err.to_string().to_ascii_lowercase();
     message.contains("invalid block range")
         || message.contains("block range params")
         || message.contains("block range is too large")
+        || message.contains("exceed maximum block range")
+        || message.contains("query returned more than")
+        || message.contains("too many results")
+        || message.contains("range too large")
+        || (message.contains("eth_getlogs") && message.contains("limit"))
+}
+
+/// Checks if an error might be a block range error that we failed to recognize.
+/// Returns true if the error looks like it could be provider-related but doesn't match known patterns.
+fn is_potential_unrecognized_block_range_error(err: &ContractError) -> bool {
+    let message = err.to_string().to_ascii_lowercase();
+    // Common keywords that suggest provider/RPC issues related to queries
+    (message.contains("block") || message.contains("range") || message.contains("limit"))
+        && (message.contains("error") || message.contains("exceed") || message.contains("too"))
 }
 
 async fn ensure_token_record(pool: &PgPool, metadata: &TokenMetadata) -> Result<i64> {
@@ -730,4 +774,3 @@ fn opt_i64_to_u64(value: Option<i64>, label: &'static str) -> Result<Option<u64>
         None => Ok(None),
     }
 }
-const ADVANCE_BATCH_SIZE: i64 = 512;
