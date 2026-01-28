@@ -62,7 +62,7 @@ Key environment variables (see `.env.example`):
 
 ## Important Design Decisions
 
-1. **Always broadcast to all targets**: Selective broadcast was removed to avoid convergence issues where agg_seq advances but only some Verifiers receive updates.
+1. **Root-based selective broadcast**: The broadcast job only sends to Verifiers that don't have the current root. This uses root comparison (not agg_seq) to determine sync status — verifiers with matching roots are considered in sync even if their agg_seq differs. This saves LayerZero fees (~$0.2-$0.5 per chain on mainnet) while avoiding convergence issues.
 
 2. **Receipt timeout**: 5-minute timeout on transaction receipt to prevent jobs from hanging on RPC issues.
 

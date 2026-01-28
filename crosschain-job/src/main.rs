@@ -234,32 +234,35 @@ struct BroadcastDestination {
 }
 
 impl BroadcastDestination {
-    async fn has_root(&self, agg_seq: u64, root: U256) -> Result<bool> {
+    /// Check if the verifier's latest global root matches the expected root.
+    /// This uses root-based comparison instead of agg_seq to support selective broadcast:
+    /// even if agg_seq differs, verifiers with the same root are considered in sync.
+    async fn has_current_root(&self, expected_root: U256) -> Result<bool> {
         let latest_seq = self
             .verifier
             .latest_agg_seq()
             .await
             .context("failed to fetch verifier latestAggSeq")?;
-        if latest_seq < agg_seq {
+        if latest_seq == 0 {
             return Ok(false);
         }
-        let stored_root = self
+        let latest_root = self
             .verifier
-            .global_transfer_root(agg_seq)
+            .global_transfer_root(latest_seq)
             .await
             .context("failed to fetch verifier globalTransferRoots entry")?;
-        Ok(stored_root == root && stored_root != U256::ZERO)
+        Ok(latest_root == expected_root && latest_root != U256::ZERO)
     }
 
+    /// Wait for the verifier to receive the expected root (regardless of agg_seq).
     async fn wait_for_root(
         &self,
-        agg_seq: u64,
-        root: U256,
+        expected_root: U256,
         confirmation: &ConfirmationSettings,
     ) -> Result<bool> {
         let deadline = Instant::now() + confirmation.timeout;
         loop {
-            if self.has_root(agg_seq, root).await? {
+            if self.has_current_root(expected_root).await? {
                 return Ok(true);
             }
             if Instant::now() >= deadline {
@@ -462,7 +465,7 @@ impl BroadcastJob {
             .await
             .context("failed to compute current aggregation root")?;
         let missing_targets = self
-            .destinations_missing(agg_seq, current_root)
+            .destinations_missing(current_root)
             .await
             .context("failed to evaluate broadcast destinations")?;
 
@@ -489,14 +492,22 @@ impl BroadcastJob {
             return Ok(());
         }
 
-        // Always broadcast to all targets to ensure consistent agg_seq across all verifiers.
-        // Selective broadcast was removed because it could cause convergence issues:
-        // broadcasting to only missing targets advances agg_seq, making previously-synced
-        // verifiers appear out-of-date in the next cycle.
+        // Selective broadcast: only send to verifiers that don't have the current root.
+        // This uses root-based comparison (not agg_seq) to avoid convergence issues:
+        // verifiers with the same root are considered in sync even if their agg_seq differs.
+        let (broadcast_eids, is_selective) = if root_changed {
+            // Root changed: broadcast to all targets
+            (self.target_eids.clone(), false)
+        } else {
+            // Root unchanged but some targets missing: broadcast only to missing targets
+            let missing_eids: Vec<u32> = missing_targets.iter().map(|(_, eid)| *eid).collect();
+            (missing_eids, true)
+        };
+
         let options = Bytes::copy_from_slice(&self.lz_options);
         let quote = self
             .contract
-            .quote_broadcast(self.target_eids.clone(), options.clone())
+            .quote_broadcast(broadcast_eids.clone(), options.clone())
             .await
             .context("failed to quote broadcast fee")?;
 
@@ -505,7 +516,7 @@ impl BroadcastJob {
             .contract
             .broadcast(
                 self.private_key,
-                self.target_eids.clone(),
+                broadcast_eids.clone(),
                 options,
                 fee_with_buffer,
             )
@@ -513,10 +524,21 @@ impl BroadcastJob {
             .context("failed to submit Hub.broadcast transaction")?;
         let tx_hash = *pending.tx_hash();
 
-        info!(
-            "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
-            self.target_eids, fee_with_buffer, self.fee_buffer_bps
-        );
+        if is_selective {
+            let missing_labels: Vec<&str> = missing_targets
+                .iter()
+                .map(|(label, _)| label.as_str())
+                .collect();
+            info!(
+                "submitted selective Hub.broadcast to missing targets {:?} (tx={tx_hash:#x}, eids={:?}, fee={} wei, buffer_bps={})",
+                missing_labels, broadcast_eids, fee_with_buffer, self.fee_buffer_bps
+            );
+        } else {
+            info!(
+                "submitted Hub.broadcast (tx={tx_hash:#x}, targets={:?}, fee={} wei, buffer_bps={})",
+                broadcast_eids, fee_with_buffer, self.fee_buffer_bps
+            );
+        }
 
         let receipt = wait_for_receipt(pending)
             .await
@@ -526,6 +548,7 @@ impl BroadcastJob {
             let target_labels: Vec<&str> = self
                 .destinations
                 .iter()
+                .filter(|d| broadcast_eids.contains(&d.eid))
                 .map(|d| d.label.as_str())
                 .collect();
             info!(
@@ -534,7 +557,7 @@ impl BroadcastJob {
             );
             self.last_broadcast_root = Some(event.root);
             self.last_broadcast_seq = Some(event.agg_seq);
-            self.confirm_destinations(event.agg_seq, event.root, tx_hash)
+            self.confirm_destinations(event.root, &broadcast_eids, tx_hash)
                 .await;
         } else {
             warn!("Hub.broadcast receipt did not contain AggregationRootUpdated event");
@@ -548,10 +571,10 @@ impl BroadcastJob {
         Ok(())
     }
 
-    async fn destinations_missing(&self, agg_seq: u64, root: U256) -> Result<Vec<(String, u32)>> {
+    async fn destinations_missing(&self, current_root: U256) -> Result<Vec<(String, u32)>> {
         let mut missing = Vec::new();
         for dest in &self.destinations {
-            match dest.has_root(agg_seq, root).await {
+            match dest.has_current_root(current_root).await {
                 Ok(true) => continue,
                 Ok(false) => missing.push((dest.label.clone(), dest.eid)),
                 Err(err) => {
@@ -566,19 +589,23 @@ impl BroadcastJob {
         Ok(missing)
     }
 
-    async fn confirm_destinations(&self, agg_seq: u64, root: U256, tx_hash: B256) {
+    async fn confirm_destinations(&self, root: U256, broadcast_eids: &[u32], tx_hash: B256) {
         for dest in &self.destinations {
-            match dest.wait_for_root(agg_seq, root, &self.confirmation).await {
+            // Only confirm destinations that were included in this broadcast
+            if !broadcast_eids.contains(&dest.eid) {
+                continue;
+            }
+            match dest.wait_for_root(root, &self.confirmation).await {
                 Ok(true) => {
                     info!(
-                        "verifier '{}' (eid {}) confirmed agg_seq {} (root={root:#x})",
-                        dest.label, dest.eid, agg_seq
+                        "verifier '{}' (eid {}) confirmed root {root:#x}",
+                        dest.label, dest.eid
                     );
                 }
                 Ok(false) => {
                     warn!(
-                        "verifier '{}' (eid {}) did not ingest agg_seq {} before timeout; will rebroadcast",
-                        dest.label, dest.eid, agg_seq
+                        "verifier '{}' (eid {}) did not receive root {root:#x} before timeout; will rebroadcast",
+                        dest.label, dest.eid
                     );
                     if let Some(probe) = &self.lz_probe {
                         probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
@@ -586,8 +613,8 @@ impl BroadcastJob {
                 }
                 Err(err) => {
                     warn!(
-                        "failed to confirm agg_seq {} on verifier '{}' (chain {}, eid {}): {err:?}",
-                        agg_seq, dest.label, dest.chain_id, dest.eid
+                        "failed to confirm root on verifier '{}' (chain {}, eid {}): {err:?}",
+                        dest.label, dest.chain_id, dest.eid
                     );
                 }
             }
