@@ -705,5 +705,8 @@ fn map_merkle_error(err: DbMerkleTreeError) -> actix_web::Error {
         DbMerkleTreeError::U64ToI64 { .. } | DbMerkleTreeError::I64ToU64 { .. } => {
             ErrorInternalServerError("integer conversion error during merkle operation")
         }
+        DbMerkleTreeError::InternalError { .. } => {
+            ErrorInternalServerError("internal merkle tree error")
+        }
     }
 }
