@@ -1,9 +1,12 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
+use futures::StreamExt;
+use indicatif::{ProgressBar, ProgressStyle};
+use reqwest::Response;
 use tokio::io::AsyncWriteExt;
 
-use crate::manifest::{verify_file_hash, Manifest};
+use crate::manifest::{sha256_file, Manifest};
 
 /// Download artifacts from a public URL and verify hashes.
 pub async fn download(
@@ -50,42 +53,60 @@ pub async fn download(
     let artifacts = manifest.all_artifacts();
     let total = artifacts.len();
 
-    log::info!("Downloading {} artifacts...", total);
+    log::info!("Processing {} artifacts...", total);
 
+    let mut downloaded_count = 0;
+    let mut skipped_count = 0;
     let mut verification_results = Vec::new();
 
     for (i, (local_filename, s3_path)) in artifacts.iter().enumerate() {
         let local_path = artifacts_dir.join(local_filename);
         let file_url = format!("{}/{}", base_url, s3_path);
 
-        log::info!(
-            "[{}/{}] Downloading {} <- {}",
-            i + 1,
-            total,
-            local_filename,
-            file_url
-        );
-
-        download_file(&client, &file_url, &local_path).await
-            .with_context(|| format!("failed to download {}", file_url))?;
-
         // Get expected hash from manifest
         let expected_hash = get_expected_hash(&manifest, local_filename)?;
 
+        // Check if file already exists and has correct hash
+        if local_path.exists() {
+            log::info!("[{}/{}] Checking {}...", i + 1, total, local_filename);
+
+            match sha256_file(&local_path) {
+                Ok(actual_hash) if actual_hash == expected_hash => {
+                    log::info!("[{}/{}] Skipped {} (hash OK)", i + 1, total, local_filename);
+                    verification_results.push((local_filename.clone(), true));
+                    skipped_count += 1;
+                    continue;
+                }
+                _ => {
+                    log::info!("[{}/{}] Re-downloading {} (hash mismatch)", i + 1, total, local_filename);
+                }
+            }
+        }
+
+        log::info!("[{}/{}] Downloading {}...", i + 1, total, local_filename);
+
+        download_file_with_progress(&client, &file_url, &local_path, local_filename).await
+            .with_context(|| format!("failed to download {}", file_url))?;
+
+        downloaded_count += 1;
+
         // Verify hash
-        let is_valid = verify_file_hash(&local_path, &expected_hash)?;
+        let actual_hash = sha256_file(&local_path)?;
+        let is_valid = actual_hash == expected_hash;
         verification_results.push((local_filename.clone(), is_valid));
 
         if is_valid {
-            log::info!("  Hash verified: OK");
+            log::info!("[{}/{}] {} verified OK", i + 1, total, local_filename);
         } else {
-            log::error!("  Hash verification FAILED!");
+            log::error!("[{}/{}] {} FAILED!", i + 1, total, local_filename);
         }
     }
 
     // Summary
-    log::info!("");
-    log::info!("=== Verification Summary ===");
+    println!();
+    log::info!("=== Download Summary ===");
+    log::info!("Downloaded: {} files", downloaded_count);
+    log::info!("Skipped (already exists): {} files", skipped_count);
 
     let failed: Vec<_> = verification_results
         .iter()
@@ -102,7 +123,7 @@ pub async fn download(
         anyhow::bail!("hash verification failed for {} file(s)", failed.len());
     }
 
-    log::info!("");
+    println!();
     log::info!("Manifest digest: {}", digest);
     log::info!("Download complete: {}", artifacts_dir.display());
 
@@ -126,9 +147,14 @@ async fn download_bytes(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> 
     Ok(bytes.to_vec())
 }
 
-/// Download a file from a URL with streaming.
-async fn download_file(client: &reqwest::Client, url: &str, local_path: &Path) -> Result<()> {
-    let response = client.get(url)
+/// Download a file from a URL with progress bar.
+async fn download_file_with_progress(
+    client: &reqwest::Client,
+    url: &str,
+    local_path: &Path,
+    filename: &str,
+) -> Result<()> {
+    let response: Response = client.get(url)
         .send()
         .await
         .with_context(|| format!("failed to fetch {}", url))?;
@@ -137,14 +163,34 @@ async fn download_file(client: &reqwest::Client, url: &str, local_path: &Path) -
         anyhow::bail!("HTTP {} for {}", response.status(), url);
     }
 
+    let total_size = response.content_length().unwrap_or(0);
+
+    let pb = ProgressBar::new(total_size);
+    pb.set_style(
+        ProgressStyle::default_bar()
+            .template("  {spinner:.green} {msg} [{bar:40.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+            .unwrap()
+            .progress_chars("#>-")
+    );
+    pb.set_message(filename.to_string());
+
     let mut file = tokio::fs::File::create(local_path).await
         .with_context(|| format!("failed to create {}", local_path.display()))?;
 
-    let bytes = response.bytes().await
-        .with_context(|| format!("failed to read response from {}", url))?;
+    let mut stream = response.bytes_stream();
+    let mut downloaded: u64 = 0;
 
-    file.write_all(&bytes).await
-        .with_context(|| format!("failed to write {}", local_path.display()))?;
+    while let Some(chunk_result) = stream.next().await {
+        let chunk_result: std::result::Result<bytes::Bytes, reqwest::Error> = chunk_result;
+        let chunk = chunk_result
+            .map_err(|e| anyhow::anyhow!("failed to read chunk from {}: {}", url, e))?;
+        file.write_all(&chunk).await
+            .with_context(|| format!("failed to write to {}", local_path.display()))?;
+        downloaded += chunk.len() as u64;
+        pb.set_position(downloaded);
+    }
+
+    pb.finish_and_clear();
 
     Ok(())
 }

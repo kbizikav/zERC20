@@ -33,7 +33,13 @@ aws-config = { version = "1.5", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.65"
 
 # HTTP client (for public download)
-reqwest = { workspace = true }
+reqwest = { workspace = true, features = ["stream"] }
+
+# Progress bar
+indicatif = "0.17"
+
+# Bytes
+bytes = "1.0"
 
 # Error handling
 anyhow = { workspace = true }

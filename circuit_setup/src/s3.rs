@@ -6,6 +6,7 @@ use aws_sdk_s3::{
     types::{CompletedMultipartUpload, CompletedPart},
     Client as S3Client,
 };
+use indicatif::ProgressBar;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
@@ -42,52 +43,113 @@ impl Storage {
         }
     }
 
-    /// Upload a file to S3, using multipart upload for large files (>1GB).
-    pub async fn upload_file(&self, s3_key: &str, local_path: &Path) -> Result<()> {
-        let metadata = tokio::fs::metadata(local_path).await
-            .with_context(|| format!("failed to get metadata for {}", local_path.display()))?;
-        let file_size = metadata.len() as usize;
-
-        if file_size < MULTIPART_THRESHOLD {
-            self.upload_file_simple(s3_key, local_path).await
-        } else {
-            self.upload_file_multipart(s3_key, local_path, file_size).await
-        }
-    }
-
-    /// Simple upload for small files.
-    async fn upload_file_simple(&self, s3_key: &str, local_path: &Path) -> Result<()> {
+    /// Upload bytes directly to S3.
+    pub async fn upload_bytes(&self, s3_key: &str, bytes: Vec<u8>) -> Result<()> {
         let full_key = self.key(s3_key);
-        let body = ByteStream::from_path(local_path).await
-            .with_context(|| format!("failed to read file {}", local_path.display()))?;
 
         self.client
             .put_object()
             .bucket(&self.bucket)
             .key(&full_key)
-            .content_type("application/octet-stream")
-            .body(body)
+            .content_type("application/json")
+            .body(ByteStream::from(bytes))
             .send()
             .await
-            .with_context(|| format!("failed to upload {} to s3://{}/{}", local_path.display(), self.bucket, full_key))?;
+            .with_context(|| format!("failed to upload to s3://{}/{}", self.bucket, full_key))?;
 
         Ok(())
     }
 
-    /// Multipart upload for large files.
-    async fn upload_file_multipart(&self, s3_key: &str, local_path: &Path, file_size: usize) -> Result<()> {
+    /// Upload a file to S3 with progress bar.
+    pub async fn upload_file_with_progress(
+        &self,
+        s3_key: &str,
+        local_path: &Path,
+        pb: &ProgressBar,
+    ) -> Result<()> {
+        let metadata = tokio::fs::metadata(local_path)
+            .await
+            .with_context(|| format!("failed to get metadata for {}", local_path.display()))?;
+        let file_size = metadata.len() as usize;
+
+        if file_size < MULTIPART_THRESHOLD {
+            self.upload_file_simple_with_progress(s3_key, local_path, pb)
+                .await
+        } else {
+            self.upload_file_multipart_with_progress(s3_key, local_path, file_size, pb)
+                .await
+        }
+    }
+
+    /// Simple upload for small files with progress.
+    async fn upload_file_simple_with_progress(
+        &self,
+        s3_key: &str,
+        local_path: &Path,
+        pb: &ProgressBar,
+    ) -> Result<()> {
+        let full_key = self.key(s3_key);
+
+        // Read file with progress
+        let mut file = File::open(local_path)
+            .await
+            .with_context(|| format!("failed to open {}", local_path.display()))?;
+
+        let file_size = file.metadata().await?.len();
+        let mut buffer = Vec::with_capacity(file_size as usize);
+        let mut chunk = vec![0u8; 64 * 1024]; // 64KB chunks for progress updates
+        let mut total_read: u64 = 0;
+
+        loop {
+            let n = file
+                .read(&mut chunk)
+                .await
+                .with_context(|| format!("failed to read {}", local_path.display()))?;
+            if n == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&chunk[..n]);
+            total_read += n as u64;
+            pb.set_position(total_read / 2); // Reading is ~50% of the work
+        }
+
+        // Upload
+        self.client
+            .put_object()
+            .bucket(&self.bucket)
+            .key(&full_key)
+            .content_type("application/octet-stream")
+            .body(ByteStream::from(buffer))
+            .send()
+            .await
+            .with_context(|| {
+                format!(
+                    "failed to upload {} to s3://{}/{}",
+                    local_path.display(),
+                    self.bucket,
+                    full_key
+                )
+            })?;
+
+        pb.set_position(file_size);
+
+        Ok(())
+    }
+
+    /// Multipart upload for large files with progress.
+    async fn upload_file_multipart_with_progress(
+        &self,
+        s3_key: &str,
+        local_path: &Path,
+        file_size: usize,
+        pb: &ProgressBar,
+    ) -> Result<()> {
         let full_key = self.key(s3_key);
         let num_parts = file_size.div_ceil(PART_SIZE);
 
-        log::info!(
-            "Starting multipart upload: {} ({} bytes, {} parts)",
-            full_key,
-            file_size,
-            num_parts
-        );
-
         // Create multipart upload
-        let create_resp = self.client
+        let create_resp = self
+            .client
             .create_multipart_upload()
             .bucket(&self.bucket)
             .key(&full_key)
@@ -101,8 +163,11 @@ impl Storage {
             .context("no upload_id in response")?;
 
         let mut completed_parts: Vec<CompletedPart> = Vec::with_capacity(num_parts);
-        let mut file = File::open(local_path).await
+        let mut file = File::open(local_path)
+            .await
             .with_context(|| format!("failed to open {}", local_path.display()))?;
+
+        let mut uploaded: u64 = 0;
 
         // Upload each part
         for part_number in 1..=num_parts {
@@ -111,17 +176,16 @@ impl Storage {
             let part_size = end - start;
 
             let mut buffer = vec![0u8; part_size];
-            file.read_exact(&mut buffer).await
-                .with_context(|| format!("failed to read part {} from {}", part_number, local_path.display()))?;
+            file.read_exact(&mut buffer).await.with_context(|| {
+                format!(
+                    "failed to read part {} from {}",
+                    part_number,
+                    local_path.display()
+                )
+            })?;
 
-            log::info!(
-                "Uploading part {}/{} ({} bytes)",
-                part_number,
-                num_parts,
-                part_size
-            );
-
-            let upload_resp = self.client
+            let upload_resp = self
+                .client
                 .upload_part()
                 .bucket(&self.bucket)
                 .key(&full_key)
@@ -140,15 +204,13 @@ impl Storage {
                             .e_tag(etag)
                             .build(),
                     );
+                    uploaded += part_size as u64;
+                    pb.set_position(uploaded);
                 }
                 Err(e) => {
                     // Abort multipart upload on failure
-                    log::error!(
-                        "Part {} upload failed, aborting multipart upload: {}",
-                        part_number,
-                        e
-                    );
-                    let _ = self.client
+                    let _ = self
+                        .client
                         .abort_multipart_upload()
                         .bucket(&self.bucket)
                         .key(&full_key)
@@ -175,27 +237,8 @@ impl Storage {
             .await
             .context("failed to complete multipart upload")?;
 
-        log::info!("Multipart upload completed: {}", full_key);
         Ok(())
     }
-
-    /// Upload bytes directly to S3.
-    pub async fn upload_bytes(&self, s3_key: &str, bytes: Vec<u8>) -> Result<()> {
-        let full_key = self.key(s3_key);
-
-        self.client
-            .put_object()
-            .bucket(&self.bucket)
-            .key(&full_key)
-            .content_type("application/json")
-            .body(ByteStream::from(bytes))
-            .send()
-            .await
-            .with_context(|| format!("failed to upload to s3://{}/{}", self.bucket, full_key))?;
-
-        Ok(())
-    }
-
 }
 
 /// Create an S3 client from environment configuration.

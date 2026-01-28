@@ -52,8 +52,7 @@ impl Manifest {
 
     /// Compute the canonical JSON representation.
     pub fn to_canonical_json(&self) -> Result<String> {
-        serde_json_canonicalizer::to_string(self)
-            .context("failed to canonicalize manifest to JSON")
+        serde_json_canonicalizer::to_string(self).context("failed to canonicalize manifest to JSON")
     }
 
     /// Compute the SHA256 digest of the canonical JSON.
@@ -73,8 +72,7 @@ impl Manifest {
 
     /// Save manifest to a file.
     pub fn save(&self, path: &Path) -> Result<()> {
-        let content = serde_json::to_string_pretty(self)
-            .context("failed to serialize manifest")?;
+        let content = serde_json::to_string_pretty(self).context("failed to serialize manifest")?;
         fs::write(path, content)
             .with_context(|| format!("failed to write manifest to {}", path.display()))
     }
@@ -83,10 +81,22 @@ impl Manifest {
     pub fn all_artifacts(&self) -> Vec<(String, String)> {
         let mut result = Vec::new();
         for (circuit_name, artifacts) in &self.circuits {
-            result.push((format!("{}_nova_pp.bin", circuit_name), artifacts.nova_pp.path.clone()));
-            result.push((format!("{}_nova_vp.bin", circuit_name), artifacts.nova_vp.path.clone()));
-            result.push((format!("{}_decider_pp.bin", circuit_name), artifacts.decider_pp.path.clone()));
-            result.push((format!("{}_decider_vp.bin", circuit_name), artifacts.decider_vp.path.clone()));
+            result.push((
+                format!("{}_nova_pp.bin", circuit_name),
+                artifacts.nova_pp.path.clone(),
+            ));
+            result.push((
+                format!("{}_nova_vp.bin", circuit_name),
+                artifacts.nova_vp.path.clone(),
+            ));
+            result.push((
+                format!("{}_decider_pp.bin", circuit_name),
+                artifacts.decider_pp.path.clone(),
+            ));
+            result.push((
+                format!("{}_decider_vp.bin", circuit_name),
+                artifacts.decider_vp.path.clone(),
+            ));
             if let Some(ref pk) = artifacts.groth16_pk {
                 result.push((format!("{}_groth16_pk.bin", circuit_name), pk.path.clone()));
             }
@@ -100,14 +110,18 @@ impl Manifest {
 
 /// Compute SHA256 hash of a file.
 pub fn sha256_file(path: &Path) -> Result<String> {
-    let content = fs::read(path)
-        .with_context(|| format!("failed to read file {}", path.display()))?;
+    let content =
+        fs::read(path).with_context(|| format!("failed to read file {}", path.display()))?;
     let hash = Sha256::digest(&content);
     Ok(hex::encode(hash))
 }
 
 /// Create an artifact entry for a file.
-pub fn create_artifact_entry(version: &str, filename: &str, artifacts_dir: &Path) -> Result<ArtifactEntry> {
+pub fn create_artifact_entry(
+    version: &str,
+    filename: &str,
+    artifacts_dir: &Path,
+) -> Result<ArtifactEntry> {
     let file_path = artifacts_dir.join(filename);
     let sha256 = sha256_file(&file_path)?;
     let s3_path = format!("{}/{}", version, filename);
@@ -115,10 +129,4 @@ pub fn create_artifact_entry(version: &str, filename: &str, artifacts_dir: &Path
         path: s3_path,
         sha256,
     })
-}
-
-/// Verify that a file matches the expected SHA256 hash.
-pub fn verify_file_hash(path: &Path, expected_hash: &str) -> Result<bool> {
-    let actual_hash = sha256_file(path)?;
-    Ok(actual_hash == expected_hash)
 }
