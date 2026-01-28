@@ -97,6 +97,19 @@ Key tables (managed by sqlx migrations):
 - `merkle_snapshots` - Tree state snapshots
 - `leases` - Distributed lock state
 
+## HTTP API (server/mod.rs)
+
+| Endpoint | Method | Description | Limits |
+|----------|--------|-------------|--------|
+| `/healthz` | GET | Health check | - |
+| `/status` | GET | Token sync status | - |
+| `/events` | GET | Events by recipient | limit ≤ 1000 |
+| `/all-events` | GET | Events for multiple recipients | recipients ≤ 100, limit ≤ 1000 |
+| `/proofs` | POST | Merkle proofs for leaves | leaf_indices ≤ 100 |
+| `/tree-index` | GET | Tree index by root | - |
+
+**Security**: Internal use only. No authentication. Deploy behind reverse proxy if exposing externally.
+
 ## Dependencies
 
 - `zkp`: Zero-knowledge proof primitives (Poseidon hash, IVC)
@@ -122,3 +135,9 @@ Key tables (managed by sqlx migrations):
 | "lease was not held" | Lock contention | Normal with multiple instances |
 | Proof generation fails | History window too small | Increase `TREE_HISTORY_WINDOW` |
 | "LeaseGuard dropped without release" | Ungraceful shutdown | Informational; cleanup happens on next startup |
+
+## Future Improvements
+
+Potential enhancements noted for future consideration:
+
+1. **IVC verify toggle**: `RootProverJob` verifies IVC proofs at each step for robustness, but this impacts throughput. Consider adding a config option to skip verification in production (e.g., `ROOT_VERIFY_IVC=false`) while keeping it enabled for debug/test environments.

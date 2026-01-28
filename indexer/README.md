@@ -27,6 +27,8 @@ Use `--once` to execute a single iteration of each job (helpful for testing or c
 IS_SYNC=true cargo run -p zerc20-tree-indexer -- --once
 ```
 
+**Note:** `IS_SYNC=true` is required even with `--once`. Without it, jobs are skipped and only the HTTP server configuration is validated.
+
 ## Database Setup
 
 Ensure the PostgreSQL database defined by `DATABASE_URL` exists and has the latest schema:
@@ -132,10 +134,50 @@ See `.env.example` for the complete list with detailed descriptions. Key variabl
 
 When the server is running, the following endpoints are available:
 
-- `GET /health` – Health check
-- `GET /tokens` – List configured tokens
-- `GET /tokens/{label}/state` – Get tree state for a token
-- `GET /tokens/{label}/proof?leaf_index={n}&target_index={m}` – Generate Merkle proof
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/healthz` | GET | Health check |
+| `/status` | GET | List all tokens with sync status |
+| `/events` | GET | Get events by recipient address |
+| `/all-events` | GET | Get events for multiple recipients |
+| `/proofs` | POST | Generate Merkle proofs for multiple leaves |
+| `/tree-index` | GET | Look up tree index by transfer root |
+
+### Request/Response Examples
+
+**GET /events**
+```
+?chain_id=11155111&token_address=0x...&to=0x...&limit=100
+```
+
+**GET /all-events**
+```
+?recipients[]=0x...&recipients[]=0x...&limit=100
+```
+Note: Maximum 100 recipients per request.
+
+**POST /proofs**
+```json
+{
+  "chain_id": 11155111,
+  "token_address": "0x...",
+  "target_index": 100,
+  "leaf_indices": [1, 2, 3]
+}
+```
+Note: Maximum 100 leaf_indices per request.
+
+**GET /tree-index**
+```
+?chain_id=11155111&token_address=0x...&transfer_root=0x...
+```
+
+### Security Notes
+
+This API is designed for **internal use only**. If exposing externally:
+- Deploy behind authentication/authorization
+- Use rate limiting
+- Consider request timeouts
 
 ## Troubleshooting
 
