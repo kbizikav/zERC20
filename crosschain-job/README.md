@@ -51,7 +51,7 @@ legacy transactions (e.g., BNB).
 From the repository root:
 
 ```bash
-cargo run -p crosschain-job
+cargo run -p zerc20-crosschain-job
 ```
 
 The binary respects CLI arguments in addition to environment overrides. Use
@@ -59,7 +59,7 @@ The binary respects CLI arguments in addition to environment overrides. Use
 time for smoke testing:
 
 ```bash
-cargo run -p crosschain-job -- --once
+cargo run -p zerc20-crosschain-job -- --once
 ```
 
 Press `Ctrl+C` to stop the long-running scheduler. The process logs every
