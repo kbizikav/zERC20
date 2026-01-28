@@ -5,20 +5,20 @@ CLI tool for managing zERC20 circuit artifacts (generation, S3 upload/download, 
 ## Installation
 
 ```bash
-cargo install --path circuit_setup
+cargo install --path circuit-setup
 ```
 
 ## Quick Start
 
 ```bash
 # Copy and configure environment
-cp circuit_setup/.env.example circuit_setup/.env
+cp circuit-setup/.env.example circuit-setup/.env
 
 # Generate artifacts
 zerc20-circuit-setup generate --version 1.0.0
 
 # Upload to S3
-zerc20-circuit-setup upload --bucket my-bucket
+zerc20-circuit-setup upload --bucket my-bucket --version 1.0.0
 
 # Download from public URL
 zerc20-circuit-setup download --version 1.0.0 --base-url https://bucket.s3.amazonaws.com/prefix
@@ -54,17 +54,22 @@ zerc20-circuit-setup generate --version <VERSION> [--seed <SEED>] [--artifacts-d
 
 ### `upload`
 
-Upload artifacts to S3. Version is automatically read from `manifest.json`. Files larger than 1GB are automatically uploaded using multipart upload.
+Upload artifacts to S3. If `manifest.json` does not exist, it will be created automatically using the specified version. Files larger than 1GB are automatically uploaded using multipart upload.
 
 ```bash
-zerc20-circuit-setup upload --bucket <BUCKET> [--prefix <PREFIX>]
+zerc20-circuit-setup upload --bucket <BUCKET> --version <VERSION> [--prefix <PREFIX>]
 ```
 
 | Option | Env Variable | Description |
 |--------|--------------|-------------|
+| `--version` | `ARTIFACTS_VERSION` | Artifact version (required) |
 | `--bucket` | `S3_BUCKET` | S3 bucket name |
 | `--prefix` | `S3_PREFIX` | S3 key prefix (optional) |
 | `--artifacts-dir` | `NOVA_ARTIFACTS_DIR` | Local artifacts directory |
+
+**Notes:**
+- If the same version already exists on S3, the upload will fail with an error
+- If `manifest.json` exists locally, the `--version` must match the manifest version
 
 **S3 structure:**
 ```
@@ -185,8 +190,8 @@ This tool uses the standard AWS credential chain. Configure credentials using on
 # 1. Generate with secure entropy
 RUST_LOG=info zerc20-circuit-setup generate --version 1.0.0
 
-# 2. Upload to S3 (version from manifest.json)
-zerc20-circuit-setup upload --bucket zerc20-artifacts --prefix prod
+# 2. Upload to S3
+zerc20-circuit-setup upload --bucket zerc20-artifacts --prefix prod --version 1.0.0
 
 # 3. Generate Solidity verifiers
 zerc20-circuit-setup generate-verifier

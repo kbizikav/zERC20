@@ -34,6 +34,10 @@ enum Commands {
 
     /// Upload artifacts to S3
     Upload {
+        /// Artifact version
+        #[arg(long, env = "ARTIFACTS_VERSION")]
+        version: String,
+
         /// Local artifacts directory
         #[arg(long, env = "NOVA_ARTIFACTS_DIR")]
         artifacts_dir: Option<PathBuf>,
@@ -111,13 +115,15 @@ async fn main() -> Result<()> {
         }
 
         Commands::Upload {
+            version,
             artifacts_dir,
             bucket,
             prefix,
         } => {
             let artifacts_dir = artifacts_dir.unwrap_or_else(default_artifacts_dir);
             log::info!(
-                "Uploading artifacts from {} to s3://{}/{}",
+                "Uploading artifacts version {} from {} to s3://{}/{}",
+                version,
                 artifacts_dir.display(),
                 bucket,
                 prefix
@@ -126,7 +132,7 @@ async fn main() -> Result<()> {
             let client = s3::create_s3_client().await?;
             let storage = s3::Storage::new(client, bucket, prefix);
 
-            commands::upload::upload(&artifacts_dir, &storage).await?;
+            commands::upload::upload(&artifacts_dir, &storage, &version).await?;
         }
 
         Commands::Download {

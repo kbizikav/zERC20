@@ -43,6 +43,35 @@ impl Storage {
         }
     }
 
+    /// Check if an object exists in S3.
+    pub async fn exists(&self, s3_key: &str) -> Result<bool> {
+        let full_key = self.key(s3_key);
+
+        match self
+            .client
+            .head_object()
+            .bucket(&self.bucket)
+            .key(&full_key)
+            .send()
+            .await
+        {
+            Ok(_) => Ok(true),
+            Err(err) => {
+                if err
+                    .as_service_error()
+                    .map(|e| e.is_not_found())
+                    .unwrap_or(false)
+                {
+                    Ok(false)
+                } else {
+                    Err(err).with_context(|| {
+                        format!("failed to check existence of s3://{}/{}", self.bucket, full_key)
+                    })
+                }
+            }
+        }
+    }
+
     /// Upload bytes directly to S3.
     pub async fn upload_bytes(&self, s3_key: &str, bytes: Vec<u8>) -> Result<()> {
         let full_key = self.key(s3_key);
