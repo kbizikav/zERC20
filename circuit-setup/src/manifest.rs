@@ -108,12 +108,26 @@ impl Manifest {
     }
 }
 
-/// Compute SHA256 hash of a file.
+/// Compute SHA256 hash of a file using streaming to avoid loading entire file into memory.
 pub fn sha256_file(path: &Path) -> Result<String> {
-    let content =
-        fs::read(path).with_context(|| format!("failed to read file {}", path.display()))?;
-    let hash = Sha256::digest(&content);
-    Ok(hex::encode(hash))
+    use std::io::Read;
+
+    let mut file =
+        fs::File::open(path).with_context(|| format!("failed to open file {}", path.display()))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024]; // 64KB buffer
+
+    loop {
+        let n = file
+            .read(&mut buffer)
+            .with_context(|| format!("failed to read file {}", path.display()))?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buffer[..n]);
+    }
+
+    Ok(hex::encode(hasher.finalize()))
 }
 
 /// Create an artifact entry for a file.
