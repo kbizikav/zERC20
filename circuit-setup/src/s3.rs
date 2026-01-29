@@ -10,10 +10,10 @@ use indicatif::ProgressBar;
 use tokio::fs::File;
 use tokio::io::AsyncReadExt;
 
-/// Multipart upload threshold: 1GB
-const MULTIPART_THRESHOLD: usize = 1024 * 1024 * 1024;
-/// Part size for multipart upload: 1GB
-const PART_SIZE: usize = 1024 * 1024 * 1024;
+/// Multipart upload threshold: 100MB
+const MULTIPART_THRESHOLD: usize = 100 * 1024 * 1024;
+/// Part size for multipart upload: 100MB
+const PART_SIZE: usize = 100 * 1024 * 1024;
 
 /// S3 storage client wrapper.
 #[derive(Clone)]
@@ -122,36 +122,22 @@ impl Storage {
     ) -> Result<()> {
         let full_key = self.key(s3_key);
 
-        // Read file with progress
-        let mut file = File::open(local_path)
+        let file_size = tokio::fs::metadata(local_path)
             .await
-            .with_context(|| format!("failed to open {}", local_path.display()))?;
+            .with_context(|| format!("failed to get metadata for {}", local_path.display()))?
+            .len();
 
-        let file_size = file.metadata().await?.len();
-        let mut buffer = Vec::with_capacity(file_size as usize);
-        let mut chunk = vec![0u8; 64 * 1024]; // 64KB chunks for progress updates
-        let mut total_read: u64 = 0;
+        // Stream directly from file instead of loading into memory
+        let body = ByteStream::from_path(local_path)
+            .await
+            .with_context(|| format!("failed to open {} for streaming", local_path.display()))?;
 
-        loop {
-            let n = file
-                .read(&mut chunk)
-                .await
-                .with_context(|| format!("failed to read {}", local_path.display()))?;
-            if n == 0 {
-                break;
-            }
-            buffer.extend_from_slice(&chunk[..n]);
-            total_read += n as u64;
-            pb.set_position(total_read / 2); // Reading is ~50% of the work
-        }
-
-        // Upload
         self.client
             .put_object()
             .bucket(&self.bucket)
             .key(&full_key)
             .content_type("application/octet-stream")
-            .body(ByteStream::from(buffer))
+            .body(body)
             .send()
             .await
             .with_context(|| {
