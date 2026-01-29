@@ -9,7 +9,7 @@ use zerc20_zkp::{
     groth16::params::Groth16Params,
     nova::{
         constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
-        params::{DeciderParams, FParams, NovaParams},
+        params::{DeciderParams, FParams},
         root_nova::RootCircuit,
         withdraw_nova::WithdrawCircuit,
     },
@@ -95,19 +95,9 @@ where
     C: FCircuit<Fr>,
     FParams<C>: Clone,
 {
-    // Load nova params to get state_len
-    let nova_pp_path = artifacts_dir.join(format!("{}_nova_pp.bin", prefix));
-    let nova_vp_path = artifacts_dir.join(format!("{}_nova_vp.bin", prefix));
-
-    let nova_pp = fs::read(&nova_pp_path)
-        .with_context(|| format!("failed to read {}", nova_pp_path.display()))?;
-    let nova_vp = fs::read(&nova_vp_path)
-        .with_context(|| format!("failed to read {}", nova_vp_path.display()))?;
-
-    let nova_params = NovaParams::<C>::from_bytes(f_params.clone(), nova_pp, nova_vp)
-        .with_context(|| format!("failed to deserialize nova params for {}", prefix))?;
-
-    let state_len = nova_params.state_len()?;
+    let circuit = C::new(f_params.clone())
+        .map_err(|e| anyhow::anyhow!("failed to create circuit for {}: {}", prefix, e))?;
+    let state_len = circuit.state_len();
 
     // Load decider params
     let decider_pp_path = artifacts_dir.join(format!("{}_decider_pp.bin", prefix));
