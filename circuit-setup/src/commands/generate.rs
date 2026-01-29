@@ -25,13 +25,24 @@ use crate::manifest::{create_artifact_entry, CircuitArtifacts, Manifest};
 
 /// Generate all circuit artifacts.
 pub fn generate(artifacts_dir: &Path, version: &str, seed: Option<u64>) -> Result<()> {
-    // Warn about fixed seed
+    // Fixed seed is only allowed in debug builds to prevent accidental use in production
     if let Some(s) = seed {
-        log::warn!(
-            "Using fixed seed {}. This is NOT recommended for production use!",
-            s
-        );
-        log::warn!("Fixed seeds make the setup deterministic and may compromise security.");
+        #[cfg(not(debug_assertions))]
+        {
+            anyhow::bail!(
+                "Fixed seed ({}) is not allowed in release builds. \
+                 Fixed seeds make the setup deterministic and compromise security.",
+                s
+            );
+        }
+        #[cfg(debug_assertions)]
+        {
+            log::warn!(
+                "Using fixed seed {}. This is NOT recommended for production use!",
+                s
+            );
+            log::warn!("Fixed seeds make the setup deterministic and may compromise security.");
+        }
     }
 
     fs::create_dir_all(artifacts_dir)
