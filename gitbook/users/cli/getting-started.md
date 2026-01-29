@@ -36,6 +36,8 @@ export STORAGE_CANISTER_ID=<CANISTER_ID>
 export NOVA_ARTIFACTS_DIR=/path/to/nova_artifacts
 ```
 
+See [ICP Canister IDs](../../reference/addresses.md#icp-canister-ids) for mainnet/testnet values.
+
 ## Basic Commands
 
 ### Issue an Invoice

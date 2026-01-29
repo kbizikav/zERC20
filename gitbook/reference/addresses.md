@@ -219,3 +219,26 @@
 | Verifier | `0xb0A159eBF38b8cb539DE40836176d46C717Ff0cd` |
 | LiquidityManager | — |
 | Adaptor | — |
+
+---
+
+## ICP Canister IDs
+
+Stealth messaging layer for encrypted announcements and key derivation on the Internet Computer.
+
+- **Key Manager** — Derives identity-based encryption (IBE) keys via VetKD for recipients to decrypt stealth payloads
+- **Storage** — Persists encrypted announcements and signed invoices
+
+### Mainnet
+
+| Canister | Principal ID |
+|----------|-------------|
+| Key Manager | `ub5gn-myaaa-aaaah-qrs2a-cai` |
+| Storage | `ug4az-baaaa-aaaah-qrs2q-cai` |
+
+### Testnet
+
+| Canister | Principal ID |
+|----------|-------------|
+| Key Manager | `3gshj-ayaaa-aaaac-a4wfq-cai` |
+| Storage | `46fkw-kqaaa-aaaac-a5a3q-cai` |
