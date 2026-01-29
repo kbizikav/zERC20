@@ -1,12 +1,15 @@
 use std::path::Path;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use futures::StreamExt;
 use indicatif::{ProgressBar, ProgressStyle};
-use reqwest::Response;
+use reqwest::{Client, Response};
 use tokio::io::AsyncWriteExt;
 
 use crate::manifest::{sha256_file, Manifest};
+
+const MAX_RETRIES: u32 = 3;
 
 /// Download artifacts from a public URL and verify hashes.
 pub async fn download(artifacts_dir: &Path, version: &str, base_url: &str) -> Result<()> {
@@ -14,7 +17,10 @@ pub async fn download(artifacts_dir: &Path, version: &str, base_url: &str) -> Re
         .with_context(|| format!("failed to create {}", artifacts_dir.display()))?;
 
     let base_url = base_url.trim_end_matches('/');
-    let client = reqwest::Client::new();
+    let client = Client::builder()
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(600))
+        .build()?;
 
     // Download manifest first
     let manifest_url = format!("{}/{}/manifest.json", base_url, version);
@@ -133,17 +139,32 @@ pub async fn download(artifacts_dir: &Path, version: &str, base_url: &str) -> Re
     Ok(())
 }
 
+/// Send an HTTP GET request with retry and exponential backoff.
+async fn download_with_retry(client: &Client, url: &str, retries: u32) -> Result<Response> {
+    for attempt in 0..retries {
+        match client.get(url).send().await {
+            Ok(r) if r.status().is_success() => return Ok(r),
+            Ok(r) => {
+                if attempt == retries - 1 {
+                    anyhow::bail!("HTTP {}", r.status())
+                }
+            }
+            Err(e) => {
+                if attempt == retries - 1 {
+                    return Err(e.into());
+                }
+            }
+        }
+        tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
+    }
+    unreachable!()
+}
+
 /// Download bytes from a URL.
-async fn download_bytes(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> {
-    let response = client
-        .get(url)
-        .send()
+async fn download_bytes(client: &Client, url: &str) -> Result<Vec<u8>> {
+    let response = download_with_retry(client, url, MAX_RETRIES)
         .await
         .with_context(|| format!("failed to fetch {}", url))?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("HTTP {} for {}", response.status(), url);
-    }
 
     let bytes = response
         .bytes()
@@ -155,20 +176,14 @@ async fn download_bytes(client: &reqwest::Client, url: &str) -> Result<Vec<u8>> 
 
 /// Download a file from a URL with progress bar.
 async fn download_file_with_progress(
-    client: &reqwest::Client,
+    client: &Client,
     url: &str,
     local_path: &Path,
     filename: &str,
 ) -> Result<()> {
-    let response: Response = client
-        .get(url)
-        .send()
+    let response = download_with_retry(client, url, MAX_RETRIES)
         .await
         .with_context(|| format!("failed to fetch {}", url))?;
-
-    if !response.status().is_success() {
-        anyhow::bail!("HTTP {} for {}", response.status(), url);
-    }
 
     let total_size = response.content_length().unwrap_or(0);
 
