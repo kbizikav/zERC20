@@ -4371,7 +4371,7 @@ checksum = "4efb278f5d3ef033b3eed7f01f1096eaf67701896aa5ef69f5eddf5a84833dc0"
 dependencies = [
  "candid",
  "ic-cdk-executor",
- "ic-cdk-macros",
+ "ic-cdk-macros 0.18.7",
  "ic-error-types",
  "ic-management-canister-types",
  "ic0",
@@ -4396,6 +4396,19 @@ name = "ic-cdk-macros"
 version = "0.18.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7eb14c5d691cc9d72bb95459b4761e3a4b3444b85a63d17555d5ddd782969a1e"
+dependencies = [
+ "candid",
+ "darling 0.20.11",
+ "proc-macro2",
+ "quote",
+ "syn 2.0.106",
+]
+
+[[package]]
+name = "ic-cdk-macros"
+version = "0.19.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "66dad91a214945cb3605bc9ef6901b87e2ac41e3624284c2cabba49d43aa4f43"
 dependencies = [
  "candid",
  "darling 0.20.11",
@@ -4540,7 +4553,7 @@ dependencies = [
  "hex-literal",
  "hkdf",
  "ic-cdk",
- "ic-cdk-macros",
+ "ic-cdk-macros 0.18.7",
  "ic-stable-structures",
  "ic_bls12_381",
  "lazy_static",
@@ -9309,7 +9322,7 @@ dependencies = [
  "hex",
  "hkdf",
  "ic-cdk",
- "ic-cdk-macros",
+ "ic-cdk-macros 0.19.0",
  "ic-ledger-types",
  "ic-stable-structures",
  "serde",
@@ -9358,7 +9371,7 @@ dependencies = [
  "candid",
  "hex",
  "ic-cdk",
- "ic-cdk-macros",
+ "ic-cdk-macros 0.19.0",
  "ic-stable-structures",
  "serde",
  "serde_bytes",
