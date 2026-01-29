@@ -31,7 +31,7 @@ clap = { version = "4.5", features = ["derive"] }
 getrandom.workspace = true
 
 [dev-dependencies]
-pocket-ic = "10.0.0"
+pocket-ic = "12.0.0"
 criterion = "0.5"
 ic_bls12_381 = { version = "0.10", features = [
     "groups",
