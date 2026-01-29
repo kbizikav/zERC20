@@ -128,12 +128,27 @@ fn test_root_circuit(artifacts_dir: &Path, f_params: FParams<RootCircuit<Fr>>) -
         .context("failed to prove root nova step 2")?;
     println!("    Nova steps: {:.2}s", start.elapsed().as_secs_f64());
 
-    // Generate decider proof
+    // Step 1: Generate decider proof
     let start = Instant::now();
-    let _proof = decider_params
-        .generate_decider_proof(nova)
+    let proof_bytes = decider_params
+        .prove_decider(&nova)
         .context("failed to generate root decider proof")?;
-    println!("    Decider proof: {:.2}s", start.elapsed().as_secs_f64());
+    println!(
+        "    Decider prove: {:.2}s ({} bytes)",
+        start.elapsed().as_secs_f64(),
+        proof_bytes.len()
+    );
+
+    // Step 2: Verify the decider proof
+    let start = Instant::now();
+    let verified = decider_params
+        .verify_decider(&proof_bytes, &nova)
+        .context("failed to verify root decider proof")?;
+    anyhow::ensure!(verified, "root decider proof verification returned false");
+    println!(
+        "    Decider verify: {:.2}s (OK)",
+        start.elapsed().as_secs_f64()
+    );
 
     Ok(())
 }
@@ -177,12 +192,31 @@ fn test_withdraw_nova_circuit<const DEPTH: usize>(
         .with_context(|| format!("failed to prove {} nova step 2", prefix))?;
     println!("    Nova steps: {:.2}s", start.elapsed().as_secs_f64());
 
-    // Generate decider proof
+    // Step 1: Generate decider proof
     let start = Instant::now();
-    let _proof = decider_params
-        .generate_decider_proof(nova)
+    let proof_bytes = decider_params
+        .prove_decider(&nova)
         .with_context(|| format!("failed to generate {} decider proof", prefix))?;
-    println!("    Decider proof: {:.2}s", start.elapsed().as_secs_f64());
+    println!(
+        "    Decider prove: {:.2}s ({} bytes)",
+        start.elapsed().as_secs_f64(),
+        proof_bytes.len()
+    );
+
+    // Step 2: Verify the decider proof
+    let start = Instant::now();
+    let verified = decider_params
+        .verify_decider(&proof_bytes, &nova)
+        .with_context(|| format!("failed to verify {} decider proof", prefix))?;
+    anyhow::ensure!(
+        verified,
+        "{} decider proof verification returned false",
+        prefix
+    );
+    println!(
+        "    Decider verify: {:.2}s (OK)",
+        start.elapsed().as_secs_f64()
+    );
 
     Ok(())
 }
@@ -208,14 +242,30 @@ fn test_groth16_circuit<const DEPTH: usize>(
         .public_inputs()
         .with_context(|| format!("failed to get {} public inputs", prefix))?;
 
-    // Generate proof
+    // Step 1: Generate groth16 proof
     let mut rng = StdRng::seed_from_u64(0xFEED_FACE);
     let start = Instant::now();
-    let _proof = params
-        .generate_proof(&mut rng, circuit, &public_inputs)
+    let proof_bytes = params
+        .prove(&mut rng, circuit)
         .with_context(|| format!("failed to generate {} groth16 proof", prefix))?;
     println!(
-        "    Proof generation: {:.2}s",
+        "    Groth16 prove: {:.2}s ({} bytes)",
+        start.elapsed().as_secs_f64(),
+        proof_bytes.len()
+    );
+
+    // Step 2: Verify the groth16 proof
+    let start = Instant::now();
+    let verified = params
+        .verify(&proof_bytes, &public_inputs)
+        .with_context(|| format!("failed to verify {} groth16 proof", prefix))?;
+    anyhow::ensure!(
+        verified,
+        "{} groth16 proof verification returned false",
+        prefix
+    );
+    println!(
+        "    Groth16 verify: {:.2}s (OK)",
         start.elapsed().as_secs_f64()
     );
 
