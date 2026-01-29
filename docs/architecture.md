@@ -27,8 +27,9 @@ This document explains how the zk-wormhole-enabled ERC-20 (zERC20) system is spl
 
 | Component | Location | Role |
 | --- | --- | --- |
-| Nova & Groth16 circuits | `zkp/` | Rust circuits for root transitions, batch withdraw, and single withdraw, plus the `generate_circuit_artifacts` binary that materialises setup artifacts. |
-| Prover artifacts | `nova_artifacts/` | Output from `cargo run --release --bin generate_circuit_artifacts`; consumed by the indexer, decider-prover, CLI, WASM bindings, and Solidity verifier generators. |
+| Nova & Groth16 circuits | `zkp/` | Rust circuits for root transitions, batch withdraw, and single withdraw. |
+| Circuit setup CLI | `circuit-setup/` | CLI tool for generating, uploading, downloading, and testing circuit artifacts. Use `zerc20-circuit-setup download` to fetch artifacts from a public URL with SHA256 verification. |
+| Prover artifacts | `nova_artifacts/` | Downloaded via `zerc20-circuit-setup download`; consumed by the indexer, decider-prover, CLI, WASM bindings, and Solidity verifier generators. |
 | WASM bindings | `wasm/` | Wrap Nova + Groth16 proving in `wasm-pack` friendly exports (`WithdrawNovaWasm`, `SingleWithdrawWasm`) for the browser UI. |
 
 ### Off-Chain Services & Jobs

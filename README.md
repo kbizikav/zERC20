@@ -2,19 +2,23 @@
 
 Before starting any node, make sure the Nova artifacts and Solidity verifiers exist. Run these commands from the repo root:
 
-1. Generate artifacts with the release build:
+1. Download artifacts using `circuit-setup` CLI:
 
    ```bash
-   cargo run --release --bin generate_circuit_artifacts
+   cargo install --path circuit-setup
+   zerc20-circuit-setup download --version <VERSION> --base-url <ARTIFACTS_URL>
    ```
 
-   This fills `nova_artifacts/` with the Nova folding artifacts (`*_nova_pp.bin`, `*_nova_vp.bin`, `*_decider_pp.bin`, `*_decider_vp.bin`, `*_verifier.sol`) and the Groth16 withdraw artifacts (`*_groth16_pk.bin`, `*_groth16_vk.bin`, `*_groth16_verifier.sol`).
+   This downloads all circuit artifacts (`*_nova_pp.bin`, `*_nova_vp.bin`, `*_decider_pp.bin`, `*_decider_vp.bin`, `*_groth16_pk.bin`, `*_groth16_vk.bin`) into `nova_artifacts/` and verifies SHA256 hashes against the manifest.
 
-2. Copy the Solidity verifiers into the contracts package:
+   See `circuit-setup/README.md` for more details on available commands (generate, upload, test, generate-verifier).
+
+2. Generate and copy the Solidity verifiers into the contracts package:
    ```bash
+   zerc20-circuit-setup generate-verifier
    ./scripts/copy_nova_verifiers.sh
    ```
-   The script copies every `*_verifier.sol` into `contracts/src/verifiers/`, creating the folder if needed.
+   The first command generates verifier contracts from the downloaded artifacts. The script copies every `*_verifier.sol` and `*.sol` into `contracts/src/verifiers/`, creating the folder if needed.
 
 ## Local setup guide
 
