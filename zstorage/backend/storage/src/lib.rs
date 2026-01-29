@@ -67,32 +67,6 @@ struct State {
     invoices_by_tag: BTreeMap<[u8; 20], BTreeMap<String, Vec<[u8; 32]>>>,
 }
 
-#[derive(Clone, CandidType, Deserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-struct AnnouncementV1 {
-    id: u64,
-    ibe_ciphertext: Vec<u8>,
-    ciphertext: Vec<u8>,
-    nonce: Vec<u8>,
-    created_at_ns: u64,
-}
-
-#[derive(Clone, CandidType, Deserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-struct StateV1 {
-    announcements: Vec<AnnouncementV1>,
-    next_id: u64,
-    invoices: BTreeMap<[u8; 20], Vec<[u8; 32]>>,
-}
-
-#[derive(Clone, CandidType, Deserialize)]
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-struct StateV2 {
-    announcements: Vec<Announcement>,
-    next_id: u64,
-    invoices_by_tag: BTreeMap<[u8; 20], BTreeMap<String, Vec<[u8; 32]>>>,
-}
-
 thread_local! {
     static STATE: RefCell<State> = RefCell::new(State::default());
 }
@@ -123,21 +97,8 @@ fn pre_upgrade() {
 #[cfg_attr(target_arch = "wasm32", post_upgrade)]
 #[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
 fn post_upgrade() {
-    let restored: Result<(State,), _> = ic_cdk::storage::stable_restore();
-    let state = match restored {
-        Ok((state,)) => state,
-        Err(_) => {
-            let restored_v2: Result<(StateV2,), _> = ic_cdk::storage::stable_restore();
-            match restored_v2 {
-                Ok((state,)) => migrate_state_v2(state),
-                Err(_) => {
-                    let (state,): (StateV1,) = ic_cdk::storage::stable_restore()
-                        .expect("failed to restore legacy storage state");
-                    migrate_state_v2(migrate_state_v1(state))
-                }
-            }
-        }
-    };
+    let (state,): (State,) =
+        ic_cdk::storage::stable_restore().expect("failed to restore storage state");
     STATE.with(|cell| {
         *cell.borrow_mut() = state;
     });
@@ -347,52 +308,6 @@ fn normalize_tag(tag: &str) -> String {
         DEFAULT_TAG.to_string()
     } else {
         tag.to_string()
-    }
-}
-
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-fn migrate_state_v1(state: StateV1) -> StateV2 {
-    let announcements = state
-        .announcements
-        .into_iter()
-        .map(|announcement| Announcement {
-            id: announcement.id,
-            ibe_ciphertext: announcement.ibe_ciphertext,
-            ciphertext: announcement.ciphertext,
-            nonce: announcement.nonce,
-            created_at_ns: announcement.created_at_ns,
-            tag: DEFAULT_TAG.to_string(),
-        })
-        .collect();
-    let invoices_by_tag = state
-        .invoices
-        .into_iter()
-        .map(|(address, invoices)| {
-            let mut tags = BTreeMap::new();
-            tags.insert(DEFAULT_TAG.to_string(), invoices);
-            (address, tags)
-        })
-        .collect();
-    StateV2 {
-        announcements,
-        next_id: state.next_id,
-        invoices_by_tag,
-    }
-}
-
-#[cfg_attr(not(target_arch = "wasm32"), allow(dead_code))]
-fn migrate_state_v2(state: StateV2) -> State {
-    let mut announcements_by_tag: BTreeMap<String, Vec<Announcement>> = BTreeMap::new();
-    for announcement in state.announcements {
-        announcements_by_tag
-            .entry(announcement.tag.clone())
-            .or_default()
-            .push(announcement);
-    }
-    State {
-        announcements_by_tag,
-        next_id: state.next_id,
-        invoices_by_tag: state.invoices_by_tag,
     }
 }
 

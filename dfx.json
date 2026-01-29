@@ -2,15 +2,15 @@
   "canisters": {
     "key_manager": {
       "type": "rust",
-      "package": "key_manager",
+      "package": "zerc20-key-manager",
       "candid": "zstorage/backend/key_manager/key_manager.did",
-      "wasm": "target/wasm32-unknown-unknown/release/key_manager.wasm"
+      "wasm": "target/wasm32-unknown-unknown/release/zerc20_key_manager.wasm"
     },
     "storage": {
       "type": "rust",
-      "package": "storage",
+      "package": "zerc20-storage",
       "candid": "zstorage/backend/storage/storage.did",
-      "wasm": "target/wasm32-unknown-unknown/release/storage.wasm"
+      "wasm": "target/wasm32-unknown-unknown/release/zerc20_storage.wasm"
     }
   },
   "defaults": {
