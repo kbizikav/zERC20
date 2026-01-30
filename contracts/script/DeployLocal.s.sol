@@ -64,6 +64,9 @@ contract DeployLocal is DeterministicDeployer {
         address deployer = vm.addr(deployerKey);
         bytes32 baseSalt = _loadBaseSalt();
 
+        // Ensure CREATE3Factory exists (deploys locally if needed)
+        _ensureCreate3Factory();
+
         vm.startBroadcast(deployerKey);
 
         (EndpointV2Mock hubEndpoint, EndpointV2Mock verifierEndpoint) = _deployEndpoints(cfg, deployer);
