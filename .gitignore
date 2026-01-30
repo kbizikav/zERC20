@@ -5,7 +5,7 @@ target
 AGENTS.md
 
 # nova artifacts
-nova_artifacts/
+nova_artifacts*
 
 # environment files
 **/.env
