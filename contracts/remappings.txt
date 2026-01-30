@@ -8,6 +8,7 @@
 @layerzerolabs/test-devtools-evm-foundry/=dependencies/@layerzerolabs-test-devtools-evm-foundry-8.0.1/
 @openzeppelin/contracts-upgradeable/=dependencies/@openzeppelin-contracts-upgradeable-5.6.0-rc.0/
 @openzeppelin/contracts/=dependencies/@openzeppelin-contracts-5.6.0-rc.0/
+create3-factory-1.0.0/=dependencies/create3-factory-1.0.0/
 forge-std/=dependencies/forge-std-1.14.0/src
 lz-address-book/=dependencies/lz-address-book-1.0.0/src
 poseidon-solidity/contracts=dependencies/poseidon-solidity-0.0.5/
