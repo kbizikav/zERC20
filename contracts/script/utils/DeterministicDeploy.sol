@@ -3,26 +3,7 @@ pragma solidity 0.8.33;
 
 import {Script} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-
-/// @title Factory for deploying contracts to deterministic addresses via CREATE3
-/// @author zefram.eth
-/// @notice Interface for LI.FI's CREATE3Factory deployment
-/// @dev See https://github.com/lifinance/create3-factory
-interface ICREATE3Factory {
-    /// @notice Deploys a contract using CREATE3
-    /// @dev The provided salt is hashed together with msg.sender to generate the final salt
-    /// @param salt The deployer-specific salt for determining the deployed contract's address
-    /// @param creationCode The creation code of the contract to deploy
-    /// @return deployed The address of the deployed contract
-    function deploy(bytes32 salt, bytes memory creationCode) external payable returns (address deployed);
-
-    /// @notice Predicts the address of a deployed contract
-    /// @dev The provided salt is hashed together with the deployer address to generate the final salt
-    /// @param deployer The deployer account that will call deploy()
-    /// @param salt The deployer-specific salt for determining the deployed contract's address
-    /// @return deployed The address of the contract that will be deployed
-    function getDeployed(address deployer, bytes32 salt) external view returns (address deployed);
-}
+import {ICREATE3Factory} from "create3-factory/src/ICREATE3Factory.sol";
 
 /// @notice Shared helpers for deterministic CREATE3 deployments across scripts.
 /// @dev Uses external LI.FI CREATE3Factory to ensure atomic proxy deployment + initialization,
@@ -39,14 +20,14 @@ abstract contract DeterministicDeployer is Script {
     error ProxyInitFailed(bytes revertData);
 
     /// @dev Ensures CREATE3Factory exists at the expected address.
-    /// On local/test environments (Anvil) where LI.FI's factory isn't deployed, use
-    /// `make setup-local` or run the following command before executing this script:
-    ///   BYTECODE=$(cat out/CREATE3Factory.sol/CREATE3Factory.json | jq -r '.deployedBytecode.object')
+    /// On local/test environments (Anvil) where LI.FI's factory isn't deployed, run:
+    ///   forge build dependencies/create3-factory/src/CREATE3Factory.sol
+    ///   BYTECODE=$(jq -r '.deployedBytecode.object' out/CREATE3Factory.sol/CREATE3Factory.json)
     ///   cast rpc anvil_setCode 0x93FEC2C00BfE902F733B57c5a6CeeD7CD1384AE1 "$BYTECODE" --rpc-url <RPC_URL>
     function _ensureCreate3Factory() internal view {
         require(
             address(CREATE3_FACTORY).code.length > 0,
-            "CREATE3Factory not deployed. Run 'make setup-local' first for local testing."
+            "CREATE3Factory not deployed. See DeterministicDeploy.sol for local setup instructions."
         );
     }
 

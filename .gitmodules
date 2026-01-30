@@ -1,0 +1,3 @@
+[submodule "contracts/dependencies/create3-factory"]
+	path = contracts/dependencies/create3-factory
+	url = https://github.com/lifinance/create3-factory
