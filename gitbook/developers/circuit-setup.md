@@ -19,6 +19,7 @@ Always verify that the manifest digest displayed during `download` matches the o
 | Version | Manifest Digest |
 |---------|-----------------|
 | `1.0.0` | `f8181f89d502cd5bebc4445c4305c6c692f92deb202a18ce5d7c41694b10a7a4` |
+| `1.1.0` | `f22882b901ac1585f665f3aa7c812dc688a0cc08d91f84c2af3c390448a85373` |
 
 ## Installation
 
