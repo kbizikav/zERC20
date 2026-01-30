@@ -45,7 +45,7 @@ Contents of `.env.example`:
 
 ```bash
 # Artifact version
-ARTIFACTS_VERSION=1.0.0
+ARTIFACTS_VERSION=1.1.0
 
 # Local directory for circuit artifacts
 NOVA_ARTIFACTS_DIR=../nova_artifacts
@@ -64,14 +64,14 @@ RUST_LOG=info
 Download circuit artifacts from a public URL and automatically verify SHA256 hashes.
 
 ```bash
-zerc20-circuit-setup download --version 1.0.0
+zerc20-circuit-setup download --version 1.1.0
 ```
 
 Or specify the URL explicitly:
 
 ```bash
 zerc20-circuit-setup download \
-  --version 1.0.0 \
+  --version 1.1.0 \
   --base-url https://zerc20-prod-public-uploads.s3.ap-southeast-1.amazonaws.com/circuit-setup \
   --artifacts-dir ./nova_artifacts
 ```
