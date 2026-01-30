@@ -1,0 +1,76 @@
+{
+  "version": "1.1.0",
+  "created_at": "2026-01-30T08:56:40.933950139+00:00",
+  "circuits": {
+    "root": {
+      "nova_pp": {
+        "path": "1.1.0/root_nova_pp.bin",
+        "sha256": "ec29e0c243eecd67469185e099fe6d42a02abd15cbd5b9044ff1807472546930"
+      },
+      "nova_vp": {
+        "path": "1.1.0/root_nova_vp.bin",
+        "sha256": "2302930fdfc3d4484113f9c9c9f58b46c925556e2b14dd47210bac30bb406398"
+      },
+      "decider_pp": {
+        "path": "1.1.0/root_decider_pp.bin",
+        "sha256": "39489c9f42d80c12b1465420eb4caeb33b8a205c6d27734745419795cb91d01c"
+      },
+      "decider_vp": {
+        "path": "1.1.0/root_decider_vp.bin",
+        "sha256": "3e6bac3c2df02784956bfc461805e33033c8d6e700e63599856f7b6fe0fdc84e"
+      }
+    },
+    "withdraw_global": {
+      "nova_pp": {
+        "path": "1.1.0/withdraw_global_nova_pp.bin",
+        "sha256": "93c872cb1e441d818673d50f1aac65ace8a8a246186e11679fb9ed604b466316"
+      },
+      "nova_vp": {
+        "path": "1.1.0/withdraw_global_nova_vp.bin",
+        "sha256": "eb41f91e78ffb456ea7950b1043e76b2414882f5f4a285a82d5f88ce3bbbd9b4"
+      },
+      "decider_pp": {
+        "path": "1.1.0/withdraw_global_decider_pp.bin",
+        "sha256": "2f3ed03bf3e13db622641ad216ff7b3e3558115ea34cea96228d3fee6ef91195"
+      },
+      "decider_vp": {
+        "path": "1.1.0/withdraw_global_decider_vp.bin",
+        "sha256": "f78ca7265872f109a3859d7df2d7486a8a2f98d4edfd8c489c11f3bcb3020177"
+      },
+      "groth16_pk": {
+        "path": "1.1.0/withdraw_global_groth16_pk.bin",
+        "sha256": "062533e974abb91c5c51f374cd54b0b3a9a66fd22634595781dd7ed70ea862ea"
+      },
+      "groth16_vk": {
+        "path": "1.1.0/withdraw_global_groth16_vk.bin",
+        "sha256": "42cb531cf90958da96fee862135e5ce4106ab568537a60f550ccbc0b13ba3018"
+      }
+    },
+    "withdraw_local": {
+      "nova_pp": {
+        "path": "1.1.0/withdraw_local_nova_pp.bin",
+        "sha256": "ced9041e1f78c4cef80a940ded182d5801b9bc0b01acaca3670efa972a3917c4"
+      },
+      "nova_vp": {
+        "path": "1.1.0/withdraw_local_nova_vp.bin",
+        "sha256": "978ef76b351668ada7f16a396767eb27baaed600ffe56bce0b62c0d74211df2d"
+      },
+      "decider_pp": {
+        "path": "1.1.0/withdraw_local_decider_pp.bin",
+        "sha256": "ca4bf7d725ebe50c1ca250359a7ea30e54ea2caaaaf97f85c04462a0eb2cbab3"
+      },
+      "decider_vp": {
+        "path": "1.1.0/withdraw_local_decider_vp.bin",
+        "sha256": "77f10b1bcc7a0c89d2eddf12a075ee837e77eae5a8d1580843f796dc72b47239"
+      },
+      "groth16_pk": {
+        "path": "1.1.0/withdraw_local_groth16_pk.bin",
+        "sha256": "c0935cb727ec43fe717346a4755730b3e6a27f48bc600be1c281f0a68002d2c5"
+      },
+      "groth16_vk": {
+        "path": "1.1.0/withdraw_local_groth16_vk.bin",
+        "sha256": "810a62c11018c42643421ee4366560f76a5eec60488a522eb835d7622470047b"
+      }
+    }
+  }
+}
