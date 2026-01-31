@@ -19,7 +19,8 @@ services:
   indexer:
     build:
       context: .
-      dockerfile: docker/indexer.Dockerfile
+      dockerfile: docker/Dockerfile
+      target: indexer
     restart: unless-stopped
     depends_on:
       postgres:
@@ -37,7 +38,7 @@ services:
       ROOT_ARTIFACTS_DIR: /app/nova_artifacts
       ROOT_INTERVAL_MS: 30000
       ROOT_SUBMIT_INTERVAL_MS: 60000
-      RUST_LOG: tree_indexer=info,folding_schemes=warn
+      RUST_LOG: zerc20_tree_indexer=info,folding_schemes=warn
     command: []
     ports:
       - "${INDEXER_HOST_PORT:-8080}:8080"
@@ -48,7 +49,8 @@ services:
   crosschain-job:
     build:
       context: .
-      dockerfile: docker/crosschain-job.Dockerfile
+      dockerfile: docker/Dockerfile
+      target: crosschain-job
     restart: unless-stopped
     environment:
       TOKENS_FILE_PATH: /app/config/tokens.json
@@ -66,7 +68,8 @@ services:
   fee-manager:
     build:
       context: .
-      dockerfile: docker/fee-manager.Dockerfile
+      dockerfile: docker/Dockerfile
+      target: fee-manager
     restart: unless-stopped
     environment:
       TOKENS_FILE_PATH: /app/config/tokens.json
