@@ -11,6 +11,16 @@ target
 # Nova artifacts (mounted at runtime via docker-compose)
 nova_artifacts
 
+# Non-Rust project directories
+frontend
+sdk
+contracts
+docs
+gitbook
+scripts
+envs
+canister_ids
+
 # Node/JS artifacts
 node_modules
 **/node_modules
@@ -31,10 +41,10 @@ wasm/pkg
 canister_ids.json
 
 # Environment and local config
+.env
+.env.*
 config/*
 !config/tokens.example.json
-frontend-app/public/config/*.json
-!frontend-app/public/config/.gitkeep
 
 # OS files
 .DS_Store
