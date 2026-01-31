@@ -36,8 +36,8 @@ COPY . .
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     --mount=type=cache,target=/workspace/target \
-    cargo build --locked --release --package tree-indexer \
-    && cp target/release/tree-indexer /workspace/bin/tree-indexer
+    cargo build --locked --release --package zerc20-tree-indexer \
+    && cp target/release/zerc20-tree-indexer /workspace/bin/tree-indexer
 
 RUN cargo install --locked sqlx-cli --no-default-features --features rustls,postgres
 

@@ -33,7 +33,7 @@ COPY wasm/Cargo.toml wasm/Cargo.toml
 
 COPY . .
 
-RUN cargo build --locked --release --package fee-manager
+RUN cargo build --locked --release --package zerc20-fee-manager
 
 FROM debian:bullseye-slim AS runtime
 
@@ -44,7 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder /workspace/target/release/fee-manager /usr/local/bin/fee-manager
+COPY --from=builder /workspace/target/release/zerc20-fee-manager /usr/local/bin/fee-manager
 
 ENV RUST_LOG=info
 

@@ -31,7 +31,7 @@ COPY wasm/Cargo.toml wasm/Cargo.toml
 
 COPY . .
 
-RUN cargo build --locked --release --package crosschain-job
+RUN cargo build --locked --release --package zerc20-crosschain-job
 
 FROM debian:bullseye-slim AS runtime
 
@@ -42,7 +42,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-COPY --from=builder /workspace/target/release/crosschain-job /usr/local/bin/crosschain-job
+COPY --from=builder /workspace/target/release/zerc20-crosschain-job /usr/local/bin/crosschain-job
 
 ENV RUST_LOG=info
 

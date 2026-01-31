@@ -36,8 +36,8 @@ COPY . .
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/workspace/target \
-    cargo build --locked --release --package decider-prover \
-    && cp target/release/decider-prover /workspace/bin/decider-prover
+    cargo build --locked --release --package zerc20-decider-prover \
+    && cp target/release/zerc20-decider-prover /workspace/bin/decider-prover
 
 FROM debian:bullseye-slim AS runtime
 
