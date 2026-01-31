@@ -61,8 +61,6 @@ FROM debian:bullseye-slim AS indexer
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libssl1.1 \
-    curl \
-    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -71,18 +69,11 @@ COPY --from=builder /workspace/bin/tree-indexer /usr/local/bin/tree-indexer
 COPY --from=builder /usr/local/cargo/bin/sqlx /usr/local/bin/sqlx
 
 COPY indexer/migrations ./migrations
-COPY docker/nova-artifacts.sh /usr/local/bin/nova-artifacts.sh
 COPY docker/indexer-entrypoint.sh /usr/local/bin/indexer-entrypoint.sh
 
-ENV ARTIFACTS_DIR=/app/nova_artifacts \
-    ARTIFACTS_SOURCE=volume \
-    ARTIFACTS_STRIP_COMPONENTS=1 \
-    RUST_LOG=info
+ENV RUST_LOG=info
 
-RUN chmod +x /usr/local/bin/indexer-entrypoint.sh /usr/local/bin/nova-artifacts.sh \
-    && mkdir -p /app/nova_artifacts
-
-VOLUME ["/app/nova_artifacts"]
+RUN chmod +x /usr/local/bin/indexer-entrypoint.sh
 
 EXPOSE 8080
 
@@ -131,27 +122,15 @@ FROM debian:bullseye-slim AS decider-prover
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
-    curl \
     libssl1.1 \
-    zstd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=builder /workspace/bin/decider-prover /usr/local/bin/decider-prover
-COPY docker/nova-artifacts.sh /usr/local/bin/nova-artifacts.sh
-COPY docker/decider-prover-entrypoint.sh /usr/local/bin/decider-prover-entrypoint
 
-ENV ARTIFACTS_DIR=/app/nova_artifacts \
-    ARTIFACTS_SOURCE=volume \
-    ARTIFACTS_STRIP_COMPONENTS=1 \
-    RUST_LOG=info
-
-RUN chmod +x /usr/local/bin/nova-artifacts.sh /usr/local/bin/decider-prover-entrypoint \
-    && mkdir -p /app/nova_artifacts
-
-VOLUME ["/app/nova_artifacts"]
+ENV RUST_LOG=info
 
 EXPOSE 8081
 
-ENTRYPOINT ["/usr/local/bin/decider-prover-entrypoint"]
+ENTRYPOINT ["/usr/local/bin/decider-prover"]
