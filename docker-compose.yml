@@ -64,6 +64,8 @@ services:
       - "${TOKENS_FILE_PATH:?TOKENS_FILE_PATH must be set in .env}:/app/config/tokens.json:ro"
 
   fee-manager:
+    profiles:
+      - fee-manager
     build:
       context: .
       dockerfile: docker/Dockerfile
