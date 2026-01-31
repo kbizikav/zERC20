@@ -39,7 +39,6 @@ services:
       ROOT_INTERVAL_MS: 30000
       ROOT_SUBMIT_INTERVAL_MS: 60000
       RUST_LOG: zerc20_tree_indexer=info,folding_schemes=warn
-    command: []
     ports:
       - "${INDEXER_HOST_PORT:-8080}:8080"
     volumes:
@@ -61,7 +60,6 @@ services:
       RELAY_OPTIONS: 0x00030100110100000000000000000000000000030d40
       BROADCAST_OPTIONS: 0x00030100110100000000000000000000000000030d40
       RUST_LOG: info
-    command: []
     volumes:
       - "${TOKENS_FILE_PATH:?TOKENS_FILE_PATH must be set in .env}:/app/config/tokens.json:ro"
 
@@ -78,7 +76,6 @@ services:
       FEE_MANAGER_INTERVAL_SECS: "${FEE_MANAGER_INTERVAL_SECS:-3600}"
       FEE_MANAGER_K_BPS: "${FEE_MANAGER_K_BPS:-1000}"
       RUST_LOG: info
-    command: []
     volumes:
       - "${TOKENS_FILE_PATH:?TOKENS_FILE_PATH must be set in .env}:/app/config/tokens.json:ro"
 

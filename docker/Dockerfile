@@ -1,9 +1,11 @@
 # syntax=docker/dockerfile:1.7
+# NOTE: This Dockerfile requires BuildKit (default since Docker 23.0).
+#       If using an older version, set DOCKER_BUILDKIT=1 before building.
 
 # ============================================================
 # Builder stage – compiles all workspace binaries in one pass
 # ============================================================
-FROM rust:1.90-bullseye AS builder
+FROM rust:1.90-bookworm AS builder
 
 WORKDIR /workspace
 
@@ -51,17 +53,25 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     && cp target/release/zerc20-fee-manager       /workspace/bin/fee-manager \
     && cp target/release/zerc20-decider-prover    /workspace/bin/decider-prover
 
-RUN cargo install --locked sqlx-cli --no-default-features --features rustls,postgres
+RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
+    cargo install --locked sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres
+
+# ============================================================
+# Runtime base – shared across all services
+# ============================================================
+FROM debian:bookworm-slim AS runtime-base
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    libssl3 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN useradd -r -s /bin/false appuser
 
 # ============================================================
 # Runtime: indexer
 # ============================================================
-FROM debian:bullseye-slim AS indexer
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libssl1.1 \
-    && rm -rf /var/lib/apt/lists/*
+FROM runtime-base AS indexer
 
 WORKDIR /app
 
@@ -75,6 +85,8 @@ ENV RUST_LOG=info
 
 RUN chmod +x /usr/local/bin/indexer-entrypoint.sh
 
+USER appuser
+
 EXPOSE 8080
 
 ENTRYPOINT ["/usr/local/bin/indexer-entrypoint.sh"]
@@ -82,12 +94,7 @@ ENTRYPOINT ["/usr/local/bin/indexer-entrypoint.sh"]
 # ============================================================
 # Runtime: crosschain-job
 # ============================================================
-FROM debian:bullseye-slim AS crosschain-job
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libssl1.1 \
-    && rm -rf /var/lib/apt/lists/*
+FROM runtime-base AS crosschain-job
 
 WORKDIR /app
 
@@ -95,17 +102,14 @@ COPY --from=builder /workspace/bin/crosschain-job /usr/local/bin/crosschain-job
 
 ENV RUST_LOG=info
 
+USER appuser
+
 ENTRYPOINT ["/usr/local/bin/crosschain-job"]
 
 # ============================================================
 # Runtime: fee-manager
 # ============================================================
-FROM debian:bullseye-slim AS fee-manager
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libssl1.1 \
-    && rm -rf /var/lib/apt/lists/*
+FROM runtime-base AS fee-manager
 
 WORKDIR /app
 
@@ -113,23 +117,22 @@ COPY --from=builder /workspace/bin/fee-manager /usr/local/bin/fee-manager
 
 ENV RUST_LOG=info
 
+USER appuser
+
 ENTRYPOINT ["/usr/local/bin/fee-manager"]
 
 # ============================================================
 # Runtime: decider-prover
 # ============================================================
-FROM debian:bullseye-slim AS decider-prover
-
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    ca-certificates \
-    libssl1.1 \
-    && rm -rf /var/lib/apt/lists/*
+FROM runtime-base AS decider-prover
 
 WORKDIR /app
 
 COPY --from=builder /workspace/bin/decider-prover /usr/local/bin/decider-prover
 
 ENV RUST_LOG=info
+
+USER appuser
 
 EXPOSE 8081
 
