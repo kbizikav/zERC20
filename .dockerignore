@@ -8,6 +8,9 @@
 target
 **/target
 
+# Nova artifacts (mounted at runtime via docker-compose)
+nova_artifacts
+
 # Node/JS artifacts
 node_modules
 **/node_modules
