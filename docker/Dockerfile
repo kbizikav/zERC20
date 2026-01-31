@@ -47,11 +47,9 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       --package zerc20-tree-indexer \
       --package zerc20-crosschain-job \
       --package zerc20-fee-manager \
-      --package zerc20-decider-prover \
     && cp target/release/zerc20-tree-indexer      /workspace/bin/tree-indexer \
     && cp target/release/zerc20-crosschain-job    /workspace/bin/crosschain-job \
-    && cp target/release/zerc20-fee-manager       /workspace/bin/fee-manager \
-    && cp target/release/zerc20-decider-prover    /workspace/bin/decider-prover
+    && cp target/release/zerc20-fee-manager       /workspace/bin/fee-manager
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo install --locked sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres
@@ -120,20 +118,3 @@ ENV RUST_LOG=info
 USER appuser
 
 ENTRYPOINT ["/usr/local/bin/fee-manager"]
-
-# ============================================================
-# Runtime: decider-prover
-# ============================================================
-FROM runtime-base AS decider-prover
-
-WORKDIR /app
-
-COPY --from=builder /workspace/bin/decider-prover /usr/local/bin/decider-prover
-
-ENV RUST_LOG=info
-
-USER appuser
-
-EXPOSE 8081
-
-ENTRYPOINT ["/usr/local/bin/decider-prover"]

@@ -3,9 +3,9 @@ services:
     image: postgres:16
     restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: postgres
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-postgres}
     ports:
       - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
     healthcheck:
@@ -28,7 +28,7 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
     environment:
-      DATABASE_URL: postgres://postgres:password@postgres:5432/postgres
+      DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-postgres}
       TOKENS_FILE_PATH: /app/config/tokens.json
       ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
       DECIDER_PROVER_URL: http://host.docker.internal:8081
