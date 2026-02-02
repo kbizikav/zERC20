@@ -121,11 +121,13 @@ impl EventIndexerConfig {
     }
 }
 
-fn block_tag_to_number(tag: BlockTag) -> BlockNumberOrTag {
-    match tag {
-        BlockTag::Latest => BlockNumberOrTag::Latest,
-        BlockTag::Safe => BlockNumberOrTag::Safe,
-        BlockTag::Finalized => BlockNumberOrTag::Finalized,
+impl From<BlockTag> for BlockNumberOrTag {
+    fn from(tag: BlockTag) -> Self {
+        match tag {
+            BlockTag::Latest => BlockNumberOrTag::Latest,
+            BlockTag::Safe => BlockNumberOrTag::Safe,
+            BlockTag::Finalized => BlockNumberOrTag::Finalized,
+        }
     }
 }
 
@@ -183,7 +185,7 @@ impl EventIndexer {
 
         let latest_block = self
             .contract
-            .latest_block_by_tag(block_tag_to_number(self.config.block_tag()))
+            .latest_block_by_tag(self.config.block_tag().into())
             .await
             .map_err(|err| EventIndexerError::contract("latest_block_by_tag", err))?;
         let contract_next_index = self
@@ -215,6 +217,14 @@ impl EventIndexer {
         let _ = self
             .backfill_missing_indices(state, expected_last_index, latest_block)
             .await?;
+
+        prune_old_blocks(
+            &self.pool,
+            self.partitions.token_id(),
+            latest_block,
+            self.config.reorg_check_window(),
+        )
+        .await?;
 
         Ok(())
     }
@@ -348,16 +358,20 @@ impl EventIndexer {
             return Ok(Vec::new());
         }
 
-        let mut blocks = Vec::with_capacity(unique.len());
-        for number in unique {
-            let hash = self
-                .contract
-                .block_hash_by_number(number)
-                .await
-                .map_err(|err| EventIndexerError::contract("block_hash_by_number", err))?;
-            blocks.push((number, hash));
-        }
-        Ok(blocks)
+        let futs: Vec<_> = unique
+            .into_iter()
+            .map(|number| async move {
+                let hash = self
+                    .contract
+                    .block_hash_by_number(number)
+                    .await
+                    .map_err(|err| EventIndexerError::contract("block_hash_by_number", err))?;
+                Ok((number, hash))
+            })
+            .collect();
+
+        let results: Vec<Result<(u64, B256)>> = futures::future::join_all(futs).await;
+        results.into_iter().collect()
     }
 
     async fn detect_reorg(&self, state: &IndexerState) -> Result<Option<u64>> {
@@ -382,7 +396,7 @@ impl EventIndexer {
             SELECT block_number, block_hash
             FROM {blocks_table}
             WHERE token_id = $1 AND block_number BETWEEN $2 AND $3
-            ORDER BY block_number ASC
+            ORDER BY block_number DESC
             "#,
             blocks_table = BLOCKS_TABLE,
         );
@@ -395,20 +409,31 @@ impl EventIndexer {
             .await
             .map_err(|err| EventIndexerError::database("load recent block hashes", err))?;
 
+        // Walk from the chain tip backward. When we find a mismatch (or a
+        // block that no longer exists), record it as the earliest known reorged
+        // block and keep scanning to find the true fork point. Once we hit a
+        // match, we know the fork is between the matching block and the
+        // earliest mismatch we found.
+        let mut earliest_mismatch: Option<u64> = None;
         for row in rows {
             let number = to_u64(row.block_number, "indexed block number")?;
             let stored = B256::from_slice(row.block_hash.as_slice());
-            let current = self
-                .contract
-                .block_hash_by_number(number)
-                .await
-                .map_err(|err| EventIndexerError::contract("block_hash_by_number", err))?;
-            if current != stored {
-                return Ok(Some(number));
+            let mismatched = match self.contract.block_hash_by_number(number).await {
+                Ok(current) => current != stored,
+                Err(_) => {
+                    // Block no longer exists on the chain — treat as reorged.
+                    true
+                }
+            };
+            if mismatched {
+                earliest_mismatch = Some(number);
+            } else if earliest_mismatch.is_some() {
+                // Found a matching block below the mismatch — fork point located.
+                break;
             }
         }
 
-        Ok(None)
+        Ok(earliest_mismatch)
     }
 
     async fn rollback_to_block(&self, reorg_block: u64) -> Result<()> {
@@ -444,20 +469,43 @@ impl EventIndexer {
             .await
             .map_err(|err| EventIndexerError::database("delete reorged blocks", err))?;
 
+        // Compute the best contiguous_index from the remaining events instead of
+        // resetting to -1, which would force a full re-scan.
+        let max_event_sql = format!(
+            r#"
+            SELECT MAX(event_index) AS max_idx, MAX(eth_block_number) AS max_block
+            FROM {events_table}
+            WHERE token_id = $1 AND eth_block_number < $2
+            "#,
+            events_table = EVENTS_TABLE,
+        );
+        let row: (Option<i64>, Option<i64>) = sqlx::query_as(&max_event_sql)
+            .bind(self.partitions.token_id())
+            .bind(to_i64(reorg_block, "reorg block for contiguous query")?)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(|err| {
+                EventIndexerError::database("query max event index before reorg block", err)
+            })?;
+        let new_contiguous_index = row.0.unwrap_or(-1);
+        let new_contiguous_block = row.1;
+
         let update_state_sql = format!(
             r#"
             UPDATE {state_table}
             SET last_synced_block = $1,
-                contiguous_index = -1,
-                contiguous_block = NULL,
+                contiguous_index = $2,
+                contiguous_block = $3,
                 last_seen_contract_index = NULL,
                 updated_at = NOW()
-            WHERE token_id = $2
+            WHERE token_id = $4
             "#,
             state_table = STATE_TABLE,
         );
         sqlx::query(&update_state_sql)
             .bind(to_i64(target_last_synced, "reorg last_synced_block")?)
+            .bind(new_contiguous_index)
+            .bind(new_contiguous_block)
             .bind(self.partitions.token_id())
             .execute(&mut *tx)
             .await
@@ -466,8 +514,6 @@ impl EventIndexer {
         tx.commit()
             .await
             .map_err(|err| EventIndexerError::database("commit reorg rollback", err))?;
-
-        let _ = advance_contiguous_index(&self.pool, self.partitions.token_id()).await?;
 
         Ok(())
     }
@@ -1001,6 +1047,35 @@ async fn upsert_indexed_blocks(pool: &PgPool, token_id: i64, blocks: &[(u64, B25
     tx.commit()
         .await
         .map_err(|err| EventIndexerError::database("commit blocks insert transaction", err))?;
+
+    Ok(())
+}
+
+async fn prune_old_blocks(
+    pool: &PgPool,
+    token_id: i64,
+    latest_block: u64,
+    reorg_check_window: u64,
+) -> Result<()> {
+    if reorg_check_window == 0 {
+        return Ok(());
+    }
+
+    let cutoff = latest_block.saturating_sub(reorg_check_window);
+    if cutoff == 0 {
+        return Ok(());
+    }
+
+    let sql = format!(
+        "DELETE FROM {blocks_table} WHERE token_id = $1 AND block_number < $2",
+        blocks_table = BLOCKS_TABLE,
+    );
+    sqlx::query(&sql)
+        .bind(token_id)
+        .bind(to_i64(cutoff, "prune cutoff block")?)
+        .execute(pool)
+        .await
+        .map_err(|err| EventIndexerError::database("prune old indexed blocks", err))?;
 
     Ok(())
 }
