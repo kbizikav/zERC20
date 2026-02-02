@@ -173,14 +173,13 @@ impl TestHarness {
     }
 
     async fn token_id(&self) -> Result<i64> {
-        let id: i64 = sqlx::query_scalar(
-            "SELECT id FROM tokens WHERE token_address = $1 AND chain_id = $2",
-        )
-        .bind(self.contract.address().as_slice())
-        .bind(i64::try_from(self.metadata.chain_id)?)
-        .fetch_one(self.pool())
-        .await
-        .context("token metadata row missing")?;
+        let id: i64 =
+            sqlx::query_scalar("SELECT id FROM tokens WHERE token_address = $1 AND chain_id = $2")
+                .bind(self.contract.address().as_slice())
+                .bind(i64::try_from(self.metadata.chain_id)?)
+                .fetch_one(self.pool())
+                .await
+                .context("token metadata row missing")?;
         Ok(id)
     }
 
@@ -276,7 +275,10 @@ async fn reorg_detection_and_rollback() -> Result<()> {
 
     assert_eq!(h.event_indices().await?, vec![0, 1]);
     assert_eq!(h.contiguous_index().await?, 1);
-    assert!(h.indexed_block_count().await? > 0, "blocks should be recorded");
+    assert!(
+        h.indexed_block_count().await? > 0,
+        "blocks should be recorded"
+    );
 
     // -- Phase 2: Snapshot, add events, sync, then revert --------------------
     let snapshot_id = evm_snapshot(&h.provider).await?;
