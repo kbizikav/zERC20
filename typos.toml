@@ -6,6 +6,8 @@ Groth16 = "Groth16"
 groth16 = "groth16"
 GROTH16 = "GROTH16"
 convertion = "convertion"
+Iz = "Iz"
+IzERC20 = "IzERC20"
 
 [default.extend-identifiers]
 smove = "smove"
@@ -14,6 +16,8 @@ convertion = "convertion"
 groth = "groth"
 Groth = "Groth"
 GROTH = "GROTH"
+Iz = "Iz"
+IzERC20 = "IzERC20"
 
 [files]
 extend-exclude = [
