@@ -27,18 +27,13 @@ const ADVANCE_BATCH_SIZE: i64 = 512;
 
 pub type Result<T> = std::result::Result<T, EventIndexerError>;
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockTag {
     Latest,
+    #[default]
     Safe,
     Finalized,
-}
-
-impl Default for BlockTag {
-    fn default() -> Self {
-        Self::Safe
-    }
 }
 
 #[derive(Debug, Error)]

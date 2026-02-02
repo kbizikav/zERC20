@@ -358,7 +358,7 @@ impl ZErc20Contract {
         let Some(block) = block else {
             return Err(ContractError::transport(
                 "get_block_by_number",
-                io::Error::new(io::ErrorKind::Other, "block not found"),
+                io::Error::other("block not found"),
             ));
         };
         Ok(block.header().number())
@@ -373,7 +373,7 @@ impl ZErc20Contract {
         let Some(block) = block else {
             return Err(ContractError::transport(
                 "get_block_by_number",
-                io::Error::new(io::ErrorKind::Other, "block not found"),
+                io::Error::other("block not found"),
             ));
         };
         Ok(block.header().hash())
