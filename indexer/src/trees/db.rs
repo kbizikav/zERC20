@@ -519,6 +519,110 @@ impl DbIncrementalMerkleTree {
         Ok(append_results)
     }
 
+    pub async fn rollback_to(&self, target_index: u64) -> Result<()> {
+        let mut tx =
+            self.pool.begin().await.map_err(|err| {
+                DbMerkleTreeError::database("begin merkle rollback transaction", err)
+            })?;
+
+        self.lock_token_row(&mut tx).await?;
+
+        let latest_index = self.latest_index_internal(&mut tx).await?;
+        if target_index >= latest_index {
+            tx.commit()
+                .await
+                .map_err(|err| DbMerkleTreeError::database("commit merkle rollback", err))?;
+            return Ok(());
+        }
+
+        let history_window = self.history_window.get();
+        let delta = latest_index - target_index;
+        if delta > history_window {
+            return Err(DbMerkleTreeError::RetentionWindowExceeded {
+                target: target_index,
+                window: history_window,
+            });
+        }
+
+        let target_i64 = i64::try_from(target_index).map_err(|_| DbMerkleTreeError::U64ToI64 {
+            label: "merkle rollback target",
+            value: target_index,
+        })?;
+
+        let rows = sqlx::query(&format!(
+            "SELECT node_path, old_hash FROM {table} WHERE token_id = $1 AND tree_index > $2 ORDER BY node_path ASC, tree_index ASC",
+            table = MERKLE_UPDATES_TABLE,
+        ))
+        .bind(self.partitions.token_id())
+        .bind(target_i64)
+        .fetch_all(tx.as_mut())
+        .await
+        .map_err(|err| DbMerkleTreeError::database("load merkle rollback updates", err))?;
+
+        let mut first_by_path: HashMap<Vec<u8>, Vec<u8>> = HashMap::new();
+        for row in rows {
+            let path_bytes: Vec<u8> = row.try_get("node_path").map_err(|err| {
+                DbMerkleTreeError::database("read node_path in rollback row", err)
+            })?;
+            if first_by_path.contains_key(&path_bytes) {
+                continue;
+            }
+            let old_hash: Vec<u8> = row
+                .try_get("old_hash")
+                .map_err(|err| DbMerkleTreeError::database("read old_hash in rollback row", err))?;
+            first_by_path.insert(path_bytes, old_hash);
+        }
+
+        if !first_by_path.is_empty() {
+            let mut builder = QueryBuilder::<Postgres>::new(format!(
+                "INSERT INTO {table} (token_id, node_path, hash, updated_at_index)",
+                table = MERKLE_NODES_TABLE,
+            ));
+            builder.push_values(first_by_path.iter(), |mut b, (path_bytes, old_hash)| {
+                b.push_bind(self.partitions.token_id());
+                b.push_bind(path_bytes.as_slice());
+                b.push_bind(old_hash.as_slice());
+                b.push_bind(target_i64);
+            });
+            builder.push(
+                " ON CONFLICT (token_id, node_path)\n                  DO UPDATE SET hash = EXCLUDED.hash,\n                                updated_at_index = EXCLUDED.updated_at_index,\n                                updated_at = NOW()",
+            );
+            builder
+                .build()
+                .execute(tx.as_mut())
+                .await
+                .map_err(|err| DbMerkleTreeError::database("upsert merkle rollback nodes", err))?;
+        }
+
+        sqlx::query(&format!(
+            "DELETE FROM {table} WHERE token_id = $1 AND tree_index > $2",
+            table = MERKLE_UPDATES_TABLE,
+        ))
+        .bind(self.partitions.token_id())
+        .bind(target_i64)
+        .execute(tx.as_mut())
+        .await
+        .map_err(|err| DbMerkleTreeError::database("delete merkle updates after rollback", err))?;
+
+        sqlx::query(&format!(
+            "DELETE FROM {table} WHERE token_id = $1 AND tree_index > $2",
+            table = MERKLE_SNAPSHOTS_TABLE,
+        ))
+        .bind(self.partitions.token_id())
+        .bind(target_i64)
+        .execute(tx.as_mut())
+        .await
+        .map_err(|err| {
+            DbMerkleTreeError::database("delete merkle snapshots after rollback", err)
+        })?;
+
+        tx.commit()
+            .await
+            .map_err(|err| DbMerkleTreeError::database("commit merkle rollback", err))?;
+
+        Ok(())
+    }
+
     pub async fn prove(&self, target_index: u64, leaf_index: u64) -> Result<HistoricalProof> {
         let mut proofs = self
             .prove_many(target_index, std::slice::from_ref(&leaf_index))

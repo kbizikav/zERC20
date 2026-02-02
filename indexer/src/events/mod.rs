@@ -1,7 +1,11 @@
 use std::{convert::TryFrom, num::NonZeroU64};
 
-use alloy::primitives::U256;
+use alloy::{
+    eips::BlockNumberOrTag,
+    primitives::{B256, U256},
+};
 use api_types::indexer::IndexedEvent;
+use serde::Deserialize;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use thiserror::Error;
 
@@ -13,13 +17,29 @@ use log::warn;
 
 pub const BLOCK_SPAN_RECOMMENDED: u64 = 5_000;
 pub const FORWARD_SCAN_OVERLAP_RECOMMENDED: u64 = 10;
+pub const REORG_CHECK_WINDOW_RECOMMENDED: u64 = 5_000;
 const VALUE_BYTES: usize = 32;
 const EVENTS_TABLE: &str = "indexed_transfer_events";
+const BLOCKS_TABLE: &str = "indexed_blocks";
 const STATE_TABLE: &str = "event_indexer_state";
 const TOKENS_TABLE: &str = "tokens";
 const ADVANCE_BATCH_SIZE: i64 = 512;
 
 pub type Result<T> = std::result::Result<T, EventIndexerError>;
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum BlockTag {
+    Latest,
+    Safe,
+    Finalized,
+}
+
+impl Default for BlockTag {
+    fn default() -> Self {
+        Self::Safe
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum EventIndexerError {
@@ -65,10 +85,17 @@ impl EventIndexerError {
 pub struct EventIndexerConfig {
     block_span: NonZeroU64,
     forward_scan_overlap: u64,
+    block_tag: BlockTag,
+    reorg_check_window: u64,
 }
 
 impl EventIndexerConfig {
-    pub fn new(block_span: u64, forward_scan_overlap: u64) -> Result<Self> {
+    pub fn new(
+        block_span: u64,
+        forward_scan_overlap: u64,
+        block_tag: BlockTag,
+        reorg_check_window: u64,
+    ) -> Result<Self> {
         let Some(block_span) = NonZeroU64::new(block_span) else {
             return Err(EventIndexerError::NonPositiveConfig {
                 label: "block_span",
@@ -77,6 +104,8 @@ impl EventIndexerConfig {
         Ok(Self {
             block_span,
             forward_scan_overlap,
+            block_tag,
+            reorg_check_window,
         })
     }
 
@@ -86,6 +115,22 @@ impl EventIndexerConfig {
 
     pub fn forward_scan_overlap(&self) -> u64 {
         self.forward_scan_overlap
+    }
+
+    pub fn block_tag(&self) -> BlockTag {
+        self.block_tag
+    }
+
+    pub fn reorg_check_window(&self) -> u64 {
+        self.reorg_check_window
+    }
+}
+
+fn block_tag_to_number(tag: BlockTag) -> BlockNumberOrTag {
+    match tag {
+        BlockTag::Latest => BlockNumberOrTag::Latest,
+        BlockTag::Safe => BlockNumberOrTag::Safe,
+        BlockTag::Finalized => BlockNumberOrTag::Finalized,
     }
 }
 
@@ -126,11 +171,26 @@ impl EventIndexer {
         )
         .await?;
 
+        if let Some(reorg_block) = self.detect_reorg(&state).await? {
+            warn!(
+                "reorg detected for token_id {} at block {}; rolling back",
+                self.partitions.token_id(),
+                reorg_block
+            );
+            self.rollback_to_block(reorg_block).await?;
+            state = ensure_state_row(
+                &self.pool,
+                self.partitions.token_id(),
+                self.deployed_block_number,
+            )
+            .await?;
+        }
+
         let latest_block = self
             .contract
-            .latest_block()
+            .latest_block_by_tag(block_tag_to_number(self.config.block_tag()))
             .await
-            .map_err(|err| EventIndexerError::contract("latest_block", err))?;
+            .map_err(|err| EventIndexerError::contract("latest_block_by_tag", err))?;
         let contract_next_index = self
             .contract
             .index()
@@ -212,6 +272,10 @@ impl EventIndexer {
             };
 
             if !fetched.is_empty() {
+                let blocks = self.fetch_block_hashes(&fetched).await?;
+                if !blocks.is_empty() {
+                    upsert_indexed_blocks(&self.pool, self.partitions.token_id(), &blocks).await?;
+                }
                 insert_events(&self.pool, self.partitions.token_id(), &fetched).await?;
             }
 
@@ -273,6 +337,145 @@ impl EventIndexer {
 
         Ok(state)
     }
+
+    async fn fetch_block_hashes(&self, events: &[IndexedEvent]) -> Result<Vec<(u64, B256)>> {
+        use std::collections::HashSet;
+
+        let mut unique = HashSet::new();
+        for event in events {
+            if event.eth_block_number == 0 {
+                continue;
+            }
+            unique.insert(event.eth_block_number);
+        }
+
+        if unique.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let mut blocks = Vec::with_capacity(unique.len());
+        for number in unique {
+            let hash = self
+                .contract
+                .block_hash_by_number(number)
+                .await
+                .map_err(|err| EventIndexerError::contract("block_hash_by_number", err))?;
+            blocks.push((number, hash));
+        }
+        Ok(blocks)
+    }
+
+    async fn detect_reorg(&self, state: &IndexerState) -> Result<Option<u64>> {
+        let window = self.config.reorg_check_window();
+        if window == 0 {
+            return Ok(None);
+        }
+
+        if state.last_synced_block <= self.deployed_block_number {
+            return Ok(None);
+        }
+
+        let from_block = state
+            .last_synced_block
+            .saturating_sub(window)
+            .max(self.deployed_block_number);
+        let from_i64 = to_i64(from_block, "reorg from_block")?;
+        let to_i64 = to_i64(state.last_synced_block, "reorg to_block")?;
+
+        let sql = format!(
+            r#"
+            SELECT block_number, block_hash
+            FROM {blocks_table}
+            WHERE token_id = $1 AND block_number BETWEEN $2 AND $3
+            ORDER BY block_number ASC
+            "#,
+            blocks_table = BLOCKS_TABLE,
+        );
+
+        let rows: Vec<BlockHashRow> = sqlx::query_as(&sql)
+            .bind(self.partitions.token_id())
+            .bind(from_i64)
+            .bind(to_i64)
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| EventIndexerError::database("load recent block hashes", err))?;
+
+        for row in rows {
+            let number = to_u64(row.block_number, "indexed block number")?;
+            let stored = B256::from_slice(row.block_hash.as_slice());
+            let current = self
+                .contract
+                .block_hash_by_number(number)
+                .await
+                .map_err(|err| EventIndexerError::contract("block_hash_by_number", err))?;
+            if current != stored {
+                return Ok(Some(number));
+            }
+        }
+
+        Ok(None)
+    }
+
+    async fn rollback_to_block(&self, reorg_block: u64) -> Result<()> {
+        let target_last_synced = reorg_block
+            .saturating_sub(1)
+            .max(self.deployed_block_number);
+
+        let mut tx: Transaction<Postgres> = self
+            .pool
+            .begin()
+            .await
+            .map_err(|err| EventIndexerError::database("begin reorg rollback", err))?;
+
+        let delete_events_sql = format!(
+            "DELETE FROM {events_table} WHERE token_id = $1 AND eth_block_number >= $2",
+            events_table = EVENTS_TABLE,
+        );
+        sqlx::query(&delete_events_sql)
+            .bind(self.partitions.token_id())
+            .bind(to_i64(reorg_block, "reorg block for delete")?)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| EventIndexerError::database("delete reorged events", err))?;
+
+        let delete_blocks_sql = format!(
+            "DELETE FROM {blocks_table} WHERE token_id = $1 AND block_number >= $2",
+            blocks_table = BLOCKS_TABLE,
+        );
+        sqlx::query(&delete_blocks_sql)
+            .bind(self.partitions.token_id())
+            .bind(to_i64(reorg_block, "reorg block for delete")?)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| EventIndexerError::database("delete reorged blocks", err))?;
+
+        let update_state_sql = format!(
+            r#"
+            UPDATE {state_table}
+            SET last_synced_block = $1,
+                contiguous_index = -1,
+                contiguous_block = NULL,
+                last_seen_contract_index = NULL,
+                updated_at = NOW()
+            WHERE token_id = $2
+            "#,
+            state_table = STATE_TABLE,
+        );
+        sqlx::query(&update_state_sql)
+            .bind(to_i64(target_last_synced, "reorg last_synced_block")?)
+            .bind(self.partitions.token_id())
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| EventIndexerError::database("reset state after reorg", err))?;
+
+        tx.commit()
+            .await
+            .map_err(|err| EventIndexerError::database("commit reorg rollback", err))?;
+
+        let _ = advance_contiguous_index(&self.pool, self.partitions.token_id()).await?;
+
+        Ok(())
+    }
 }
 
 struct GapAnchor {
@@ -301,6 +504,12 @@ struct EventSummaryRow {
     eth_block_number: i64,
 }
 
+#[derive(FromRow)]
+struct BlockHashRow {
+    block_number: i64,
+    block_hash: Vec<u8>,
+}
+
 struct PreparedEvent {
     index_i64: i64,
     block_i64: i64,
@@ -313,6 +522,7 @@ struct PreparedEvent {
 struct EventIndexerPartitions {
     token_id: i64,
     events_partition: String,
+    blocks_partition: String,
     state_partition: String,
 }
 
@@ -323,10 +533,12 @@ impl EventIndexerPartitions {
         }
         let suffix = format!("p{token_id}");
         let events_partition = format!("{EVENTS_TABLE}_{suffix}");
+        let blocks_partition = format!("{BLOCKS_TABLE}_{suffix}");
         let state_partition = format!("{STATE_TABLE}_{suffix}");
         Ok(Self {
             token_id,
             events_partition,
+            blocks_partition,
             state_partition,
         })
     }
@@ -357,6 +569,17 @@ impl EventIndexerPartitions {
             .execute(pool)
             .await
             .map_err(|err| EventIndexerError::database("ensure state partition", err))?;
+
+        let blocks_sql = format!(
+            "CREATE TABLE IF NOT EXISTS {partition} PARTITION OF {parent} FOR VALUES IN ({value})",
+            partition = self.blocks_partition,
+            parent = BLOCKS_TABLE,
+            value = self.token_id,
+        );
+        sqlx::query(&blocks_sql)
+            .execute(pool)
+            .await
+            .map_err(|err| EventIndexerError::database("ensure blocks partition", err))?;
 
         Ok(())
     }
@@ -740,6 +963,49 @@ async fn insert_events(pool: &PgPool, token_id: i64, events: &[IndexedEvent]) ->
     tx.commit()
         .await
         .map_err(|err| EventIndexerError::database("commit events insert transaction", err))?;
+
+    Ok(())
+}
+
+async fn upsert_indexed_blocks(pool: &PgPool, token_id: i64, blocks: &[(u64, B256)]) -> Result<()> {
+    if blocks.is_empty() {
+        return Ok(());
+    }
+
+    let mut prepared = Vec::with_capacity(blocks.len());
+    for (block_number, block_hash) in blocks {
+        let block_i64 = to_i64(*block_number, "event block number")?;
+        prepared.push((block_i64, *block_hash));
+    }
+
+    let mut tx = pool
+        .begin()
+        .await
+        .map_err(|err| EventIndexerError::database("begin blocks insert transaction", err))?;
+
+    let mut builder = QueryBuilder::<Postgres>::new(format!(
+        "INSERT INTO {blocks_table} (token_id, block_number, block_hash) ",
+        blocks_table = BLOCKS_TABLE,
+    ));
+    builder.push_values(&prepared, |mut b, (block_i64, block_hash)| {
+        b.push_bind(token_id);
+        b.push_bind(*block_i64);
+        b.push_bind(block_hash.as_slice());
+    });
+    builder.push(
+        " ON CONFLICT (token_id, block_number) DO UPDATE \
+         SET block_hash = EXCLUDED.block_hash",
+    );
+
+    builder
+        .build()
+        .execute(&mut *tx)
+        .await
+        .map_err(|err| EventIndexerError::database("upsert blocks batch", err))?;
+
+    tx.commit()
+        .await
+        .map_err(|err| EventIndexerError::database("commit blocks insert transaction", err))?;
 
     Ok(())
 }

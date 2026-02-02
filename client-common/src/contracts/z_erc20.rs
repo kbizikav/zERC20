@@ -5,7 +5,10 @@ use crate::contracts::{
     utils::{NormalProvider, get_provider_with_signer, send_call_with_legacy, uint256_as_u64},
 };
 use alloy::{
+    consensus::BlockHeader,
+    eips::BlockNumberOrTag,
     network::Ethereum,
+    network::primitives::{BlockResponse, HeaderResponse},
     primitives::{Address, B256, Bytes, U256},
     providers::{PendingTransactionBuilder, Provider},
     sol,
@@ -13,6 +16,7 @@ use alloy::{
 };
 use api_types::indexer::IndexedEvent;
 use serde::{Deserialize, Serialize}; // for get_block_number
+use std::io;
 
 sol!(
     #[sol(rpc)]
@@ -339,6 +343,40 @@ impl ZErc20Contract {
             .await
             .map_err(|err| ContractError::transport("get_block_number", err))?;
         Ok(n)
+    }
+
+    pub async fn latest_block_by_tag(&self, tag: BlockNumberOrTag) -> ContractResult<u64> {
+        if matches!(tag, BlockNumberOrTag::Latest) {
+            return self.latest_block().await;
+        }
+
+        let block = self
+            .provider
+            .get_block_by_number(tag)
+            .await
+            .map_err(|err| ContractError::transport("get_block_by_number", err))?;
+        let Some(block) = block else {
+            return Err(ContractError::transport(
+                "get_block_by_number",
+                io::Error::new(io::ErrorKind::Other, "block not found"),
+            ));
+        };
+        Ok(block.header().number())
+    }
+
+    pub async fn block_hash_by_number(&self, number: u64) -> ContractResult<B256> {
+        let block = self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Number(number))
+            .await
+            .map_err(|err| ContractError::transport("get_block_by_number", err))?;
+        let Some(block) = block else {
+            return Err(ContractError::transport(
+                "get_block_by_number",
+                io::Error::new(io::ErrorKind::Other, "block not found"),
+            ));
+        };
+        Ok(block.header().hash())
     }
 }
 

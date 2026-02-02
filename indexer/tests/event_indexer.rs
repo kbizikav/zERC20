@@ -23,7 +23,8 @@ use common::{
 };
 use sqlx::migrate::Migrator;
 use zerc20_tree_indexer::events::{
-    BLOCK_SPAN_RECOMMENDED, EventIndexer, EventIndexerConfig, FORWARD_SCAN_OVERLAP_RECOMMENDED,
+    BLOCK_SPAN_RECOMMENDED, BlockTag, EventIndexer, EventIndexerConfig,
+    FORWARD_SCAN_OVERLAP_RECOMMENDED, REORG_CHECK_WINDOW_RECOMMENDED,
 };
 
 #[tokio::test(flavor = "multi_thread")]
@@ -122,8 +123,12 @@ async fn event_indexer_syncs_against_anvil() -> Result<()> {
         chain_id: DEFAULT_ANVIL_CHAIN_ID,
     };
 
-    let indexer_config =
-        EventIndexerConfig::new(BLOCK_SPAN_RECOMMENDED, FORWARD_SCAN_OVERLAP_RECOMMENDED)?;
+    let indexer_config = EventIndexerConfig::new(
+        BLOCK_SPAN_RECOMMENDED,
+        FORWARD_SCAN_OVERLAP_RECOMMENDED,
+        BlockTag::Latest,
+        REORG_CHECK_WINDOW_RECOMMENDED,
+    )?;
 
     let indexer = EventIndexer::new(
         contract.clone(),
