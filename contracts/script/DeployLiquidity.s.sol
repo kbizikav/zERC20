@@ -63,7 +63,9 @@ contract DeployLiquidity is DeterministicDeployer {
             LiquidityManager(payable(_deploy3(broadcaster, baseSalt, "LIQUIDITY_MANAGER_IMPL", implCode)));
         bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (cfg.fee, cfg.owner));
         LiquidityManager manager = LiquidityManager(
-            payable(_deployProxyAndInit(broadcaster, baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
+            payable(_deployProxyAndInit(
+                    broadcaster, baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData
+                ))
         );
 
         console2.log("LiquidityManager implementation deployed at", address(implementation));
@@ -91,9 +93,9 @@ contract DeployLiquidity is DeterministicDeployer {
                 Adaptor(payable(_deploy3(broadcaster, baseSalt, "ADAPTOR_IMPL", adaptorImplCode)));
             bytes memory adaptorInitData = abi.encodeCall(Adaptor.initialize, (cfg.owner));
             Adaptor adaptor = Adaptor(
-                payable(
-                    _deployProxyAndInit(broadcaster, baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData)
-                )
+                payable(_deployProxyAndInit(
+                        broadcaster, baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData
+                    ))
             );
             console2.log("Adaptor implementation deployed at", address(adaptorImplementation));
             console2.log("Adaptor proxy deployed at", address(adaptor));

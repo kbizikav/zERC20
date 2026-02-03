@@ -4,9 +4,7 @@ pragma solidity 0.8.33;
 import {Script} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ICREATE3Factory} from "create3-factory/ICREATE3Factory.sol";
-import {
-    FACTORY_ADDRESS
-} from "create3-factory/CREATE3Constant.sol";
+import {FACTORY_ADDRESS} from "create3-factory/CREATE3Constant.sol";
 
 /// @notice Shared helpers for deterministic CREATE3 deployments across scripts.
 /// @dev Uses external CREATE3Factory to ensure atomic proxy deployment + initialization,

@@ -22,7 +22,6 @@ contract SimpleStorage {
     }
 }
 
-
 contract DeploySimpleStorage is DeterministicDeployer {
     function run() external {
         _ensureCreate3Factory();
@@ -38,10 +37,7 @@ contract DeploySimpleStorage is DeterministicDeployer {
 
         vm.startBroadcast(deployerKey);
 
-        bytes memory creationCode = abi.encodePacked(
-            type(SimpleStorage).creationCode,
-            abi.encode(initialValue)
-        );
+        bytes memory creationCode = abi.encodePacked(type(SimpleStorage).creationCode, abi.encode(initialValue));
 
         address deployed = _deploy3(deployer, baseSalt, "SimpleStorage", creationCode);
 

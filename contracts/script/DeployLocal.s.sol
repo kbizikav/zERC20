@@ -213,10 +213,7 @@ contract DeployLocal is DeterministicDeployer {
         console2.log("\tRootDecider deployed at", rootDecider);
     }
 
-    function _deployWithdrawGlobalDecider(address deployer, bytes32 baseSalt)
-        private
-        returns (address withdrawGlobal)
-    {
+    function _deployWithdrawGlobalDecider(address deployer, bytes32 baseSalt) private returns (address withdrawGlobal) {
         bytes memory code = type(WithdrawGlobalNovaDecider).creationCode;
         withdrawGlobal = _deploy3(deployer, baseSalt, "WITHDRAW_GLOBAL_DECIDER", code);
         console2.log("\tWithdrawGlobalDecider deployed at", withdrawGlobal);
