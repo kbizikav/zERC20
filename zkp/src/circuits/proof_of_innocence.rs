@@ -22,7 +22,7 @@
 use crate::{
     circuits::constants::{ADDRESS_BIT_LENGTH, BYTES31_BIT_LENGTH},
     utils::{
-        poseidon::gadgets::{poseidon2_var, CircomCRHParametersVar},
+        poseidon::gadgets::{CircomCRHParametersVar, poseidon2_var},
         tree::gadgets::merkle::{enforce_bit_length, merkle_root_from_leaf, to_bits_le_limited},
     },
 };
@@ -279,8 +279,7 @@ mod tests {
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
@@ -346,8 +345,7 @@ mod tests {
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
@@ -403,8 +401,7 @@ mod tests {
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
@@ -469,8 +466,7 @@ mod tests {
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
