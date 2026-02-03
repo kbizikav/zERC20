@@ -162,7 +162,7 @@ impl TestHarness {
             self.contract.clone(),
             self.database.pool().clone(),
             0,
-            self.metadata.clone(),
+            self.metadata,
             config,
         )
         .await?)
@@ -361,7 +361,7 @@ async fn old_blocks_are_pruned() -> Result<()> {
         h.contract.clone(),
         h.pool().clone(),
         0,
-        h.metadata.clone(),
+        h.metadata,
         config,
     )
     .await?;
@@ -464,7 +464,7 @@ async fn reorg_detection_disabled_when_window_zero() -> Result<()> {
         h.contract.clone(),
         h.pool().clone(),
         0,
-        h.metadata.clone(),
+        h.metadata,
         config,
     )
     .await?;
