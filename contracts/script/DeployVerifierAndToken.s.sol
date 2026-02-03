@@ -97,21 +97,21 @@ contract DeployVerifierAndToken is DeterministicDeployer {
 
         bytes memory tokenImplCode =
             abi.encodePacked(type(zERC20).creationCode, abi.encode(endpoint, cfg.tokenDecimals));
-        zERC20 tokenImpl = zERC20(_deploy3(baseSalt, "TOKEN_IMPL", tokenImplCode));
+        zERC20 tokenImpl = zERC20(_deploy3(deployer, baseSalt, "TOKEN_IMPL", tokenImplCode));
         bytes memory tokenInit = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
-        zERC20 token = zERC20(_deployProxyAndInit(baseSalt, "TOKEN_PROXY", address(tokenImpl), tokenInit));
+        zERC20 token = zERC20(_deployProxyAndInit(deployer, baseSalt, "TOKEN_PROXY", address(tokenImpl), tokenInit));
         console2.log("Token implementation deployed at", address(tokenImpl));
         console2.log("Token proxy deployed at", address(token));
         console2.log("  owner set to", owner);
 
         VerifierDeps memory deps;
-        deps.rootDecider = _deployRootDecider(baseSalt);
-        deps.withdrawGlobal = _deployWithdrawGlobalDecider(baseSalt);
-        deps.withdrawLocal = _deployWithdrawLocalDecider(baseSalt);
-        deps.withdrawGlobalGroth16 = _deployWithdrawGlobalGroth16(baseSalt);
-        deps.withdrawLocalGroth16 = _deployWithdrawLocalGroth16(baseSalt);
+        deps.rootDecider = _deployRootDecider(deployer, baseSalt);
+        deps.withdrawGlobal = _deployWithdrawGlobalDecider(deployer, baseSalt);
+        deps.withdrawLocal = _deployWithdrawLocalDecider(deployer, baseSalt);
+        deps.withdrawGlobalGroth16 = _deployWithdrawGlobalGroth16(deployer, baseSalt);
+        deps.withdrawLocalGroth16 = _deployWithdrawLocalGroth16(deployer, baseSalt);
 
-        Verifier verifier = _deployVerifier(baseSalt, token, hubEid, endpoint, delegate, deps);
+        Verifier verifier = _deployVerifier(deployer, baseSalt, token, hubEid, endpoint, delegate, deps);
 
         token.setVerifier(address(verifier));
         console2.log("  verifier set to", address(verifier));
@@ -119,37 +119,44 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         vm.stopBroadcast();
     }
 
-    function _deployRootDecider(bytes32 baseSalt) private returns (address rootDecider) {
+    function _deployRootDecider(address deployer, bytes32 baseSalt) private returns (address rootDecider) {
         bytes memory code = type(RootNovaDecider).creationCode;
-        rootDecider = _deploy3(baseSalt, "ROOT_DECIDER", code);
+        rootDecider = _deploy3(deployer, baseSalt, "ROOT_DECIDER", code);
         console2.log("  RootDecider deployed at", rootDecider);
     }
 
-    function _deployWithdrawGlobalDecider(bytes32 baseSalt) private returns (address withdrawGlobal) {
+    function _deployWithdrawGlobalDecider(address deployer, bytes32 baseSalt) private returns (address withdrawGlobal) {
         bytes memory code = type(WithdrawGlobalNovaDecider).creationCode;
-        withdrawGlobal = _deploy3(baseSalt, "WITHDRAW_GLOBAL_DECIDER", code);
+        withdrawGlobal = _deploy3(deployer, baseSalt, "WITHDRAW_GLOBAL_DECIDER", code);
         console2.log("  WithdrawGlobalDecider deployed at", withdrawGlobal);
     }
 
-    function _deployWithdrawLocalDecider(bytes32 baseSalt) private returns (address withdrawLocal) {
+    function _deployWithdrawLocalDecider(address deployer, bytes32 baseSalt) private returns (address withdrawLocal) {
         bytes memory code = type(WithdrawLocalNovaDecider).creationCode;
-        withdrawLocal = _deploy3(baseSalt, "WITHDRAW_LOCAL_DECIDER", code);
+        withdrawLocal = _deploy3(deployer, baseSalt, "WITHDRAW_LOCAL_DECIDER", code);
         console2.log("  WithdrawLocalDecider deployed at", withdrawLocal);
     }
 
-    function _deployWithdrawGlobalGroth16(bytes32 baseSalt) private returns (address withdrawGlobalGroth16) {
+    function _deployWithdrawGlobalGroth16(address deployer, bytes32 baseSalt)
+        private
+        returns (address withdrawGlobalGroth16)
+    {
         bytes memory code = type(WithdrawGlobalGroth16Verifier).creationCode;
-        withdrawGlobalGroth16 = _deploy3(baseSalt, "WITHDRAW_GLOBAL_GROTH16", code);
+        withdrawGlobalGroth16 = _deploy3(deployer, baseSalt, "WITHDRAW_GLOBAL_GROTH16", code);
         console2.log("  WithdrawGlobalGroth16Verifier deployed at", withdrawGlobalGroth16);
     }
 
-    function _deployWithdrawLocalGroth16(bytes32 baseSalt) private returns (address withdrawLocalGroth16) {
+    function _deployWithdrawLocalGroth16(address deployer, bytes32 baseSalt)
+        private
+        returns (address withdrawLocalGroth16)
+    {
         bytes memory code = type(WithdrawLocalGroth16Verifier).creationCode;
-        withdrawLocalGroth16 = _deploy3(baseSalt, "WITHDRAW_LOCAL_GROTH16", code);
+        withdrawLocalGroth16 = _deploy3(deployer, baseSalt, "WITHDRAW_LOCAL_GROTH16", code);
         console2.log("  WithdrawLocalGroth16Verifier deployed at", withdrawLocalGroth16);
     }
 
     function _deployVerifier(
+        address deployer,
         bytes32 baseSalt,
         zERC20 token,
         uint32 hubEid,
@@ -158,7 +165,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         VerifierDeps memory deps
     ) private returns (Verifier verifier) {
         bytes memory verifierImplCode = abi.encodePacked(type(Verifier).creationCode, abi.encode(endpoint));
-        Verifier verifierImpl = Verifier(_deploy3(baseSalt, "VERIFIER_IMPL", verifierImplCode));
+        Verifier verifierImpl = Verifier(_deploy3(deployer, baseSalt, "VERIFIER_IMPL", verifierImplCode));
         VerifierArgs memory args = VerifierArgs({
             token: address(token),
             hubEid: hubEid,
@@ -170,7 +177,8 @@ contract DeployVerifierAndToken is DeterministicDeployer {
             withdrawLocalGroth16: deps.withdrawLocalGroth16
         });
         bytes memory verifierInit = _encodeVerifierInit(args);
-        verifier = Verifier(_deployProxyAndInit(baseSalt, "VERIFIER_PROXY", address(verifierImpl), verifierInit));
+        verifier =
+            Verifier(_deployProxyAndInit(deployer, baseSalt, "VERIFIER_PROXY", address(verifierImpl), verifierInit));
 
         console2.log("Verifier implementation deployed at", address(verifierImpl));
         console2.log("Verifier proxy deployed at", address(verifier));

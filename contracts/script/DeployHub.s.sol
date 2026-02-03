@@ -29,9 +29,9 @@ contract DeployHub is DeterministicDeployer {
         }
 
         bytes memory hubImplCode = abi.encodePacked(type(Hub).creationCode, abi.encode(endpoint));
-        Hub hubImpl = Hub(_deploy3(baseSalt, "HUB_IMPL", hubImplCode));
+        Hub hubImpl = Hub(_deploy3(deployer, baseSalt, "HUB_IMPL", hubImplCode));
         bytes memory hubInit = abi.encodeCall(Hub.initialize, (delegate));
-        Hub hub = Hub(_deployProxyAndInit(baseSalt, "HUB_PROXY", address(hubImpl), hubInit));
+        Hub hub = Hub(_deployProxyAndInit(deployer, baseSalt, "HUB_PROXY", address(hubImpl), hubInit));
 
         console2.log("Hub implementation deployed at", address(hubImpl));
         console2.log("Hub proxy deployed at", address(hub));

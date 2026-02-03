@@ -60,10 +60,10 @@ contract DeployLiquidity is DeterministicDeployer {
         bytes memory implCode =
             abi.encodePacked(type(LiquidityManager).creationCode, abi.encode(cfg.underlyingToken, cfg.zerc20Token));
         LiquidityManager implementation =
-            LiquidityManager(payable(_deploy3(baseSalt, "LIQUIDITY_MANAGER_IMPL", implCode)));
+            LiquidityManager(payable(_deploy3(broadcaster, baseSalt, "LIQUIDITY_MANAGER_IMPL", implCode)));
         bytes memory initData = abi.encodeCall(LiquidityManager.initialize, (cfg.fee, cfg.owner));
         LiquidityManager manager = LiquidityManager(
-            payable(_deployProxyAndInit(baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
+            payable(_deployProxyAndInit(broadcaster, baseSalt, "LIQUIDITY_MANAGER_PROXY", address(implementation), initData))
         );
 
         console2.log("LiquidityManager implementation deployed at", address(implementation));
@@ -87,10 +87,13 @@ contract DeployLiquidity is DeterministicDeployer {
             bytes memory adaptorImplCode = abi.encodePacked(
                 type(Adaptor).creationCode, abi.encode(address(manager), cfg.stargate, cfg.lzEndpoint)
             );
-            Adaptor adaptorImplementation = Adaptor(payable(_deploy3(baseSalt, "ADAPTOR_IMPL", adaptorImplCode)));
+            Adaptor adaptorImplementation =
+                Adaptor(payable(_deploy3(broadcaster, baseSalt, "ADAPTOR_IMPL", adaptorImplCode)));
             bytes memory adaptorInitData = abi.encodeCall(Adaptor.initialize, (cfg.owner));
             Adaptor adaptor = Adaptor(
-                payable(_deployProxyAndInit(baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData))
+                payable(
+                    _deployProxyAndInit(broadcaster, baseSalt, "ADAPTOR_PROXY", address(adaptorImplementation), adaptorInitData)
+                )
             );
             console2.log("Adaptor implementation deployed at", address(adaptorImplementation));
             console2.log("Adaptor proxy deployed at", address(adaptor));
