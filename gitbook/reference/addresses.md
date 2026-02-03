@@ -4,81 +4,81 @@
 
 ### zETH
 
-**Hub**: `0xFeFdC87A90450B0cE665479Cb684772755dF5483` (Base)
+**Hub**: `0x58357afA19BF7ed2185C82508BBb03AaD1B2EfEe` (Base)
 
 #### Ethereum
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x8023ee23ba4cfE4b190e98522c49C4dB522E274E` |
-| Verifier | `0x7Cd54Ac7d58E1F565ed610D4F49E60aF4be122F9` |
-| LiquidityManager | `0x3406e87aF3A8d63d9230410948282B75fA9B0227` |
-| Adaptor | `0x1228D0352142fE67d2955F12f30bC49e51AD4c2e` |
+| zERC20 | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
+| Verifier | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
+| LiquidityManager | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
+| Adaptor | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
 
 #### Arbitrum
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x8023ee23ba4cfE4b190e98522c49C4dB522E274E` |
-| Verifier | `0x7Cd54Ac7d58E1F565ed610D4F49E60aF4be122F9` |
-| LiquidityManager | `0x3406e87aF3A8d63d9230410948282B75fA9B0227` |
-| Adaptor | `0x1228D0352142fE67d2955F12f30bC49e51AD4c2e` |
+| zERC20 | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
+| Verifier | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
+| LiquidityManager | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
+| Adaptor | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
 
 #### Base
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x8023ee23ba4cfE4b190e98522c49C4dB522E274E` |
-| Verifier | `0x7Cd54Ac7d58E1F565ed610D4F49E60aF4be122F9` |
-| LiquidityManager | `0x3406e87aF3A8d63d9230410948282B75fA9B0227` |
-| Adaptor | `0x1228D0352142fE67d2955F12f30bC49e51AD4c2e` |
+| zERC20 | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
+| Verifier | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
+| LiquidityManager | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
+| Adaptor | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
 
 ---
 
 ### zUSDC
 
-**Hub**: `0xA0cf86aECc67F8c5F70e1A63CF5C6FCDdaDFBd8B` (Base)
+**Hub**: `0xF52BEbC34195BA611891826120db435Ce6ADd9A1` (Base)
 
 #### Ethereum
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x70A12172999a04738f65ef982Aa42d4A10cC04F3` |
-| Verifier | `0x20abbC2F77C20EB65db1924BaCC43d84B5f6e17b` |
-| LiquidityManager | `0xBA96dB62E8D36307d53251785Df7172426Faf491` |
-| Adaptor | `0xFa55F90b966fB21C4a09bd99b2b05A956e84816c` |
+| zERC20 | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
+| Verifier | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
+| LiquidityManager | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
+| Adaptor | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
 
 #### Arbitrum
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x70A12172999a04738f65ef982Aa42d4A10cC04F3` |
-| Verifier | `0x20abbC2F77C20EB65db1924BaCC43d84B5f6e17b` |
-| LiquidityManager | `0xBA96dB62E8D36307d53251785Df7172426Faf491` |
-| Adaptor | `0xFa55F90b966fB21C4a09bd99b2b05A956e84816c` |
+| zERC20 | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
+| Verifier | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
+| LiquidityManager | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
+| Adaptor | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
 
 #### Base
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x70A12172999a04738f65ef982Aa42d4A10cC04F3` |
-| Verifier | `0x20abbC2F77C20EB65db1924BaCC43d84B5f6e17b` |
-| LiquidityManager | `0xBA96dB62E8D36307d53251785Df7172426Faf491` |
-| Adaptor | `0xFa55F90b966fB21C4a09bd99b2b05A956e84816c` |
+| zERC20 | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
+| Verifier | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
+| LiquidityManager | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
+| Adaptor | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
 
 ---
 
 ### zBNB
 
-**Hub**: `0x9Eb6B19c5aC4E666ba59C53ae7ECdAf7f7e07911` (BNB Chain)
+**Hub**: `0x675A949a8608483B828967EA984030fd6348418b` (BNB Chain)
 
 #### BNB Chain
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x3431cf9278411A7DEfC0CB651D8D055C22536e3d` |
-| Verifier | `0x37f9bD67E8Cc588EB825fF531844F1561D1339CC` |
-| LiquidityManager | `0xD6e9Bbe7777a14eCdec71990aA72fa7A3225eF40` |
+| zERC20 | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
+| Verifier | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
+| LiquidityManager | `0xACe7a7a22cD54Ee39827A35F9A3829AD2838eeDA` |
 | Adaptor | — |
 
 > **Note**: zBNB wrap/unwrap is only available on BNB Chain. Other chains support zBNB transfers via LayerZero OFT but do not have LiquidityManager contracts.
@@ -87,8 +87,8 @@
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x3431cf9278411A7DEfC0CB651D8D055C22536e3d` |
-| Verifier | `0x37f9bD67E8Cc588EB825fF531844F1561D1339CC` |
+| zERC20 | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
+| Verifier | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
 | LiquidityManager | — |
 | Adaptor | — |
 
@@ -96,8 +96,8 @@
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x3431cf9278411A7DEfC0CB651D8D055C22536e3d` |
-| Verifier | `0x37f9bD67E8Cc588EB825fF531844F1561D1339CC` |
+| zERC20 | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
+| Verifier | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
 | LiquidityManager | — |
 | Adaptor | — |
 
@@ -105,8 +105,8 @@
 
 | Contract | Address |
 |----------|---------|
-| zERC20 | `0x3431cf9278411A7DEfC0CB651D8D055C22536e3d` |
-| Verifier | `0x37f9bD67E8Cc588EB825fF531844F1561D1339CC` |
+| zERC20 | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
+| Verifier | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
 | LiquidityManager | — |
 | Adaptor | — |
 

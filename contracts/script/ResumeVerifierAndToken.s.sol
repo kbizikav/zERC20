@@ -53,7 +53,7 @@ contract ResumeVerifierAndToken is DeterministicDeployer {
         console2.log("HUB_EID:", hubEid);
 
         // Deploy Verifier Proxy with initialization
-        Verifier verifier = _deployVerifierProxy(baseSalt, hubEid, delegate);
+        Verifier verifier = _deployVerifierProxy(deployer, baseSalt, hubEid, delegate);
 
         // Set verifier on token
         zERC20 token = zERC20(TOKEN_PROXY);
@@ -68,7 +68,7 @@ contract ResumeVerifierAndToken is DeterministicDeployer {
         console2.log("Verifier Proxy:", address(verifier));
     }
 
-    function _deployVerifierProxy(bytes32 baseSalt, uint32 hubEid, address delegate)
+    function _deployVerifierProxy(address deployer, bytes32 baseSalt, uint32 hubEid, address delegate)
         private
         returns (Verifier verifier)
     {
@@ -86,7 +86,7 @@ contract ResumeVerifierAndToken is DeterministicDeployer {
             )
         );
 
-        address verifierProxy = _deployProxyAndInit(baseSalt, "VERIFIER_PROXY", VERIFIER_IMPL, verifierInit);
+        address verifierProxy = _deployProxyAndInit(deployer, baseSalt, "VERIFIER_PROXY", VERIFIER_IMPL, verifierInit);
         verifier = Verifier(verifierProxy);
 
         console2.log("Verifier proxy deployed at", address(verifier));

@@ -127,9 +127,131 @@ See `config/tokens.zeth.testnet.json` for the full zETH configuration.
 
 ---
 
-## Mainnet
+## Mainnet - zUSDC
 
-Not yet deployed.
+USDC-backed token with 6 decimals. Hub on Base.
+
+**Hub**: `0xF52BEbC34195BA611891826120db435Ce6ADd9A1` (Base)
+
+### Ethereum
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
+| Verifier (proxy) | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
+| LiquidityManager (proxy) | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
+| Adaptor (proxy) | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
+
+### Arbitrum
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
+| Verifier (proxy) | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
+| LiquidityManager (proxy) | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
+| Adaptor (proxy) | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
+
+### Base
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
+| Verifier (proxy) | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
+| LiquidityManager (proxy) | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
+| Adaptor (proxy) | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
+
+### Config File
+
+See `config/deployed/mainnet/tokens.zusdc.mainnet.json` for the full zUSDC configuration.
+
+---
+
+## Mainnet - zETH
+
+Native ETH-backed token with 18 decimals. Hub on Base.
+
+**Hub**: `0x58357afA19BF7ed2185C82508BBb03AaD1B2EfEe` (Base)
+
+### Ethereum
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
+| Verifier (proxy) | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
+| LiquidityManager (proxy) | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
+| Adaptor (proxy) | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
+
+### Arbitrum
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
+| Verifier (proxy) | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
+| LiquidityManager (proxy) | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
+| Adaptor (proxy) | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
+
+### Base
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
+| Verifier (proxy) | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
+| LiquidityManager (proxy) | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
+| Adaptor (proxy) | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
+
+### Config File
+
+See `config/deployed/mainnet/tokens.zeth.mainnet.json` for the full zETH configuration.
+
+---
+
+## Mainnet - zBNB
+
+Native BNB-backed token with 18 decimals. Hub on BNB Chain.
+
+**Hub**: `0x675A949a8608483B828967EA984030fd6348418b` (BNB Chain)
+
+### BNB Chain
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
+| Verifier (proxy) | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
+| LiquidityManager (proxy) | `0xACe7a7a22cD54Ee39827A35F9A3829AD2838eeDA` |
+| Adaptor | — |
+
+> **Note**: zBNB wrap/unwrap is only available on BNB Chain. Other chains support zBNB transfers via LayerZero OFT but do not have LiquidityManager contracts.
+
+### Ethereum
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
+| Verifier (proxy) | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
+| LiquidityManager | — |
+| Adaptor | — |
+
+### Arbitrum
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
+| Verifier (proxy) | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
+| LiquidityManager | — |
+| Adaptor | — |
+
+### Base
+
+| Contract | Address |
+|----------|---------|
+| zERC20 (proxy) | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
+| Verifier (proxy) | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
+| LiquidityManager | — |
+| Adaptor | — |
+
+### Config File
+
+See `config/deployed/mainnet/tokens.zbnb.mainnet.json` for the full zBNB configuration.
 
 ---
 
