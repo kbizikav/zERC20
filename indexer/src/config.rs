@@ -96,7 +96,7 @@ struct EnvSettings {
     event_block_span: u64,
     #[serde(default = "default_forward_overlap")]
     event_forward_scan_overlap: u64,
-    #[serde(default = "default_event_block_tag")]
+    #[serde(default)]
     event_block_tag: BlockTag,
     #[serde(default = "default_reorg_check_window")]
     event_reorg_check_window: u64,
@@ -136,7 +136,7 @@ pub struct EventJobConfig {
     pub block_span: u64,
     #[serde(default = "default_forward_overlap")]
     pub forward_scan_overlap: u64,
-    #[serde(default = "default_event_block_tag")]
+    #[serde(default)]
     pub block_tag: BlockTag,
     #[serde(default = "default_reorg_check_window")]
     pub reorg_check_window: u64,
@@ -178,7 +178,7 @@ impl Default for EventJobConfig {
             interval_ms: default_event_interval_ms(),
             block_span: default_block_span(),
             forward_scan_overlap: default_forward_overlap(),
-            block_tag: default_event_block_tag(),
+            block_tag: BlockTag::default(),
             reorg_check_window: default_reorg_check_window(),
         }
     }
@@ -321,10 +321,6 @@ fn default_block_span() -> u64 {
 
 fn default_forward_overlap() -> u64 {
     FORWARD_SCAN_OVERLAP_RECOMMENDED
-}
-
-fn default_event_block_tag() -> BlockTag {
-    BlockTag::Safe
 }
 
 fn default_reorg_check_window() -> u64 {

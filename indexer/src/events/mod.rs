@@ -30,8 +30,8 @@ pub type Result<T> = std::result::Result<T, EventIndexerError>;
 #[derive(Debug, Clone, Copy, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum BlockTag {
-    Latest,
     #[default]
+    Latest,
     Safe,
     Finalized,
 }
