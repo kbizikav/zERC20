@@ -6,6 +6,7 @@ Groth16 = "Groth16"
 groth16 = "groth16"
 GROTH16 = "GROTH16"
 convertion = "convertion"
+Iz = "Iz"
 
 [default.extend-identifiers]
 smove = "smove"
