@@ -19,6 +19,11 @@ abstract contract DeterministicDeployer is Script {
 
     bytes32 internal constant DEFAULT_DEPLOY_SALT = keccak256("zerc20.deploy.default");
 
+    /// @dev Global salt for stateless verifier contracts (RootDecider, WithdrawDeciders, Groth16Verifiers).
+    /// These contracts have no constructor arguments and can be shared across all token deployments
+    /// (e.g., zUSDC, zETH) on the same chain, saving deployment gas.
+    bytes32 internal constant GLOBAL_VERIFIERS_SALT = keccak256("zerc20.verifiers.global");
+
     error Create3FactoryNotDeployed();
 
     /// @dev Ensures CREATE3Factory exists at the expected address.
@@ -92,5 +97,26 @@ abstract contract DeterministicDeployer is Script {
             type(ERC1967Proxy).creationCode, abi.encode(implementation, initCalldata)
         );
         proxy = _deploy3(deployer, baseSalt, label, proxyCreationCode);
+    }
+
+    /// @dev Deploys a contract using the global verifiers salt namespace.
+    /// Use this for stateless verifier contracts that can be shared across token deployments.
+    /// @param deployer The address that will call deploy() on the factory.
+    /// @param label Human-readable label to derive unique salt within the global namespace.
+    /// @param creationCode Bytecode including constructor arguments.
+    /// @return deployed The address of the deployed contract.
+    function _deploy3Global(address deployer, string memory label, bytes memory creationCode)
+        internal
+        returns (address deployed)
+    {
+        deployed = _deploy3(deployer, GLOBAL_VERIFIERS_SALT, label, creationCode);
+    }
+
+    /// @dev Predicts the CREATE3 address for a global verifier contract.
+    /// @param deployer The address that will call deploy() on the factory.
+    /// @param label Human-readable label to derive unique salt within the global namespace.
+    /// @return predicted The address where the contract would be deployed.
+    function _predictGlobalAddress(address deployer, string memory label) internal view returns (address predicted) {
+        predicted = _predictAddress(deployer, GLOBAL_VERIFIERS_SALT, label);
     }
 }

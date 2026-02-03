@@ -194,11 +194,11 @@ contract DeployLocal is DeterministicDeployer {
         bytes32 baseSalt
     ) private returns (Verifier verifier) {
         VerifierDeps memory deps;
-        deps.rootDecider = _deployRootDecider(deployer, baseSalt);
-        deps.withdrawGlobal = _deployWithdrawGlobalDecider(deployer, baseSalt);
-        deps.withdrawLocal = _deployWithdrawLocalDecider(deployer, baseSalt);
-        deps.withdrawGlobalGroth16 = _deployWithdrawGlobalGroth16(deployer, baseSalt);
-        deps.withdrawLocalGroth16 = _deployWithdrawLocalGroth16(deployer, baseSalt);
+        deps.rootDecider = _deployRootDecider(deployer);
+        deps.withdrawGlobal = _deployWithdrawGlobalDecider(deployer);
+        deps.withdrawLocal = _deployWithdrawLocalDecider(deployer);
+        deps.withdrawGlobalGroth16 = _deployWithdrawGlobalGroth16(deployer);
+        deps.withdrawLocalGroth16 = _deployWithdrawLocalGroth16(deployer);
 
         address delegate = cfg.verifierDelegate == address(0) ? deployer : cfg.verifierDelegate;
         verifier = _deployVerifier(deployer, baseSalt, token, cfg.hubEid, address(endpoint), delegate, deps);
@@ -207,39 +207,33 @@ contract DeployLocal is DeterministicDeployer {
         console2.log("\tToken verifier wired");
     }
 
-    function _deployRootDecider(address deployer, bytes32 baseSalt) private returns (address rootDecider) {
+    function _deployRootDecider(address deployer) private returns (address rootDecider) {
         bytes memory code = type(RootNovaDecider).creationCode;
-        rootDecider = _deploy3(deployer, baseSalt, "ROOT_DECIDER", code);
+        rootDecider = _deploy3Global(deployer, "ROOT_DECIDER", code);
         console2.log("\tRootDecider deployed at", rootDecider);
     }
 
-    function _deployWithdrawGlobalDecider(address deployer, bytes32 baseSalt) private returns (address withdrawGlobal) {
+    function _deployWithdrawGlobalDecider(address deployer) private returns (address withdrawGlobal) {
         bytes memory code = type(WithdrawGlobalNovaDecider).creationCode;
-        withdrawGlobal = _deploy3(deployer, baseSalt, "WITHDRAW_GLOBAL_DECIDER", code);
+        withdrawGlobal = _deploy3Global(deployer, "WITHDRAW_GLOBAL_DECIDER", code);
         console2.log("\tWithdrawGlobalDecider deployed at", withdrawGlobal);
     }
 
-    function _deployWithdrawLocalDecider(address deployer, bytes32 baseSalt) private returns (address withdrawLocal) {
+    function _deployWithdrawLocalDecider(address deployer) private returns (address withdrawLocal) {
         bytes memory code = type(WithdrawLocalNovaDecider).creationCode;
-        withdrawLocal = _deploy3(deployer, baseSalt, "WITHDRAW_LOCAL_DECIDER", code);
+        withdrawLocal = _deploy3Global(deployer, "WITHDRAW_LOCAL_DECIDER", code);
         console2.log("\tWithdrawLocalDecider deployed at", withdrawLocal);
     }
 
-    function _deployWithdrawGlobalGroth16(address deployer, bytes32 baseSalt)
-        private
-        returns (address withdrawGlobalGroth16)
-    {
+    function _deployWithdrawGlobalGroth16(address deployer) private returns (address withdrawGlobalGroth16) {
         bytes memory code = type(WithdrawGlobalGroth16Verifier).creationCode;
-        withdrawGlobalGroth16 = _deploy3(deployer, baseSalt, "WITHDRAW_GLOBAL_GROTH16", code);
+        withdrawGlobalGroth16 = _deploy3Global(deployer, "WITHDRAW_GLOBAL_GROTH16", code);
         console2.log("\tWithdrawGlobalGroth16Verifier deployed at", withdrawGlobalGroth16);
     }
 
-    function _deployWithdrawLocalGroth16(address deployer, bytes32 baseSalt)
-        private
-        returns (address withdrawLocalGroth16)
-    {
+    function _deployWithdrawLocalGroth16(address deployer) private returns (address withdrawLocalGroth16) {
         bytes memory code = type(WithdrawLocalGroth16Verifier).creationCode;
-        withdrawLocalGroth16 = _deploy3(deployer, baseSalt, "WITHDRAW_LOCAL_GROTH16", code);
+        withdrawLocalGroth16 = _deploy3Global(deployer, "WITHDRAW_LOCAL_GROTH16", code);
         console2.log("\tWithdrawLocalGroth16Verifier deployed at", withdrawLocalGroth16);
     }
 
