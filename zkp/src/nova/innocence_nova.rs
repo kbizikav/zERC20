@@ -11,10 +11,17 @@
 //! - `recipient`: Hash of the GeneralRecipient (constant across all steps)
 //! - `total_teleported`: Running sum of transfer values (accumulator)
 //!
+//! # Recipient Binding
+//!
+//! Each transfer is bound to the recipient via burn address PoW. The prover must
+//! provide a `secret` that satisfies `derive(recipient, secret)` with PoW constraint.
+//! This prevents attackers from using another user's transfers in their proof.
+//!
 //! # Usage
 //!
 //! ```ignore
-//! let circuit = InnocenceCircuit::new(poseidon2_params)?;
+//! let params = (poseidon2_config, poseidon3_config);
+//! let circuit = InnocenceCircuit::new(params)?;
 //! let z_0 = vec![ofac_root, recipient, Fr::zero()];
 //! let mut nova = nova_params.initial_nova(z_0)?;
 //!
@@ -25,7 +32,7 @@
 //! let proof = nova.ivc_proof();
 //! ```
 
-use ark_crypto_primitives::sponge::{Absorb, poseidon::PoseidonConfig};
+use ark_crypto_primitives::sponge::{poseidon::PoseidonConfig, Absorb};
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -35,7 +42,7 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::vec::Vec;
 use core::{borrow::Borrow, convert::TryInto};
-use folding_schemes::{Error, frontend::FCircuit};
+use folding_schemes::{frontend::FCircuit, Error};
 
 use crate::{
     circuits::proof_of_innocence::innocence_step,
@@ -53,6 +60,8 @@ pub const INNOCENCE_STATE_LEN: usize = 3;
 pub struct InnocenceCircuit<F: PrimeField + Absorb, const DEPTH: usize> {
     /// Poseidon parameters for 2-to-1 hashing (gap leaves and Merkle tree)
     pub poseidon2_params: PoseidonConfig<F>,
+    /// Poseidon parameters for 3-to-1 hashing (burn address derivation)
+    pub poseidon3_params: PoseidonConfig<F>,
 }
 
 /// External inputs for each step of the Proof of Innocence circuit.
@@ -66,6 +75,8 @@ pub struct InnocenceExternalInputs<F: PrimeField, const DEPTH: usize> {
     pub from_address: F,
     /// Transfer value
     pub value: F,
+    /// Secret used to derive burn address (proves transfer belongs to recipient)
+    pub secret: F,
     /// Lower bound of the exclusion gap containing `from_address`
     pub start: F,
     /// Upper bound of the exclusion gap containing `from_address`
@@ -82,6 +93,7 @@ impl<F: PrimeField, const DEPTH: usize> Default for InnocenceExternalInputs<F, D
             is_dummy: false,
             from_address: F::zero(),
             value: F::zero(),
+            secret: F::zero(),
             start: F::zero(),
             end: F::zero(),
             gap_index: F::zero(),
@@ -96,6 +108,7 @@ pub struct InnocenceExternalInputsVar<F: PrimeField, const DEPTH: usize> {
     pub is_dummy: Boolean<F>,
     pub from_address: FpVar<F>,
     pub value: FpVar<F>,
+    pub secret: FpVar<F>,
     pub start: FpVar<F>,
     pub end: FpVar<F>,
     pub gap_index: FpVar<F>,
@@ -118,6 +131,7 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<InnocenceExternalInputs<F, DEPT
             let from_address =
                 FpVar::<F>::new_variable(cs.clone(), || Ok(value.from_address), mode)?;
             let val = FpVar::<F>::new_variable(cs.clone(), || Ok(value.value), mode)?;
+            let secret = FpVar::<F>::new_variable(cs.clone(), || Ok(value.secret), mode)?;
             let start = FpVar::<F>::new_variable(cs.clone(), || Ok(value.start), mode)?;
             let end = FpVar::<F>::new_variable(cs.clone(), || Ok(value.end), mode)?;
             let gap_index = FpVar::<F>::new_variable(cs.clone(), || Ok(value.gap_index), mode)?;
@@ -130,6 +144,7 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<InnocenceExternalInputs<F, DEPT
                 is_dummy,
                 from_address,
                 value: val,
+                secret,
                 start,
                 end,
                 gap_index,
@@ -140,13 +155,15 @@ impl<F: PrimeField, const DEPTH: usize> AllocVar<InnocenceExternalInputs<F, DEPT
 }
 
 impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for InnocenceCircuit<F, DEPTH> {
-    type Params = PoseidonConfig<F>;
+    type Params = (PoseidonConfig<F>, PoseidonConfig<F>);
     type ExternalInputs = InnocenceExternalInputs<F, DEPTH>;
     type ExternalInputsVar = InnocenceExternalInputsVar<F, DEPTH>;
 
     fn new(params: Self::Params) -> Result<Self, Error> {
+        let (poseidon2_params, poseidon3_params) = params;
         Ok(Self {
-            poseidon2_params: params,
+            poseidon2_params,
+            poseidon3_params,
         })
     }
 
@@ -169,6 +186,7 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for InnocenceCircui
             is_dummy,
             from_address,
             value,
+            secret,
             start,
             end,
             gap_index,
@@ -179,14 +197,20 @@ impl<F: PrimeField + Absorb, const DEPTH: usize> FCircuit<F> for InnocenceCircui
         let poseidon2_params = CircomCRHParametersVar {
             parameters: self.poseidon2_params.clone(),
         };
+        let poseidon3_params = CircomCRHParametersVar {
+            parameters: self.poseidon3_params.clone(),
+        };
 
         let new_total_teleported = innocence_step::<F, DEPTH>(
             &poseidon2_params,
+            &poseidon3_params,
             &ofac_root,
+            &recipient,
             &from_address,
             &prev_total_teleported,
             &is_dummy,
             &value,
+            &secret,
             &start,
             &end,
             &gap_index,
@@ -209,6 +233,7 @@ pub fn dummy_innocence_ext_input<F: PrimeField, const DEPTH: usize>(
         is_dummy: true,
         from_address: F::zero(),
         value,
+        secret: F::zero(),
         start: F::zero(),
         end: F::zero(),
         gap_index: F::zero(),
@@ -220,8 +245,9 @@ pub fn dummy_innocence_ext_input<F: PrimeField, const DEPTH: usize>(
 mod tests {
     use super::*;
     use crate::{
+        circuits::burn_address::{find_pow_nonce, secret_from_nonce},
         nova::params::NovaParams,
-        utils::poseidon::utils::{circom_poseidon2_config, poseidon2},
+        utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config, poseidon2},
     };
     use ark_bn254::Fr;
     use ark_ff::AdditiveGroup;
@@ -234,13 +260,11 @@ mod tests {
     fn build_test_exclusion_tree(gaps: &[(Fr, Fr)]) -> Fr {
         let leaves: Vec<Fr> = gaps.iter().map(|(s, e)| poseidon2(*s, *e)).collect();
 
-        // Pad to power of 2
         let mut padded_leaves = leaves.clone();
         while padded_leaves.len() < (1 << DEPTH) {
             padded_leaves.push(Fr::from(0u64));
         }
 
-        // Build tree bottom-up
         let mut current_level = padded_leaves;
         while current_level.len() > 1 {
             let mut next_level = Vec::new();
@@ -257,7 +281,6 @@ mod tests {
     fn get_merkle_proof(gaps: &[(Fr, Fr)], index: usize) -> [Fr; DEPTH] {
         let leaves: Vec<Fr> = gaps.iter().map(|(s, e)| poseidon2(*s, *e)).collect();
 
-        // Pad to power of 2
         let mut padded_leaves = leaves.clone();
         while padded_leaves.len() < (1 << DEPTH) {
             padded_leaves.push(Fr::from(0u64));
@@ -275,7 +298,6 @@ mod tests {
             };
             siblings.push(current_level[sibling_index]);
 
-            // Build next level
             let mut next_level = Vec::new();
             for chunk in current_level.chunks(2) {
                 let hash = poseidon2(chunk[0], chunk[1]);
@@ -288,11 +310,17 @@ mod tests {
         siblings.try_into().unwrap()
     }
 
+    /// Helper to find a valid secret for a recipient (satisfies PoW)
+    fn find_valid_secret(recipient: Fr, seed: u64) -> Fr {
+        let secret_seed = Fr::from(seed);
+        let nonce = find_pow_nonce(recipient, secret_seed);
+        secret_from_nonce(secret_seed, nonce)
+    }
+
     #[test]
     fn test_innocence_circuit_single_step() {
         let mut rng = StdRng::seed_from_u64(42);
 
-        // Create exclusion tree with 3 gaps
         let gaps = vec![
             (Fr::from(0u64), Fr::from(100u64)),
             (Fr::from(100u64), Fr::from(200u64)),
@@ -300,15 +328,15 @@ mod tests {
         ];
         let ofac_root = build_test_exclusion_tree(&gaps);
         let recipient = Fr::from(12345u64);
+        let secret = find_valid_secret(recipient, 1000);
 
-        // Initial state: [ofac_root, recipient, 0]
         let z_0 = vec![ofac_root, recipient, Fr::ZERO];
 
-        // Create external input for a valid transfer
         let ext_input = InnocenceExternalInputs::<Fr, DEPTH> {
             is_dummy: false,
-            from_address: Fr::from(150u64), // In gap 1: (100, 200)
+            from_address: Fr::from(150u64),
             value: Fr::from(1000u64),
+            secret,
             start: Fr::from(100u64),
             end: Fr::from(200u64),
             gap_index: Fr::from(1u64),
@@ -316,8 +344,9 @@ mod tests {
         };
 
         let poseidon2_params = circom_poseidon2_config::<Fr>();
+        let poseidon3_params = circom_poseidon3_config::<Fr>();
         let nova_params = NovaParams::<InnocenceCircuit<Fr, DEPTH>>::rand(
-            poseidon2_params,
+            (poseidon2_params, poseidon3_params),
             &mut rng,
         )
         .unwrap();
@@ -333,7 +362,6 @@ mod tests {
     fn test_innocence_circuit_multiple_steps() {
         let mut rng = StdRng::seed_from_u64(42);
 
-        // Create exclusion tree
         let gaps = vec![
             (Fr::from(0u64), Fr::from(100u64)),
             (Fr::from(100u64), Fr::from(200u64)),
@@ -342,35 +370,39 @@ mod tests {
         let ofac_root = build_test_exclusion_tree(&gaps);
         let recipient = Fr::from(12345u64);
 
+        // Find valid secrets for each transfer
+        let secret1 = find_valid_secret(recipient, 1000);
+        let secret2 = find_valid_secret(recipient, 2000);
+        let secret3 = find_valid_secret(recipient, 3000);
+
         let z_0 = vec![ofac_root, recipient, Fr::ZERO];
 
-        // Multiple transfers from different non-sanctioned addresses
         let transfers = vec![
-            // Address 50 is in gap 0: (0, 100)
             InnocenceExternalInputs::<Fr, DEPTH> {
                 is_dummy: false,
                 from_address: Fr::from(50u64),
                 value: Fr::from(100u64),
+                secret: secret1,
                 start: Fr::from(0u64),
                 end: Fr::from(100u64),
                 gap_index: Fr::from(0u64),
                 siblings: get_merkle_proof(&gaps, 0),
             },
-            // Address 150 is in gap 1: (100, 200)
             InnocenceExternalInputs::<Fr, DEPTH> {
                 is_dummy: false,
                 from_address: Fr::from(150u64),
                 value: Fr::from(200u64),
+                secret: secret2,
                 start: Fr::from(100u64),
                 end: Fr::from(200u64),
                 gap_index: Fr::from(1u64),
                 siblings: get_merkle_proof(&gaps, 1),
             },
-            // Address 500 is in gap 2: (200, 1000)
             InnocenceExternalInputs::<Fr, DEPTH> {
                 is_dummy: false,
                 from_address: Fr::from(500u64),
                 value: Fr::from(300u64),
+                secret: secret3,
                 start: Fr::from(200u64),
                 end: Fr::from(1000u64),
                 gap_index: Fr::from(2u64),
@@ -379,8 +411,9 @@ mod tests {
         ];
 
         let poseidon2_params = circom_poseidon2_config::<Fr>();
+        let poseidon3_params = circom_poseidon3_config::<Fr>();
         let nova_params = NovaParams::<InnocenceCircuit<Fr, DEPTH>>::rand(
-            poseidon2_params,
+            (poseidon2_params, poseidon3_params),
             &mut rng,
         )
         .unwrap();
@@ -400,12 +433,11 @@ mod tests {
         let ivc_proof = nova.ivc_proof();
         nova_params.verify(ivc_proof).unwrap();
 
-        // Verify final state
-        // Total should be 100 + 200 + 300 = 600
+        // Verify final state: total = 100 + 200 + 300 = 600
         let final_state = nova.state();
-        assert_eq!(final_state[0], ofac_root); // ofac_root unchanged
-        assert_eq!(final_state[1], recipient); // recipient unchanged
-        assert_eq!(final_state[2], Fr::from(600u64)); // total teleported
+        assert_eq!(final_state[0], ofac_root);
+        assert_eq!(final_state[1], recipient);
+        assert_eq!(final_state[2], Fr::from(600u64));
     }
 
     #[test]
@@ -418,14 +450,15 @@ mod tests {
         ];
         let ofac_root = build_test_exclusion_tree(&gaps);
         let recipient = Fr::from(999u64);
+        let secret = find_valid_secret(recipient, 5000);
 
         let z_0 = vec![ofac_root, recipient, Fr::ZERO];
 
-        // One real transfer
         let real_transfer = InnocenceExternalInputs::<Fr, DEPTH> {
             is_dummy: false,
             from_address: Fr::from(50u64),
             value: Fr::from(1000u64),
+            secret,
             start: Fr::from(0u64),
             end: Fr::from(100u64),
             gap_index: Fr::from(0u64),
@@ -433,18 +466,18 @@ mod tests {
         };
 
         let poseidon2_params = circom_poseidon2_config::<Fr>();
+        let poseidon3_params = circom_poseidon3_config::<Fr>();
         let nova_params = NovaParams::<InnocenceCircuit<Fr, DEPTH>>::rand(
-            poseidon2_params,
+            (poseidon2_params, poseidon3_params),
             &mut rng,
         )
         .unwrap();
 
         let mut nova = nova_params.initial_nova(z_0).unwrap();
 
-        // Real step
         nova.prove_step(&mut rng, real_transfer, None).unwrap();
 
-        // Dummy steps with zero value (no effect on total)
+        // Dummy steps with zero value
         for _ in 0..3 {
             let dummy = dummy_innocence_ext_input::<Fr, DEPTH>(Fr::ZERO);
             nova.prove_step(&mut rng, dummy, None).unwrap();
@@ -453,7 +486,7 @@ mod tests {
         let ivc_proof = nova.ivc_proof();
         nova_params.verify(ivc_proof).unwrap();
 
-        // Total should still be 1000 (dummy steps with value=0 don't change it)
+        // Total should still be 1000
         let final_state = nova.state();
         assert_eq!(final_state[2], Fr::from(1000u64));
     }
