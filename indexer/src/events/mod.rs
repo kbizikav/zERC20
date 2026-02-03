@@ -420,9 +420,13 @@ impl EventIndexer {
             let stored = B256::from_slice(row.block_hash.as_slice());
             let mismatched = match self.contract.block_hash_by_number(number).await {
                 Ok(current) => current != stored,
-                Err(_) => {
-                    // Block no longer exists on the chain — treat as reorged.
-                    true
+                Err(err) => {
+                    if is_block_not_found(&err) {
+                        // Block no longer exists on the chain — treat as reorged.
+                        true
+                    } else {
+                        return Err(EventIndexerError::contract("block_hash_by_number", err));
+                    }
                 }
             };
             if mismatched {
@@ -469,25 +473,46 @@ impl EventIndexer {
             .await
             .map_err(|err| EventIndexerError::database("delete reorged blocks", err))?;
 
-        // Compute the best contiguous_index from the remaining events instead of
-        // resetting to -1, which would force a full re-scan.
-        let max_event_sql = format!(
+        // Recompute the contiguous index from remaining events, stopping at the first gap.
+        let contiguous_sql = format!(
             r#"
-            SELECT MAX(event_index) AS max_idx, MAX(eth_block_number) AS max_block
-            FROM {events_table}
-            WHERE token_id = $1 AND eth_block_number < $2
+            WITH ordered AS (
+                SELECT event_index,
+                       eth_block_number,
+                       ROW_NUMBER() OVER (ORDER BY event_index) - 1 AS expected
+                FROM {events_table}
+                WHERE token_id = $1 AND eth_block_number < $2
+            ),
+            gap AS (
+                SELECT MIN(expected) AS gap_at
+                FROM ordered
+                WHERE event_index != expected
+            ),
+            contig AS (
+                SELECT
+                    CASE
+                        WHEN NOT EXISTS (SELECT 1 FROM ordered) THEN -1
+                        WHEN (SELECT gap_at FROM gap) IS NULL THEN (SELECT MAX(event_index) FROM ordered)
+                        ELSE (SELECT gap_at FROM gap) - 1
+                    END AS contiguous_index
+            )
+            SELECT contiguous_index,
+                   (SELECT eth_block_number
+                    FROM ordered
+                    WHERE event_index = contig.contiguous_index) AS contiguous_block
+            FROM contig
             "#,
             events_table = EVENTS_TABLE,
         );
-        let row: (Option<i64>, Option<i64>) = sqlx::query_as(&max_event_sql)
+        let row: (i64, Option<i64>) = sqlx::query_as(&contiguous_sql)
             .bind(self.partitions.token_id())
             .bind(to_i64(reorg_block, "reorg block for contiguous query")?)
             .fetch_one(&mut *tx)
             .await
             .map_err(|err| {
-                EventIndexerError::database("query max event index before reorg block", err)
+                EventIndexerError::database("query contiguous index before reorg block", err)
             })?;
-        let new_contiguous_index = row.0.unwrap_or(-1);
+        let new_contiguous_index = row.0;
         let new_contiguous_block = row.1;
 
         let update_state_sql = format!(
@@ -517,6 +542,10 @@ impl EventIndexer {
 
         Ok(())
     }
+}
+
+fn is_block_not_found(err: &ContractError) -> bool {
+    matches!(err, ContractError::BlockNotFound(_))
 }
 
 struct GapAnchor {

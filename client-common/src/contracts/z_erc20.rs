@@ -16,7 +16,6 @@ use alloy::{
 };
 use api_types::indexer::IndexedEvent;
 use serde::{Deserialize, Serialize}; // for get_block_number
-use std::io;
 
 sol!(
     #[sol(rpc)]
@@ -356,10 +355,8 @@ impl ZErc20Contract {
             .await
             .map_err(|err| ContractError::transport("get_block_by_number", err))?;
         let Some(block) = block else {
-            return Err(ContractError::transport(
-                "get_block_by_number",
-                io::Error::other("block not found"),
-            ));
+            // Block number is unknown for tag-based queries; use 0 as placeholder.
+            return Err(ContractError::BlockNotFound(0));
         };
         Ok(block.header().number())
     }
@@ -371,10 +368,7 @@ impl ZErc20Contract {
             .await
             .map_err(|err| ContractError::transport("get_block_by_number", err))?;
         let Some(block) = block else {
-            return Err(ContractError::transport(
-                "get_block_by_number",
-                io::Error::other("block not found"),
-            ));
+            return Err(ContractError::BlockNotFound(number));
         };
         Ok(block.header().hash())
     }
