@@ -98,7 +98,7 @@ impl TreeIngestionJob {
         .await
         .with_context(|| format!("failed to initialise merkle tree for '{}'", token.label))?;
 
-        let processed = latest_tree_index(&self.pool, token_id).await?;
+        let mut processed = latest_tree_index(&self.pool, token_id).await?;
         let contiguous_index = contiguous_event_index(&self.pool, token_id).await?;
         let target_event_count = match contiguous_index {
             None => 0,
@@ -110,7 +110,10 @@ impl TreeIngestionJob {
                 "tree state ahead of events for '{}': processed={}, contiguous_events={}",
                 token.label, processed, target_event_count
             );
-            return Ok(());
+            tree.rollback_to(target_event_count)
+                .await
+                .with_context(|| format!("failed to rollback merkle tree for '{}'", token.label))?;
+            processed = latest_tree_index(&self.pool, token_id).await?;
         }
 
         if processed == target_event_count {

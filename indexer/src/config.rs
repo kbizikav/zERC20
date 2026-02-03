@@ -12,7 +12,10 @@ use reqwest::Url;
 use serde::Deserialize;
 
 use crate::{
-    events::{BLOCK_SPAN_RECOMMENDED, EventIndexerConfig, FORWARD_SCAN_OVERLAP_RECOMMENDED},
+    events::{
+        BLOCK_SPAN_RECOMMENDED, BlockTag, EventIndexerConfig, FORWARD_SCAN_OVERLAP_RECOMMENDED,
+        REORG_CHECK_WINDOW_RECOMMENDED,
+    },
     trees::{DbMerkleTreeConfig, HISTORY_WINDOW_RECOMMENDED},
 };
 use zkp::nova::constants::TRANSFER_TREE_HEIGHT;
@@ -47,6 +50,8 @@ impl IndexerConfig {
             interval_ms: env.event_interval_ms,
             block_span: env.event_block_span,
             forward_scan_overlap: env.event_forward_scan_overlap,
+            block_tag: env.event_block_tag,
+            reorg_check_window: env.event_reorg_check_window,
         };
         event_indexer
             .ensure_valid()
@@ -91,6 +96,10 @@ struct EnvSettings {
     event_block_span: u64,
     #[serde(default = "default_forward_overlap")]
     event_forward_scan_overlap: u64,
+    #[serde(default)]
+    event_block_tag: BlockTag,
+    #[serde(default = "default_reorg_check_window")]
+    event_reorg_check_window: u64,
     #[serde(default = "default_tree_interval_ms")]
     tree_interval_ms: u64,
     #[serde(default = "default_history_window")]
@@ -127,6 +136,10 @@ pub struct EventJobConfig {
     pub block_span: u64,
     #[serde(default = "default_forward_overlap")]
     pub forward_scan_overlap: u64,
+    #[serde(default)]
+    pub block_tag: BlockTag,
+    #[serde(default = "default_reorg_check_window")]
+    pub reorg_check_window: u64,
 }
 
 impl EventJobConfig {
@@ -134,8 +147,13 @@ impl EventJobConfig {
         if self.interval_ms == 0 {
             return Err(anyhow!("event job interval must be positive"));
         }
-        EventIndexerConfig::new(self.block_span, self.forward_scan_overlap)
-            .context("invalid event indexer configuration")?;
+        EventIndexerConfig::new(
+            self.block_span,
+            self.forward_scan_overlap,
+            self.block_tag,
+            self.reorg_check_window,
+        )
+        .context("invalid event indexer configuration")?;
         Ok(())
     }
 
@@ -144,8 +162,13 @@ impl EventJobConfig {
     }
 
     pub fn build_indexer_config(&self) -> Result<EventIndexerConfig> {
-        EventIndexerConfig::new(self.block_span, self.forward_scan_overlap)
-            .context("failed to construct EventIndexerConfig")
+        EventIndexerConfig::new(
+            self.block_span,
+            self.forward_scan_overlap,
+            self.block_tag,
+            self.reorg_check_window,
+        )
+        .context("failed to construct EventIndexerConfig")
     }
 }
 
@@ -155,6 +178,8 @@ impl Default for EventJobConfig {
             interval_ms: default_event_interval_ms(),
             block_span: default_block_span(),
             forward_scan_overlap: default_forward_overlap(),
+            block_tag: BlockTag::default(),
+            reorg_check_window: default_reorg_check_window(),
         }
     }
 }
@@ -296,6 +321,10 @@ fn default_block_span() -> u64 {
 
 fn default_forward_overlap() -> u64 {
     FORWARD_SCAN_OVERLAP_RECOMMENDED
+}
+
+fn default_reorg_check_window() -> u64 {
+    REORG_CHECK_WINDOW_RECOMMENDED
 }
 
 fn default_tree_interval_ms() -> u64 {

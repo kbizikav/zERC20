@@ -36,6 +36,7 @@ use reqwest::Url;
 use sqlx::{PgPool, migrate::Migrator};
 use zerc20_tree_indexer::{
     config::{EventJobConfig, RootJobConfig, TreeJobConfig},
+    events::BlockTag,
     jobs::{EventSyncJobBuilder, RootProverJobBuilder, TreeIngestionJobBuilder},
     trees::HISTORY_WINDOW_RECOMMENDED,
 };
@@ -166,9 +167,15 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
 
     let tree_job_config = TreeJobConfig::default();
 
+    // Anvil does not advance the "safe" head, so we must use Latest for local tests.
+    let event_job_config = EventJobConfig {
+        block_tag: BlockTag::Latest,
+        ..Default::default()
+    };
+
     let event_job = EventSyncJobBuilder::new(
         database.pool().clone(),
-        EventJobConfig::default(),
+        event_job_config,
         vec![token_entry.clone()],
     )
     .into_job()

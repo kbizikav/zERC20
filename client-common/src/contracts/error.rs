@@ -14,6 +14,8 @@ pub enum ContractError {
     },
     #[error("event `{0}` not found in transaction logs")]
     MissingEvent(&'static str),
+    #[error("block not found: {0}")]
+    BlockNotFound(u64),
 }
 
 pub type ContractResult<T> = Result<T, ContractError>;
