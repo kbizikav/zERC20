@@ -25,6 +25,11 @@ DEFAULT_TOKENS_FILE = (ROOT_DIR / "config" / "tokens.json").resolve()
 # Ownable.owner() function signature
 OWNER_SELECTOR = "0x8da5cb5b"
 
+# AccessControl.hasRole(bytes32,address) function signature
+HAS_ROLE_SELECTOR = "0x91d14854"
+# DEFAULT_ADMIN_ROLE = bytes32(0)
+DEFAULT_ADMIN_ROLE = "0x" + "00" * 32
+
 
 class ConfigError(RuntimeError):
     """Raised when the configuration is invalid or missing required fields."""
@@ -205,6 +210,23 @@ def get_owner(w3: Web3, address: str) -> str | None:
         return None
 
 
+def has_admin_role(w3: Web3, contract_address: str, account: str) -> bool | None:
+    """Call hasRole(DEFAULT_ADMIN_ROLE, account) on the contract."""
+    try:
+        # Encode hasRole(bytes32 role, address account)
+        # role = DEFAULT_ADMIN_ROLE (32 bytes of zeros)
+        # account = address padded to 32 bytes
+        account_padded = account.lower().replace("0x", "").zfill(64)
+        calldata = HAS_ROLE_SELECTOR + DEFAULT_ADMIN_ROLE[2:] + account_padded
+        result = w3.eth.call({"to": Web3.to_checksum_address(contract_address), "data": calldata})
+        if len(result) >= 32:
+            return int.from_bytes(result[-32:], "big") != 0
+        return None
+    except Exception as e:
+        print(f"  Error calling hasRole(): {e}")
+        return None
+
+
 def main() -> None:
     tokens_path, new_owner = parse_args()
     if not tokens_path.is_file():
@@ -229,16 +251,28 @@ def main() -> None:
             w3_cache[oapp.rpc_url] = Web3(Web3.HTTPProvider(oapp.rpc_url))
 
         w3 = w3_cache[oapp.rpc_url]
-        current_owner = get_owner(w3, oapp.oapp_address)
 
-        status = "✓" if current_owner == new_owner_checksum else "✗"
-        print(f"[{status}] {oapp.label} {oapp.oapp_type} ({oapp.oapp_address})")
-        print(f"    Current owner: {current_owner or 'unknown'}")
+        # For liquidity manager, check DEFAULT_ADMIN_ROLE instead of owner()
+        if oapp.oapp_type == "liquidity":
+            has_role = has_admin_role(w3, oapp.oapp_address, new_owner_checksum)
+            status = "✓" if has_role else "✗"
+            print(f"[{status}] {oapp.label} {oapp.oapp_type} ({oapp.oapp_address})")
+            print(f"    Has DEFAULT_ADMIN_ROLE: {has_role}")
 
-        if current_owner == new_owner_checksum:
-            successes += 1
+            if has_role:
+                successes += 1
+            else:
+                mismatches.append((oapp, f"no DEFAULT_ADMIN_ROLE"))
         else:
-            mismatches.append((oapp, current_owner))
+            current_owner = get_owner(w3, oapp.oapp_address)
+            status = "✓" if current_owner == new_owner_checksum else "✗"
+            print(f"[{status}] {oapp.label} {oapp.oapp_type} ({oapp.oapp_address})")
+            print(f"    Current owner: {current_owner or 'unknown'}")
+
+            if current_owner == new_owner_checksum:
+                successes += 1
+            else:
+                mismatches.append((oapp, current_owner))
 
     print(f"\n{'='*60}")
     print(f"Results: {successes}/{len(oapps)} OApps have correct owner")
