@@ -4,7 +4,7 @@
       "label": "bnb-mainnet",
       "token_address": "0x4388D5618B9e13Bd580209CDf37a202778C75c54",
       "verifier_address": "0xb05977Af4aA54117910ed72141F674531894774A",
-      "liquidity_manager_address": "0xACe7a7a22cD54Ee39827A35F9A3829AD2838eeDA",
+      "liquidity_manager_address": "0x39Cc069dF606c7bc8c79b0ADd0696BCaf548eFD9",
       "adaptor_address": null,
       "chain_id": 56,
       "eid": 30102,
