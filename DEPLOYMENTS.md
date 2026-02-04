@@ -131,34 +131,34 @@ See `config/tokens.zeth.testnet.json` for the full zETH configuration.
 
 USDC-backed token with 6 decimals. Hub on Base.
 
-**Hub**: `0xF52BEbC34195BA611891826120db435Ce6ADd9A1` (Base)
+**Hub**: `0x0E81e4CF6C8B408bC40D7AC8240bBc12CdD56F1D` (Base)
 
 ### Ethereum
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
-| Verifier (proxy) | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
-| LiquidityManager (proxy) | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
-| Adaptor (proxy) | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
+| zERC20 (proxy) | `0xEB81ab55Bc7aa89d1e0E3F60597D86e37702Af53` |
+| Verifier (proxy) | `0xfb786B5E6520284Aa6a8dFA3B4F7A09ed423e25f` |
+| LiquidityManager (proxy) | `0x04be137Df79bE7B5F3314C4a84D1C5E0d99BD477` |
+| Adaptor (proxy) | `0x3fCBc7f919b712258859e2e3c78188168E47B287` |
 
 ### Arbitrum
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
-| Verifier (proxy) | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
-| LiquidityManager (proxy) | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
-| Adaptor (proxy) | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
+| zERC20 (proxy) | `0xEB81ab55Bc7aa89d1e0E3F60597D86e37702Af53` |
+| Verifier (proxy) | `0xfb786B5E6520284Aa6a8dFA3B4F7A09ed423e25f` |
+| LiquidityManager (proxy) | `0x04be137Df79bE7B5F3314C4a84D1C5E0d99BD477` |
+| Adaptor (proxy) | `0x3fCBc7f919b712258859e2e3c78188168E47B287` |
 
 ### Base
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0x9a0C876e626271fbD6D63cb46e3aFe532d77C320` |
-| Verifier (proxy) | `0xD213aE536104b96421C31750cb802a24718ff8f3` |
-| LiquidityManager (proxy) | `0x5f0520c7a9a137D17FA06E444c54499B6aE17Bfd` |
-| Adaptor (proxy) | `0x4f0A72854e4bA79eAC69266AE9b2f934653371F1` |
+| zERC20 (proxy) | `0xEB81ab55Bc7aa89d1e0E3F60597D86e37702Af53` |
+| Verifier (proxy) | `0xfb786B5E6520284Aa6a8dFA3B4F7A09ed423e25f` |
+| LiquidityManager (proxy) | `0x04be137Df79bE7B5F3314C4a84D1C5E0d99BD477` |
+| Adaptor (proxy) | `0x3fCBc7f919b712258859e2e3c78188168E47B287` |
 
 ### Config File
 
@@ -170,34 +170,34 @@ See `config/deployed/mainnet/tokens.zusdc.mainnet.json` for the full zUSDC confi
 
 Native ETH-backed token with 18 decimals. Hub on Base.
 
-**Hub**: `0x58357afA19BF7ed2185C82508BBb03AaD1B2EfEe` (Base)
+**Hub**: `0x6B5e8509ae57A54863A7255e610d6F0c10FCAFB5` (Base)
 
 ### Ethereum
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
-| Verifier (proxy) | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
-| LiquidityManager (proxy) | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
-| Adaptor (proxy) | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
+| zERC20 (proxy) | `0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924` |
+| Verifier (proxy) | `0xdCC76DEbb526Eef0210Bd38729b803591951Ab34` |
+| LiquidityManager (proxy) | `0xcC10b7098FEf1aB2f0FF3bE91d2A7B3230b90CF0` |
+| Adaptor (proxy) | `0xfDe2C5758BbdDcDEa2d73EdeB5C13DE98B21Eb7D` |
 
 ### Arbitrum
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
-| Verifier (proxy) | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
-| LiquidityManager (proxy) | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
-| Adaptor (proxy) | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
+| zERC20 (proxy) | `0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924` |
+| Verifier (proxy) | `0xdCC76DEbb526Eef0210Bd38729b803591951Ab34` |
+| LiquidityManager (proxy) | `0xcC10b7098FEf1aB2f0FF3bE91d2A7B3230b90CF0` |
+| Adaptor (proxy) | `0xfDe2C5758BbdDcDEa2d73EdeB5C13DE98B21Eb7D` |
 
 ### Base
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0xff335e658286704251A158Ca7513d3e0B4074faa` |
-| Verifier (proxy) | `0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c` |
-| LiquidityManager (proxy) | `0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2` |
-| Adaptor (proxy) | `0x35955d908A4e431aD089816dBC42aAD089FCef21` |
+| zERC20 (proxy) | `0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924` |
+| Verifier (proxy) | `0xdCC76DEbb526Eef0210Bd38729b803591951Ab34` |
+| LiquidityManager (proxy) | `0xcC10b7098FEf1aB2f0FF3bE91d2A7B3230b90CF0` |
+| Adaptor (proxy) | `0xfDe2C5758BbdDcDEa2d73EdeB5C13DE98B21Eb7D` |
 
 ### Config File
 
@@ -209,15 +209,15 @@ See `config/deployed/mainnet/tokens.zeth.mainnet.json` for the full zETH configu
 
 Native BNB-backed token with 18 decimals. Hub on BNB Chain.
 
-**Hub**: `0x675A949a8608483B828967EA984030fd6348418b` (BNB Chain)
+**Hub**: `0x35eE54CEDb9aba3b785C493C0B50643E65471c7A` (BNB Chain)
 
 ### BNB Chain
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
-| Verifier (proxy) | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
-| LiquidityManager (proxy) | `0xACe7a7a22cD54Ee39827A35F9A3829AD2838eeDA` |
+| zERC20 (proxy) | `0x4388D5618B9e13Bd580209CDf37a202778C75c54` |
+| Verifier (proxy) | `0xb05977Af4aA54117910ed72141F674531894774A` |
+| LiquidityManager (proxy) | `0x39Cc069dF606c7bc8c79b0ADd0696BCaf548eFD9` |
 | Adaptor | — |
 
 > **Note**: zBNB wrap/unwrap is only available on BNB Chain. Other chains support zBNB transfers via LayerZero OFT but do not have LiquidityManager contracts.
@@ -226,8 +226,8 @@ Native BNB-backed token with 18 decimals. Hub on BNB Chain.
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
-| Verifier (proxy) | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
+| zERC20 (proxy) | `0x4388D5618B9e13Bd580209CDf37a202778C75c54` |
+| Verifier (proxy) | `0xb05977Af4aA54117910ed72141F674531894774A` |
 | LiquidityManager | — |
 | Adaptor | — |
 
@@ -235,8 +235,8 @@ Native BNB-backed token with 18 decimals. Hub on BNB Chain.
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
-| Verifier (proxy) | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
+| zERC20 (proxy) | `0x4388D5618B9e13Bd580209CDf37a202778C75c54` |
+| Verifier (proxy) | `0xb05977Af4aA54117910ed72141F674531894774A` |
 | LiquidityManager | — |
 | Adaptor | — |
 
@@ -244,8 +244,8 @@ Native BNB-backed token with 18 decimals. Hub on BNB Chain.
 
 | Contract | Address |
 |----------|---------|
-| zERC20 (proxy) | `0xB788bD0eDC23D36BED170665fa4D9B6A51Dc8488` |
-| Verifier (proxy) | `0xFB56760c24E5E94c629171B462957f48149c8ACc` |
+| zERC20 (proxy) | `0x4388D5618B9e13Bd580209CDf37a202778C75c54` |
+| Verifier (proxy) | `0xb05977Af4aA54117910ed72141F674531894774A` |
 | LiquidityManager | — |
 | Adaptor | — |
 
