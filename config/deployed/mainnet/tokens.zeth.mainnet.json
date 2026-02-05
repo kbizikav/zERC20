@@ -2,12 +2,12 @@
   "tokens": [
     {
       "label": "eth-mainnet",
-      "token_address": "0xff335e658286704251A158Ca7513d3e0B4074faa",
-      "verifier_address": "0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c",
-      "liquidity_manager_address": "0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2",
-      "adaptor_address": "0x35955d908A4e431aD089816dBC42aAD089FCef21",
+      "token_address": "0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924",
+      "verifier_address": "0xdCC76DEbb526Eef0210Bd38729b803591951Ab34",
+      "liquidity_manager_address": "0xcC10b7098FEf1aB2f0FF3bE91d2A7B3230b90CF0",
+      "adaptor_address": "0xfDe2C5758BbdDcDEa2d73EdeB5C13DE98B21Eb7D",
       "chain_id": 1,
-      "deployed_block_number": 24373392,
+      "deployed_block_number": 24383713,
       "eid": 30101,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "rpc_urls": [
@@ -19,12 +19,12 @@
     },
     {
       "label": "arb-mainnet",
-      "token_address": "0xff335e658286704251A158Ca7513d3e0B4074faa",
-      "verifier_address": "0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c",
-      "liquidity_manager_address": "0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2",
-      "adaptor_address": "0x35955d908A4e431aD089816dBC42aAD089FCef21",
+      "token_address": "0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924",
+      "verifier_address": "0xdCC76DEbb526Eef0210Bd38729b803591951Ab34",
+      "liquidity_manager_address": "0xcC10b7098FEf1aB2f0FF3bE91d2A7B3230b90CF0",
+      "adaptor_address": "0xfDe2C5758BbdDcDEa2d73EdeB5C13DE98B21Eb7D",
       "chain_id": 42161,
-      "deployed_block_number": 428046884,
+      "deployed_block_number": 428548563,
       "eid": 30110,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
       "rpc_urls": [
@@ -36,14 +36,14 @@
     },
     {
       "label": "base-mainnet",
-      "token_address": "0xff335e658286704251A158Ca7513d3e0B4074faa",
-      "verifier_address": "0xc6c88CABDd0167B008f50ba60D4c7F1c434a7e1c",
-      "liquidity_manager_address": "0x85a19c3FF534EB00D268966CF6B50e7FF95aA3D2",
-      "adaptor_address": "0x35955d908A4e431aD089816dBC42aAD089FCef21",
+      "token_address": "0x410056c6F0A9ABD8c42b9eEF3BB451966Fb0d924",
+      "verifier_address": "0xdCC76DEbb526Eef0210Bd38729b803591951Ab34",
+      "liquidity_manager_address": "0xcC10b7098FEf1aB2f0FF3bE91d2A7B3230b90CF0",
+      "adaptor_address": "0xfDe2C5758BbdDcDEa2d73EdeB5C13DE98B21Eb7D",
       "chain_id": 8453,
       "eid": 30184,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
-      "deployed_block_number": 41648568,
+      "deployed_block_number": 41711005,
       "rpc_urls": [
         "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
       ],
@@ -53,7 +53,7 @@
     }
   ],
   "hub": {
-    "hub_address": "0x58357afA19BF7ed2185C82508BBb03AaD1B2EfEe",
+    "hub_address": "0x6B5e8509ae57A54863A7255e610d6F0c10FCAFB5",
     "chain_id": 8453,
     "eid": 30184,
     "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
