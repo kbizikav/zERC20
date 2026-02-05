@@ -247,67 +247,24 @@ mod tests {
     use crate::{
         circuits::burn_address::{find_pow_nonce, secret_from_nonce},
         nova::params::NovaParams,
-        utils::poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config, poseidon2},
+        utils::{
+            exclusion_tree::ExclusionTree,
+            poseidon::utils::{circom_poseidon2_config, circom_poseidon3_config},
+        },
     };
     use ark_bn254::Fr;
     use ark_ff::AdditiveGroup;
     use folding_schemes::FoldingScheme;
     use rand::{rngs::StdRng, SeedableRng};
 
-    const DEPTH: usize = 4;
+    const OFAC_LIST: &str = include_str!("../../data/ofac_sanction_list.txt");
+    // 81 sanctioned addresses → 82 gaps → need 2^7 = 128 leaves
+    const DEPTH: usize = 7;
 
-    /// Helper to build a simple exclusion tree for testing.
-    fn build_test_exclusion_tree(gaps: &[(Fr, Fr)]) -> Fr {
-        let leaves: Vec<Fr> = gaps.iter().map(|(s, e)| poseidon2(*s, *e)).collect();
-
-        let mut padded_leaves = leaves.clone();
-        while padded_leaves.len() < (1 << DEPTH) {
-            padded_leaves.push(Fr::from(0u64));
-        }
-
-        let mut current_level = padded_leaves;
-        while current_level.len() > 1 {
-            let mut next_level = Vec::new();
-            for chunk in current_level.chunks(2) {
-                let hash = poseidon2(chunk[0], chunk[1]);
-                next_level.push(hash);
-            }
-            current_level = next_level;
-        }
-        current_level[0]
-    }
-
-    /// Helper to get Merkle proof for a leaf at given index
-    fn get_merkle_proof(gaps: &[(Fr, Fr)], index: usize) -> [Fr; DEPTH] {
-        let leaves: Vec<Fr> = gaps.iter().map(|(s, e)| poseidon2(*s, *e)).collect();
-
-        let mut padded_leaves = leaves.clone();
-        while padded_leaves.len() < (1 << DEPTH) {
-            padded_leaves.push(Fr::from(0u64));
-        }
-
-        let mut siblings = Vec::new();
-        let mut current_level = padded_leaves;
-        let mut current_index = index;
-
-        for _ in 0..DEPTH {
-            let sibling_index = if current_index % 2 == 0 {
-                current_index + 1
-            } else {
-                current_index - 1
-            };
-            siblings.push(current_level[sibling_index]);
-
-            let mut next_level = Vec::new();
-            for chunk in current_level.chunks(2) {
-                let hash = poseidon2(chunk[0], chunk[1]);
-                next_level.push(hash);
-            }
-            current_level = next_level;
-            current_index /= 2;
-        }
-
-        siblings.try_into().unwrap()
+    fn build_ofac_tree() -> ExclusionTree {
+        let lines: Vec<&str> = OFAC_LIST.lines().collect();
+        let addresses = ExclusionTree::parse_addresses(&lines);
+        ExclusionTree::from_sorted_addresses(&addresses, DEPTH)
     }
 
     /// Helper to find a valid secret for a recipient (satisfies PoW)
@@ -317,30 +274,36 @@ mod tests {
         secret_from_nonce(secret_seed, nonce)
     }
 
+    // Innocent addresses falling in different gaps of the OFAC exclusion tree
+    const INNOCENT_ADDR_1: &str = "0x0100000000000000000000000000000000000000";
+    const INNOCENT_ADDR_2: &str = "0x0600000000000000000000000000000000000000";
+    const INNOCENT_ADDR_3: &str = "0x1000000000000000000000000000000000000000";
+
     #[test]
     fn test_innocence_circuit_single_step() {
         let mut rng = StdRng::seed_from_u64(42);
 
-        let gaps = vec![
-            (Fr::from(0u64), Fr::from(100u64)),
-            (Fr::from(100u64), Fr::from(200u64)),
-            (Fr::from(200u64), Fr::from(1000u64)),
-        ];
-        let ofac_root = build_test_exclusion_tree(&gaps);
+        let tree = build_ofac_tree();
+        let ofac_root = tree.root();
         let recipient = Fr::from(12345u64);
         let secret = find_valid_secret(recipient, 1000);
+
+        let from_address = ExclusionTree::parse_addresses(&[INNOCENT_ADDR_1])[0];
+        let proof = tree
+            .prove_non_membership(from_address)
+            .expect("address should not be sanctioned");
 
         let z_0 = vec![ofac_root, recipient, Fr::ZERO];
 
         let ext_input = InnocenceExternalInputs::<Fr, DEPTH> {
             is_dummy: false,
-            from_address: Fr::from(150u64),
+            from_address,
             value: Fr::from(1000u64),
             secret,
-            start: Fr::from(100u64),
-            end: Fr::from(200u64),
-            gap_index: Fr::from(1u64),
-            siblings: get_merkle_proof(&gaps, 1),
+            start: proof.start,
+            end: proof.end,
+            gap_index: Fr::from(proof.gap_index),
+            siblings: proof.siblings_array(),
         };
 
         let poseidon2_params = circom_poseidon2_config::<Fr>();
@@ -362,12 +325,8 @@ mod tests {
     fn test_innocence_circuit_multiple_steps() {
         let mut rng = StdRng::seed_from_u64(42);
 
-        let gaps = vec![
-            (Fr::from(0u64), Fr::from(100u64)),
-            (Fr::from(100u64), Fr::from(200u64)),
-            (Fr::from(200u64), Fr::from(1000u64)),
-        ];
-        let ofac_root = build_test_exclusion_tree(&gaps);
+        let tree = build_ofac_tree();
+        let ofac_root = tree.root();
         let recipient = Fr::from(12345u64);
 
         // Find valid secrets for each transfer
@@ -377,38 +336,31 @@ mod tests {
 
         let z_0 = vec![ofac_root, recipient, Fr::ZERO];
 
-        let transfers = vec![
-            InnocenceExternalInputs::<Fr, DEPTH> {
-                is_dummy: false,
-                from_address: Fr::from(50u64),
-                value: Fr::from(100u64),
-                secret: secret1,
-                start: Fr::from(0u64),
-                end: Fr::from(100u64),
-                gap_index: Fr::from(0u64),
-                siblings: get_merkle_proof(&gaps, 0),
-            },
-            InnocenceExternalInputs::<Fr, DEPTH> {
-                is_dummy: false,
-                from_address: Fr::from(150u64),
-                value: Fr::from(200u64),
-                secret: secret2,
-                start: Fr::from(100u64),
-                end: Fr::from(200u64),
-                gap_index: Fr::from(1u64),
-                siblings: get_merkle_proof(&gaps, 1),
-            },
-            InnocenceExternalInputs::<Fr, DEPTH> {
-                is_dummy: false,
-                from_address: Fr::from(500u64),
-                value: Fr::from(300u64),
-                secret: secret3,
-                start: Fr::from(200u64),
-                end: Fr::from(1000u64),
-                gap_index: Fr::from(2u64),
-                siblings: get_merkle_proof(&gaps, 2),
-            },
-        ];
+        let addrs = [INNOCENT_ADDR_1, INNOCENT_ADDR_2, INNOCENT_ADDR_3];
+        let secrets = [secret1, secret2, secret3];
+        let values = [100u64, 200, 300];
+
+        let transfers: Vec<InnocenceExternalInputs<Fr, DEPTH>> = addrs
+            .iter()
+            .zip(secrets.iter())
+            .zip(values.iter())
+            .map(|((addr, secret), value)| {
+                let from_address = ExclusionTree::parse_addresses(&[addr])[0];
+                let proof = tree
+                    .prove_non_membership(from_address)
+                    .expect("address should not be sanctioned");
+                InnocenceExternalInputs::<Fr, DEPTH> {
+                    is_dummy: false,
+                    from_address,
+                    value: Fr::from(*value),
+                    secret: *secret,
+                    start: proof.start,
+                    end: proof.end,
+                    gap_index: Fr::from(proof.gap_index),
+                    siblings: proof.siblings_array(),
+                }
+            })
+            .collect();
 
         let poseidon2_params = circom_poseidon2_config::<Fr>();
         let poseidon3_params = circom_poseidon3_config::<Fr>();
@@ -444,25 +396,27 @@ mod tests {
     fn test_innocence_circuit_with_dummy_padding() {
         let mut rng = StdRng::seed_from_u64(42);
 
-        let gaps = vec![
-            (Fr::from(0u64), Fr::from(100u64)),
-            (Fr::from(100u64), Fr::from(200u64)),
-        ];
-        let ofac_root = build_test_exclusion_tree(&gaps);
+        let tree = build_ofac_tree();
+        let ofac_root = tree.root();
         let recipient = Fr::from(999u64);
         let secret = find_valid_secret(recipient, 5000);
+
+        let from_address = ExclusionTree::parse_addresses(&[INNOCENT_ADDR_1])[0];
+        let proof = tree
+            .prove_non_membership(from_address)
+            .expect("address should not be sanctioned");
 
         let z_0 = vec![ofac_root, recipient, Fr::ZERO];
 
         let real_transfer = InnocenceExternalInputs::<Fr, DEPTH> {
             is_dummy: false,
-            from_address: Fr::from(50u64),
+            from_address,
             value: Fr::from(1000u64),
             secret,
-            start: Fr::from(0u64),
-            end: Fr::from(100u64),
-            gap_index: Fr::from(0u64),
-            siblings: get_merkle_proof(&gaps, 0),
+            start: proof.start,
+            end: proof.end,
+            gap_index: Fr::from(proof.gap_index),
+            siblings: proof.siblings_array(),
         };
 
         let poseidon2_params = circom_poseidon2_config::<Fr>();

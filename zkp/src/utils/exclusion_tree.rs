@@ -20,7 +20,7 @@
 use crate::utils::poseidon::utils::poseidon2;
 use crate::utils::tree::merkle_tree::{MerkleProof, MerkleTree};
 use ark_bn254::Fr;
-use ark_ff::{BigInteger, PrimeField};
+use ark_ff::PrimeField;
 use num_bigint::BigUint;
 use std::str::FromStr;
 

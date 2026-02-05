@@ -175,9 +175,12 @@ mod tests {
         circuits::burn_address::{
             compute_burn_address_from_secret, find_pow_nonce, secret_from_nonce,
         },
-        utils::poseidon::{
-            gadgets::CircomCRHParametersVar,
-            utils::{circom_poseidon2_config, circom_poseidon3_config, poseidon2},
+        utils::{
+            exclusion_tree::ExclusionTree,
+            poseidon::{
+                gadgets::CircomCRHParametersVar,
+                utils::{circom_poseidon2_config, circom_poseidon3_config},
+            },
         },
     };
     use ark_bn254::Fr;
@@ -187,60 +190,14 @@ mod tests {
         ns,
     };
 
-    const DEPTH: usize = 4;
+    const OFAC_LIST: &str = include_str!("../../data/ofac_sanction_list.txt");
+    // 81 sanctioned addresses → 82 gaps → need 2^7 = 128 leaves
+    const DEPTH: usize = 7;
 
-    /// Helper to build a simple exclusion tree for testing.
-    fn build_test_exclusion_tree(gaps: &[(Fr, Fr)]) -> Fr {
-        let leaves: Vec<Fr> = gaps.iter().map(|(s, e)| poseidon2(*s, *e)).collect();
-
-        let mut padded_leaves = leaves.clone();
-        while padded_leaves.len() < (1 << DEPTH) {
-            padded_leaves.push(Fr::from(0u64));
-        }
-
-        let mut current_level = padded_leaves;
-        while current_level.len() > 1 {
-            let mut next_level = Vec::new();
-            for chunk in current_level.chunks(2) {
-                let hash = poseidon2(chunk[0], chunk[1]);
-                next_level.push(hash);
-            }
-            current_level = next_level;
-        }
-        current_level[0]
-    }
-
-    /// Helper to get Merkle proof for a leaf at given index
-    fn get_merkle_proof(gaps: &[(Fr, Fr)], index: usize) -> Vec<Fr> {
-        let leaves: Vec<Fr> = gaps.iter().map(|(s, e)| poseidon2(*s, *e)).collect();
-
-        let mut padded_leaves = leaves.clone();
-        while padded_leaves.len() < (1 << DEPTH) {
-            padded_leaves.push(Fr::from(0u64));
-        }
-
-        let mut siblings = Vec::new();
-        let mut current_level = padded_leaves;
-        let mut current_index = index;
-
-        for _ in 0..DEPTH {
-            let sibling_index = if current_index % 2 == 0 {
-                current_index + 1
-            } else {
-                current_index - 1
-            };
-            siblings.push(current_level[sibling_index]);
-
-            let mut next_level = Vec::new();
-            for chunk in current_level.chunks(2) {
-                let hash = poseidon2(chunk[0], chunk[1]);
-                next_level.push(hash);
-            }
-            current_level = next_level;
-            current_index /= 2;
-        }
-
-        siblings
+    fn build_ofac_tree() -> ExclusionTree {
+        let lines: Vec<&str> = OFAC_LIST.lines().collect();
+        let addresses = ExclusionTree::parse_addresses(&lines);
+        ExclusionTree::from_sorted_addresses(&addresses, DEPTH)
     }
 
     /// Helper to find a valid secret for a recipient (satisfies PoW)
@@ -249,6 +206,11 @@ mod tests {
         let nonce = find_pow_nonce(recipient, secret_seed);
         secret_from_nonce(secret_seed, nonce)
     }
+
+    // First sanctioned address on the list
+    const FIRST_SANCTIONED: &str = "0x04dba1194ee10112fe6c3207c0687def0e78bacf";
+    // An innocent address that falls in the gap between the 1st and 2nd sanctioned addresses
+    const INNOCENT_ADDRESS: &str = "0x0600000000000000000000000000000000000000";
 
     #[test]
     fn innocence_step_accepts_valid_proof_with_recipient_binding() -> Result<(), SynthesisError> {
@@ -261,13 +223,8 @@ mod tests {
         let poseidon3_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
-        // Setup exclusion tree
-        let gaps = vec![
-            (Fr::from(0u64), Fr::from(100u64)),
-            (Fr::from(100u64), Fr::from(200u64)),
-            (Fr::from(200u64), Fr::from(1000u64)),
-        ];
-        let ofac_root_value = build_test_exclusion_tree(&gaps);
+        let tree = build_ofac_tree();
+        let ofac_root_value = tree.root();
 
         // Setup recipient and valid secret (satisfies PoW)
         let recipient_value = Fr::from(12345u64);
@@ -277,16 +234,14 @@ mod tests {
         compute_burn_address_from_secret(recipient_value, secret_value)
             .expect("secret should satisfy PoW");
 
-        // Test: prove address 150 is not sanctioned
-        let from_address_value = Fr::from(150u64);
-        let start_value = Fr::from(100u64);
-        let end_value = Fr::from(200u64);
-        let gap_index_value = Fr::from(1u64);
+        // Prove an innocent address is not sanctioned
+        let from_address_value = ExclusionTree::parse_addresses(&[INNOCENT_ADDRESS])[0];
+        let proof = tree
+            .prove_non_membership(from_address_value)
+            .expect("address should not be sanctioned");
+
         let value_value = Fr::from(1000u64);
         let prev_total_value = Fr::from(500u64);
-        let is_dummy_value = false;
-
-        let siblings_values = get_merkle_proof(&gaps, 1);
 
         // Allocate variables
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
@@ -294,13 +249,15 @@ mod tests {
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
         let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
-        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
+        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(false))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
-        let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
-        let end = FpVar::<Fr>::new_witness(ns!(cs, "end"), || Ok(end_value))?;
-        let gap_index = FpVar::<Fr>::new_witness(ns!(cs, "gap_index"), || Ok(gap_index_value))?;
-        let siblings = siblings_values
+        let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(proof.start))?;
+        let end = FpVar::<Fr>::new_witness(ns!(cs, "end"), || Ok(proof.end))?;
+        let gap_index =
+            FpVar::<Fr>::new_witness(ns!(cs, "gap_index"), || Ok(Fr::from(proof.gap_index)))?;
+        let siblings = proof
+            .siblings
             .iter()
             .map(|s| FpVar::<Fr>::new_witness(ns!(cs, "sibling"), || Ok(*s)))
             .collect::<Result<Vec<_>, _>>()?;
@@ -340,12 +297,8 @@ mod tests {
         let poseidon3_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
-        let gaps = vec![
-            (Fr::from(0u64), Fr::from(100u64)),
-            (Fr::from(100u64), Fr::from(200u64)),
-            (Fr::from(200u64), Fr::from(1000u64)),
-        ];
-        let ofac_root_value = build_test_exclusion_tree(&gaps);
+        let tree = build_ofac_tree();
+        let ofac_root_value = tree.root();
 
         // Alice's recipient and valid secret
         let alice_recipient = Fr::from(12345u64);
@@ -354,15 +307,13 @@ mod tests {
         // ATTACK: Carol tries to use Alice's secret with her own recipient
         let carol_recipient = Fr::from(99999u64);
 
-        let from_address_value = Fr::from(150u64);
-        let start_value = Fr::from(100u64);
-        let end_value = Fr::from(200u64);
-        let gap_index_value = Fr::from(1u64);
+        let from_address_value = ExclusionTree::parse_addresses(&[INNOCENT_ADDRESS])[0];
+        let proof = tree
+            .prove_non_membership(from_address_value)
+            .expect("address should not be sanctioned");
+
         let value_value = Fr::from(1000u64);
         let prev_total_value = Fr::from(0u64);
-        let is_dummy_value = false;
-
-        let siblings_values = get_merkle_proof(&gaps, 1);
 
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
         // Carol's recipient but Alice's secret
@@ -370,13 +321,15 @@ mod tests {
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
         let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
-        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
+        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(false))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(alice_secret))?;
-        let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
-        let end = FpVar::<Fr>::new_witness(ns!(cs, "end"), || Ok(end_value))?;
-        let gap_index = FpVar::<Fr>::new_witness(ns!(cs, "gap_index"), || Ok(gap_index_value))?;
-        let siblings = siblings_values
+        let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(proof.start))?;
+        let end = FpVar::<Fr>::new_witness(ns!(cs, "end"), || Ok(proof.end))?;
+        let gap_index =
+            FpVar::<Fr>::new_witness(ns!(cs, "gap_index"), || Ok(Fr::from(proof.gap_index)))?;
+        let siblings = proof
+            .siblings
             .iter()
             .map(|s| FpVar::<Fr>::new_witness(ns!(cs, "sibling"), || Ok(*s)))
             .collect::<Result<Vec<_>, _>>()?;
@@ -417,39 +370,41 @@ mod tests {
         let poseidon3_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
-        let gaps = vec![
-            (Fr::from(0u64), Fr::from(100u64)),
-            (Fr::from(100u64), Fr::from(200u64)),
-            (Fr::from(200u64), Fr::from(1000u64)),
-        ];
-        let ofac_root_value = build_test_exclusion_tree(&gaps);
+        let tree = build_ofac_tree();
+        let ofac_root_value = tree.root();
 
         let recipient_value = Fr::from(12345u64);
         let secret_value = find_valid_secret(recipient_value, 2000);
 
-        // Try to prove address 100 is not sanctioned (but it's at the boundary = sanctioned)
-        let from_address_value = Fr::from(100u64);
-        let start_value = Fr::from(100u64);
-        let end_value = Fr::from(200u64);
-        let gap_index_value = Fr::from(1u64);
+        // The sanctioned address itself — prove_non_membership returns None
+        let sanctioned = ExclusionTree::parse_addresses(&[FIRST_SANCTIONED])[0];
+        assert!(tree.prove_non_membership(sanctioned).is_none());
+
+        // Use the neighbouring gap's proof but with the sanctioned address as from_address.
+        // The gap immediately after the sanctioned address has start == sanctioned address,
+        // so from_address == start, which fails the strict inequality.
+        let innocent_neighbor = ExclusionTree::parse_addresses(&[INNOCENT_ADDRESS])[0];
+        let proof = tree
+            .prove_non_membership(innocent_neighbor)
+            .expect("neighbor should not be sanctioned");
+
         let value_value = Fr::from(1000u64);
         let prev_total_value = Fr::from(0u64);
-        let is_dummy_value = false;
-
-        let siblings_values = get_merkle_proof(&gaps, 1);
 
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
-        let from_address =
-            FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
+        // Sanctioned address as from_address
+        let from_address = FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(sanctioned))?;
         let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
-        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
+        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(false))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
-        let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
-        let end = FpVar::<Fr>::new_witness(ns!(cs, "end"), || Ok(end_value))?;
-        let gap_index = FpVar::<Fr>::new_witness(ns!(cs, "gap_index"), || Ok(gap_index_value))?;
-        let siblings = siblings_values
+        let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(proof.start))?;
+        let end = FpVar::<Fr>::new_witness(ns!(cs, "end"), || Ok(proof.end))?;
+        let gap_index =
+            FpVar::<Fr>::new_witness(ns!(cs, "gap_index"), || Ok(Fr::from(proof.gap_index)))?;
+        let siblings = proof
+            .siblings
             .iter()
             .map(|s| FpVar::<Fr>::new_witness(ns!(cs, "sibling"), || Ok(*s)))
             .collect::<Result<Vec<_>, _>>()?;
@@ -500,7 +455,6 @@ mod tests {
         let gap_index_value = Fr::from(0u64);
         let value_value = Fr::from(50u64);
         let prev_total_value = Fr::from(100u64);
-        let is_dummy_value = true; // DUMMY - skip ALL verification
 
         let siblings_values = vec![Fr::from(0u64); DEPTH];
 
@@ -509,7 +463,7 @@ mod tests {
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
         let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
-        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
+        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(true))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
         let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
@@ -557,39 +511,43 @@ mod tests {
         let poseidon3_params =
             CircomCRHParametersVar::new_constant(ns!(cs, "poseidon3_params"), &poseidon3_config)?;
 
-        let gaps = vec![
-            (Fr::from(0u64), Fr::from(100u64)),
-            (Fr::from(100u64), Fr::from(200u64)),
-            (Fr::from(200u64), Fr::from(1000u64)),
-        ];
-        let ofac_root_value = build_test_exclusion_tree(&gaps);
+        let tree = build_ofac_tree();
+        let ofac_root_value = tree.root();
 
         let recipient_value = Fr::from(12345u64);
         let secret_value = find_valid_secret(recipient_value, 3000);
 
-        let from_address_value = Fr::from(150u64);
-        let start_value = Fr::from(100u64);
-        let end_value = Fr::from(200u64);
-        let gap_index_value = Fr::from(1u64);
+        // Get a valid proof for our innocent address
+        let from_address_value = ExclusionTree::parse_addresses(&[INNOCENT_ADDRESS])[0];
+        let correct_proof = tree
+            .prove_non_membership(from_address_value)
+            .expect("address should not be sanctioned");
+
+        // Get a WRONG proof from a different gap (gap 0, which is before the first sanctioned addr)
+        let wrong_proof = tree
+            .prove_non_membership(Fr::from(1u64))
+            .expect("address 1 should not be sanctioned");
+
         let value_value = Fr::from(1000u64);
         let prev_total_value = Fr::from(0u64);
-        let is_dummy_value = false;
-
-        // Wrong proof - using index 0's proof for index 1's leaf
-        let siblings_values = get_merkle_proof(&gaps, 0);
 
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
         let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
-        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
+        let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(false))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
-        let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(start_value))?;
-        let end = FpVar::<Fr>::new_witness(ns!(cs, "end"), || Ok(end_value))?;
-        let gap_index = FpVar::<Fr>::new_witness(ns!(cs, "gap_index"), || Ok(gap_index_value))?;
-        let siblings = siblings_values
+        // Use correct gap boundaries but wrong Merkle siblings
+        let start = FpVar::<Fr>::new_witness(ns!(cs, "start"), || Ok(correct_proof.start))?;
+        let end = FpVar::<Fr>::new_witness(ns!(cs, "end"), || Ok(correct_proof.end))?;
+        let gap_index = FpVar::<Fr>::new_witness(ns!(cs, "gap_index"), || {
+            Ok(Fr::from(correct_proof.gap_index))
+        })?;
+        // Wrong siblings from a different gap's proof
+        let siblings = wrong_proof
+            .siblings
             .iter()
             .map(|s| FpVar::<Fr>::new_witness(ns!(cs, "sibling"), || Ok(*s)))
             .collect::<Result<Vec<_>, _>>()?;
