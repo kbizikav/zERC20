@@ -32,7 +32,7 @@
 //! let proof = nova.ivc_proof();
 //! ```
 
-use ark_crypto_primitives::sponge::{poseidon::PoseidonConfig, Absorb};
+use ark_crypto_primitives::sponge::{Absorb, poseidon::PoseidonConfig};
 use ark_ff::PrimeField;
 use ark_r1cs_std::{
     alloc::{AllocVar, AllocationMode},
@@ -42,11 +42,10 @@ use ark_r1cs_std::{
 use ark_relations::gr1cs::{ConstraintSystemRef, Namespace, SynthesisError};
 use ark_std::vec::Vec;
 use core::{borrow::Borrow, convert::TryInto};
-use folding_schemes::{frontend::FCircuit, Error};
+use folding_schemes::{Error, frontend::FCircuit};
 
 use crate::{
-    circuits::proof_of_innocence::innocence_step,
-    utils::poseidon::gadgets::CircomCRHParametersVar,
+    circuits::proof_of_innocence::innocence_step, utils::poseidon::gadgets::CircomCRHParametersVar,
 };
 
 /// State vector length: [ofac_root, recipient, total_teleported]
@@ -255,7 +254,7 @@ mod tests {
     use ark_bn254::Fr;
     use ark_ff::AdditiveGroup;
     use folding_schemes::FoldingScheme;
-    use rand::{rngs::StdRng, SeedableRng};
+    use rand::{SeedableRng, rngs::StdRng};
 
     const OFAC_LIST: &str = include_str!("../../data/ofac_sanction_list.txt");
     // 81 sanctioned addresses → 82 gaps → need 2^7 = 128 leaves

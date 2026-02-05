@@ -27,10 +27,7 @@ use std::str::FromStr;
 /// Maximum 160-bit address value (2^160 - 1)
 fn max_address() -> Fr {
     // 2^160 - 1 = 1461501637330902918203684832716283019655932542975
-    let max_160 = BigUint::from_str(
-        "1461501637330902918203684832716283019655932542975",
-    )
-    .unwrap();
+    let max_160 = BigUint::from_str("1461501637330902918203684832716283019655932542975").unwrap();
     Fr::from(max_160)
 }
 
@@ -140,8 +137,8 @@ impl ExclusionTree {
                     return None;
                 }
                 let hex_str = s.strip_prefix("0x").unwrap_or(s);
-                let big = BigUint::parse_bytes(hex_str.as_bytes(), 16)
-                    .expect("Invalid hex address");
+                let big =
+                    BigUint::parse_bytes(hex_str.as_bytes(), 16).expect("Invalid hex address");
                 Some(Fr::from(big))
             })
             .collect();
@@ -442,7 +439,8 @@ mod tests {
         assert_eq!(tree.num_gaps(), 4);
 
         // Random address should be provable (unless it happens to match a sanctioned one)
-        let random_addr = ExclusionTree::parse_addresses(&["0x1234567890abcdef1234567890abcdef12345678"])[0];
+        let random_addr =
+            ExclusionTree::parse_addresses(&["0x1234567890abcdef1234567890abcdef12345678"])[0];
         let proof = tree.prove_non_membership(random_addr);
         assert!(proof.is_some());
 
