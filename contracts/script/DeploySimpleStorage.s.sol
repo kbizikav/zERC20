@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity 0.8.33;
 
-import {Script, console} from "forge-std/Script.sol";
+import {console} from "forge-std/Script.sol";
 import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 
 /// @notice Simple storage contract for testing CREATE3 deployment and verification.

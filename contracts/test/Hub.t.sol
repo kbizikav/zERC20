@@ -737,7 +737,7 @@ contract HubTest is TestHelperOz5 {
         hub.broadcast{value: deposit}(targetEids, options, address(refundReceiver));
 
         assertEq(hub.aggSeq(), 1, "agg sequence incremented once");
-        assertFalse(refundReceiver.innerCallSucceeded(), "reentrant call blocked");
+        assertFalse(refundReceiver.getInnerCallSucceeded(), "reentrant call blocked");
     }
 
     function _targetEids() internal pure returns (uint32[] memory targetEids) {
@@ -848,7 +848,7 @@ contract NonZeroLzTokenFeeSendLibMock is ISendLib {
     }
 
     function quote(Packet calldata, bytes calldata, bool) external view returns (MessagingFee memory) {
-        return MessagingFee(nativeFee, lzTokenFee);
+        return MessagingFee({nativeFee: nativeFee, lzTokenFee: lzTokenFee});
     }
 
     function setTreasury(address) external pure {}
@@ -860,26 +860,26 @@ contract NonZeroLzTokenFeeSendLibMock is ISendLib {
 
 contract ReentrantRefundReceiver {
     Hub internal immutable HUB;
-    uint32[] internal TARGET_EIDS;
-    bytes internal OPTIONS;
+    uint32[] internal targetEids;
+    bytes internal options;
 
-    bool internal INNER_CALL_SUCCEEDED;
+    bool internal innerCallSucceeded;
 
     constructor(Hub hub_, uint32[] memory targetEids_, bytes memory options_) {
         HUB = hub_;
-        TARGET_EIDS = targetEids_;
-        OPTIONS = options_;
+        targetEids = targetEids_;
+        options = options_;
     }
 
     // solhint-disable-next-line no-complex-fallback
     receive() external payable {
         bytes memory data =
-            abi.encodeWithSignature("broadcast(uint32[],bytes,address)", TARGET_EIDS, OPTIONS, address(this));
+            abi.encodeWithSignature("broadcast(uint32[],bytes,address)", targetEids, options, address(this));
         (bool ok,) = address(HUB).call{value: msg.value}(data);
-        INNER_CALL_SUCCEEDED = ok;
+        innerCallSucceeded = ok;
     }
 
-    function innerCallSucceeded() external view returns (bool) {
-        return INNER_CALL_SUCCEEDED;
+    function getInnerCallSucceeded() external view returns (bool) {
+        return innerCallSucceeded;
     }
 }

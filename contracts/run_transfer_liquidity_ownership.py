@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run TransferOAppOwnership.s.sol for all tokens and verifiers in tokens.json."""
+"""Run TransferLiquidityOwnership.s.sol for all LiquidityManagers and Adaptors in tokens.json."""
 from __future__ import annotations
 
 import argparse
@@ -17,8 +17,8 @@ from typing import Any, Sequence
 SCRIPT_DIR = Path(__file__).resolve().parent
 ROOT_DIR = SCRIPT_DIR.parent
 DEFAULT_TOKENS_FILE = (ROOT_DIR / "config" / "tokens.json").resolve()
-SET_DELEGATE_SCRIPT = "script/TransferOAppOwnership.s.sol:SetOAppDelegate"
-TRANSFER_OWNER_SCRIPT = "script/TransferOAppOwnership.s.sol:TransferOAppOwner"
+TRANSFER_LM_OWNERSHIP_SCRIPT = "script/TransferLiquidityOwnership.s.sol:TransferLiquidityManagerOwnership"
+TRANSFER_ADAPTOR_OWNERSHIP_SCRIPT = "script/TransferLiquidityOwnership.s.sol:TransferAdaptorOwnership"
 
 
 class ConfigError(RuntimeError):
@@ -26,10 +26,10 @@ class ConfigError(RuntimeError):
 
 
 @dataclass
-class OAppConfig:
+class ContractConfig:
     label: str
-    oapp_address: str
-    oapp_type: str  # "token" or "verifier"
+    contract_address: str
+    contract_type: str  # "liquidity_manager" or "adaptor"
     chain_id: str
     rpc_url: str
     legacy_tx: bool
@@ -37,27 +37,27 @@ class OAppConfig:
 
 def parse_args() -> tuple[Path, str, str, list[str]]:
     parser = argparse.ArgumentParser(
-        usage="run_transfer_oapp_ownership.py [--file PATH] --action ACTION [--] [forge flags...]",
+        usage="run_transfer_liquidity_ownership.py [--file PATH] --type TYPE [--] [forge flags...]",
         description=(
-            "Reads a tokens.json-formatted file and runs TransferOAppOwnership.s.sol "
-            "for each token and verifier to transfer delegate/owner to NEW_OWNER."
+            "Reads a tokens.json-formatted file and runs TransferLiquidityOwnership.s.sol "
+            "for each LiquidityManager or Adaptor to transfer ownership to NEW_OWNER."
         ),
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Examples:\n"
-            "  NEW_OWNER=0x123... ./run_transfer_oapp_ownership.py --action delegate\n"
-            "  NEW_OWNER=0x123... ./run_transfer_oapp_ownership.py --action owner\n"
-            "  NEW_OWNER=0x123... ./run_transfer_oapp_ownership.py --action both\n"
-            "  NEW_OWNER=0x123... ./run_transfer_oapp_ownership.py --action both --file ../config/tokens.prod.json -- --broadcast -vv\n"
+            "  NEW_OWNER=0x123... ./run_transfer_liquidity_ownership.py --type liquidity_manager\n"
+            "  NEW_OWNER=0x123... ./run_transfer_liquidity_ownership.py --type adaptor\n"
+            "  NEW_OWNER=0x123... ./run_transfer_liquidity_ownership.py --type all\n"
+            "  NEW_OWNER=0x123... ./run_transfer_liquidity_ownership.py --type all --file ../config/tokens.prod.json -- --broadcast -vv\n"
         ),
     )
     parser.add_argument("--file", dest="tokens_file", help="Path to tokens.json (defaults to ../config/tokens.json)")
     parser.add_argument("positional_file", nargs="?", help="Optional tokens.json path when not using --file")
     parser.add_argument(
-        "--action",
-        choices=["delegate", "owner", "both"],
+        "--type",
+        choices=["liquidity_manager", "adaptor", "all"],
         required=True,
-        help="Action to perform: 'delegate' to set delegate, 'owner' to transfer ownership, 'both' to do delegate first then owner",
+        help="Contract type to transfer: 'liquidity_manager', 'adaptor', or 'all'",
     )
     args, forge_args = parser.parse_known_args()
 
@@ -79,7 +79,7 @@ def parse_args() -> tuple[Path, str, str, list[str]]:
     if not new_owner:
         raise ConfigError("NEW_OWNER environment variable must be set")
 
-    return tokens_path, new_owner, args.action, forge_args
+    return tokens_path, new_owner, args.type, forge_args
 
 
 SIGNER_FLAGS = {
@@ -158,7 +158,7 @@ def first_rpc_url(value: Any) -> str | None:
     return url
 
 
-def parse_config(tokens_path: Path) -> list[OAppConfig]:
+def parse_config(tokens_path: Path, contract_type: str) -> list[ContractConfig]:
     try:
         raw = json.loads(tokens_path.read_text())
     except FileNotFoundError as exc:
@@ -170,7 +170,7 @@ def parse_config(tokens_path: Path) -> list[OAppConfig]:
     if not tokens_raw:
         raise ConfigError(f"tokens array is empty in {tokens_path}")
 
-    oapps: list[OAppConfig] = []
+    contracts: list[ContractConfig] = []
     for entry in tokens_raw:
         label = normalize_str(entry.get("label"))
         if not label:
@@ -189,39 +189,41 @@ def parse_config(tokens_path: Path) -> list[OAppConfig]:
             legacy_raw = entry.get("legacyTx")
         legacy_tx = normalize_bool(legacy_raw)
 
-        # Add token
-        token_address = normalize_str(
-            entry.get("token_address") or entry.get("tokenAddress")
-        )
-        if token_address:
-            oapps.append(
-                OAppConfig(
-                    label=label,
-                    oapp_address=token_address,
-                    oapp_type="token",
-                    chain_id=chain_id,
-                    rpc_url=rpc_url,
-                    legacy_tx=legacy_tx,
-                )
+        # Add LiquidityManager
+        if contract_type in ("liquidity_manager", "all"):
+            lm_address = normalize_str(
+                entry.get("liquidity_manager_address") or entry.get("liquidityManagerAddress")
             )
-
-        # Add verifier
-        verifier_address = normalize_str(
-            entry.get("verifier_address") or entry.get("verifierAddress")
-        )
-        if verifier_address:
-            oapps.append(
-                OAppConfig(
-                    label=label,
-                    oapp_address=verifier_address,
-                    oapp_type="verifier",
-                    chain_id=chain_id,
-                    rpc_url=rpc_url,
-                    legacy_tx=legacy_tx,
+            if lm_address:
+                contracts.append(
+                    ContractConfig(
+                        label=label,
+                        contract_address=lm_address,
+                        contract_type="liquidity_manager",
+                        chain_id=chain_id,
+                        rpc_url=rpc_url,
+                        legacy_tx=legacy_tx,
+                    )
                 )
-            )
 
-    return oapps
+        # Add Adaptor
+        if contract_type in ("adaptor", "all"):
+            adaptor_address = normalize_str(
+                entry.get("adaptor_address") or entry.get("adaptorAddress")
+            )
+            if adaptor_address:
+                contracts.append(
+                    ContractConfig(
+                        label=label,
+                        contract_address=adaptor_address,
+                        contract_type="adaptor",
+                        chain_id=chain_id,
+                        rpc_url=rpc_url,
+                        legacy_tx=legacy_tx,
+                    )
+                )
+
+    return contracts
 
 
 def run_forge(script: str, rpc_url: str, forge_args: Sequence[str], env_overrides: dict[str, str]) -> None:
@@ -235,51 +237,48 @@ def run_forge(script: str, rpc_url: str, forge_args: Sequence[str], env_override
 
 
 def main() -> None:
-    tokens_path, new_owner, action, forge_args = parse_args()
+    tokens_path, new_owner, contract_type, forge_args = parse_args()
     if not tokens_path.is_file():
         raise ConfigError(f"tokens file not found at {tokens_path}")
 
     ensure_command_available("forge")
     ensure_private_key(forge_args)
 
-    oapps = parse_config(tokens_path)
-    if not oapps:
-        print("No tokens or verifiers found. Nothing to do.")
+    contracts = parse_config(tokens_path, contract_type)
+    if not contracts:
+        print("No LiquidityManagers or Adaptors found. Nothing to do.")
         return
-
-    # Determine which actions to run (delegate must come before owner)
-    if action == "both":
-        actions = ["delegate", "owner"]
-    else:
-        actions = [action]
 
     base_forge_args = forge_args if forge_args else ["--broadcast"]
 
-    for current_action in actions:
-        script = SET_DELEGATE_SCRIPT if current_action == "delegate" else TRANSFER_OWNER_SCRIPT
-        action_desc = "Setting delegate" if current_action == "delegate" else "Transferring ownership"
+    print(f"Transferring ownership to {new_owner} on {len(contracts)} contract(s)")
 
-        print(f"{action_desc} to {new_owner} on {len(oapps)} OApp(s)")
+    for contract in contracts:
+        forge_args_for_chain = list(base_forge_args)
+        if contract.legacy_tx:
+            forge_args_for_chain.append("--legacy")
 
-        for oapp in oapps:
-            forge_args_for_chain = list(base_forge_args)
-            if oapp.legacy_tx:
-                forge_args_for_chain.append("--legacy")
+        if contract.contract_type == "liquidity_manager":
+            script = TRANSFER_LM_OWNERSHIP_SCRIPT
+            type_desc = "LiquidityManager"
+        else:
+            script = TRANSFER_ADAPTOR_OWNERSHIP_SCRIPT
+            type_desc = "Adaptor"
 
-            prefix = f"{action_desc} for '{oapp.label}' {oapp.oapp_type} ({oapp.oapp_address})"
-            print(f"{prefix} (legacy tx)" if oapp.legacy_tx else prefix)
+        prefix = f"Transferring {type_desc} ownership for '{contract.label}' ({contract.contract_address})"
+        print(f"{prefix} (legacy tx)" if contract.legacy_tx else prefix)
 
-            run_forge(
-                script=script,
-                rpc_url=oapp.rpc_url,
-                forge_args=forge_args_for_chain,
-                env_overrides={
-                    "OAPP_ADDRESS": oapp.oapp_address,
-                    "NEW_OWNER": new_owner,
-                },
-            )
+        run_forge(
+            script=script,
+            rpc_url=contract.rpc_url,
+            forge_args=forge_args_for_chain,
+            env_overrides={
+                "CONTRACT_ADDRESS": contract.contract_address,
+                "NEW_OWNER": new_owner,
+            },
+        )
 
-        print(f"{action_desc} scripts completed")
+    print("Ownership transfer scripts completed")
 
 
 if __name__ == "__main__":
