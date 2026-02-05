@@ -144,7 +144,7 @@ impl ExclusionTree {
             .collect();
 
         // Sort by integer value
-        addresses.sort_by(|a, b| a.into_bigint().cmp(&b.into_bigint()));
+        addresses.sort_by_key(|a| a.into_bigint());
         addresses
     }
 
