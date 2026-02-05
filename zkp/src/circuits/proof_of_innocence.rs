@@ -32,7 +32,7 @@ use crate::{
         constants::{ADDRESS_BIT_LENGTH, BYTES31_BIT_LENGTH},
     },
     utils::{
-        poseidon::gadgets::{poseidon2_var, CircomCRHParametersVar},
+        poseidon::gadgets::{CircomCRHParametersVar, poseidon2_var},
         tree::gadgets::merkle::{enforce_bit_length, merkle_root_from_leaf, to_bits_le_limited},
     },
 };
@@ -41,7 +41,7 @@ use ark_ff::PrimeField;
 use ark_r1cs_std::{
     boolean::Boolean,
     eq::EqGadget,
-    fields::{fp::FpVar, FieldVar},
+    fields::{FieldVar, fp::FpVar},
 };
 use ark_relations::gr1cs::SynthesisError;
 use core::ops::Not;
@@ -122,6 +122,7 @@ where
     //    Verify burn_address = derive(recipient, secret) with PoW constraint.
     //    This proves the transfer was intended for this recipient.
     //    The PoW check is conditional on should_constrain (skipped for dummy steps).
+    //    Burn address is left unused by design. It is no further of use in the circuit.
     let _burn_address = burn_address_var(poseidon3_params, recipient, secret, &should_constrain)?;
 
     // 2. EXCLUSION PROOF: Verify start < from_address < end
@@ -292,8 +293,7 @@ mod tests {
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
@@ -369,8 +369,7 @@ mod tests {
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(carol_recipient))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(alice_secret))?;
@@ -443,8 +442,7 @@ mod tests {
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
@@ -510,8 +508,7 @@ mod tests {
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
@@ -585,8 +582,7 @@ mod tests {
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(is_dummy_value))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
