@@ -12,9 +12,6 @@ members = [
     "zstorage/frontend",
     "zstorage/backend/key_manager",
     "zstorage/backend/storage",
-    "trusted-setup/common",
-    "trusted-setup/cli",
-    "trusted-setup/coordinator",
     "circuit-setup",
 ]
 resolver = "2"
