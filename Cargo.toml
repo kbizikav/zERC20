@@ -23,7 +23,7 @@ env_logger = "0.11.8"
 log = "0.4.28"
 hex = "0.4.3"
 base64 = "0.22.1"
-clap = { version = "4.5.18", features = ["derive", "env"] }
+clap = { version = "4.5.57", features = ["derive", "env"] }
 aes-gcm = { version = "0.10", default-features = false, features = [
     "aes",
     "alloc",
