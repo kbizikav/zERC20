@@ -11,7 +11,7 @@ If you know the recipient's address:
 1. Visit the [Frontend](https://app.zerc20.io/)
 2. Click the "Private Send" tab
 3. Select the recipient chain from the dropdown
-4. Enter the recipient's Ethereum address
+4. Enter the recipient's address or ENS name (.eth, .base.eth)
 5. Enter the amount of zERC20 to send
 6. Click "Send Privately"
 
