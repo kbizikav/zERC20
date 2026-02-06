@@ -62,21 +62,28 @@ To convert zERC20 tokens back to the underlying asset:
 1. Click the "Wrap / Unwrap" button
 2. Select the "UNWRAP" tab
 3. Enter the amount to unwrap
-4. Choose your receiving option
+4. Set your preferred slippage tolerance (0.5%, 3%, 10%, or Custom)
+5. Select the destination chain from the "UNWRAP ON" dropdown
 
 **Same Chain Unwrap:**
 
-Select "Current Chain" to receive the underlying tokens on the same chain you're connected to.
+Select your current chain (shown as "Chain (Current)") to receive the underlying tokens on the same chain.
 
 <figure><img src="../../assets/frontend_how_to/unwrap-same-chain.png" alt="Unwrap Same Chain" width="480"><figcaption>Unwrap to current chain</figcaption></figure>
 
 **Cross-Chain Unwrap:**
 
-Select "Different Chain" to unwrap and bridge to another chain in one transaction. This uses LayerZero for cross-chain messaging.
+Select a different chain from the "UNWRAP ON" dropdown to access liquidity on another chain. The process works as follows:
 
-<figure><img src="../../assets/frontend_how_to/unwrap-cross-chain.png" alt="Unwrap Cross Chain" width="480"><figcaption>Unwrap with cross-chain bridge to a different network</figcaption></figure>
+1. Your zERC20 tokens are bridged from your current chain (Chain A) to the destination chain (Chain B) via LayerZero
+2. On Chain B, the tokens are unwrapped to the underlying asset (e.g., USDC)
+3. The underlying tokens are bridged back to your current chain (Chain A)
 
-You can preview the cross-chain fee before confirming the transaction.
+For example, if you're on Arbitrum and select "Base" as the unwrap destination, the flow is: **Arbitrum → Base → Arbitrum**. You receive the underlying tokens on Arbitrum, but the unwrap happens on Base.
+
+<figure><img src="../../assets/frontend_how_to/unwrap-cross-chain.png" alt="Unwrap Cross Chain" width="480"><figcaption>Cross-chain unwrap using liquidity from another network</figcaption></figure>
+
+The fee breakdown (unwrap fee, bridge fee, LayerZero fee) is shown before confirming the transaction.
 
 > **Fee Optimization**: If unwrap fees are high on your current chain due to low liquidity, cross-chain unwrap lets you access liquidity from another chain with lower fees. The frontend shows fee comparisons so you can choose the best option. See [Fees and Rewards](../fees-and-rewards.md) for details.
 
