@@ -49,6 +49,8 @@ impl HttpLayerZeroClient {
 
         let client = Client::builder()
             .user_agent("curl/8.0 (zerc20-cli layerzero client)")
+            .connect_timeout(std::time::Duration::from_secs(30))
+            .timeout(std::time::Duration::from_secs(60))
             .build()
             .map_err(LayerZeroError::ClientBuild)?;
 

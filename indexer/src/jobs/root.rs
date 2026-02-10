@@ -20,7 +20,7 @@ use log::{debug, error, info, warn};
 use rand::SeedableRng;
 use rand_chacha::ChaCha20Rng;
 use sqlx::{PgPool, Row};
-use tokio::time::sleep;
+use tokio::time::{self, sleep};
 
 use crate::{
     config::RootJobConfig,
@@ -1234,12 +1234,16 @@ fn fr_to_bytes(value: Fr) -> [u8; 32] {
     result
 }
 
+/// Maximum time to wait for a transaction receipt before giving up.
+const RECEIPT_TIMEOUT_SECS: u64 = 300; // 5 minutes
+
 async fn wait_for_receipt(
     pending: PendingTransactionBuilder<Ethereum>,
 ) -> Result<alloy::rpc::types::TransactionReceipt> {
-    let receipt = pending
-        .get_receipt()
+    let timeout_duration = Duration::from_secs(RECEIPT_TIMEOUT_SECS);
+    let receipt = time::timeout(timeout_duration, pending.get_receipt())
         .await
+        .context("timed out waiting for transaction receipt")?
         .context("failed to fetch transaction receipt")?;
     if receipt.status() {
         Ok(receipt)
