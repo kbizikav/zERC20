@@ -27,45 +27,47 @@ The scanning process:
 
 ## Viewing Received Transfers
 
-After scanning, you'll see a list of incoming transfers:
+After scanning, you'll see a list of incoming transfers grouped by timestamp:
 
 <figure><img src="../../assets/frontend_how_to/announcement-list.png" alt="Announcement List" width="560"><figcaption>Announcement List</figcaption></figure>
 
-Each announcement shows:
-- **ID**: Unique identifier for the transfer
-- **Transaction Hash**: The on-chain transaction reference
-- **Timestamp**: When the transfer was made
+Click the **+** button on an announcement to expand its details.
 
 ## Announcement Details
 
+Each announcement goes through the following status flow:
+
+| Status | Meaning |
+|--------|---------|
+| **PENDING** | Transfer detected but not yet confirmed for withdrawal |
+| **READY** | Transfer confirmed and available for withdrawal |
+| **REDEEMED** | Funds have already been withdrawn |
+
 Click on an announcement to view its details:
 
-<figure><img src="../../assets/frontend_how_to/announcement-detail.png" alt="Announcement Detail" width="480"><figcaption>Announcement Detail</figcaption></figure>
+<figure><img src="../../assets/frontend_how_to/announcement-detail.png" alt="Announcement Detail" width="480"><figcaption>Announcement Detail (PENDING)</figcaption></figure>
 
 The detail view shows:
-- **Announcement ID**: Unique identifier
-- **Chain**: The chain where the transfer originated
-- **Type**: Single or batch transfer
-- **Eligible Value Total**: Amount already claimed
-- **Pending Total Value**: Amount available to withdraw
-- **Eligible Events**: Number of redeemable transfers
+- **Status**: Current status of the transfer (PENDING / READY / REDEEMED)
+- **Destination chain**: The chain where funds can be withdrawn
+- **Amount and token**: The amount of zERC20 received
+- **Source**: The originating chain and sender address
+- **Burn address**: The burn address used for the transfer
 
 ## Withdrawing Funds
 
-Once you have eligible transfers:
+Once a transfer reaches **READY** status (shown as "ARRIVED"):
 
-1. Click on the announcement with pending value
+1. Expand the announcement
 2. Click the "REDEEM" button
 
-<figure><img src="../../assets/frontend_how_to/redeem-detail.png" alt="Redeem Detail" width="480"><figcaption>Redeem Detail</figcaption></figure>
+<figure><img src="../../assets/frontend_how_to/redeem-detail.png" alt="Redeem Detail" width="480"><figcaption>Transfer ready for redemption</figcaption></figure>
 
-3. Wait for the proof generation process (this creates a zero-knowledge proof that you are entitled to withdraw the funds)
+3. Wait for the proof generation and transaction to complete (this creates a zero-knowledge proof that you are entitled to withdraw the funds)
 
-<figure><img src="../../assets/frontend_how_to/redeem-progress.png" alt="Redeem Progress" width="480"><figcaption>Proof generation and transaction in progress</figcaption></figure>
+4. Once completed, the status will change to **REDEEMED** and the button will show "Already Redeemed"
 
-4. Wait for the transaction to complete
-
-<figure><img src="../../assets/frontend_how_to/redeem-success.png" alt="Redeem Success" width="480"><figcaption>Redeem Success</figcaption></figure>
+<figure><img src="../../assets/frontend_how_to/redeem-success.png" alt="Redeem Success" width="480"><figcaption>Transfer successfully redeemed</figcaption></figure>
 
 The funds will be transferred to your connected wallet address.
 
