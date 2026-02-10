@@ -57,7 +57,9 @@ pub fn get_provider(rpc_url: &str) -> anyhow::Result<NormalProvider> {
         .parse()
         .context(format!("Failed to parse rpc url: {}", rpc_url))?;
     let http = Http::with_client(rpc_http_client()?, url);
-    let client = RpcClient::builder().layer(retry_layer).transport(http, false);
+    let client = RpcClient::builder()
+        .layer(retry_layer)
+        .transport(http, false);
     let provider = ProviderBuilder::default()
         .with_gas_estimation()
         .with_simple_nonce_management()
