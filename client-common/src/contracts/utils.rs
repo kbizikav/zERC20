@@ -20,7 +20,7 @@ use alloy::{
 use anyhow::Context;
 use hex;
 use reqwest::Url;
-use std::str::FromStr;
+use std::{str::FromStr, time::Duration};
 use tower::ServiceBuilder;
 
 use crate::contracts::{ContractError, ContractResult};
@@ -38,12 +38,28 @@ pub type ProviderWithSigner = FillProvider<
     alloy::providers::RootProvider,
 >;
 
+/// Default timeout for individual RPC HTTP requests.
+const RPC_REQUEST_TIMEOUT_SECS: u64 = 60;
+/// Default connection timeout for RPC HTTP connections.
+const RPC_CONNECT_TIMEOUT_SECS: u64 = 30;
+
+fn rpc_http_client() -> anyhow::Result<reqwest::Client> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(RPC_CONNECT_TIMEOUT_SECS))
+        .timeout(Duration::from_secs(RPC_REQUEST_TIMEOUT_SECS))
+        .build()
+        .context("failed to build RPC HTTP client")
+}
+
 pub fn get_provider(rpc_url: &str) -> anyhow::Result<NormalProvider> {
     let retry_layer = RetryBackoffLayer::new(5, 1000, 100);
     let url: Url = rpc_url
         .parse()
         .context(format!("Failed to parse rpc url: {}", rpc_url))?;
-    let client = RpcClient::builder().layer(retry_layer).http(url);
+    let http = Http::with_client(rpc_http_client()?, url);
+    let client = RpcClient::builder()
+        .layer(retry_layer)
+        .transport(http, false);
     let provider = ProviderBuilder::default()
         .with_gas_estimation()
         .with_simple_nonce_management()
@@ -54,13 +70,14 @@ pub fn get_provider(rpc_url: &str) -> anyhow::Result<NormalProvider> {
 
 pub fn get_provider_with_fallback(rpc_urls: &[String]) -> anyhow::Result<NormalProvider> {
     let retry_layer = RetryBackoffLayer::new(5, 1000, 100);
+    let http_client = rpc_http_client()?;
     let transports = rpc_urls
         .iter()
         .map(|url| {
             let url: Url = url
                 .parse()
                 .context(format!("Failed to parse rpc url: {}", url))?;
-            Ok(Http::new(url))
+            Ok(Http::with_client(http_client.clone(), url))
         })
         .collect::<Result<Vec<_>, anyhow::Error>>()?;
     let fallback_layer =
