@@ -75,8 +75,7 @@ pub struct InnocenceCircuit<F: PrimeField + Absorb, const DEPTH: usize, const TR
 ///
 /// These are the per-step private inputs that vary for each transfer being proven.
 #[derive(Clone, Debug)]
-pub struct InnocenceExternalInputs<F: PrimeField, const DEPTH: usize, const TRANSFER_DEPTH: usize>
-{
+pub struct InnocenceExternalInputs<F: PrimeField, const DEPTH: usize, const TRANSFER_DEPTH: usize> {
     /// Whether this is a padding/dummy step (skips verification)
     pub is_dummy: bool,
     /// Sender address to prove is not sanctioned
@@ -155,14 +154,13 @@ impl<F: PrimeField, const DEPTH: usize, const TRANSFER_DEPTH: usize>
                 FpVar::<F>::new_variable(cs.clone(), || Ok(value.from_address), mode)?;
             let val = FpVar::<F>::new_variable(cs.clone(), || Ok(value.value), mode)?;
             let secret = FpVar::<F>::new_variable(cs.clone(), || Ok(value.secret), mode)?;
-            let leaf_index =
-                FpVar::<F>::new_variable(cs.clone(), || Ok(value.leaf_index), mode)?;
-            let transfer_siblings =
-                <[FpVar<F>; TRANSFER_DEPTH] as AllocVar<[F; TRANSFER_DEPTH], F>>::new_variable(
-                    cs.clone(),
-                    || Ok(value.transfer_siblings),
-                    mode,
-                )?;
+            let leaf_index = FpVar::<F>::new_variable(cs.clone(), || Ok(value.leaf_index), mode)?;
+            let transfer_siblings = <[FpVar<F>; TRANSFER_DEPTH] as AllocVar<
+                [F; TRANSFER_DEPTH],
+                F,
+            >>::new_variable(
+                cs.clone(), || Ok(value.transfer_siblings), mode
+            )?;
             let start = FpVar::<F>::new_variable(cs.clone(), || Ok(value.start), mode)?;
             let end = FpVar::<F>::new_variable(cs.clone(), || Ok(value.end), mode)?;
             let gap_index = FpVar::<F>::new_variable(cs.clone(), || Ok(value.gap_index), mode)?;
@@ -213,9 +211,15 @@ impl<F: PrimeField + Absorb, const DEPTH: usize, const TRANSFER_DEPTH: usize> FC
         z_i: Vec<FpVar<F>>, // [ofac_root, recipient, merkle_root, prev_leaf_index_with_offset, prev_total_teleported]
         external_inputs: Self::ExternalInputsVar,
     ) -> Result<Vec<FpVar<F>>, SynthesisError> {
-        let [ofac_root, recipient, merkle_root, prev_leaf_index_with_offset, prev_total_teleported]: [FpVar<F>; INNOCENCE_STATE_LEN] =
-            z_i.try_into()
-                .map_err(|_| SynthesisError::AssignmentMissing)?;
+        let [
+            ofac_root,
+            recipient,
+            merkle_root,
+            prev_leaf_index_with_offset,
+            prev_total_teleported,
+        ]: [FpVar<F>; INNOCENCE_STATE_LEN] = z_i
+            .try_into()
+            .map_err(|_| SynthesisError::AssignmentMissing)?;
 
         let InnocenceExternalInputsVar {
             is_dummy,
@@ -347,8 +351,7 @@ mod tests {
         let ofac_root = tree.root();
         let recipient = Fr::from(12345u64);
         let secret = find_valid_secret(recipient, 1000);
-        let burn_address =
-            compute_burn_address_from_secret(recipient, secret).expect("valid PoW");
+        let burn_address = compute_burn_address_from_secret(recipient, secret).expect("valid PoW");
 
         let from_address = ExclusionTree::parse_addresses(&[INNOCENT_ADDR_1])[0];
         let proof = tree
@@ -505,8 +508,7 @@ mod tests {
         let ofac_root = tree.root();
         let recipient = Fr::from(999u64);
         let secret = find_valid_secret(recipient, 5000);
-        let burn_address =
-            compute_burn_address_from_secret(recipient, secret).expect("valid PoW");
+        let burn_address = compute_burn_address_from_secret(recipient, secret).expect("valid PoW");
 
         let from_address = ExclusionTree::parse_addresses(&[INNOCENT_ADDR_1])[0];
         let proof = tree

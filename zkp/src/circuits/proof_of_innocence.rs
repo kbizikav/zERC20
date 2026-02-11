@@ -275,8 +275,7 @@ mod tests {
             .expect("insert should succeed");
         let transfer_root = transfer_tree.get_root();
         let transfer_proof = transfer_tree.prove(leaf_index);
-        let transfer_siblings: [Fr; TRANSFER_DEPTH] =
-            transfer_proof.siblings.try_into().unwrap();
+        let transfer_siblings: [Fr; TRANSFER_DEPTH] = transfer_proof.siblings.try_into().unwrap();
         (transfer_root, leaf_index, transfer_siblings)
     }
 
@@ -400,8 +399,8 @@ mod tests {
         // Alice's recipient and valid secret
         let alice_recipient = Fr::from(12345u64);
         let alice_secret = find_valid_secret(alice_recipient, 1000);
-        let alice_burn = compute_burn_address_from_secret(alice_recipient, alice_secret)
-            .expect("valid PoW");
+        let alice_burn =
+            compute_burn_address_from_secret(alice_recipient, alice_secret).expect("valid PoW");
 
         // ATTACK: Carol tries to use Alice's secret with her own recipient
         let carol_recipient = Fr::from(99999u64);
@@ -492,8 +491,8 @@ mod tests {
 
         let recipient_value = Fr::from(12345u64);
         let secret_value = find_valid_secret(recipient_value, 2000);
-        let burn_address_value = compute_burn_address_from_secret(recipient_value, secret_value)
-            .expect("valid PoW");
+        let burn_address_value =
+            compute_burn_address_from_secret(recipient_value, secret_value).expect("valid PoW");
 
         // The sanctioned address itself — prove_non_membership returns None
         let sanctioned = ExclusionTree::parse_addresses(&[FIRST_SANCTIONED])[0];
@@ -595,7 +594,7 @@ mod tests {
         let leaf_index_value = Fr::from(2u64);
 
         let siblings_values = vec![Fr::from(0u64); DEPTH];
-        let transfer_siblings_values = vec![Fr::from(0u64); TRANSFER_DEPTH];
+        let transfer_siblings_values = [Fr::from(0u64); TRANSFER_DEPTH];
 
         let ofac_root = FpVar::<Fr>::new_witness(ns!(cs, "ofac_root"), || Ok(ofac_root_value))?;
         let recipient = FpVar::<Fr>::new_witness(ns!(cs, "recipient"), || Ok(recipient_value))?;
@@ -603,16 +602,15 @@ mod tests {
             FpVar::<Fr>::new_witness(ns!(cs, "transfer_root"), || Ok(transfer_root_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_leaf_index_with_offset = FpVar::<Fr>::new_witness(
-            ns!(cs, "prev_leaf_idx"),
-            || Ok(prev_leaf_index_with_offset_value),
-        )?;
+        let prev_leaf_index_with_offset =
+            FpVar::<Fr>::new_witness(ns!(cs, "prev_leaf_idx"), || {
+                Ok(prev_leaf_index_with_offset_value)
+            })?;
         let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(prev_total_value))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(true))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
-        let leaf_index =
-            FpVar::<Fr>::new_witness(ns!(cs, "leaf_index"), || Ok(leaf_index_value))?;
+        let leaf_index = FpVar::<Fr>::new_witness(ns!(cs, "leaf_index"), || Ok(leaf_index_value))?;
         let transfer_siblings = transfer_siblings_values
             .iter()
             .map(|s| FpVar::<Fr>::new_witness(ns!(cs, "transfer_sibling"), || Ok(*s)))
@@ -678,8 +676,8 @@ mod tests {
 
         let recipient_value = Fr::from(12345u64);
         let secret_value = find_valid_secret(recipient_value, 3000);
-        let burn_address_value = compute_burn_address_from_secret(recipient_value, secret_value)
-            .expect("valid PoW");
+        let burn_address_value =
+            compute_burn_address_from_secret(recipient_value, secret_value).expect("valid PoW");
 
         // Get a valid proof for our innocent address
         let from_address_value = ExclusionTree::parse_addresses(&[INNOCENT_ADDRESS])[0];
@@ -775,8 +773,8 @@ mod tests {
 
         let recipient_value = Fr::from(12345u64);
         let secret_value = find_valid_secret(recipient_value, 4000);
-        let burn_address_value = compute_burn_address_from_secret(recipient_value, secret_value)
-            .expect("valid PoW");
+        let burn_address_value =
+            compute_burn_address_from_secret(recipient_value, secret_value).expect("valid PoW");
 
         let from_address_value = ExclusionTree::parse_addresses(&[INNOCENT_ADDRESS])[0];
         let proof = tree
@@ -799,12 +797,11 @@ mod tests {
             FpVar::<Fr>::new_witness(ns!(cs, "transfer_root"), || Ok(transfer_root_value))?;
         let from_address =
             FpVar::<Fr>::new_witness(ns!(cs, "from_address"), || Ok(from_address_value))?;
-        let prev_leaf_index_with_offset = FpVar::<Fr>::new_witness(
-            ns!(cs, "prev_leaf_idx"),
-            || Ok(prev_leaf_index_with_offset_value),
-        )?;
-        let prev_total =
-            FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(Fr::from(1000u64)))?;
+        let prev_leaf_index_with_offset =
+            FpVar::<Fr>::new_witness(ns!(cs, "prev_leaf_idx"), || {
+                Ok(prev_leaf_index_with_offset_value)
+            })?;
+        let prev_total = FpVar::<Fr>::new_witness(ns!(cs, "prev_total"), || Ok(Fr::from(1000u64)))?;
         let is_dummy = Boolean::new_witness(ns!(cs, "is_dummy"), || Ok(false))?;
         let value = FpVar::<Fr>::new_witness(ns!(cs, "value"), || Ok(value_value))?;
         let secret = FpVar::<Fr>::new_witness(ns!(cs, "secret"), || Ok(secret_value))?;
