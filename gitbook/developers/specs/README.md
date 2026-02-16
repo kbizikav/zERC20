@@ -16,7 +16,7 @@ Detailed technical specifications for zERC20 components.
 |------------|-------|--------|
 | Max transfer value | 2^248 - 1 | Must fit in BN254 scalar field |
 | Address size | 160 bits | Ethereum address width |
-| Merkle tree depth | Configurable | Per-token and global trees |
+| Merkle tree depth | 40 (local) / 46 (global) | Per-token and global trees |
 | PoW difficulty | 16 bits | Burn address collision resistance |
 
 ### Proof Types
