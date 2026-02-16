@@ -45,7 +45,7 @@ Proves a single transfer to a burn address exists in the Merkle tree.
 
 **Constraints**:
 1. Recompute burn address from `(recipient, secret)` with PoW check
-2. Hash leaf: `Poseidon3(from_address, burn_address, value)`
+2. Hash leaf: `Poseidon3(from_address, burn_address, value)` — `burn_address` is the `to` field of the transfer leaf (see [Integration Guide](../integration.md#leaf-structure))
 3. Verify Merkle inclusion against `merkle_root`
 4. Output `withdraw_value = value - delta`
 
