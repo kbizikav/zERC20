@@ -280,8 +280,8 @@ For maximum privacy, run your own indexer instance to avoid sender-recipient lin
 ### Docker Compose
 
 ```bash
-git clone https://github.com/kbizikav/zERC20.git
-cd zERC20
+git clone https://github.com/InternetMaximalism/zerc20.git
+cd zerc20
 docker compose up -d
 ```
 
