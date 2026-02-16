@@ -20,7 +20,7 @@ This page lists all external URLs referenced in the documentation. If URLs chang
 
 | Name | URL | Description |
 |------|-----|-------------|
-| GitHub | https://github.com/kbizikav/zERC20 | Source code repository |
+| GitHub | https://github.com/InternetMaximalism/zerc20 | Source code repository |
 
 ---
 
