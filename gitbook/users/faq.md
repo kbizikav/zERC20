@@ -110,7 +110,7 @@ The tokens are permanently locked unless the intended recipient of that burn add
 
 4. **Verify burn address**
    - Confirm the sender used the correct burn address
-   - Burn addresses are case-sensitive
+   - EVM addresses are case-insensitive (e.g. `0xAbc...` and `0xabc...` refer to the same address), but always use the checksummed (mixed-case, EIP-55) format to catch typos
 
 ### Tokens appear stuck in a burn address
 
