@@ -44,11 +44,11 @@ Proof of Innocence is an off-chain compliance feature that acts as an AML policy
 ### Exclusion Tree
 
 A “OFAC non-membership tree” is a Merkle tree of sorted disjoint (`start`, `end`) pairs representing the gaps between the elements of the OFAC sanctions list. That is, the union of the regions `start..=end` is exactly the complement of the set of sanctions list.
-The OFAC sanctions list is committed using a OFAC non-membership tree. The leaf of the the tree are computed as:
+The OFAC sanctions list is committed using a OFAC non-membership tree. The leaf of the tree is computed as:
 ```rust
 leaf = poseidon2(start, end)
 ```
-If the sanctions list contains **k** addresses, the exclusion tree has **k + 1** gaps (one before the first address, one between each consecutive pair, and one after the last).The minimum tree height is **⌈log₂(k + 1)⌉**. In practice, add 2-3 levels of headroom to accommodate list growth without regenerating circuit artifacts.
+If the sanctions list contains **k** addresses, the exclusion tree has **k + 1** gaps (one before the first address, one between each consecutive pair, and one after the last). The minimum tree height is **⌈log₂(k + 1)⌉**. In practice, add 2-3 levels of headroom to accommodate list growth without regenerating circuit artifacts.
 
 ### Non-Membership Proof (Nova Step)
 Each transfer to a recipient has a `transfer_leaf` = `(from_address, burn_address, value)` (where `burn_address` is the `to` field of the generic transfer leaf).
