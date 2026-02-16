@@ -51,7 +51,7 @@ leaf = poseidon2(start, end)
 If the sanctions list contains **k** addresses, the exclusion tree has **k + 1** gaps (one before the first address, one between each consecutive pair, and one after the last).The minimum tree height is **⌈log₂(k + 1)⌉**. In practice, add 2-3 levels of headroom to accommodate list growth without regenerating circuit artifacts.
 
 ### Non-Membership Proof (Nova Step)
-Each transfer to a recipient has a `transfer_leaf` = `(from_address, burn_address, value)`.
+Each transfer to a recipient has a `transfer_leaf` = `(from_address, burn_address, value)` (where `burn_address` is the `to` field of the generic transfer leaf).
 To prove that `totalTeleported` per `recipient` is not originated from sanctioned sources,
 for each transfer we prove the sender (`transfer_leaf.from`) is not in the OFAC list:
 **Public Inputs (constant across all steps):**
