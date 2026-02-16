@@ -174,8 +174,7 @@ impl EventIndexer {
         if let Some(reorg_block) = self.detect_reorg(&state).await? {
             warn!(
                 "reorg detected for '{}' at block {}; rolling back",
-                self.label,
-                reorg_block
+                self.label, reorg_block
             );
             self.rollback_to_block(reorg_block).await?;
             state = ensure_state_row(
@@ -267,8 +266,7 @@ impl EventIndexer {
                             "unrecognized error during block range query [{from}, {to}] for '{}' - \
                             this may be a new block range limit pattern that should be added to \
                             is_invalid_block_range_error(): {}",
-                            self.label,
-                            err
+                            self.label, err
                         );
                     }
 

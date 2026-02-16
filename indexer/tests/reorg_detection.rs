@@ -358,8 +358,15 @@ async fn old_blocks_are_pruned() -> Result<()> {
         2, // tiny window
     )?;
 
-    let indexer =
-        EventIndexer::new(h.contract.clone(), h.pool().clone(), 0, h.metadata, config, "test-token").await?;
+    let indexer = EventIndexer::new(
+        h.contract.clone(),
+        h.pool().clone(),
+        0,
+        h.metadata,
+        config,
+        "test-token",
+    )
+    .await?;
 
     // Create several events across multiple blocks.
     await_receipt(
@@ -455,8 +462,15 @@ async fn reorg_detection_disabled_when_window_zero() -> Result<()> {
         0, // disabled
     )?;
 
-    let indexer =
-        EventIndexer::new(h.contract.clone(), h.pool().clone(), 0, h.metadata, config, "test-token").await?;
+    let indexer = EventIndexer::new(
+        h.contract.clone(),
+        h.pool().clone(),
+        0,
+        h.metadata,
+        config,
+        "test-token",
+    )
+    .await?;
 
     // Mint, sync, snapshot, add event, sync, revert, sync.
     await_receipt(
