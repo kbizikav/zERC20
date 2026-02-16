@@ -5,5 +5,5 @@ edition = "2024"
 
 [dependencies]
 serde = { workspace = true }
-serde_with = { version = "3.8.1", features = ["macros"] }
+serde_with = { version = "3.16.1", features = ["macros"] }
 alloy = { workspace = true }
