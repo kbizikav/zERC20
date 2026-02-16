@@ -25,7 +25,7 @@ Circuit artifacts are required for generating withdrawal proofs. Download them b
 
 ```bash
 cargo install --path ../circuit-setup
-zerc20-circuit-setup download --version 1.0.0
+zerc20-circuit-setup download --version 1.1.0
 ```
 
 See [Circuit Setup](../../developers/circuit-setup.md) for more details.
