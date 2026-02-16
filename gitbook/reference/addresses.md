@@ -147,6 +147,14 @@
 | LiquidityManager | `0x5a09Cc328fA6bB32f3d6fC54906106ddD49a2D7c` |
 | Adaptor | `0x588F07b52E50E8600F654c63176818403F6E3EB6` |
 
+#### Base Sepolia
+
+| Contract | Address |
+|----------|---------|
+| Hub | `0xD18b503B335656C05dC516366C0C8FD6e3b13856` |
+
+> Hub only — no zERC20/Verifier/LiquidityManager/Adaptor contracts are deployed on this chain.
+
 ---
 
 ### zUSDC
@@ -179,6 +187,14 @@
 | Verifier | `0xb199A85463Bc5c0009c058E80b8A0d3D5e0025D6` |
 | LiquidityManager | `0xB9f41F93882c2ddC212a4EcC776BBd9D97D2F3C6` |
 | Adaptor | `0xC14A0a1381e455f89a31eDB00F562F5a6F8780Ad` |
+
+#### Base Sepolia
+
+| Contract | Address |
+|----------|---------|
+| Hub | `0xF64Bd0a90120611b0c941e3eF546f2F82F1eaB44` |
+
+> Hub only — no zERC20/Verifier/LiquidityManager/Adaptor contracts are deployed on this chain.
 
 ---
 
