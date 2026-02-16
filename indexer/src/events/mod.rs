@@ -293,7 +293,11 @@ impl EventIndexer {
             }
 
             let next_from = to.saturating_add(1);
-            from = next_from.saturating_sub(forward_overlap.min(next_from));
+            // Cap overlap to current_span - 1 so `from` always advances by at least 1.
+            // Without this, when current_span < forward_overlap the subtraction
+            // pushes `from` backward, creating an infinite loop.
+            let effective_overlap = forward_overlap.min(current_span.saturating_sub(1));
+            from = next_from.saturating_sub(effective_overlap.min(next_from));
         }
 
         Ok(())
