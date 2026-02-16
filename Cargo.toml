@@ -52,7 +52,7 @@ rand_chacha = "0.3.1"
 getrandom = { version = "0.2.16", features = ["js"] }
 ark-std = "0.5.0"
 serde = { version = "1.0.221", features = ["derive"] }
-serde_json = "1.0.132"
+serde_json = "1.0.149"
 tower = "0.5.2"
 reqwest = "0.12.23"
 thiserror = "2.0.17"
