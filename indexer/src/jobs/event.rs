@@ -78,6 +78,7 @@ impl EventSyncJob {
             token.deployed_block_number,
             token.metadata,
             self.indexer_config,
+            &token.label,
         )
         .await
         .with_context(|| format!("failed to initialise event indexer for '{}'", token.label))?;

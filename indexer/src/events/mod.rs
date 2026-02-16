@@ -132,6 +132,7 @@ impl From<BlockTag> for BlockNumberOrTag {
 }
 
 pub struct EventIndexer {
+    label: String,
     contract: ZErc20Contract,
     pool: PgPool,
     deployed_block_number: u64,
@@ -146,10 +147,12 @@ impl EventIndexer {
         deployed_block_number: u64,
         metadata: TokenMetadata,
         config: EventIndexerConfig,
+        label: impl Into<String>,
     ) -> Result<Self> {
         let token_id = ensure_token_record(&pool, &metadata).await?;
         let partitions = EventIndexerPartitions::new(token_id)?;
         Ok(Self {
+            label: label.into(),
             contract,
             pool,
             deployed_block_number,
@@ -170,8 +173,8 @@ impl EventIndexer {
 
         if let Some(reorg_block) = self.detect_reorg(&state).await? {
             warn!(
-                "reorg detected for token_id {} at block {}; rolling back",
-                self.partitions.token_id(),
+                "reorg detected for '{}' at block {}; rolling back",
+                self.label,
                 reorg_block
             );
             self.rollback_to_block(reorg_block).await?;
@@ -248,8 +251,8 @@ impl EventIndexer {
                         let previous_span = current_span;
                         current_span = (current_span / 2).max(1);
                         warn!(
-                            "provider rejected block range [{from}, {to}] for token_id {} (contract {}); reducing span from {} to {}",
-                            self.partitions.token_id(),
+                            "provider rejected block range [{from}, {to}] for '{}' (contract {}); reducing span from {} to {}",
+                            self.label,
                             self.contract.address(),
                             previous_span,
                             current_span,
@@ -261,10 +264,10 @@ impl EventIndexer {
                     // This helps operators identify new patterns that should be added.
                     if current_span > 1 && is_potential_unrecognized_block_range_error(&err) {
                         warn!(
-                            "unrecognized error during block range query [{from}, {to}] for token_id {} - \
+                            "unrecognized error during block range query [{from}, {to}] for '{}' - \
                             this may be a new block range limit pattern that should be added to \
                             is_invalid_block_range_error(): {}",
-                            self.partitions.token_id(),
+                            self.label,
                             err
                         );
                     }
