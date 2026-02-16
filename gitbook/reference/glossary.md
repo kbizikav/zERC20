@@ -13,6 +13,9 @@ A transfer where the link between the sender and recipient is hidden from on-cha
 ### Zero-Knowledge Proof (ZKP)
 A cryptographic method that allows one party to prove they know a value without revealing the value itself. In zERC20, ZKPs prove that a recipient is entitled to withdraw funds from a burn address without revealing which burn address they're withdrawing from.
 
+### Teleport
+The on-chain operation that mints tokens to a recipient after a zero-knowledge proof is verified. Corresponds to the `Verifier.teleport()` (batch) and `Verifier.singleTeleport()` (single) contract functions. In effect, teleport is the final step of a private transfer: the proof shows the recipient is entitled to funds burned on any chain, and teleport mints the equivalent amount on the destination chain.
+
 ### Withdrawal
 The process of claiming tokens from a burn address using a zero-knowledge proof. The tokens are minted to the recipient's chosen address.
 
