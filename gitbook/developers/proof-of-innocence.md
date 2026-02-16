@@ -1,6 +1,6 @@
-# Proof of Innocence
+# Proof of Innocence (Planned)
 
-Disclaimer: feature still to be implemented. 
+> **Status: Not yet implemented.** This page describes a planned feature. The interfaces and designs below are subject to change and are not available for use today.
 
 Proof of Innocence is an off-chain compliance feature that acts as an AML policy. It allows users to prove their received funds did not originate from sanctioned addresses (e.g., OFAC list) without revealing transaction details.
 
