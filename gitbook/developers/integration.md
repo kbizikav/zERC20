@@ -295,4 +295,4 @@ RPC_URL=https://...
 TOKENS_FILE_PATH=./config/tokens.json
 ```
 
-See the Docker Compose configuration above for setup instructions.
+See `docker-compose.yml` in the repository root for the full service configuration.
