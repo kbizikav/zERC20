@@ -68,87 +68,103 @@ for each transfer we prove the sender (`transfer_leaf.from`) is not in the OFAC 
 1. **Sender not sanctioned**: `start < from_address < end` verified against `ofac_root`
 2. **Accumulate value**: `totalTeleported_new = totalTeleported_old + value`
 
+## CLI Usage (Planned)
+
+> **Note**: This is an MVP interface. Users must manually assemble witness files.
+
 ### Generate Proof of Innocence
-**Note**: This is an MVP interface. Users must manually assemble witness files.
+
 Generate a Nova proof that all transfers to a recipient originated from non-sanctioned addresses.
-```bash                                                                                                                                                                                     
-# Generate proof for a recipient                                                                                                                                                            
-zerc20-cli proof-of-innocence generate \                                                                                                                                                    
-  --recipient <GENERAL_RECIPIENT_HASH> \                                                                                                                                                    
-  --ofac-root <OFAC_TREE_ROOT> \                                                                                                                                                            
-  --transfers-file <TRANSFERS_JSON> \                                                                                                                                                       
-  --exclusion-proofs-file <EXCLUSION_PROOFS_JSON> \                                                                                                                                         
-  --output <PROOF_OUTPUT_PATH>   
-```                                                                                                                                                           
-  | Argument | Description |
-  |----------|-------------|
-  | `--recipient` | Hash of GeneralRecipient (from withdrawal flow) |
-  | `--ofac-root` | Trusted OFAC exclusion tree root |
-  | `--transfers-file` | JSON file with list of (from_address, value) pairs |
-  | `--exclusion-proofs-file` | JSON file with exclusion proofs from OFAC tree service |
-  | `--output` | Path to write the generated proof |
+
+```bash
+# Generate proof for a recipient
+zerc20-cli proof-of-innocence generate \
+  --recipient <GENERAL_RECIPIENT_HASH> \
+  --ofac-root <OFAC_TREE_ROOT> \
+  --transfers-file <TRANSFERS_JSON> \
+  --exclusion-proofs-file <EXCLUSION_PROOFS_JSON> \
+  --output <PROOF_OUTPUT_PATH>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `--recipient` | Hash of GeneralRecipient (from withdrawal flow) |
+| `--ofac-root` | Trusted OFAC exclusion tree root |
+| `--transfers-file` | JSON file with list of (from_address, value) pairs |
+| `--exclusion-proofs-file` | JSON file with exclusion proofs from OFAC tree service |
+| `--output` | Path to write the generated proof |
+
 ### Verify Proof of Innocence
-```bash                                                                                                                                                                    
-# Verify a proof                                                                                                                                                                            
-zerc20-cli proof-of-innocence verify \                                                                                                                                                      
-  --proof <PROOF_PATH> \                                                                                                                                                                    
-  --recipient <GENERAL_RECIPIENT_HASH> \                                                                                                                                                    
-  --total-teleported <TOTAL_VALUE> \                                                                                                                                                        
-  --ofac-root <OFAC_TREE_ROOT>         
-```                                                                                                                                                     
-  | Argument | Description |
-  |----------|-------------|
-  | `--proof` | Path to the proof file |
-  | `--recipient` | Expected recipient hash |
-  | `--total-teleported` | Expected total value (wei) |
-  | `--ofac-root` | Trusted OFAC exclusion tree root |
+
+```bash
+# Verify a proof
+zerc20-cli proof-of-innocence verify \
+  --proof <PROOF_PATH> \
+  --recipient <GENERAL_RECIPIENT_HASH> \
+  --total-teleported <TOTAL_VALUE> \
+  --ofac-root <OFAC_TREE_ROOT>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `--proof` | Path to the proof file |
+| `--recipient` | Expected recipient hash |
+| `--total-teleported` | Expected total value (wei) |
+| `--ofac-root` | Trusted OFAC exclusion tree root |
+
 ### Example
-```bash                                                                                                                                                                    
-# 1. Generate proof                                                                                                                                                                         
-zerc20-cli proof-of-innocence generate \                                                                                                                                                    
-  --recipient 0x1a2b3c...recipient_hash \                                                                                                                                                   
-  --ofac-root 0x5678...ofac_root \                                                                                                                                                          
-  --transfers-file ./my_transfers.json \                                                                                                                                                    
-  --exclusion-proofs-file ./exclusion_proofs.json \                                                                                                                                         
-  --output ./innocence_proof.bin                                                                                                                                                            
-                                                                                                                                                                                            
-# 2. Verify proof                                                                                                                                                                           
-zerc20-cli proof-of-innocence verify \                                                                                                                                                      
-  --proof ./innocence_proof.bin \                                                                                                                                                           
-  --recipient 0x1a2b3c...recipient_hash \                                                                                                                                                   
-  --total-teleported 1000000000000000000 \                                                                                                                                                  
-  --ofac-root 0x5678...ofac_root                                                                                                                                                            
-                                                                                                                                                                                            
-# Output:                                                                                                                                                                                   
-# ✓ Proof valid                                                                                                                                                                             
-# recipient: 0x1a2b3c...                                                                                                                                                                    
-# totalTeleported: 1000000000000000000 (1.0 ETH)                                                                                                                                            
-# ofac_root: 0x5678...    
-```                                                                                                                                                                                     
-### Input File Formats 
+
+```bash
+# 1. Generate proof
+zerc20-cli proof-of-innocence generate \
+  --recipient 0x1a2b3c...recipient_hash \
+  --ofac-root 0x5678...ofac_root \
+  --transfers-file ./my_transfers.json \
+  --exclusion-proofs-file ./exclusion_proofs.json \
+  --output ./innocence_proof.bin
+
+# 2. Verify proof
+zerc20-cli proof-of-innocence verify \
+  --proof ./innocence_proof.bin \
+  --recipient 0x1a2b3c...recipient_hash \
+  --total-teleported 1000000000000000000 \
+  --ofac-root 0x5678...ofac_root
+
+# Output:
+# ✓ Proof valid
+# recipient: 0x1a2b3c...
+# totalTeleported: 1000000000000000000 (1.0 ETH)
+# ofac_root: 0x5678...
+```
+
+### Input File Formats
+
 `transfers.json` - List of transfers to prove:
-```json                                                                                                                                    
-[                                                                                                                                                                                           
-  { "from_address": "0xabc...", "value": "500000000000000000" },                                                                                                                            
-  { "from_address": "0xdef...", "value": "500000000000000000" }                                                                                                                             
-]  
-```                                                                                                                                                                                 
+
+```json
+[
+  { "from_address": "0xabc...", "value": "500000000000000000" },
+  { "from_address": "0xdef...", "value": "500000000000000000" }
+]
+```
+
 `exclusion_proofs.json` - Exclusion proofs from OFAC tree service:
-```json                                                                                                                      
-[                                                                                                                                                                                           
-  {                                                                                                                                                                                         
-    "from_address": "0xabc...",                                                                                                                                                             
-    "start": "0x000...",                                                                                                                                                                    
-    "end": "0x111...",                                                                                                                                                                      
-    "path": ["0x...", "0x..."],                                                                                                                                                             
-    "position": 5                                                                                                                                                                           
-  },                                                                                                                                                                                        
-  {                                                                                                                                                                                         
-    "from_address": "0xdef...",                                                                                                                                                             
-    "start": "0x222...",                                                                                                                                                                    
-    "end": "0x333...",                                                                                                                                                                      
-    "path": ["0x...", "0x..."],                                                                                                                                                             
-    "position": 12                                                                                                                                                                          
-  }                                                                                                                                                                                         
-]                   
+
+```json
+[
+  {
+    "from_address": "0xabc...",
+    "start": "0x000...",
+    "end": "0x111...",
+    "path": ["0x...", "0x..."],
+    "position": 5
+  },
+  {
+    "from_address": "0xdef...",
+    "start": "0x222...",
+    "end": "0x333...",
+    "path": ["0x...", "0x..."],
+    "position": 12
+  }
+]
 ```
