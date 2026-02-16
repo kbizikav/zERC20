@@ -136,6 +136,7 @@ async fn event_indexer_syncs_against_anvil() -> Result<()> {
         0,
         metadata,
         indexer_config,
+        "test-token",
     )
     .await?;
 
