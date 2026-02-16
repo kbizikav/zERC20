@@ -5,15 +5,15 @@ This guide walks you through installing and using the zERC20 command-line interf
 ## Installation
 
 ```bash
-git clone https://github.com/kbizikav/zERC20.git
-cd zERC20/cli
+git clone https://github.com/InternetMaximalism/zerc20.git
+cd zerc20/cli
 cargo install --path .
 ```
 
 This installs the CLI binary as `zerc20-cli` (older versions may install as `cli`). Alternatively, run directly from the repository:
 
 ```bash
-cd zERC20/cli
+cd zerc20/cli
 cargo run -r -- <command> ...
 ```
 
@@ -24,7 +24,7 @@ cargo run -r -- <command> ...
 Circuit artifacts are required for generating withdrawal proofs. Download them before using the CLI:
 
 ```bash
-cargo install --path circuit-setup
+cargo install --path ../circuit-setup
 zerc20-circuit-setup download --version 1.1.0
 ```
 
@@ -125,4 +125,4 @@ zerc20-cli invoice receive --chain-id 1 --invoice-id inv-01
 ## Next Steps
 
 - [FAQ](../faq.md) — Common questions and troubleshooting
-- [CLI README](https://github.com/kbizikav/zERC20/tree/main/cli) — Full CLI documentation
+- [CLI README](https://github.com/InternetMaximalism/zerc20/tree/main/cli) — Full CLI documentation
