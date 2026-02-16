@@ -1,5 +1,7 @@
 # Contract Addresses
 
+> **Source of truth**: `config/deployed/` JSON files. This page is derived from those files. When in doubt, refer to `config/deployed/mainnet/` and `config/deployed/testnet/`.
+
 ## Mainnet
 
 ### zETH
@@ -217,7 +219,7 @@
 |----------|---------|
 | zERC20 | `0x28240ADC769046793a139b815dad6618b7Eb2499` |
 | Verifier | `0xb0A159eBF38b8cb539DE40836176d46C717Ff0cd` |
-| LiquidityManager | — |
+| LiquidityManager | `0xD05c2d006841F08826c3C531CC1a0AF997846222` |
 | Adaptor | — |
 
 ---
