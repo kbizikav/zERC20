@@ -1,5 +1,9 @@
 # Integration Guide
 
+> **Looking for the SDK?** If you want to integrate zERC20 programmatically
+> (private sends, scanning, wrap/unwrap), see the [SDK Guide](sdk/quickstart.md).
+> This page covers lower-level contract integration and oracle usage.
+
 This guide covers how to integrate zERC20 into your application.
 
 ## Overview
