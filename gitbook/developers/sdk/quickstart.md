@@ -123,6 +123,7 @@ function normalizeTokens(file: TokensFile): NormalizedTokens;
 interface NormalizedTokens {
   hub?: HubEntry;
   tokens: TokenEntry[];
+  raw: TokensFile;
 }
 
 function findTokenByChain(

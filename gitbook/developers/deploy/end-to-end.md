@@ -222,6 +222,7 @@ import {
   scanReceivings,
   collectRedeemContext,
 } from "zerc20-client-sdk";
+import { hexToBytes } from "viem";
 
 // Authorize
 const authPayload = await createAuthorizationPayload(

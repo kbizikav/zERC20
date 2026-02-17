@@ -85,18 +85,19 @@ After preparing the invoice, sign the `signatureMessage` with the recipient's wa
 
 ```typescript
 import { submitInvoice } from "zerc20-client-sdk";
+import { hexToBytes } from "viem";
 
 // Sign the message from the preparation step
 const signature = await walletClient.signMessage({
   message: artifacts.signatureMessage,
 });
 
-// Submit to the canister
+// Submit to the canister (convert hex signature to Uint8Array)
 await submitInvoice(
-  client,                // StealthCanisterClient
-  artifacts.invoiceId,   // hex-encoded invoice ID
-  signature,             // raw signature bytes
-  artifacts.tag,         // optional tag
+  client,                       // StealthCanisterClient
+  artifacts.invoiceId,          // hex-encoded invoice ID
+  hexToBytes(signature),        // Uint8Array signature
+  artifacts.tag,                // optional tag
 );
 ```
 
@@ -153,6 +154,7 @@ import {
   submitInvoice,
   listInvoices,
 } from "zerc20-client-sdk";
+import { hexToBytes } from "viem";
 
 // 1. Prepare the invoice
 const artifacts = await prepareInvoiceIssue({
@@ -175,7 +177,7 @@ const signature = await walletClient.signMessage({
 await submitInvoice(
   client,
   artifacts.invoiceId,
-  signature,
+  hexToBytes(signature),  // convert hex string to Uint8Array
   artifacts.tag,
 );
 
