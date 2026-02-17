@@ -34,10 +34,10 @@ The SDK ships with compressed token configuration for mainnet and testnet deploy
 ### `loadTokens`
 
 ```typescript
-loadTokens(options?: LoadTokensOptions): Promise<NormalizedTokens>
+loadTokens(compressed: string, options?: LoadTokensOptions): Promise<NormalizedTokens>
 ```
 
-Loads token configuration from the compressed built-in data bundled with the SDK. By default this returns mainnet tokens; pass `{ network: "testnet" }` to load testnet configuration instead.
+Loads token configuration from a compressed string. The `compressed` argument must be a **Base64-encoded gzip** payload whose decompressed content is UTF-8 JSON conforming to the `TokensFile` schema. Results are cached by default so repeated calls with the same payload are cheap.
 
 **Returns** `{ hub?: HubEntry, tokens: TokenEntry[], raw: TokensFile }`
 
@@ -89,7 +89,7 @@ A class that manages cached token loads. You rarely need to interact with it dir
 clearTokensCache(): void
 ```
 
-Clears the cached entries in the default cache manager. The next call to `loadTokens` will decompress and parse the built-in data again.
+Clears the cached entries in the default cache manager. The next call to `loadTokens` will decompress and parse the data again.
 
 ### `resetTokensCache`
 
@@ -111,13 +111,14 @@ Returns the singleton `TokensCacheManager` used by `loadTokens` when no custom c
 
 ```typescript
 import {
-  loadTokens,
+  normalizeTokens,
   findTokenByChain,
   createProviderForToken,
 } from "zerc20-client-sdk";
 
-// 1. Load the built-in mainnet token configuration
-const { hub, tokens } = await loadTokens();
+// 1. Load token configuration from your tokens.json
+const tokensFile = await import("./tokens.json");
+const { hub, tokens } = normalizeTokens(tokensFile);
 
 console.log(`Loaded ${tokens.length} token(s)`);
 if (hub) {

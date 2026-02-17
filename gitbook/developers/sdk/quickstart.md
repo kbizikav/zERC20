@@ -62,7 +62,7 @@ const stealthClient = sdk.createStealthClient({
 });
 ```
 
-All fields in the config are optional -- omit them to use the production defaults.
+The `agent`, `storageCanisterId`, and `keyManagerCanisterId` fields are **required**. If any are missing (and no factory defaults have been set), `createStealthClient()` will throw an error.
 
 ```typescript
 sdk.createStealthClient(config?: Partial<StealthClientConfig>): StealthCanisterClient
@@ -70,7 +70,11 @@ sdk.createStealthClient(config?: Partial<StealthClientConfig>): StealthCanisterC
 
 ## Load Tokens
 
-Fetch the canonical token registry with `loadTokens()`. The returned `NormalizedTokens` object contains the Hub entry and an array of per-chain token entries.
+The SDK provides two ways to load token configuration:
+
+### Option A: From compressed data with `loadTokens`
+
+`loadTokens(compressed)` accepts a **Base64-encoded gzip** string containing token configuration JSON. This is the format used by the production frontend.
 
 ```typescript
 import {
@@ -79,10 +83,30 @@ import {
   createProviderForToken,
 } from "zerc20-client-sdk";
 
-const { hub, tokens } = await loadTokens();
+// `compressed` is a Base64-encoded gzip string of your tokens.json
+const { hub, tokens } = await loadTokens(compressedTokensString);
+```
+
+### Option B: From raw JSON with `normalizeTokens`
+
+If you have a `tokens.json` file (e.g., from your own deployment), use `normalizeTokens()` instead:
+
+```typescript
+import {
+  normalizeTokens,
+  findTokenByChain,
+  createProviderForToken,
+} from "zerc20-client-sdk";
+
+const tokensFile = await import("./tokens.json");
+const { hub, tokens } = normalizeTokens(tokensFile);
 // hub?: HubEntry           -- Hub contract metadata (Base chain)
 // tokens: TokenEntry[]     -- per-chain token entries
+```
 
+### Finding tokens and creating providers
+
+```typescript
 // Pick the token entry for Arbitrum (chain ID 42161)
 const entry = findTokenByChain(tokens, 42161n);
 
@@ -93,7 +117,8 @@ const publicClient = createProviderForToken(entry);
 ### Type signatures
 
 ```typescript
-function loadTokens(options?: LoadTokensOptions): Promise<NormalizedTokens>;
+function loadTokens(compressed: string, options?: LoadTokensOptions): Promise<NormalizedTokens>;
+function normalizeTokens(file: TokensFile): NormalizedTokens;
 
 interface NormalizedTokens {
   hub?: HubEntry;
@@ -115,24 +140,32 @@ Below is a compact end-to-end example. Each helper is covered in detail on the [
 ```typescript
 import {
   createSdk,
-  loadTokens,
+  normalizeTokens,
   findTokenByChain,
   createProviderForToken,
   getSeedMessage,
   preparePrivateSend,
   submitPrivateSendAnnouncement,
 } from "zerc20-client-sdk";
-import { encodeFunctionData, erc20Abi } from "viem";
+import { encodeFunctionData, erc20Abi, keccak256, toBytes } from "viem";
+import { HttpAgent } from "@dfinity/agent";
 
 // 1. Initialize
 const sdk = createSdk();
-const client = sdk.createStealthClient();
-const { tokens } = await loadTokens();
+const agent = await HttpAgent.create({ host: "https://icp-api.io" });
+const client = sdk.createStealthClient({
+  agent,
+  storageCanisterId: "your-storage-canister-id",
+  keyManagerCanisterId: "your-key-manager-canister-id",
+});
+const tokensFile = await import("./tokens.json");
+const { tokens } = normalizeTokens(tokensFile);
 const entry = findTokenByChain(tokens, 42161n);   // Arbitrum
 
-// 2. Derive seed from wallet signature
-const seedMsg = getSeedMessage();
-const seedHex = await walletClient.signMessage({ message: seedMsg });
+// 2. Derive seed from wallet signature (hash to 32 bytes)
+const seedMsg = await getSeedMessage();
+const signature = await walletClient.signMessage({ message: seedMsg });
+const seedHex = keccak256(toBytes(signature));
 
 // 3. Prepare the private send
 const preparation = await preparePrivateSend({

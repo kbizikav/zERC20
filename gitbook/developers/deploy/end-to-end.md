@@ -174,6 +174,7 @@ import {
   submitPrivateSendAnnouncement,
   getSeedMessage,
 } from "zerc20-client-sdk";
+import { keccak256, toBytes } from "viem";
 import { HttpAgent } from "@dfinity/agent";
 
 const sdk = createSdk();
@@ -184,13 +185,13 @@ const stealthClient = sdk.createStealthClient({
   keyManagerCanisterId: "YOUR_KEY_MANAGER_CANISTER_ID",
 });
 
-// Derive seed
-const seedMessage = getSeedMessage();
+// Derive seed (hash signature to 32 bytes)
+const seedMessage = await getSeedMessage();
 const seedSignature = await walletClient.signMessage({
   message: seedMessage,
   account,
 });
-const seedHex = seedSignature; // Use signature as seed
+const seedHex = keccak256(toBytes(seedSignature));
 
 // Prepare and submit
 const preparation = await preparePrivateSend({

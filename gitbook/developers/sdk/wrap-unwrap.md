@@ -55,14 +55,15 @@ function quoteLocalWrap(
 
 ```typescript
 import {
-  loadTokens,
+  normalizeTokens,
   findTokenByChain,
   quoteLocalWrap,
   wrapWithLiquidityManager,
 } from "zerc20-client-sdk";
 
 // 1. Resolve addresses from the token registry
-const { tokens } = await loadTokens();
+const tokensFile = await import("./tokens.json");
+const { tokens } = normalizeTokens(tokensFile);
 const entry = findTokenByChain(tokens, 42161n); // Arbitrum
 
 // 2. Preview the wrap

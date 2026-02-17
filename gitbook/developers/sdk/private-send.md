@@ -18,13 +18,17 @@ Every private send starts with a **seed** -- a wallet-signed message that determ
 
 ```typescript
 import { getSeedMessage } from "zerc20-client-sdk";
+import { keccak256, toBytes } from "viem";
 
-// getSeedMessage() returns a human-readable string for the wallet to sign
-const message = getSeedMessage();
-const seedHex = await walletClient.signMessage({ message });
+// getSeedMessage() is async and returns a human-readable string for the wallet to sign
+const message = await getSeedMessage();
+const signature = await walletClient.signMessage({ message });
+
+// Hash the 65-byte signature down to 32 bytes -- the SDK requires a 32-byte hex seed
+const seedHex = keccak256(toBytes(signature));
 ```
 
-`getSeedMessage()` returns a fixed string. The hex-encoded signature (`seedHex`) is used as the entropy source for all subsequent derivations.
+`getSeedMessage()` returns an async `Promise<string>`. The wallet signature (65 bytes) must be hashed with `keccak256` to produce a 32-byte hex string for `seedHex`. The SDK validates that `seedHex` is exactly 32 bytes and will throw if it is not.
 
 ## Step 2: Prepare the Private Send
 
@@ -50,7 +54,7 @@ const preparation = await preparePrivateSend({
 | `client` | `StealthCanisterClient` | Yes | ICP stealth client from `sdk.createStealthClient()` |
 | `recipientAddress` | `string` | Yes | Recipient's EVM address |
 | `recipientChainId` | `number \| bigint` | Yes | Chain ID the recipient will claim on |
-| `seedHex` | `string` | Yes | Hex-encoded wallet signature from Step 1 |
+| `seedHex` | `string` | Yes | 32-byte hex string (`keccak256` of the wallet signature from Step 1) |
 | `paymentAdviceIdHex` | `string` | No | Optional payment-advice identifier |
 | `vetkdKeyIdName` | `string` | No | Override VetKD key ID name |
 
@@ -141,36 +145,45 @@ function submitPrivateSendAnnouncement(
 ```typescript
 import {
   createSdk,
-  loadTokens,
+  normalizeTokens,
   findTokenByChain,
   createProviderForToken,
   getSeedMessage,
   preparePrivateSend,
   submitPrivateSendAnnouncement,
 } from "zerc20-client-sdk";
-import { createWalletClient, custom, encodeFunctionData, erc20Abi } from "viem";
+import { createWalletClient, custom, encodeFunctionData, erc20Abi, keccak256, toBytes } from "viem";
 import { arbitrum } from "viem/chains";
+import { HttpAgent } from "@dfinity/agent";
 
 // --- Setup ---
 const sdk = createSdk();
-const stealthClient = sdk.createStealthClient();
+const agent = await HttpAgent.create({ host: "https://icp-api.io" });
+const stealthClient = sdk.createStealthClient({
+  agent,
+  storageCanisterId: "your-storage-canister-id",
+  keyManagerCanisterId: "your-key-manager-canister-id",
+});
 
 const walletClient = createWalletClient({
   chain: arbitrum,
   transport: custom(window.ethereum!),
 });
 
-const { tokens } = await loadTokens();
+// Load your tokens (from your own config or built-in compressed data)
+const tokensFile = await import("./tokens.json");
+const { tokens } = normalizeTokens(tokensFile);
 const entry = findTokenByChain(tokens, 42161n);
 const publicClient = createProviderForToken(entry);
 
 // --- Step 1: Derive seed ---
-const seedMsg = getSeedMessage();
+const seedMsg = await getSeedMessage();
 const [account] = await walletClient.getAddresses();
-const seedHex = await walletClient.signMessage({
+const signature = await walletClient.signMessage({
   account,
   message: seedMsg,
 });
+const seedHex = keccak256(toBytes(signature));
 
 // --- Step 2: Prepare ---
 const preparation = await preparePrivateSend({

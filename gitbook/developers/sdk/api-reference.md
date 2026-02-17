@@ -68,7 +68,7 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 | Name | Signature | Returns | Description |
 |------|-----------|---------|-------------|
 | `WasmRuntime` | class | - | WASM lifecycle manager |
-| `getSeedMessage` | `()` | `string` | Get message to sign for seed derivation |
+| `getSeedMessage` | `()` | `Promise<string>` | Get message to sign for seed derivation |
 | `derivePaymentAdvice` | `(seedHex, paymentAdviceIdHex, chainId, address)` | `Promise<SecretAndTweak>` | Derive payment advice |
 | `buildFullBurnAddress` | `(chainId, address, secret, tweak)` | `Promise<BurnArtifacts>` | Build burn address |
 | `decodeFullBurnAddress` | `(fullBurnAddressHex)` | `Promise<BurnArtifacts>` | Decode burn address |
@@ -77,7 +77,7 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 
 | Name | Signature | Returns | Description |
 |------|-----------|---------|-------------|
-| `loadTokens` | `(options?)` | `Promise<NormalizedTokens>` | Load built-in token config |
+| `loadTokens` | `(compressed, options?)` | `Promise<NormalizedTokens>` | Load tokens from compressed (Base64 gzip) string |
 | `normalizeTokens` | `(file: TokensFile)` | `NormalizedTokens` | Normalize raw token config |
 | `findTokenByChain` | `(tokens, chainId)` | `TokenEntry` | Find token by chain ID |
 | `createProviderForToken` | `(entry)` | `PublicClient` | Create RPC provider |

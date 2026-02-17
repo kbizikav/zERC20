@@ -26,7 +26,7 @@ import { prepareInvoiceIssue } from "zerc20-client-sdk";
 
 const artifacts = await prepareInvoiceIssue({
   client,            // StealthCanisterClient
-  seedHex,           // hex-encoded seed for deterministic derivation
+  seedHex,           // 32-byte hex seed (keccak256 of wallet signature)
   recipientAddress,  // recipient EVM address
   recipientChainId,  // chain ID where the recipient will redeem
   isBatch: false,    // true for batch (10 addresses), false for single
@@ -49,7 +49,7 @@ function prepareInvoiceIssue(
 | Field              | Type                    | Required | Description                                    |
 | ------------------ | ----------------------- | -------- | ---------------------------------------------- |
 | `client`           | `StealthCanisterClient` | Yes      | ICP canister client                            |
-| `seedHex`          | `string`                | Yes      | Hex-encoded seed for deterministic derivation  |
+| `seedHex`          | `string`                | Yes      | 32-byte hex seed (see [Private Send](private-send.md#step-1-derive-seed) for derivation)  |
 | `recipientAddress` | `string`                | Yes      | Recipient EVM address                          |
 | `recipientChainId` | `number`                | Yes      | Chain ID where the recipient will redeem       |
 | `isBatch`          | `boolean`               | Yes      | `true` for batch (10 addresses), `false` for single |
