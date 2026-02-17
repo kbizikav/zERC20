@@ -137,7 +137,7 @@ const invoiceIds = await listInvoices(
 function listInvoices(
   client: StealthCanisterClient,
   ownerAddress: string,
-  chainId?: number,
+  chainId?: number | bigint,
   tag?: string,
 ): Promise<string[]>;
 ```

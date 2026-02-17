@@ -41,7 +41,7 @@ const preparation = await preparePrivateSend({
   client,                               // StealthCanisterClient
   recipientAddress: "0xRecipient...",   // EVM address of the recipient
   recipientChainId: 42161n,             // Chain ID where recipient will claim
-  seedHex,                              // Hex-encoded wallet signature
+  seedHex,                              // 32-byte hex seed (keccak256 of signature)
 });
 ```
 
