@@ -655,10 +655,10 @@ impl BroadcastJob {
                 }
             }
         }
-        if any_timed_out {
-            if let Some(probe) = &self.lz_probe {
-                probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
-            }
+        if any_timed_out
+            && let Some(probe) = &self.lz_probe
+        {
+            probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
         }
     }
 }
