@@ -11,6 +11,7 @@ import { normalizeHex, toBigInt } from '../utils/hex.js';
 export type EnvProvider = (key: string) => string | undefined;
 
 const ENV_VAR_PATTERN = /\$\{([^}]+)\}/g;
+const ENV_VAR_TEST = /\$\{[^}]+\}/;
 
 /**
  * Expands environment variables in a string using the ${VAR_NAME} syntax.
@@ -33,7 +34,7 @@ export function expandEnvVars(value: string, envProvider: EnvProvider): string {
  * Checks if a string contains environment variable placeholders.
  */
 export function hasEnvVars(value: string): boolean {
-  return ENV_VAR_PATTERN.test(value);
+  return ENV_VAR_TEST.test(value);
 }
 
 export interface TokenEntry {
