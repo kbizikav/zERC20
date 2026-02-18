@@ -1,4 +1,12 @@
-use std::{collections::HashMap, path::Path, str::FromStr, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    str::FromStr,
+    time::Duration,
+};
+
+use futures::future::join_all;
+use rand::Rng;
 
 use alloy::{
     network::Ethereum,
@@ -573,9 +581,23 @@ impl BroadcastJob {
     }
 
     async fn destinations_missing(&self, current_root: U256) -> Result<Vec<(String, u32)>> {
+        let jitters = random_jitters(self.destinations.len());
+        let futs: Vec<_> = self
+            .destinations
+            .iter()
+            .zip(jitters)
+            .map(|(dest, jitter)| async move {
+                sleep(jitter).await;
+                let result = dest.has_current_root(current_root).await;
+                (dest, result)
+            })
+            .collect();
+
+        let results = join_all(futs).await;
+
         let mut missing = Vec::new();
-        for dest in &self.destinations {
-            match dest.has_current_root(current_root).await {
+        for (dest, result) in results {
+            match result {
                 Ok(true) => continue,
                 Ok(false) => missing.push((dest.label.clone(), dest.eid)),
                 Err(err) => {
@@ -591,12 +613,28 @@ impl BroadcastJob {
     }
 
     async fn confirm_destinations(&self, root: U256, broadcast_eids: &[u32], tx_hash: B256) {
-        for dest in &self.destinations {
-            // Only confirm destinations that were included in this broadcast
-            if !broadcast_eids.contains(&dest.eid) {
-                continue;
-            }
-            match dest.wait_for_root(root, &self.confirmation).await {
+        let eid_set: HashSet<u32> = broadcast_eids.iter().copied().collect();
+        let targets: Vec<_> = self
+            .destinations
+            .iter()
+            .filter(|d| eid_set.contains(&d.eid))
+            .collect();
+        let jitters = random_jitters(targets.len());
+        let futs: Vec<_> = targets
+            .into_iter()
+            .zip(jitters)
+            .map(|(dest, jitter)| async move {
+                sleep(jitter).await;
+                let result = dest.wait_for_root(root, &self.confirmation).await;
+                (dest, result)
+            })
+            .collect();
+
+        let results = join_all(futs).await;
+
+        let mut any_timed_out = false;
+        for (dest, result) in results {
+            match result {
                 Ok(true) => {
                     info!(
                         "verifier '{}' (eid {}) confirmed root {root:#x}",
@@ -608,9 +646,7 @@ impl BroadcastJob {
                         "verifier '{}' (eid {}) did not receive root {root:#x} before timeout; will rebroadcast",
                         dest.label, dest.eid
                     );
-                    if let Some(probe) = &self.lz_probe {
-                        probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
-                    }
+                    any_timed_out = true;
                 }
                 Err(err) => {
                     warn!(
@@ -619,6 +655,9 @@ impl BroadcastJob {
                     );
                 }
             }
+        }
+        if any_timed_out && let Some(probe) = &self.lz_probe {
+            probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
         }
     }
 }
@@ -983,6 +1022,15 @@ async fn wait_for_receipt(
     } else {
         bail!("transaction reverted: {:?}", receipt);
     }
+}
+
+/// Generate random jitter durations (0–499ms) for staggering concurrent RPC
+/// calls. Uses `thread_rng` synchronously so the returned `Vec` is `Send`.
+fn random_jitters(count: usize) -> Vec<Duration> {
+    let mut rng = rand::thread_rng();
+    (0..count)
+        .map(|_| Duration::from_millis(rng.gen_range(0..500)))
+        .collect()
 }
 
 fn apply_fee_buffer(fee: U256, buffer_bps: u64) -> U256 {
