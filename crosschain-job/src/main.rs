@@ -5,7 +5,7 @@ use std::{
     time::Duration,
 };
 
-use futures::{StreamExt, stream::FuturesUnordered};
+use futures::future::join_all;
 use rand::Rng;
 
 use alloy::{
@@ -581,7 +581,7 @@ impl BroadcastJob {
 
     async fn destinations_missing(&self, current_root: U256) -> Result<Vec<(String, u32)>> {
         let jitters = random_jitters(self.destinations.len());
-        let futs: FuturesUnordered<_> = self
+        let futs: Vec<_> = self
             .destinations
             .iter()
             .zip(jitters)
@@ -592,7 +592,7 @@ impl BroadcastJob {
             })
             .collect();
 
-        let results: Vec<_> = futs.collect().await;
+        let results = join_all(futs).await;
 
         let mut missing = Vec::new();
         for (dest, result) in results {
@@ -619,7 +619,7 @@ impl BroadcastJob {
             .filter(|d| eid_set.contains(&d.eid))
             .collect();
         let jitters = random_jitters(targets.len());
-        let futs: FuturesUnordered<_> = targets
+        let futs: Vec<_> = targets
             .into_iter()
             .zip(jitters)
             .map(|(dest, jitter)| async move {
@@ -629,7 +629,7 @@ impl BroadcastJob {
             })
             .collect();
 
-        let results: Vec<_> = futs.collect().await;
+        let results = join_all(futs).await;
 
         let mut any_timed_out = false;
         for (dest, result) in results {
@@ -1024,7 +1024,7 @@ async fn wait_for_receipt(
     }
 }
 
-/// Generate random jitter durations (0-500ms) for staggering concurrent RPC
+/// Generate random jitter durations (0–499ms) for staggering concurrent RPC
 /// calls. Uses `thread_rng` synchronously so the returned `Vec` is `Send`.
 fn random_jitters(count: usize) -> Vec<Duration> {
     let mut rng = rand::thread_rng();
