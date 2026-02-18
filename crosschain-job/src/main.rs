@@ -1,5 +1,7 @@
 use std::{collections::HashMap, path::Path, str::FromStr, time::Duration};
 
+use futures::future::join_all;
+
 use alloy::{
     network::Ethereum,
     primitives::{B256, Bytes, U256},
@@ -572,9 +574,15 @@ impl BroadcastJob {
     }
 
     async fn destinations_missing(&self, current_root: U256) -> Result<Vec<(String, u32)>> {
+        let checks = self.destinations.iter().map(|dest| async move {
+            let result = dest.has_current_root(current_root).await;
+            (dest, result)
+        });
+        let results = join_all(checks).await;
+
         let mut missing = Vec::new();
-        for dest in &self.destinations {
-            match dest.has_current_root(current_root).await {
+        for (dest, result) in results {
+            match result {
                 Ok(true) => continue,
                 Ok(false) => missing.push((dest.label.clone(), dest.eid)),
                 Err(err) => {
@@ -590,12 +598,19 @@ impl BroadcastJob {
     }
 
     async fn confirm_destinations(&self, root: U256, broadcast_eids: &[u32], tx_hash: B256) {
-        for dest in &self.destinations {
-            // Only confirm destinations that were included in this broadcast
-            if !broadcast_eids.contains(&dest.eid) {
-                continue;
-            }
-            match dest.wait_for_root(root, &self.confirmation).await {
+        let confirmations = self
+            .destinations
+            .iter()
+            .filter(|d| broadcast_eids.contains(&d.eid))
+            .map(|dest| async move {
+                let result = dest.wait_for_root(root, &self.confirmation).await;
+                (dest, result)
+            });
+        let results = join_all(confirmations).await;
+
+        let mut any_timed_out = false;
+        for (dest, result) in results {
+            match result {
                 Ok(true) => {
                     info!(
                         "verifier '{}' (eid {}) confirmed root {root:#x}",
@@ -607,9 +622,7 @@ impl BroadcastJob {
                         "verifier '{}' (eid {}) did not receive root {root:#x} before timeout; will rebroadcast",
                         dest.label, dest.eid
                     );
-                    if let Some(probe) = &self.lz_probe {
-                        probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
-                    }
+                    any_timed_out = true;
                 }
                 Err(err) => {
                     warn!(
@@ -617,6 +630,11 @@ impl BroadcastJob {
                         dest.label, dest.chain_id, dest.eid
                     );
                 }
+            }
+        }
+        if any_timed_out {
+            if let Some(probe) = &self.lz_probe {
+                probe.log_tx_messages(tx_hash, "Hub.broadcast").await;
             }
         }
     }
