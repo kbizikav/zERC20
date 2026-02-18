@@ -306,6 +306,23 @@ export function loadTokensFromCompressed(
   compressed: string,
   options: LoadTokensOptions = {},
 ): Promise<NormalizedTokens> {
+  // When envProvider is set without an explicit cacheKey, bypass caching.
+  // The envProvider function expands ${VAR} placeholders in RPC URLs at
+  // parse time, so the output depends on runtime environment state.
+  // Caching such results would silently return stale URLs when a different
+  // envProvider (or different env values) is used in a subsequent call.
+  if (options.envProvider && !options.cacheKey) {
+    return Promise.resolve().then(() => {
+      const gzippedBytes = base64ToBytes(compressed);
+      const decompress = options.decompress ?? ((data: Uint8Array) => ungzip(data));
+      const decompressed = decompress(gzippedBytes);
+      const normalizedBytes =
+        decompressed instanceof Uint8Array ? decompressed : new Uint8Array(decompressed as ArrayBufferLike);
+      const parsed = decodeTokensPayload(normalizedBytes, options.decoder);
+      return asNormalizedTokens(parsed, options.envProvider);
+    });
+  }
+
   const cache = options.cache ?? tokenCache;
   const cacheKey = options.cacheKey ?? `compressed:${compressed}`;
   if (cache.has(cacheKey)) {

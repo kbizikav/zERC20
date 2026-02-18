@@ -1,6 +1,7 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, beforeEach } from 'vitest';
 
-import { hasEnvVars, normalizeTokens, type TokensFile } from '../tokens.js';
+import type { EnvProvider, NormalizedTokens, TokensFile } from '../tokens.js';
+import { hasEnvVars, normalizeTokens, loadTokensFromCompressed, clearTokensCache } from '../tokens.js';
 
 describe('hasEnvVars', () => {
   it('returns true for consecutive env-var strings', () => {
@@ -54,5 +55,79 @@ describe('normalizeTokens env expansion', () => {
       'https://alchemy-value.hub.example',
       'https://hub.example/infura-value',
     ]);
+  });
+});
+
+// Base64-encoded gzip of a tokens JSON with rpcUrls containing ${TEST_RPC_URL}
+const COMPRESSED_WITH_ENV =
+  'H4sIAAAAAAAAE52PQQrCMBRE7zK4zCK6zE7FhSAiNV1JKWnyq6XfpiRVWkrvLsELiLOcxxuYGYNvqYtQtxlsKmIoaIqDTjXEF2+dCxQjFOQof8saAm8KTd1Q+EPfQMA+TNMdHRTSmKOe/URux96259ezopCIlBAIvc0DpxNYzfpw1WV22Zd5dlpQCDDdjZ30CFUbjrQUywfm3NPl9gAAAA==';
+
+// Base64-encoded gzip of a tokens JSON with plain rpcUrls (no env vars)
+const COMPRESSED_PLAIN =
+  'H4sIAAAAAAAAE52PsQ6CMBRF/+XODVTHbrq5OOFkGEr7FMKDNq/VQAj/bhp/wHjHe3JucjfkMNKcYO4b2HbEMGgo5abUUF988l4oJRjoRf+WAxTeJMNjIPlDP0LB9XaYLx4GZcxT5LCSP3Nw4/U1dSSFaA0Fie4mXE6gzzkmU9cSXUWLnSJT5cKEVoHpad3aLDAPy4n2dv8AMSZ4Gf4AAAA=';
+
+describe('loadTokensFromCompressed', () => {
+  let cache: Map<string, Promise<NormalizedTokens>>;
+
+  beforeEach(() => {
+    cache = new Map();
+    clearTokensCache();
+  });
+
+  it('caches results when no envProvider is given', async () => {
+    const first = await loadTokensFromCompressed(COMPRESSED_PLAIN, { cache });
+    const second = await loadTokensFromCompressed(COMPRESSED_PLAIN, { cache });
+
+    expect(first).toBe(second); // same reference — served from cache
+    expect(cache.size).toBe(1);
+  });
+
+  it('bypasses cache when envProvider is set without cacheKey', async () => {
+    const envA: EnvProvider = (key) => (key === 'TEST_RPC_URL' ? 'https://rpc-a.example.com' : undefined);
+    const envB: EnvProvider = (key) => (key === 'TEST_RPC_URL' ? 'https://rpc-b.example.com' : undefined);
+
+    const resultA = await loadTokensFromCompressed(COMPRESSED_WITH_ENV, { cache, envProvider: envA });
+    const resultB = await loadTokensFromCompressed(COMPRESSED_WITH_ENV, { cache, envProvider: envB });
+
+    // Each call should produce independently resolved URLs
+    expect(resultA.tokens[0].rpcUrls[0]).toBe('https://rpc-a.example.com');
+    expect(resultB.tokens[0].rpcUrls[0]).toBe('https://rpc-b.example.com');
+
+    // Cache should NOT have been populated
+    expect(cache.size).toBe(0);
+  });
+
+  it('uses cache when envProvider is set WITH explicit cacheKey', async () => {
+    const envA: EnvProvider = (key) => (key === 'TEST_RPC_URL' ? 'https://rpc-a.example.com' : undefined);
+    const envB: EnvProvider = (key) => (key === 'TEST_RPC_URL' ? 'https://rpc-b.example.com' : undefined);
+
+    const resultA = await loadTokensFromCompressed(COMPRESSED_WITH_ENV, {
+      cache,
+      envProvider: envA,
+      cacheKey: 'shared-key',
+    });
+    const resultB = await loadTokensFromCompressed(COMPRESSED_WITH_ENV, {
+      cache,
+      envProvider: envB,
+      cacheKey: 'shared-key',
+    });
+
+    // Second call should return the cached result from envA (same reference)
+    expect(resultA).toBe(resultB);
+    expect(resultA.tokens[0].rpcUrls[0]).toBe('https://rpc-a.example.com');
+    expect(cache.size).toBe(1);
+  });
+
+  it('does not leak envProvider results into plain cache', async () => {
+    const env: EnvProvider = (key) => (key === 'TEST_RPC_URL' ? 'https://rpc-env.example.com' : undefined);
+
+    // Call with envProvider (should bypass cache)
+    await loadTokensFromCompressed(COMPRESSED_WITH_ENV, { cache, envProvider: env });
+
+    // Call without envProvider using different payload (should use cache)
+    const plain = await loadTokensFromCompressed(COMPRESSED_PLAIN, { cache });
+
+    expect(cache.size).toBe(1);
+    expect(plain.tokens[0].rpcUrls[0]).toBe('https://rpc.example.com');
   });
 });
