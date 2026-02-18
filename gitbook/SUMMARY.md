@@ -30,7 +30,6 @@
   * [Infrastructure Setup](developers/deploy/infrastructure.md)
   * [End-to-End Walkthrough](developers/deploy/end-to-end.md)
 * [Integration Guide](developers/integration.md)
-* [Indexer API Reference](developers/indexer-api.md)
 * [Circuit Setup](developers/circuit-setup.md)
 * [Proof of Innocence (Planned)](developers/proof-of-innocence.md)
 * [Technical Specifications](developers/specs/README.md)
