@@ -23,7 +23,6 @@
   * [Invoices](developers/sdk/invoices.md)
   * [Wrap and Unwrap](developers/sdk/wrap-unwrap.md)
   * [Proof Generation](developers/sdk/proof-generation.md)
-  * [Token Registry](developers/sdk/token-registry.md)
   * [API Reference](developers/sdk/api-reference.md)
 * [Integration Guide](developers/integration.md)
 * [Circuit Setup](developers/circuit-setup.md)
