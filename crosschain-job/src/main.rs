@@ -1,4 +1,9 @@
-use std::{collections::HashMap, path::Path, str::FromStr, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    str::FromStr,
+    time::Duration,
+};
 
 use futures::future::join_all;
 
@@ -574,7 +579,10 @@ impl BroadcastJob {
     }
 
     async fn destinations_missing(&self, current_root: U256) -> Result<Vec<(String, u32)>> {
-        let checks = self.destinations.iter().map(|dest| async move {
+        let checks = self.destinations.iter().enumerate().map(|(idx, dest)| async move {
+            // Stagger checks to avoid thundering-herd RPC bursts.
+            let jitter = Duration::from_millis(idx as u64 * 200);
+            sleep(jitter).await;
             let result = dest.has_current_root(current_root).await;
             (dest, result)
         });
@@ -598,11 +606,17 @@ impl BroadcastJob {
     }
 
     async fn confirm_destinations(&self, root: U256, broadcast_eids: &[u32], tx_hash: B256) {
+        let eid_set: HashSet<u32> = broadcast_eids.iter().copied().collect();
         let confirmations = self
             .destinations
             .iter()
-            .filter(|d| broadcast_eids.contains(&d.eid))
-            .map(|dest| async move {
+            .filter(|d| eid_set.contains(&d.eid))
+            .enumerate()
+            .map(|(idx, dest)| async move {
+                // Stagger initial polls to avoid thundering-herd RPC bursts.
+                // Each destination waits idx * 200ms before its first check.
+                let jitter = Duration::from_millis(idx as u64 * 200);
+                sleep(jitter).await;
                 let result = dest.wait_for_root(root, &self.confirmation).await;
                 (dest, result)
             });
