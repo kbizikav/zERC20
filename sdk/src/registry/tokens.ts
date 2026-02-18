@@ -302,6 +302,16 @@ export function clearTokensCache(cache?: Map<string, Promise<NormalizedTokens>>,
   target.clear();
 }
 
+function parseCompressed(compressed: string, options: LoadTokensOptions): NormalizedTokens {
+  const gzippedBytes = base64ToBytes(compressed);
+  const decompress = options.decompress ?? ((data: Uint8Array) => ungzip(data));
+  const decompressed = decompress(gzippedBytes);
+  const normalizedBytes =
+    decompressed instanceof Uint8Array ? decompressed : new Uint8Array(decompressed as ArrayBufferLike);
+  const parsed = decodeTokensPayload(normalizedBytes, options.decoder);
+  return asNormalizedTokens(parsed, options.envProvider);
+}
+
 export function loadTokensFromCompressed(
   compressed: string,
   options: LoadTokensOptions = {},
@@ -311,16 +321,8 @@ export function loadTokensFromCompressed(
   // parse time, so the output depends on runtime environment state.
   // Caching such results would silently return stale URLs when a different
   // envProvider (or different env values) is used in a subsequent call.
-  if (options.envProvider && !options.cacheKey) {
-    return Promise.resolve().then(() => {
-      const gzippedBytes = base64ToBytes(compressed);
-      const decompress = options.decompress ?? ((data: Uint8Array) => ungzip(data));
-      const decompressed = decompress(gzippedBytes);
-      const normalizedBytes =
-        decompressed instanceof Uint8Array ? decompressed : new Uint8Array(decompressed as ArrayBufferLike);
-      const parsed = decodeTokensPayload(normalizedBytes, options.decoder);
-      return asNormalizedTokens(parsed, options.envProvider);
-    });
+  if (options.envProvider && options.cacheKey == null) {
+    return Promise.resolve().then(() => parseCompressed(compressed, options));
   }
 
   const cache = options.cache ?? tokenCache;
@@ -329,15 +331,7 @@ export function loadTokensFromCompressed(
     return cache.get(cacheKey) as Promise<NormalizedTokens>;
   }
 
-  const promise = Promise.resolve().then(() => {
-    const gzippedBytes = base64ToBytes(compressed);
-    const decompress = options.decompress ?? ((data: Uint8Array) => ungzip(data));
-    const decompressed = decompress(gzippedBytes);
-    const normalizedBytes =
-      decompressed instanceof Uint8Array ? decompressed : new Uint8Array(decompressed as ArrayBufferLike);
-    const parsed = decodeTokensPayload(normalizedBytes, options.decoder);
-    return asNormalizedTokens(parsed, options.envProvider);
-  });
+  const promise = Promise.resolve().then(() => parseCompressed(compressed, options));
 
   cache.set(cacheKey, promise);
   return promise;

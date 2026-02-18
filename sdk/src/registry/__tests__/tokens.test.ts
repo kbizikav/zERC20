@@ -118,6 +118,27 @@ describe('loadTokensFromCompressed', () => {
     expect(cache.size).toBe(1);
   });
 
+  it('treats explicit empty cacheKey as a valid key (uses cache)', async () => {
+    const envA: EnvProvider = (key) => (key === 'TEST_RPC_URL' ? 'https://rpc-a.example.com' : undefined);
+    const envB: EnvProvider = (key) => (key === 'TEST_RPC_URL' ? 'https://rpc-b.example.com' : undefined);
+
+    const resultA = await loadTokensFromCompressed(COMPRESSED_WITH_ENV, {
+      cache,
+      envProvider: envA,
+      cacheKey: '',
+    });
+    const resultB = await loadTokensFromCompressed(COMPRESSED_WITH_ENV, {
+      cache,
+      envProvider: envB,
+      cacheKey: '',
+    });
+
+    // Empty string is an explicit cacheKey — caching should apply
+    expect(resultA).toBe(resultB);
+    expect(resultA.tokens[0].rpcUrls[0]).toBe('https://rpc-a.example.com');
+    expect(cache.size).toBe(1);
+  });
+
   it('does not leak envProvider results into plain cache', async () => {
     const env: EnvProvider = (key) => (key === 'TEST_RPC_URL' ? 'https://rpc-env.example.com' : undefined);
 
