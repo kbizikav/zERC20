@@ -180,6 +180,7 @@ impl LayerZeroProbe {
 struct HubTokenLayout {
     eid: u32,
     position: u64,
+    verifier: alloy::primitives::Address,
 }
 
 #[derive(Clone)]
@@ -851,6 +852,7 @@ async fn resolve_target_eids(
                     HubTokenLayout {
                         eid: info.eid,
                         position: *position,
+                        verifier: info.verifier,
                     },
                 );
             }
@@ -899,7 +901,7 @@ fn build_broadcast_destinations(
         })?;
 
         let contract =
-            VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
+            VerifierContract::new(provider, info.verifier).with_legacy_tx(token.legacy_tx);
         destinations.push(BroadcastDestination {
             label: token.label.clone(),
             chain_id: token.chain_id,
@@ -994,4 +996,108 @@ fn apply_fee_buffer(fee: U256, buffer_bps: u64) -> U256 {
         buffered = fee + U256::from(1u64);
     }
     buffered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::Address;
+
+    fn make_token(chain_id: u64, verifier: Address) -> TokenEntry {
+        TokenEntry {
+            label: format!("test-chain-{chain_id}"),
+            token_address: Address::ZERO,
+            verifier_address: verifier,
+            liquidity_manager_address: None,
+            adaptor_address: None,
+            eid: None,
+            layerzero_endpoint: None,
+            chain_id,
+            deployed_block_number: 0,
+            rpc_urls: vec!["http://localhost:8545".into()],
+            legacy_tx: false,
+            relay_interval_secs: None,
+            root_submit_interval_ms: None,
+        }
+    }
+
+    /// When config verifier differs from hub-reported verifier (stale config),
+    /// build_broadcast_destinations must use the hub-reported verifier.
+    #[test]
+    fn build_broadcast_destinations_uses_hub_verifier_over_stale_config() {
+        let stale_config_verifier = Address::new([0xAA; 20]);
+        let hub_verifier = Address::new([0xBB; 20]);
+
+        // Config has a stale verifier address
+        let tokens = [make_token(42161, stale_config_verifier)];
+
+        // Layout is populated from hub data (simulating resolve_target_eids output)
+        let mut layout = HashMap::new();
+        layout.insert(
+            42161,
+            HubTokenLayout {
+                eid: 30110,
+                position: 0,
+                verifier: hub_verifier,
+            },
+        );
+
+        let destinations = build_broadcast_destinations(&tokens, &layout).unwrap();
+        assert_eq!(destinations.len(), 1);
+        assert_eq!(
+            destinations[0].verifier.address(),
+            hub_verifier,
+            "should use hub-reported verifier, not stale config"
+        );
+        assert_ne!(destinations[0].verifier.address(), stale_config_verifier);
+    }
+
+    /// Tokens not present in hub layout are silently skipped.
+    #[test]
+    fn build_broadcast_destinations_skips_missing_chain() {
+        let tokens = [make_token(42161, Address::new([0xAA; 20]))];
+        let layout = HashMap::new(); // empty — chain not in hub
+
+        let destinations = build_broadcast_destinations(&tokens, &layout).unwrap();
+        assert!(destinations.is_empty());
+    }
+
+    #[test]
+    fn apply_fee_buffer_zero_bps() {
+        let fee = U256::from(1000u64);
+        assert_eq!(apply_fee_buffer(fee, 0), fee);
+    }
+
+    #[test]
+    fn apply_fee_buffer_1000_bps() {
+        let fee = U256::from(10_000u64);
+        let buffered = apply_fee_buffer(fee, 1000);
+        assert_eq!(buffered, U256::from(11_000u64));
+    }
+
+    /// When fee * bps / 10000 rounds down to zero, the +1 wei floor kicks in.
+    #[test]
+    fn apply_fee_buffer_rounds_up_to_at_least_one_wei() {
+        // fee=1, bps=1 → 1 * 10001 / 10000 = 1 (integer division)
+        // Since buffered == fee and fee > 0, result should be fee + 1
+        let fee = U256::from(1u64);
+        let buffered = apply_fee_buffer(fee, 1);
+        assert_eq!(buffered, U256::from(2u64));
+    }
+
+    /// Zero fee stays zero regardless of bps.
+    #[test]
+    fn apply_fee_buffer_zero_fee() {
+        assert_eq!(apply_fee_buffer(U256::ZERO, 500), U256::ZERO);
+    }
+
+    /// Large fee near U256::MAX must not panic due to overflow.
+    /// saturating_mul caps at U256::MAX before dividing by 10000.
+    #[test]
+    fn apply_fee_buffer_no_panic_on_large_fee() {
+        let large = U256::MAX / U256::from(2u64);
+        // Should not panic — saturating_mul prevents overflow
+        let buffered = apply_fee_buffer(large, 5000);
+        assert!(buffered > U256::ZERO);
+    }
 }
