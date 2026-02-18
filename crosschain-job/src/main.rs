@@ -5,7 +5,8 @@ use std::{
     time::Duration,
 };
 
-use futures::future::join_all;
+use futures::{StreamExt, stream::FuturesUnordered};
+use rand::Rng;
 
 use alloy::{
     network::Ethereum,
@@ -579,14 +580,19 @@ impl BroadcastJob {
     }
 
     async fn destinations_missing(&self, current_root: U256) -> Result<Vec<(String, u32)>> {
-        let checks = self.destinations.iter().enumerate().map(|(idx, dest)| async move {
-            // Stagger checks to avoid thundering-herd RPC bursts.
-            let jitter = Duration::from_millis(idx as u64 * 200);
-            sleep(jitter).await;
-            let result = dest.has_current_root(current_root).await;
-            (dest, result)
-        });
-        let results = join_all(checks).await;
+        let jitters = random_jitters(self.destinations.len());
+        let futs: FuturesUnordered<_> = self
+            .destinations
+            .iter()
+            .zip(jitters)
+            .map(|(dest, jitter)| async move {
+                sleep(jitter).await;
+                let result = dest.has_current_root(current_root).await;
+                (dest, result)
+            })
+            .collect();
+
+        let results: Vec<_> = futs.collect().await;
 
         let mut missing = Vec::new();
         for (dest, result) in results {
@@ -607,20 +613,23 @@ impl BroadcastJob {
 
     async fn confirm_destinations(&self, root: U256, broadcast_eids: &[u32], tx_hash: B256) {
         let eid_set: HashSet<u32> = broadcast_eids.iter().copied().collect();
-        let confirmations = self
+        let targets: Vec<_> = self
             .destinations
             .iter()
             .filter(|d| eid_set.contains(&d.eid))
-            .enumerate()
-            .map(|(idx, dest)| async move {
-                // Stagger initial polls to avoid thundering-herd RPC bursts.
-                // Each destination waits idx * 200ms before its first check.
-                let jitter = Duration::from_millis(idx as u64 * 200);
+            .collect();
+        let jitters = random_jitters(targets.len());
+        let futs: FuturesUnordered<_> = targets
+            .into_iter()
+            .zip(jitters)
+            .map(|(dest, jitter)| async move {
                 sleep(jitter).await;
                 let result = dest.wait_for_root(root, &self.confirmation).await;
                 (dest, result)
-            });
-        let results = join_all(confirmations).await;
+            })
+            .collect();
+
+        let results: Vec<_> = futs.collect().await;
 
         let mut any_timed_out = false;
         for (dest, result) in results {
@@ -1013,6 +1022,15 @@ async fn wait_for_receipt(
     } else {
         bail!("transaction reverted: {:?}", receipt);
     }
+}
+
+/// Generate random jitter durations (0-500ms) for staggering concurrent RPC
+/// calls. Uses `thread_rng` synchronously so the returned `Vec` is `Send`.
+fn random_jitters(count: usize) -> Vec<Duration> {
+    let mut rng = rand::thread_rng();
+    (0..count)
+        .map(|_| Duration::from_millis(rng.gen_range(0..500)))
+        .collect()
 }
 
 fn apply_fee_buffer(fee: U256, buffer_bps: u64) -> U256 {
