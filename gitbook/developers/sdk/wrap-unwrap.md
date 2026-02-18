@@ -8,22 +8,21 @@ Wrap an underlying token into its zERC20 equivalent.
 
 ```typescript
 function wrapWithLiquidityManager(
-  params: LocalWrapParams,
+  params: WrapWithLiquidityManagerParams,
 ): Promise<LiquidityActionResult>;
 ```
 
-### LocalWrapParams
+### WrapWithLiquidityManagerParams
 
 | Field | Type | Description |
 |-------|------|-------------|
 | `walletClient` | `WalletClient` | Wallet client used to sign and send transactions |
 | `publicClient?` | `PublicClient` | Optional public client for read calls (derived from `walletClient` if omitted) |
-| `liquidityManagerAddress` | `Address` | Address of the LiquidityManager contract |
-| `zerc20TokenAddress` | `Address` | Address of the zERC20 token to receive |
+| `liquidityManagerAddress` | `string` | Address of the LiquidityManager contract |
 | `amount` | `bigint \| number \| string` | Amount of underlying token to wrap (in base units) |
-| `recipient?` | `Address` | Recipient of the minted zERC20 (defaults to the sender) |
+| `underlyingTokenAddress?` | `string` | Override underlying token address (auto-read from contract if omitted) |
+| `recipient?` | `string` | Recipient of the minted zERC20 (defaults to the sender) |
 | `feeOverrides?` | `FeeOverrides` | Optional gas-price / gas-limit overrides |
-| `minAmountOut?` | `bigint` | Minimum zERC20 to receive; reverts on-chain if not met |
 
 For **native ETH wrapping**, the SDK sends `msg.value` automatically -- no ERC-20 approval is needed. For ERC-20 underlying tokens the SDK checks the current allowance and submits an approval transaction first if required.
 
@@ -36,20 +35,15 @@ For **native ETH wrapping**, the SDK sends `msg.value` automatically -- no ERC-2
 
 ### Quote
 
-Before wrapping, fetch an off-chain quote to preview the reward and expected output:
+Before wrapping, you can query the on-chain `quoteWrapReward` to preview the reward:
 
 ```typescript
-function quoteLocalWrap(
-  params: LocalWrapQuoteParams,
-): Promise<LocalWrapQuote>;
+import { getLiquidityManagerContract } from "zerc20-client-sdk";
+
+const manager = getLiquidityManagerContract(entry.liquidityManagerAddress, publicClient);
+const reward = await manager.read.quoteWrapReward([100_000_000n]);
+console.log("Reward:", reward);
 ```
-
-`LocalWrapQuote` contains:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `reward` | `bigint` | Bonus zERC20 minted on top of the deposited amount |
-| `expectedOut` | `bigint` | Total zERC20 the caller will receive (`amount + reward`) |
 
 ### Example -- Wrap 100 USDC to zUSDC
 
@@ -57,7 +51,6 @@ function quoteLocalWrap(
 import {
   normalizeTokens,
   findTokenByChain,
-  quoteLocalWrap,
   wrapWithLiquidityManager,
 } from "zerc20-client-sdk";
 
@@ -66,23 +59,11 @@ const tokensFile = await import("./tokens.json");
 const { tokens } = normalizeTokens(tokensFile);
 const entry = findTokenByChain(tokens, 42161n); // Arbitrum
 
-// 2. Preview the wrap
-const quote = await quoteLocalWrap({
-  publicClient,
-  liquidityManagerAddress: entry.liquidityManagerAddress,
-  zerc20TokenAddress: entry.tokenAddress,
-  amount: 100_000_000n, // 100 USDC (6 decimals)
-});
-console.log("Reward:", quote.reward);
-console.log("Expected zUSDC out:", quote.expectedOut);
-
-// 3. Execute the wrap
+// 2. Execute the wrap
 const result = await wrapWithLiquidityManager({
   walletClient,
   liquidityManagerAddress: entry.liquidityManagerAddress,
-  zerc20TokenAddress: entry.tokenAddress,
-  amount: 100_000_000n,
-  minAmountOut: quote.expectedOut,
+  amount: 100_000_000n, // 100 USDC (6 decimals)
 });
 console.log("Wrap tx:", result.transactionHash);
 if (result.approvalTransactionHash) {
@@ -170,7 +151,7 @@ Use the quote helpers to estimate costs **before** submitting a transaction:
 
 | Operation | Helper | Key fields |
 |-----------|--------|------------|
-| Local wrap | `quoteLocalWrap()` | `reward`, `expectedOut` |
+| Local wrap | `getLiquidityManagerContract().read.quoteWrapReward()` | reward amount |
 | Local unwrap | `quoteLocalUnwrap()` | `fee`, `expectedOut` |
 | Cross-chain unwrap | `buildCrossUnwrapQuote()` | `tokenUnwrapFee`, `nativeBridgeFee`, `tokenBridgeFee`, `expectedOut` |
 

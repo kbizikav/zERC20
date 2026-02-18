@@ -51,10 +51,10 @@ function prepareInvoiceIssue(
 | `client`           | `StealthCanisterClient` | Yes      | ICP canister client                            |
 | `seedHex`          | `string`                | Yes      | 32-byte hex seed (see [Private Send](private-send.md#step-1-derive-seed) for derivation)  |
 | `recipientAddress` | `string`                | Yes      | Recipient EVM address                          |
-| `recipientChainId` | `number`                | Yes      | Chain ID where the recipient will redeem       |
+| `recipientChainId` | `number \| bigint`      | Yes      | Chain ID where the recipient will redeem       |
 | `isBatch`          | `boolean`               | Yes      | `true` for batch (10 addresses), `false` for single |
 | `tag`              | `string \| undefined`   | No       | Tag for categorizing or filtering invoices     |
-| `randomBytes`      | `Uint8Array \| undefined` | No     | Custom random bytes for burn address derivation |
+| `randomBytes`      | `(length: number) => Uint8Array` | No | Custom random bytes generator for burn address derivation |
 | `maxRetries`       | `number \| undefined`   | No       | Max PoW retries for burn address generation    |
 
 **InvoiceIssueArtifacts:**
@@ -63,7 +63,7 @@ function prepareInvoiceIssue(
 | ------------------ | ---------------------------- | ----------------------------------------------- |
 | `invoiceId`        | `string`                     | Unique invoice identifier                       |
 | `recipientAddress` | `string`                     | Recipient EVM address                           |
-| `recipientChainId` | `number`                     | Chain ID for redemption                         |
+| `recipientChainId` | `bigint`                     | Chain ID for redemption                         |
 | `burnAddresses`    | `InvoiceBatchBurnAddress[]`  | Array of burn address entries                   |
 | `signatureMessage` | `string`                     | Message to sign with the recipient's wallet     |
 | `tag`              | `string \| undefined`        | Tag, if provided                                |

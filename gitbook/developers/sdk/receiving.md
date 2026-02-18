@@ -34,9 +34,9 @@ function createAuthorizationPayload(
 | Field              | Type     | Description                                            |
 | ------------------ | -------- | ------------------------------------------------------ |
 | `message`          | `string` | Human-readable message to display in the wallet prompt |
-| `canonicalMessage` | `string` | Canonical form used for on-canister verification       |
+| `canonicalMessage` | `Uint8Array` | Canonical form used for on-canister verification       |
 | `expiryNs`        | `bigint` | Expiry timestamp in nanoseconds                        |
-| `nonce`            | `string` | Random nonce to prevent replay attacks                 |
+| `nonce`            | `bigint` | Random nonce to prevent replay attacks                 |
 | `transport`        | `object` | Ephemeral transport key pair for VetKey decryption     |
 
 ## Step 2: Sign the Authorization Message
@@ -110,18 +110,18 @@ function scanReceivings(
 | `client`     | `StealthCanisterClient`  | Yes      | ICP canister client                              |
 | `vetKey`     | `VetKey`                 | Yes      | Decryption key from Step 3                       |
 | `pageSize`   | `number`                 | No       | Number of announcements per page (default: 100)  |
-| `startAfter` | `string \| undefined`    | No       | Announcement ID to resume scanning after         |
+| `startAfter` | `bigint \| undefined`    | No       | Announcement ID to resume scanning after         |
 | `tag`        | `string \| undefined`    | No       | Filter announcements by tag                      |
 
 **ScannedAnnouncement:**
 
 | Field              | Type     | Description                                   |
 | ------------------ | -------- | --------------------------------------------- |
-| `id`               | `string` | Unique announcement identifier                |
+| `id`               | `bigint` | Unique announcement identifier                |
 | `burnAddress`      | `string` | Truncated burn address (on-chain destination) |
 | `fullBurnAddress`  | `string` | Full burn address before truncation           |
 | `createdAtNs`      | `bigint` | Creation timestamp in nanoseconds             |
-| `recipientChainId` | `number` | Chain ID where the recipient will redeem      |
+| `recipientChainId` | `bigint` | Chain ID where the recipient will redeem      |
 
 ## Step 5: Collect Redeem Context
 
@@ -159,7 +159,7 @@ function collectRedeemContext(
 | `verifierContract`  | `Contract`       | Yes      | Verifier contract instance             |
 | `indexerUrl`        | `string`         | Yes      | Indexer HTTP endpoint                  |
 | `indexerFetchLimit` | `number`         | No       | Max events per indexer request         |
-| `eventBlockSpan`    | `number`         | No       | Block range per event scan             |
+| `eventBlockSpan`    | `bigint \| number` | No     | Block range per event scan             |
 
 **RedeemContext:**
 

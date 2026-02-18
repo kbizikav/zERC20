@@ -56,44 +56,51 @@ cast send $HUB_ADDRESS "registerToken((uint64,uint32,address,address))" \
 
 ## Step 2: Create tokens.json
 
-Create a `tokens.json` file with the deployed contract addresses:
+Create a `tokens.json` file with the deployed contract addresses. This flat structure is consumed by both the off-chain services and the SDK:
 
 ```json
 {
   "tokens": [
     {
-      "tokenName": "zUSDT",
-      "tokenSymbol": "zUSDT",
-      "decimals": 6,
-      "hubChainId": 84532,
-      "hubEid": 40245,
-      "hubAddress": "0x<HUB_ADDRESS>",
-      "chains": [
-        {
-          "chainId": 421614,
-          "eid": 40231,
-          "rpcUrls": ["https://arb-sepolia.g.alchemy.com/v2/YOUR_KEY"],
-          "tokenAddress": "0x<ARB_TOKEN>",
-          "verifierAddress": "0x<ARB_VERIFIER>",
-          "liquidityManagerAddress": "0x<ARB_LIQUIDITY_MANAGER>",
-          "adaptorAddress": "0x<ARB_ADAPTOR>",
-          "underlyingTokenAddress": "0x<ARB_USDT>"
-        },
-        {
-          "chainId": 11155420,
-          "eid": 40232,
-          "rpcUrls": ["https://opt-sepolia.g.alchemy.com/v2/YOUR_KEY"],
-          "tokenAddress": "0x<OP_TOKEN>",
-          "verifierAddress": "0x<OP_VERIFIER>",
-          "liquidityManagerAddress": "0x<OP_LIQUIDITY_MANAGER>",
-          "adaptorAddress": "0x<OP_ADAPTOR>",
-          "underlyingTokenAddress": "0x<OP_USDT>"
-        }
-      ],
-      "relayIntervalSecs": 300,
-      "broadcastIntervalSecs": 600
+      "label": "arb-sepolia",
+      "token_address": "0x<ARB_TOKEN>",
+      "verifier_address": "0x<ARB_VERIFIER>",
+      "liquidity_manager_address": "0x<ARB_LIQUIDITY_MANAGER>",
+      "adaptor_address": "0x<ARB_ADAPTOR>",
+      "chain_id": 421614,
+      "deployed_block_number": 12345678,
+      "eid": 40231,
+      "layerzero_endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+      "rpc_urls": ["https://arb-sepolia.g.alchemy.com/v2/YOUR_KEY"],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs": 300,
+      "legacy_tx": false
+    },
+    {
+      "label": "op-sepolia",
+      "token_address": "0x<OP_TOKEN>",
+      "verifier_address": "0x<OP_VERIFIER>",
+      "liquidity_manager_address": "0x<OP_LIQUIDITY_MANAGER>",
+      "adaptor_address": "0x<OP_ADAPTOR>",
+      "chain_id": 11155420,
+      "deployed_block_number": 23456789,
+      "eid": 40232,
+      "layerzero_endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+      "rpc_urls": ["https://opt-sepolia.g.alchemy.com/v2/YOUR_KEY"],
+      "root_submit_interval_ms": 100000,
+      "relay_interval_secs": 300,
+      "legacy_tx": false
     }
-  ]
+  ],
+  "hub": {
+    "hub_address": "0x<HUB_ADDRESS>",
+    "chain_id": 84532,
+    "eid": 40245,
+    "layerzero_endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+    "rpc_urls": ["https://base-sepolia.g.alchemy.com/v2/YOUR_KEY"],
+    "broadcast_interval_secs": 600,
+    "legacy_tx": false
+  }
 }
 ```
 

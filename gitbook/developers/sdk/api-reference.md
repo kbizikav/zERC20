@@ -40,9 +40,8 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 
 | Name | Signature | Returns | Description |
 |------|-----------|---------|-------------|
-| `wrapWithLiquidityManager` | `(params: LocalWrapParams)` | `Promise<LiquidityActionResult>` | Wrap underlying to zERC20 |
+| `wrapWithLiquidityManager` | `(params: WrapWithLiquidityManagerParams)` | `Promise<LiquidityActionResult>` | Wrap underlying to zERC20 |
 | `unwrapWithLiquidityManager` | `(params: LocalUnwrapParams)` | `Promise<LiquidityActionResult>` | Unwrap zERC20 to underlying |
-| `quoteLocalWrap` | `(params)` | `Promise<LocalWrapQuote>` | Quote wrap reward |
 | `quoteLocalUnwrap` | `(params)` | `Promise<LocalUnwrapQuote>` | Quote unwrap fee |
 | `buildCrossUnwrapQuote` | `(params)` | `Promise<CrossUnwrapQuote>` | Quote cross-chain unwrap |
 | `sendCrossUnwrap` | `(params)` | `Promise<LiquidityActionResult>` | Execute cross-chain unwrap |
