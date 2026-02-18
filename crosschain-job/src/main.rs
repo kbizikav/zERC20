@@ -180,6 +180,7 @@ impl LayerZeroProbe {
 struct HubTokenLayout {
     eid: u32,
     position: u64,
+    verifier: alloy::primitives::Address,
 }
 
 #[derive(Clone)]
@@ -851,6 +852,7 @@ async fn resolve_target_eids(
                     HubTokenLayout {
                         eid: info.eid,
                         position: *position,
+                        verifier: info.verifier,
                     },
                 );
             }
@@ -899,7 +901,7 @@ fn build_broadcast_destinations(
         })?;
 
         let contract =
-            VerifierContract::new(provider, token.verifier_address).with_legacy_tx(token.legacy_tx);
+            VerifierContract::new(provider, info.verifier).with_legacy_tx(token.legacy_tx);
         destinations.push(BroadcastDestination {
             label: token.label.clone(),
             chain_id: token.chain_id,
@@ -994,4 +996,98 @@ fn apply_fee_buffer(fee: U256, buffer_bps: u64) -> U256 {
         buffered = fee + U256::from(1u64);
     }
     buffered
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use alloy::primitives::Address;
+
+    fn make_token(chain_id: u64, verifier: Address) -> TokenEntry {
+        TokenEntry {
+            label: format!("test-chain-{chain_id}"),
+            token_address: Address::ZERO,
+            verifier_address: verifier,
+            liquidity_manager_address: None,
+            adaptor_address: None,
+            eid: None,
+            layerzero_endpoint: None,
+            chain_id,
+            deployed_block_number: 0,
+            rpc_urls: vec!["http://localhost:8545".into()],
+            legacy_tx: false,
+            relay_interval_secs: None,
+            root_submit_interval_ms: None,
+        }
+    }
+
+    fn make_hub_info(chain_id: u64, eid: u32, verifier: Address) -> HubTokenInfo {
+        HubTokenInfo {
+            chain_id,
+            eid,
+            verifier,
+            token: Address::ZERO,
+        }
+    }
+
+    #[test]
+    fn hub_token_layout_stores_hub_verifier() {
+        let config_verifier = Address::new([0xAA; 20]);
+        let hub_verifier = Address::new([0xBB; 20]);
+
+        let tokens = [make_token(42161, config_verifier)];
+        let hub_infos = vec![make_hub_info(42161, 30110, hub_verifier)];
+
+        // Simulate resolve_target_eids logic
+        let mut layout = HashMap::new();
+        for (idx, info) in hub_infos.iter().enumerate() {
+            layout.insert(
+                info.chain_id,
+                HubTokenLayout {
+                    eid: info.eid,
+                    position: idx as u64,
+                    verifier: info.verifier,
+                },
+            );
+        }
+
+        let info = layout.get(&tokens[0].chain_id).unwrap();
+        assert_eq!(info.verifier, hub_verifier, "layout should store the hub-reported verifier");
+        assert_ne!(info.verifier, config_verifier, "layout should NOT use config verifier");
+    }
+
+    #[test]
+    fn build_broadcast_destinations_uses_hub_verifier() {
+        let config_verifier = Address::new([0xAA; 20]);
+        let hub_verifier = Address::new([0xBB; 20]);
+
+        let tokens = [make_token(42161, config_verifier)];
+        let mut layout = HashMap::new();
+        layout.insert(
+            42161,
+            HubTokenLayout {
+                eid: 30110,
+                position: 0,
+                verifier: hub_verifier,
+            },
+        );
+
+        let destinations = build_broadcast_destinations(&tokens, &layout).unwrap();
+        assert_eq!(destinations.len(), 1);
+        assert_eq!(destinations[0].verifier.address(), hub_verifier);
+        assert_ne!(destinations[0].verifier.address(), config_verifier);
+    }
+
+    #[test]
+    fn apply_fee_buffer_zero_bps() {
+        let fee = U256::from(1000u64);
+        assert_eq!(apply_fee_buffer(fee, 0), fee);
+    }
+
+    #[test]
+    fn apply_fee_buffer_1000_bps() {
+        let fee = U256::from(10_000u64);
+        let buffered = apply_fee_buffer(fee, 1000);
+        assert_eq!(buffered, U256::from(11_000u64));
+    }
 }
