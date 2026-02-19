@@ -14,6 +14,10 @@ This guide covers three tips for integrating zERC20:
 2. **Oracle Integration**: Leverage zERC20's Transfer Merkle Tree as an on-chain oracle to verify transfer history with ZK proofs
 3. **Self-Hosted Indexer**: Run your own indexer node for maximum privacy, avoiding sender-recipient linkage exposure
 
+## Creating a New zERC20 Token
+
+Want to launch a zERC20 version of your token (e.g., zUNI, zUSDT)? Visit [zerc20.io/integrate](https://zerc20.io/integrate) to get in touch with the zERC20 team. We'll work with you to deploy and configure everything.
+
 ## Token Integration
 
 zERC20 is fully ERC-20 compatible. Any application that supports ERC-20 tokens can use zERC20.
