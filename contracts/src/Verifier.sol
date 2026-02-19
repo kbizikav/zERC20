@@ -101,11 +101,27 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         mapping(uint64 => uint256) provedTransferRoots;
         mapping(uint64 => uint256) globalTransferRoots;
         mapping(uint256 => uint256) totalTeleported;
+    }
+
+    // ERC-7201 slot for namespace "zerc20.storage.allowedProvers".
+    // Isolated from VerifierStorage so the feature can be removed without layout impact.
+    bytes32 private constant ALLOWED_PROVERS_SLOT = 0x7df33cd7bf86990bd72fbc637ced290e49788cd74afe06d17e0fa683b8fe4600;
+
+    /// @custom:storage-location erc7201:zerc20.storage.allowedProvers
+    struct AllowedProversStorage {
         mapping(address => bool) allowedProvers;
     }
 
     function _getVerifierStorage() private pure returns (VerifierStorage storage $) {
         bytes32 slot = VERIFIER_STORAGE_SLOT;
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            $.slot := slot
+        }
+    }
+
+    function _getAllowedProversStorage() private pure returns (AllowedProversStorage storage $) {
+        bytes32 slot = ALLOWED_PROVERS_SLOT;
         // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := slot
@@ -177,7 +193,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     }
 
     function isAllowedProver(address prover) public view returns (bool) {
-        return _getVerifierStorage().allowedProvers[prover];
+        return _getAllowedProversStorage().allowedProvers[prover];
     }
 
     constructor(address endpoint) OAppUpgradeable(endpoint) {
@@ -289,8 +305,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     }
 
     modifier onlyAllowedProver() {
-        VerifierStorage storage $ = _getVerifierStorage();
-        require($.allowedProvers[msg.sender], UnauthorizedProver(msg.sender));
+        require(_getAllowedProversStorage().allowedProvers[msg.sender], UnauthorizedProver(msg.sender));
         _;
     }
 
@@ -558,8 +573,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     /// @param prover Address to allow.
     function setAllowedProver(address prover) external onlyOwner {
         require(prover != address(0), ZeroAddress());
-        VerifierStorage storage $ = _getVerifierStorage();
-        $.allowedProvers[prover] = true;
+        _getAllowedProversStorage().allowedProvers[prover] = true;
         emit ProverAllowed(prover);
     }
 
@@ -567,8 +581,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     /// @param prover Address to remove.
     function removeAllowedProver(address prover) external onlyOwner {
         require(prover != address(0), ZeroAddress());
-        VerifierStorage storage $ = _getVerifierStorage();
-        $.allowedProvers[prover] = false;
+        _getAllowedProversStorage().allowedProvers[prover] = false;
         emit ProverRemoved(prover);
     }
 }
