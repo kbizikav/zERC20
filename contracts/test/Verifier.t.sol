@@ -456,6 +456,106 @@ contract VerifierTest is TestHelperOz5 {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Allowed Prover Tests
+    // -----------------------------------------------------------------------
+
+    function testSetAllowedProver() public {
+        address prover = address(0xBEEF);
+        assertFalse(verifier.isAllowedProver(prover), "prover should not be allowed initially");
+        verifier.setAllowedProver(prover);
+        assertTrue(verifier.isAllowedProver(prover), "prover should be allowed after set");
+    }
+
+    function testSetAllowedProverEmitsEvent() public {
+        address prover = address(0xBEEF);
+        vm.expectEmit(true, false, false, false, address(verifier));
+        emit Verifier.ProverAllowed(prover);
+        verifier.setAllowedProver(prover);
+    }
+
+    function testSetAllowedProverOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        verifier.setAllowedProver(address(0xCAFE));
+    }
+
+    function testSetAllowedProverRevertsOnZeroAddress() public {
+        vm.expectRevert(Verifier.ZeroAddress.selector);
+        verifier.setAllowedProver(address(0));
+    }
+
+    function testRemoveAllowedProver() public {
+        address prover = address(0xBEEF);
+        verifier.setAllowedProver(prover);
+        assertTrue(verifier.isAllowedProver(prover), "prover should be allowed");
+        verifier.removeAllowedProver(prover);
+        assertFalse(verifier.isAllowedProver(prover), "prover should not be allowed after removal");
+    }
+
+    function testRemoveAllowedProverEmitsEvent() public {
+        address prover = address(0xBEEF);
+        verifier.setAllowedProver(prover);
+        vm.expectEmit(true, false, false, false, address(verifier));
+        emit Verifier.ProverRemoved(prover);
+        verifier.removeAllowedProver(prover);
+    }
+
+    function testRemoveAllowedProverOnlyOwner() public {
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        verifier.removeAllowedProver(address(0xCAFE));
+    }
+
+    function testRemoveAllowedProverRevertsOnZeroAddress() public {
+        vm.expectRevert(Verifier.ZeroAddress.selector);
+        verifier.removeAllowedProver(address(0));
+    }
+
+    function testIsAllowedProverDefaultFalse() public view {
+        assertFalse(verifier.isAllowedProver(address(0xBEEF)), "should be false by default");
+        assertFalse(verifier.isAllowedProver(address(this)), "should be false by default for test contract");
+    }
+
+    function testProveTransferRootRevertsWhenCallerNotAllowed() public {
+        address nonProver = address(0xBEEF);
+        uint256[32] memory proof;
+        vm.prank(nonProver);
+        vm.expectRevert(abi.encodeWithSelector(Verifier.UnauthorizedProver.selector, nonProver));
+        verifier.proveTransferRoot(abi.encode(proof));
+    }
+
+    function testVerifierUpgradePreservesAllowedProvers() public {
+        Verifier implementation = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                TOKEN,
+                HUB_EID,
+                address(this),
+                ROOT_DECIDER,
+                WITHDRAW_GLOBAL_DECIDER,
+                WITHDRAW_LOCAL_DECIDER,
+                SINGLE_WITHDRAW_GLOBAL_VERIFIER,
+                SINGLE_WITHDRAW_LOCAL_VERIFIER
+            )
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        Verifier proxiedVerifier = Verifier(address(proxy));
+
+        address prover = address(0xBEEF);
+        proxiedVerifier.setAllowedProver(prover);
+        assertTrue(proxiedVerifier.isAllowedProver(prover), "prover should be allowed before upgrade");
+
+        VerifierUpgradeMock newImplementation = new VerifierUpgradeMock(address(endpoint));
+        proxiedVerifier.upgradeToAndCall(address(newImplementation), bytes(""));
+
+        assertTrue(proxiedVerifier.isAllowedProver(prover), "prover should be allowed after upgrade");
+        assertFalse(proxiedVerifier.isAllowedProver(address(0xCAFE)), "non-prover should still be false after upgrade");
+    }
+
     function testVerifierUpgradeRevertsOnEndpointMismatch() public {
         Verifier implementation = new Verifier(address(endpoint));
         bytes memory initData = abi.encodeCall(
@@ -630,6 +730,7 @@ contract VerifierReentrancyTest is TestHelperOz5 {
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         verifier = Verifier(address(proxy));
         verifier.setPeer(HUB_EID, _toBytes32(address(this)));
+        verifier.setAllowedProver(address(this));
 
         attacker = new ReentrancyAttacker(verifier);
     }

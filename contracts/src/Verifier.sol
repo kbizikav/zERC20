@@ -49,6 +49,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         address singleWithdrawLocalVerifier
     );
 
+    error UnauthorizedProver(address caller);
+    event ProverAllowed(address indexed prover);
+    event ProverRemoved(address indexed prover);
+
     error InvalidProof();
     error NoProvedRoot();
     error ZeroAddress();
@@ -99,8 +103,25 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         mapping(uint256 => uint256) totalTeleported;
     }
 
+    // ERC-7201 slot for namespace "zerc20.storage.allowedProvers".
+    // Isolated from VerifierStorage so the feature can be removed without layout impact.
+    bytes32 private constant ALLOWED_PROVERS_SLOT = 0x7df33cd7bf86990bd72fbc637ced290e49788cd74afe06d17e0fa683b8fe4600;
+
+    /// @custom:storage-location erc7201:zerc20.storage.allowedProvers
+    struct AllowedProversStorage {
+        mapping(address => bool) allowedProvers;
+    }
+
     function _getVerifierStorage() private pure returns (VerifierStorage storage $) {
         bytes32 slot = VERIFIER_STORAGE_SLOT;
+        // solhint-disable-next-line no-inline-assembly
+        assembly {
+            $.slot := slot
+        }
+    }
+
+    function _getAllowedProversStorage() private pure returns (AllowedProversStorage storage $) {
+        bytes32 slot = ALLOWED_PROVERS_SLOT;
         // solhint-disable-next-line no-inline-assembly
         assembly {
             $.slot := slot
@@ -169,6 +190,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
 
     function totalTeleported(uint256 recipient) public view returns (uint256) {
         return _getVerifierStorage().totalTeleported[recipient];
+    }
+
+    function isAllowedProver(address prover) public view returns (bool) {
+        return _getAllowedProversStorage().allowedProvers[prover];
     }
 
     constructor(address endpoint) OAppUpgradeable(endpoint) {
@@ -279,10 +304,15 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         return (index_, hashChain_);
     }
 
+    modifier onlyAllowedProver() {
+        require(_getAllowedProversStorage().allowedProvers[msg.sender], UnauthorizedProver(msg.sender));
+        _;
+    }
+
     /// @notice Verifies a Nova proof for a transfer-root transition and records the resulting root by index.
     /// @dev Enforces consistency between (a) previously proved roots and (b) reserved hash chains, pausing on conflicts.
     /// @param proof Opaque calldata expected by `IRootDecider`, ABI-encoded as `uint256[32]`.
-    function proveTransferRoot(bytes calldata proof) external whenNotPaused {
+    function proveTransferRoot(bytes calldata proof) external whenNotPaused onlyAllowedProver {
         uint256[32] memory proof_ = abi.decode(proof, (uint256[32]));
         uint64 oldIndex = uint64(proof_[1]);
         // proof_[2] is oldHashChain, intentionally unused in on-chain verification
@@ -537,5 +567,21 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
             $.singleWithdrawGlobalVerifier,
             $.singleWithdrawLocalVerifier
         );
+    }
+
+    /// @notice Grants `prover` permission to call `proveTransferRoot`.
+    /// @param prover Address to allow.
+    function setAllowedProver(address prover) external onlyOwner {
+        require(prover != address(0), ZeroAddress());
+        _getAllowedProversStorage().allowedProvers[prover] = true;
+        emit ProverAllowed(prover);
+    }
+
+    /// @notice Revokes `prover` permission to call `proveTransferRoot`.
+    /// @param prover Address to remove.
+    function removeAllowedProver(address prover) external onlyOwner {
+        require(prover != address(0), ZeroAddress());
+        _getAllowedProversStorage().allowedProvers[prover] = false;
+        emit ProverRemoved(prover);
     }
 }
