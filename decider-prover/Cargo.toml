@@ -26,7 +26,7 @@ tokio = { workspace = true, features = ["full"] }
 actix-web = { workspace = true }
 actix-cors = { workspace = true }
 api-types = { path = "../api-types", package = "zerc20-api-types" }
-pgmq = "0.31.0"
+pgmq = "0.32.0"
 sqlx = { workspace = true }
 chrono = "0.4.38"
 reqwest = { workspace = true, features = ["json"] }
