@@ -49,6 +49,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         address singleWithdrawLocalVerifier
     );
 
+    error UnauthorizedProver(address caller);
+    event ProverAllowed(address indexed prover);
+    event ProverRemoved(address indexed prover);
+
     error InvalidProof();
     error NoProvedRoot();
     error ZeroAddress();
@@ -97,6 +101,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         mapping(uint64 => uint256) provedTransferRoots;
         mapping(uint64 => uint256) globalTransferRoots;
         mapping(uint256 => uint256) totalTeleported;
+        mapping(address => bool) allowedProvers;
     }
 
     function _getVerifierStorage() private pure returns (VerifierStorage storage $) {
@@ -169,6 +174,10 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
 
     function totalTeleported(uint256 recipient) public view returns (uint256) {
         return _getVerifierStorage().totalTeleported[recipient];
+    }
+
+    function isAllowedProver(address prover) public view returns (bool) {
+        return _getVerifierStorage().allowedProvers[prover];
     }
 
     constructor(address endpoint) OAppUpgradeable(endpoint) {
@@ -279,10 +288,16 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         return (index_, hashChain_);
     }
 
+    modifier onlyAllowedProver() {
+        VerifierStorage storage $ = _getVerifierStorage();
+        require($.allowedProvers[msg.sender], UnauthorizedProver(msg.sender));
+        _;
+    }
+
     /// @notice Verifies a Nova proof for a transfer-root transition and records the resulting root by index.
     /// @dev Enforces consistency between (a) previously proved roots and (b) reserved hash chains, pausing on conflicts.
     /// @param proof Opaque calldata expected by `IRootDecider`, ABI-encoded as `uint256[32]`.
-    function proveTransferRoot(bytes calldata proof) external whenNotPaused {
+    function proveTransferRoot(bytes calldata proof) external whenNotPaused onlyAllowedProver {
         uint256[32] memory proof_ = abi.decode(proof, (uint256[32]));
         uint64 oldIndex = uint64(proof_[1]);
         // proof_[2] is oldHashChain, intentionally unused in on-chain verification
@@ -537,5 +552,23 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
             $.singleWithdrawGlobalVerifier,
             $.singleWithdrawLocalVerifier
         );
+    }
+
+    /// @notice Grants `prover` permission to call `proveTransferRoot`.
+    /// @param prover Address to allow.
+    function setAllowedProver(address prover) external onlyOwner {
+        require(prover != address(0), ZeroAddress());
+        VerifierStorage storage $ = _getVerifierStorage();
+        $.allowedProvers[prover] = true;
+        emit ProverAllowed(prover);
+    }
+
+    /// @notice Revokes `prover` permission to call `proveTransferRoot`.
+    /// @param prover Address to remove.
+    function removeAllowedProver(address prover) external onlyOwner {
+        require(prover != address(0), ZeroAddress());
+        VerifierStorage storage $ = _getVerifierStorage();
+        $.allowedProvers[prover] = false;
+        emit ProverRemoved(prover);
     }
 }
