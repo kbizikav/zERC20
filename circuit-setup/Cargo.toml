@@ -29,7 +29,7 @@ tokio = { workspace = true, features = ["rt-multi-thread", "fs"] }
 futures = { workspace = true }
 
 # AWS S3 (for upload only)
-aws-config = { version = "1.5", features = ["behavior-version-latest"] }
+aws-config = { version = "1.8", features = ["behavior-version-latest"] }
 aws-sdk-s3 = "1.65"
 
 # HTTP client (for public download)
