@@ -13,7 +13,7 @@ use serde::Deserialize;
 
 use crate::{
     events::{
-        BLOCK_SPAN_RECOMMENDED, BlockTag, EventIndexerConfig, FORWARD_SCAN_OVERLAP_RECOMMENDED,
+        BLOCK_SPAN_RECOMMENDED, EventIndexerConfig, FORWARD_SCAN_OVERLAP_RECOMMENDED,
         REORG_CHECK_WINDOW_RECOMMENDED,
     },
     trees::{DbMerkleTreeConfig, HISTORY_WINDOW_RECOMMENDED},
@@ -50,7 +50,6 @@ impl IndexerConfig {
             interval_ms: env.event_interval_ms,
             block_span: env.event_block_span,
             forward_scan_overlap: env.event_forward_scan_overlap,
-            block_tag: env.event_block_tag,
             reorg_check_window: env.event_reorg_check_window,
         };
         event_indexer
@@ -96,8 +95,6 @@ struct EnvSettings {
     event_block_span: u64,
     #[serde(default = "default_forward_overlap")]
     event_forward_scan_overlap: u64,
-    #[serde(default)]
-    event_block_tag: BlockTag,
     #[serde(default = "default_reorg_check_window")]
     event_reorg_check_window: u64,
     #[serde(default = "default_tree_interval_ms")]
@@ -136,8 +133,6 @@ pub struct EventJobConfig {
     pub block_span: u64,
     #[serde(default = "default_forward_overlap")]
     pub forward_scan_overlap: u64,
-    #[serde(default)]
-    pub block_tag: BlockTag,
     #[serde(default = "default_reorg_check_window")]
     pub reorg_check_window: u64,
 }
@@ -150,7 +145,6 @@ impl EventJobConfig {
         EventIndexerConfig::new(
             self.block_span,
             self.forward_scan_overlap,
-            self.block_tag,
             self.reorg_check_window,
         )
         .context("invalid event indexer configuration")?;
@@ -165,7 +159,6 @@ impl EventJobConfig {
         EventIndexerConfig::new(
             self.block_span,
             self.forward_scan_overlap,
-            self.block_tag,
             self.reorg_check_window,
         )
         .context("failed to construct EventIndexerConfig")
@@ -178,7 +171,6 @@ impl Default for EventJobConfig {
             interval_ms: default_event_interval_ms(),
             block_span: default_block_span(),
             forward_scan_overlap: default_forward_overlap(),
-            block_tag: BlockTag::default(),
             reorg_check_window: default_reorg_check_window(),
         }
     }

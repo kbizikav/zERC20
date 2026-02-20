@@ -1,11 +1,7 @@
 use std::{convert::TryFrom, num::NonZeroU64};
 
-use alloy::{
-    eips::BlockNumberOrTag,
-    primitives::{B256, U256},
-};
+use alloy::primitives::{B256, U256};
 use api_types::indexer::IndexedEvent;
-use serde::Deserialize;
 use sqlx::{FromRow, PgPool, Postgres, QueryBuilder, Transaction};
 use thiserror::Error;
 
@@ -26,15 +22,6 @@ const TOKENS_TABLE: &str = "tokens";
 const ADVANCE_BATCH_SIZE: i64 = 512;
 
 pub type Result<T> = std::result::Result<T, EventIndexerError>;
-
-#[derive(Debug, Clone, Copy, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum BlockTag {
-    #[default]
-    Latest,
-    Safe,
-    Finalized,
-}
 
 #[derive(Debug, Error)]
 pub enum EventIndexerError {
@@ -80,7 +67,6 @@ impl EventIndexerError {
 pub struct EventIndexerConfig {
     block_span: NonZeroU64,
     forward_scan_overlap: u64,
-    block_tag: BlockTag,
     reorg_check_window: u64,
 }
 
@@ -88,7 +74,6 @@ impl EventIndexerConfig {
     pub fn new(
         block_span: u64,
         forward_scan_overlap: u64,
-        block_tag: BlockTag,
         reorg_check_window: u64,
     ) -> Result<Self> {
         let Some(block_span) = NonZeroU64::new(block_span) else {
@@ -99,7 +84,6 @@ impl EventIndexerConfig {
         Ok(Self {
             block_span,
             forward_scan_overlap,
-            block_tag,
             reorg_check_window,
         })
     }
@@ -112,22 +96,8 @@ impl EventIndexerConfig {
         self.forward_scan_overlap
     }
 
-    pub fn block_tag(&self) -> BlockTag {
-        self.block_tag
-    }
-
     pub fn reorg_check_window(&self) -> u64 {
         self.reorg_check_window
-    }
-}
-
-impl From<BlockTag> for BlockNumberOrTag {
-    fn from(tag: BlockTag) -> Self {
-        match tag {
-            BlockTag::Latest => BlockNumberOrTag::Latest,
-            BlockTag::Safe => BlockNumberOrTag::Safe,
-            BlockTag::Finalized => BlockNumberOrTag::Finalized,
-        }
     }
 }
 
@@ -187,9 +157,9 @@ impl EventIndexer {
 
         let latest_block = self
             .contract
-            .latest_block_by_tag(self.config.block_tag().into())
+            .latest_block()
             .await
-            .map_err(|err| EventIndexerError::contract("latest_block_by_tag", err))?;
+            .map_err(|err| EventIndexerError::contract("latest_block", err))?;
         let contract_next_index = self
             .contract
             .index()

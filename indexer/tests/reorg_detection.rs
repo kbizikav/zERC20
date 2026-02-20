@@ -24,8 +24,8 @@ use common::{
 };
 use sqlx::migrate::Migrator;
 use zerc20_tree_indexer::events::{
-    BLOCK_SPAN_RECOMMENDED, BlockTag, EventIndexer, EventIndexerConfig,
-    FORWARD_SCAN_OVERLAP_RECOMMENDED, REORG_CHECK_WINDOW_RECOMMENDED,
+    BLOCK_SPAN_RECOMMENDED, EventIndexer, EventIndexerConfig, FORWARD_SCAN_OVERLAP_RECOMMENDED,
+    REORG_CHECK_WINDOW_RECOMMENDED,
 };
 
 // ---------------------------------------------------------------------------
@@ -151,7 +151,6 @@ impl TestHarness {
         Ok(EventIndexerConfig::new(
             BLOCK_SPAN_RECOMMENDED,
             FORWARD_SCAN_OVERLAP_RECOMMENDED,
-            BlockTag::Latest,
             REORG_CHECK_WINDOW_RECOMMENDED,
         )?)
     }
@@ -354,7 +353,6 @@ async fn old_blocks_are_pruned() -> Result<()> {
     let config = EventIndexerConfig::new(
         BLOCK_SPAN_RECOMMENDED,
         FORWARD_SCAN_OVERLAP_RECOMMENDED,
-        BlockTag::Latest,
         2, // tiny window
     )?;
 
@@ -458,7 +456,6 @@ async fn reorg_detection_disabled_when_window_zero() -> Result<()> {
     let config = EventIndexerConfig::new(
         BLOCK_SPAN_RECOMMENDED,
         FORWARD_SCAN_OVERLAP_RECOMMENDED,
-        BlockTag::Latest,
         0, // disabled
     )?;
 
