@@ -1,9 +1,8 @@
 use std::time::Duration;
 
 use api_types::prover::{CircuitKind, JobInfoResponse, JobRequest, JobStatus, JobStatusResponse};
-use chrono::{Duration as ChronoDuration, Utc};
 use pgmq::{
-    Message, PGMQueue,
+    Message, PGMQueueExt,
     types::{PGMQ_SCHEMA, QUEUE_PREFIX},
 };
 use serde::{Deserialize, Serialize};
@@ -70,7 +69,7 @@ pub enum EnqueueJobResult {
 #[derive(Clone)]
 pub struct QueueClient {
     pool: Pool<Postgres>,
-    pgmq: PGMQueue,
+    pgmq: PGMQueueExt,
     queue_name: String,
     queue_table: QueueTableName,
     job_table: JobTableName,
@@ -115,7 +114,7 @@ impl QueueClient {
             .max_connections(DEFAULT_POOL_SIZE)
             .connect(database_url)
             .await?;
-        let pgmq = PGMQueue::new_with_pool(pool.clone()).await;
+        let pgmq = PGMQueueExt::new_with_pool(pool.clone()).await;
         pgmq.create(queue_name).await?;
         create_job_table(&pool, &job_table).await?;
 
@@ -207,7 +206,7 @@ impl QueueClient {
         loop {
             match self
                 .pgmq
-                .read::<JobRequest>(&self.queue_name, Some(self.visibility_timeout_secs))
+                .read::<JobRequest>(&self.queue_name, self.visibility_timeout_secs)
                 .await?
             {
                 Some(Message {
@@ -259,9 +258,8 @@ impl QueueClient {
     }
 
     pub async fn extend_visibility(&self, message_id: i64) -> Result<(), ProverError> {
-        let new_vt = Utc::now() + ChronoDuration::seconds(i64::from(self.visibility_timeout_secs));
         self.pgmq
-            .set_vt::<JobRequest>(&self.queue_name, message_id, new_vt)
+            .set_vt::<JobRequest>(&self.queue_name, message_id, self.visibility_timeout_secs)
             .await?;
         Ok(())
     }
