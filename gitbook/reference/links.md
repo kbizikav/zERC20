@@ -14,7 +14,14 @@ This page lists all external URLs referenced in the documentation. If URLs chang
 
 | Name | URL | Description |
 |------|-----|-------------|
-| Discord | https://discord.gg/U3twJUfzmE | Community chat and support |
+| Discord | https://discord.gg/5HCgDyW7tD | Community chat and support |
+| Telegram Support | https://t.me/zERC20bot | Real-time support bot |
+
+## Support
+
+| Name | Contact | Description |
+|------|---------|-------------|
+| Email | help@zerc20.io | Formal support inquiries |
 
 ## Resources
 
