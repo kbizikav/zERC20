@@ -126,4 +126,8 @@ The "stuck" tokens represent the burned supply that backs the minted withdrawal.
 
 - Check the [CLI Guide](cli/getting-started.md) for command reference
 - Review [How zERC20 Works](../overview/how-it-works.md) for technical details
-- Join our [Discord](https://discord.gg/U3twJUfzmE) for community support
+- Join our [Discord](https://discord.gg/5HCgDyW7tD) for community support
+- Contact us on Telegram: [@zERC20bot](https://t.me/zERC20bot)
+- Email us at **help@zerc20.io**
+
+For full support details, see the [Support](../reference/support.md) page.

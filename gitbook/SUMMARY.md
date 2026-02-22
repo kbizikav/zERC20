@@ -36,4 +36,5 @@
 
 * [Contract Addresses](reference/addresses.md)
 * [External Links](reference/links.md)
+* [Support](reference/support.md)
 * [Glossary](reference/glossary.md)
