@@ -264,6 +264,15 @@ impl QueueClient {
         Ok(())
     }
 
+    pub async fn pending_count(&self) -> Result<i64, ProverError> {
+        let sql = format!(
+            "SELECT COUNT(*) as count FROM {} WHERE vt <= now()",
+            self.queue_table.qualified()
+        );
+        let row = sqlx::query(&sql).fetch_one(&self.pool).await?;
+        Ok(row.try_get("count")?)
+    }
+
     pub fn visibility_extension_interval(&self) -> Duration {
         self.visibility_extension_interval
     }

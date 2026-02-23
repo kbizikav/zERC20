@@ -32,6 +32,7 @@ services:
       TOKENS_FILE_PATH: /app/config/tokens.json
       ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
       DECIDER_PROVER_URL: http://host.docker.internal:8081
+      DECIDER_PROVER_TIMEOUT_SECS: 600
       ROOT_SUBMITTER_PRIVATE_KEY: "${ROOT_SUBMITTER_PRIVATE_KEY:?ROOT_SUBMITTER_PRIVATE_KEY must be set in .env}"
       IS_SYNC: "true"
       LISTEN_ADDR: 0.0.0.0:8080

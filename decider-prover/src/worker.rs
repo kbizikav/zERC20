@@ -34,7 +34,8 @@ async fn process_once(
     let job_id = job.job_id.clone();
     let circuit = job.circuit.clone();
 
-    info!("job {job_id} ({circuit}) started");
+    let pending = queue.pending_count().await.unwrap_or(-1);
+    info!("job {job_id} ({circuit}) started ({pending} pending)");
 
     queue
         .update_status(&job_id, JobStatus::Processing, None, None, job_ttl_seconds)
