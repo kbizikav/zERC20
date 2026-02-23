@@ -13,6 +13,7 @@ members = [
     "zstorage/backend/key_manager",
     "zstorage/backend/storage",
     "circuit-setup",
+    "watcher",
 ]
 resolver = "2"
 

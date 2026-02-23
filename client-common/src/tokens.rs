@@ -199,7 +199,7 @@ pub fn load_tokens_from_path(path: impl AsRef<Path>) -> Result<TokensFile> {
 /// Expands environment variable placeholders in the format `${VAR}`.
 ///
 /// Returns an error if a referenced environment variable is not defined.
-fn expand_env_vars(contents: &str) -> Result<String> {
+pub fn expand_env_vars(contents: &str) -> Result<String> {
     let mut result = String::with_capacity(contents.len());
     let mut chars = contents.chars().peekable();
 

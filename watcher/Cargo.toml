@@ -1,0 +1,20 @@
+[package]
+name = "zerc20-watcher"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alloy = { workspace = true }
+anyhow = { workspace = true }
+clap = { workspace = true }
+client-common = { path = "../client-common", package = "zerc20-client-common" }
+api-types = { path = "../api-types", package = "zerc20-api-types" }
+dotenvy = { workspace = true }
+env_logger = { workspace = true }
+log = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = "0.9"
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["full"] }

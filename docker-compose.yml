@@ -82,5 +82,21 @@ services:
     volumes:
       - "${TOKENS_FILE_PATH:?TOKENS_FILE_PATH must be set in .env}:/app/config/tokens.json:ro"
 
+  watcher:
+    profiles:
+      - watcher
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: watcher
+    restart: unless-stopped
+    environment:
+      WATCHER_CONFIG_PATH: /app/config/watcher.yaml
+      DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL:?DISCORD_WEBHOOK_URL must be set in .env}"
+      ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
+      RUST_LOG: info
+    volumes:
+      - "${WATCHER_CONFIG_PATH:-./config/watcher.yaml}:/app/config/watcher.yaml:ro"
+
 volumes:
   postgres-data:

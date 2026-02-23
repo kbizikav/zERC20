@@ -26,6 +26,7 @@ RUN mkdir -p \
     decider-prover \
     indexer \
     wasm \
+    watcher \
     bin
 
 COPY Cargo.toml Cargo.lock ./
@@ -38,6 +39,7 @@ COPY fee-manager/Cargo.toml fee-manager/Cargo.toml
 COPY decider-prover/Cargo.toml decider-prover/Cargo.toml
 COPY indexer/Cargo.toml indexer/Cargo.toml
 COPY wasm/Cargo.toml wasm/Cargo.toml
+COPY watcher/Cargo.toml watcher/Cargo.toml
 
 COPY . .
 
@@ -47,9 +49,11 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       --package zerc20-tree-indexer \
       --package zerc20-crosschain-job \
       --package zerc20-fee-manager \
+      --package zerc20-watcher \
     && cp target/release/zerc20-tree-indexer      /workspace/bin/tree-indexer \
     && cp target/release/zerc20-crosschain-job    /workspace/bin/crosschain-job \
-    && cp target/release/zerc20-fee-manager       /workspace/bin/fee-manager
+    && cp target/release/zerc20-fee-manager       /workspace/bin/fee-manager \
+    && cp target/release/zerc20-watcher           /workspace/bin/watcher
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo install --locked sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres
@@ -118,3 +122,18 @@ ENV RUST_LOG=info
 USER appuser
 
 ENTRYPOINT ["/usr/local/bin/fee-manager"]
+
+# ============================================================
+# Runtime: watcher
+# ============================================================
+FROM runtime-base AS watcher
+
+WORKDIR /app
+
+COPY --from=builder /workspace/bin/watcher /usr/local/bin/watcher
+
+ENV RUST_LOG=info
+
+USER appuser
+
+ENTRYPOINT ["/usr/local/bin/watcher"]
