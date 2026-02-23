@@ -53,6 +53,11 @@ async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
         .await
         .context("failed to read hub current_aggregation_root")?;
 
+    if hub_root == U256::ZERO {
+        info!("hub aggregation root is zero, skipping crosschain checks for {path}");
+        return Ok(Vec::new());
+    }
+
     let mut alerts = Vec::new();
 
     for token in &tokens_file.tokens {
@@ -67,134 +72,133 @@ async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
 
         let verifier = VerifierContract::new(provider, token.verifier_address);
 
-        // aggSeq sync check
-        match verifier.latest_agg_seq().await {
-            Ok(v_agg_seq) => {
-                if hub_agg_seq > v_agg_seq {
-                    let delay = hub_agg_seq - v_agg_seq;
-                    info!(
-                        "AGG_SEQ DELAY: {} — hub={}, verifier={}, delay={}",
-                        label, hub_agg_seq, v_agg_seq, delay
-                    );
-                    alerts.push(Alert {
-                        severity: Severity::Warning,
-                        domain: "crosschain".to_string(),
-                        title: format!("aggSeq delay: {}", label),
-                        description: format!(
-                            "Verifier **{}** (chain {}) aggSeq is **{}** behind hub (hub={}, verifier={}).",
-                            label, token.chain_id, delay, hub_agg_seq, v_agg_seq,
-                        ),
-                        fields: vec![
-                            AlertField {
-                                name: "Token".to_string(),
-                                value: label.clone(),
-                                inline: true,
-                            },
-                            AlertField {
-                                name: "Chain".to_string(),
-                                value: token.chain_id.to_string(),
-                                inline: true,
-                            },
-                            AlertField {
-                                name: "Hub aggSeq".to_string(),
-                                value: hub_agg_seq.to_string(),
-                                inline: true,
-                            },
-                            AlertField {
-                                name: "Verifier aggSeq".to_string(),
-                                value: v_agg_seq.to_string(),
-                                inline: true,
-                            },
-                        ],
-                    });
-                }
-
-                // Root consistency check: only when verifier is at hub's seq
-                if v_agg_seq == hub_agg_seq && hub_agg_seq > 0 {
-                    match verifier.global_transfer_root(v_agg_seq).await {
-                        Ok(v_root) => {
-                            if v_root != hub_root && v_root != U256::ZERO {
-                                info!(
-                                    "ROOT MISMATCH: {} — hub_root={:#x}, verifier_root={:#x}",
-                                    label, hub_root, v_root
-                                );
-                                alerts.push(Alert {
-                                    severity: Severity::Critical,
-                                    domain: "crosschain".to_string(),
-                                    title: format!("Root mismatch: {}", label),
-                                    description: format!(
-                                        "Verifier **{}** (chain {}) root at aggSeq {} does not match hub root.",
-                                        label, token.chain_id, v_agg_seq,
-                                    ),
-                                    fields: vec![
-                                        AlertField {
-                                            name: "Token".to_string(),
-                                            value: label.clone(),
-                                            inline: true,
-                                        },
-                                        AlertField {
-                                            name: "aggSeq".to_string(),
-                                            value: v_agg_seq.to_string(),
-                                            inline: true,
-                                        },
-                                        AlertField {
-                                            name: "Hub root".to_string(),
-                                            value: format!("{:#x}", hub_root),
-                                            inline: false,
-                                        },
-                                        AlertField {
-                                            name: "Verifier root".to_string(),
-                                            value: format!("{:#x}", v_root),
-                                            inline: false,
-                                        },
-                                    ],
-                                });
-                            }
-                        }
-                        Err(err) => {
-                            error!(
-                                "failed to read global_transfer_root for '{}': {:?}",
-                                label, err
-                            );
-                        }
-                    }
-                }
-            }
+        let v_agg_seq = match verifier.latest_agg_seq().await {
+            Ok(seq) => seq,
             Err(err) => {
                 error!("failed to read latest_agg_seq for '{}': {:?}", label, err);
+                continue;
             }
+        };
+
+        // Root sync check: uses the same logic as crosschain-job's has_current_root().
+        // A verifier is in sync if its root at latest_agg_seq matches the hub's current root,
+        // regardless of whether the aggSeq values match.
+        if v_agg_seq == 0 {
+            info!("ROOT NOT SYNCED: {} — verifier aggSeq is 0", label);
+            alerts.push(Alert {
+                severity: Severity::Warning,
+                domain: "crosschain".to_string(),
+                title: format!("Root not synced: {}", label),
+                description: format!(
+                    "Verifier **{}** (chain {}) has not received any aggregation root yet (aggSeq=0).",
+                    label, token.chain_id,
+                ),
+                fields: vec![
+                    AlertField {
+                        name: "Token".to_string(),
+                        value: label.clone(),
+                        inline: true,
+                    },
+                    AlertField {
+                        name: "Chain".to_string(),
+                        value: token.chain_id.to_string(),
+                        inline: true,
+                    },
+                ],
+            });
+            continue;
         }
 
-        // isUpToDate check
-        match verifier.is_up_to_date().await {
-            Ok(false) => {
-                info!("NOT UP TO DATE: {}", label);
-                alerts.push(Alert {
-                    severity: Severity::Warning,
-                    domain: "crosschain".to_string(),
-                    title: format!("Not up to date: {}", label),
-                    description: format!(
-                        "Verifier **{}** (chain {}) reports `isUpToDate = false`.",
-                        label, token.chain_id,
-                    ),
-                    fields: vec![
-                        AlertField {
-                            name: "Token".to_string(),
-                            value: label.clone(),
-                            inline: true,
-                        },
-                        AlertField {
-                            name: "Chain".to_string(),
-                            value: token.chain_id.to_string(),
-                            inline: true,
-                        },
-                    ],
-                });
-            }
-            Ok(true) => {}
+        let v_root = match verifier.global_transfer_root(v_agg_seq).await {
+            Ok(r) => r,
             Err(err) => {
-                error!("failed to read is_up_to_date for '{}': {:?}", label, err);
+                error!(
+                    "failed to read global_transfer_root for '{}': {:?}",
+                    label, err
+                );
+                continue;
             }
+        };
+
+        // Critical: same aggSeq but different root → protocol-level inconsistency
+        if v_agg_seq == hub_agg_seq && v_root != hub_root && v_root != U256::ZERO {
+            info!(
+                "ROOT MISMATCH: {} — same aggSeq={}, hub_root={:#x}, verifier_root={:#x}",
+                label, hub_agg_seq, hub_root, v_root
+            );
+            alerts.push(Alert {
+                severity: Severity::Critical,
+                domain: "crosschain".to_string(),
+                title: format!("Root mismatch: {}", label),
+                description: format!(
+                    "Verifier **{}** (chain {}) has a **different root** at the same aggSeq {} as the hub.",
+                    label, token.chain_id, v_agg_seq,
+                ),
+                fields: vec![
+                    AlertField {
+                        name: "Token".to_string(),
+                        value: label.clone(),
+                        inline: true,
+                    },
+                    AlertField {
+                        name: "aggSeq".to_string(),
+                        value: v_agg_seq.to_string(),
+                        inline: true,
+                    },
+                    AlertField {
+                        name: "Hub root".to_string(),
+                        value: format!("{:#x}", hub_root),
+                        inline: false,
+                    },
+                    AlertField {
+                        name: "Verifier root".to_string(),
+                        value: format!("{:#x}", v_root),
+                        inline: false,
+                    },
+                ],
+            });
+            continue;
+        }
+
+        // Warning: verifier's latest root doesn't match hub's current root.
+        // This means the broadcast hasn't reached this verifier yet.
+        let has_current_root = v_root == hub_root && v_root != U256::ZERO;
+        if !has_current_root {
+            info!(
+                "ROOT NOT SYNCED: {} — verifier_root={:#x} (seq={}), hub_root={:#x} (seq={})",
+                label, v_root, v_agg_seq, hub_root, hub_agg_seq
+            );
+            alerts.push(Alert {
+                severity: Severity::Warning,
+                domain: "crosschain".to_string(),
+                title: format!("Root not synced: {}", label),
+                description: format!(
+                    "Verifier **{}** (chain {}) does not have the hub's current aggregation root. Broadcast may be pending.",
+                    label, token.chain_id,
+                ),
+                fields: vec![
+                    AlertField {
+                        name: "Token".to_string(),
+                        value: label.clone(),
+                        inline: true,
+                    },
+                    AlertField {
+                        name: "Chain".to_string(),
+                        value: token.chain_id.to_string(),
+                        inline: true,
+                    },
+                    AlertField {
+                        name: "Hub root".to_string(),
+                        value: format!("{:#x}", hub_root),
+                        inline: false,
+                    },
+                    AlertField {
+                        name: "Verifier root".to_string(),
+                        value: format!("{:#x}", v_root),
+                        inline: false,
+                    },
+                ],
+            });
         }
     }
 
