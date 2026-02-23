@@ -96,9 +96,9 @@ impl AlertManager {
                 embeds,
                 username: Some("zERC20 Watcher".to_string()),
             };
-            self.post_webhook(&payload).await.with_context(|| {
-                format!("failed to send {} alert(s) to Discord", chunk.len())
-            })?;
+            self.post_webhook(&payload)
+                .await
+                .with_context(|| format!("failed to send {} alert(s) to Discord", chunk.len()))?;
 
             for alert in chunk {
                 let key = alert.dedup_key();

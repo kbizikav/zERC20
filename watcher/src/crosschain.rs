@@ -21,7 +21,10 @@ pub async fn check_crosschain(config: &CrosschainConfig) -> Vec<Alert> {
                     severity: Severity::Critical,
                     domain: "crosschain".to_string(),
                     title: format!("Config load failed: {}", path),
-                    description: format!("Failed to load or process token config `{}`: {}", path, err),
+                    description: format!(
+                        "Failed to load or process token config `{}`: {}",
+                        path, err
+                    ),
                     fields: vec![],
                 });
             }
@@ -43,10 +46,7 @@ async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
     let hub_provider = hub_entry.provider()?;
     let hub = HubContract::new(hub_provider, hub_entry.hub_address);
 
-    let hub_agg_seq = hub
-        .agg_seq()
-        .await
-        .context("failed to read hub agg_seq")?;
+    let hub_agg_seq = hub.agg_seq().await.context("failed to read hub agg_seq")?;
 
     let hub_root = hub
         .current_aggregation_root()
@@ -161,10 +161,7 @@ async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
                 }
             }
             Err(err) => {
-                error!(
-                    "failed to read latest_agg_seq for '{}': {:?}",
-                    label, err
-                );
+                error!("failed to read latest_agg_seq for '{}': {:?}", label, err);
             }
         }
 
@@ -196,10 +193,7 @@ async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
             }
             Ok(true) => {}
             Err(err) => {
-                error!(
-                    "failed to read is_up_to_date for '{}': {:?}",
-                    label, err
-                );
+                error!("failed to read is_up_to_date for '{}': {:?}", label, err);
             }
         }
     }

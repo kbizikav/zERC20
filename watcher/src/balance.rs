@@ -75,14 +75,8 @@ pub async fn check_balances(
                 }
             };
 
-            match check_single_balance(
-                &account.name,
-                address,
-                threshold,
-                chain_name,
-                chain_cfg,
-            )
-            .await
+            match check_single_balance(&account.name, address, threshold, chain_name, chain_cfg)
+                .await
             {
                 Ok(Some(alert)) => alerts.push(alert),
                 Ok(None) => {}

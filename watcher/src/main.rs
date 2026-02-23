@@ -44,8 +44,10 @@ async fn main() -> Result<()> {
     let config = load_config(&cli.config)?;
     info!("loaded config from {}", cli.config.display());
 
-    let mut alert_manager =
-        AlertManager::new(config.discord_webhook_url.clone(), config.alert.cooldown_seconds);
+    let mut alert_manager = AlertManager::new(
+        config.discord_webhook_url.clone(),
+        config.alert.cooldown_seconds,
+    );
 
     let mut indexer_monitor = config
         .indexer
