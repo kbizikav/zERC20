@@ -57,8 +57,6 @@ pub struct ChainConfig {
 pub struct IndexerConfig {
     #[serde(default = "default_stale_threshold")]
     pub stale_threshold_cycles: u32,
-    #[serde(default = "default_max_index_gap")]
-    pub max_index_gap: u64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -81,10 +79,6 @@ fn default_interval() -> u64 {
 
 fn default_stale_threshold() -> u32 {
     5
-}
-
-fn default_max_index_gap() -> u64 {
-    100
 }
 
 fn default_cooldown() -> u64 {

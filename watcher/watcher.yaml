@@ -74,19 +74,18 @@ chains:
 # Token-level monitoring (indexer + crosschain)
 tokens:
   - name: zUSDC
-    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zusdc/status"
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zusdc"
     crosschain_config_path: "../config/deployed/mainnet/tokens.zusdc.mainnet.json"
   - name: zETH
-    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zeth/status"
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zeth"
     crosschain_config_path: "../config/deployed/mainnet/tokens.zeth.mainnet.json"
   - name: zBNB
-    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zbnb/status"
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zbnb"
     crosschain_config_path: "../config/deployed/mainnet/tokens.zbnb.mainnet.json"
 
 # Indexer thresholds
 indexer:
   stale_threshold_cycles: 5
-  max_index_gap: 100
 
 # Alert control
 alert:

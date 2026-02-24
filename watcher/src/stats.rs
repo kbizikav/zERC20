@@ -15,6 +15,36 @@ use crate::alert::{DiscordEmbed, DiscordField};
 use crate::balance::format_wei_as_eth;
 use crate::config::{AccountConfig, ChainConfig, TokenConfig, WatcherConfig};
 
+/// Fetch the minimum `latestProvedIndex` across all verifiers for a token config.
+async fn fetch_min_proved_index(config_path: &str) -> Result<Option<u64>> {
+    let tokens_file: TokensFile =
+        load_tokens_from_path(config_path).with_context(|| format!("loading {}", config_path))?;
+
+    let mut min_proved: Option<u64> = None;
+    for token in &tokens_file.tokens {
+        let provider = match token.provider() {
+            Ok(p) => p,
+            Err(err) => {
+                error!("failed to create provider for '{}': {:?}", token.label, err);
+                continue;
+            }
+        };
+        let verifier = VerifierContract::new(provider, token.verifier_address);
+        match verifier.latest_proved_index().await {
+            Ok(idx) => {
+                min_proved = Some(min_proved.map_or(idx, |m: u64| m.min(idx)));
+            }
+            Err(err) => {
+                error!(
+                    "failed to read latestProvedIndex for '{}': {:?}",
+                    token.label, err
+                );
+            }
+        }
+    }
+    Ok(min_proved)
+}
+
 /// Collect system-wide stats and return Discord embeds for reporting.
 pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
     let mut embeds = Vec::new();
@@ -112,29 +142,46 @@ async fn get_balance(address: Address, chain_cfg: &ChainConfig) -> Result<U256> 
         .context("failed to get balance")
 }
 
-/// Indexer stats: pipeline stage indices for each token.
+/// Indexer stats: tree_synced_index and latestProvedIndex for each token.
 async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
     let client = reqwest::Client::new();
-    let mut token_statuses: Vec<(String, Vec<TokenStatusResponse>)> = Vec::new();
+
+    let fmt = |v: Option<u64>| match v {
+        Some(n) => n.to_string(),
+        None => "-".to_string(),
+    };
+
+    let mut lines = Vec::new();
+    lines.push(format!(
+        "{:<12} {:>12} {:>12}",
+        "token", "tree_synced", "proved"
+    ));
+    lines.push("-".repeat(38));
+
+    let mut has_data = false;
 
     for token in tokens {
-        let url = match token.indexer_url.as_ref() {
-            Some(u) => u,
+        let base_url = match token.indexer_url.as_ref() {
+            Some(u) => u.trim_end_matches('/'),
             None => continue,
         };
-        match client
-            .get(url)
+
+        // Fetch tree_synced_index from /status
+        let status_url = format!("{}/status", base_url);
+        let tree_synced = match client
+            .get(&status_url)
             .send()
             .await
             .and_then(|r| Ok(r.error_for_status()?))
         {
             Ok(resp) => match resp.json::<Vec<TokenStatusResponse>>().await {
-                Ok(s) => token_statuses.push((token.name.clone(), s)),
+                Ok(statuses) => statuses.first().and_then(|s| s.tree_synced_index),
                 Err(err) => {
                     error!(
                         "failed to parse indexer status for {}: {:?}",
                         token.name, err
                     );
+                    None
                 }
             },
             Err(err) => {
@@ -142,38 +189,33 @@ async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
                     "failed to fetch indexer status for {}: {:?}",
                     token.name, err
                 );
+                None
             }
-        }
+        };
+
+        // Fetch latestProvedIndex from verifier
+        let proved = match &token.crosschain_config_path {
+            Some(path) => match fetch_min_proved_index(path).await {
+                Ok(idx) => idx,
+                Err(err) => {
+                    error!("failed to fetch proved index for {}: {:?}", token.name, err);
+                    None
+                }
+            },
+            None => None,
+        };
+
+        lines.push(format!(
+            "{:<12} {:>12} {:>12}",
+            token.name,
+            fmt(tree_synced),
+            fmt(proved),
+        ));
+        has_data = true;
     }
 
-    if token_statuses.is_empty() {
+    if !has_data {
         return None;
-    }
-
-    let mut lines = Vec::new();
-    lines.push(format!(
-        "{:<12} {:>8} {:>8} {:>8} {:>8} {:>8}",
-        "token", "events", "tree", "ivc", "reserve", "proved"
-    ));
-    lines.push("-".repeat(60));
-
-    let fmt = |v: Option<u64>| match v {
-        Some(n) => n.to_string(),
-        None => "-".to_string(),
-    };
-
-    for (name, statuses) in &token_statuses {
-        for s in statuses {
-            lines.push(format!(
-                "{:<12} {:>8} {:>8} {:>8} {:>8} {:>8}",
-                name,
-                fmt(s.events_synced_index),
-                fmt(s.tree_synced_index),
-                fmt(s.ivc_generated_index),
-                fmt(s.onchain_reserved_index),
-                fmt(s.onchain_proved_index),
-            ));
-        }
     }
 
     Some(DiscordEmbed {
