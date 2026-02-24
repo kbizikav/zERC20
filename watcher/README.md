@@ -22,7 +22,7 @@ A monitoring daemon that continuously checks the health of the zERC20 system and
                    Discord Webhook    Discord Webhook
 ```
 
-The watcher runs on a configurable interval (default: 60s). Each cycle executes all three monitoring domains, collects alerts, applies cooldown-based deduplication (default: 1 hour), and posts filtered alerts to Discord. An optional stats reporter sends periodic system-wide status summaries.
+Each cycle executes all three monitoring domains, collects alerts, applies cooldown-based deduplication, and posts filtered alerts to Discord. An optional stats reporter sends periodic system-wide status summaries.
 
 ## Quick Start
 
@@ -39,54 +39,7 @@ cargo run --bin zerc20-watcher -- --config watcher/watcher.yaml --once
 
 ## Configuration
 
-All configuration lives in `watcher.yaml`. Environment variables are supported via `${VAR_NAME}` syntax.
-
-```yaml
-discord_webhook_url: "${DISCORD_WEBHOOK_URL}"
-interval_seconds: 60              # Main loop interval
-
-# Balance monitoring
-accounts:
-  - name: mainnet_fee_manager
-    address: "${MAINNET_FEE_MANAGER_ADDRESS}"
-    required_balance: "0.01"      # ETH denomination
-    chains: [ethereum, base, arbitrum]
-
-chains:
-  ethereum:
-    rpc_url: "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://etherscan.io/address/"
-
-# Token-level monitoring (shared by indexer + crosschain)
-tokens:
-  - name: zUSDC
-    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zusdc"
-    crosschain_config_path: "../config/deployed/mainnet/tokens.zusdc.mainnet.json"
-
-# Indexer thresholds
-indexer:
-  stale_threshold_cycles: 5       # Alert after N consecutive stale cycles
-
-# Crosschain thresholds
-crosschain:
-  root_delay_threshold_seconds: 2400  # 40 minutes
-
-# Alert deduplication
-alert:
-  cooldown_seconds: 3600          # Suppress duplicate alerts for 1 hour
-
-# Periodic stats report (0 or omit to disable)
-stats_interval_seconds: 3600
-```
-
-### Environment Variables
-
-| Variable | Description |
-|---|---|
-| `DISCORD_WEBHOOK_URL` | Discord webhook endpoint for alerts |
-| `ALCHEMY_KEY` | Alchemy API key for RPC access |
-| `MAINNET_FEE_MANAGER_ADDRESS` | Fee manager account address |
-| `MAINNET_RELAYER_*_ADDRESS` | Relayer account addresses per token |
+All configuration lives in [`watcher.yaml`](watcher.yaml). Environment variables are supported via `${VAR_NAME}` syntax. See the file directly for available fields and defaults.
 
 ---
 
@@ -197,8 +150,8 @@ These checks verify that aggregation roots broadcast by the Hub are correctly re
 |---|---|---|---|
 | Root not synced | Warning | `Verifier.latestAggSeq() == 0` | Verifier has never received any aggregation root. Either newly deployed or bridge delivery is completely broken. |
 | **Root mismatch** | **Critical** | `Verifier.latestAggSeq() == Hub.aggSeq()` AND `Verifier.globalTransferRoot(seq) != Hub event root` AND `Verifier root != 0` | **Protocol-level inconsistency.** The Verifier and Hub disagree on the root at the same sequence number. This could indicate a bridge relay bug, a malicious message, or a contract state corruption. Requires immediate investigation. |
-| Root sync delayed | Warning | `Verifier.latestAggSeq() < Hub.aggSeq()` AND the Hub broadcast event for the first missing sequence is older than `root_delay_threshold_seconds` (default: 40min) | The bridge message carrying the aggregation root to this L2 has not been delivered within the expected timeframe. The crosschain message relay may be stalled. |
-| Root sync delayed (very old) | Warning | Same as above, but the Hub event is not found within the lookback window (50,000 blocks / ~7 days) | The verifier is extremely far behind — the root was broadcast so long ago it's no longer in the event scan window. |
+| Root sync delayed | Warning | `Verifier.latestAggSeq() < Hub.aggSeq()` AND the Hub broadcast event for the first missing sequence is older than `root_delay_threshold_seconds` | The bridge message carrying the aggregation root to this L2 has not been delivered within the expected timeframe. The crosschain message relay may be stalled. |
+| Root sync delayed (very old) | Warning | Same as above, but the Hub event is not found within the lookback window (`hub_event_lookback_blocks`) | The verifier is extremely far behind — the root was broadcast so long ago it's no longer in the event scan window. |
 
 **Why root mismatch is compared against the event root (not `currentAggregationRoot()`):**
 The Hub's `currentAggregationRoot()` reflects the *latest* state, which may have already advanced past the sequence the Verifier is at. To correctly compare, we look up the historical `AggregationRootUpdated` event at the specific `aggSeq` that both sides share, ensuring an apples-to-apples comparison.
@@ -212,12 +165,17 @@ These checks verify that transfer roots relayed from each Verifier are actually 
 1. Read `Verifier.latestRelayedIndex()` — how many transfer roots the Verifier has sent.
 2. Look up `Hub.eidPosition(eid)` to find the Verifier's slot in the Hub.
 3. Read `Hub.transferTreeIndex(position - 1)` — how many transfer roots the Hub has received from this Verifier.
-4. If the Verifier has relayed more than the Hub has received: measure the delay.
+4. Compare:
+   - **Equal:** Verify the roots match (same as H→V root mismatch check).
+   - **Verifier ahead:** Find the oldest pending relay event (`index > hub_tree_index`) and measure its age. Relays may skip indices (batch execution), so we scan all events rather than looking for a specific index.
+   - **Hub ahead:** Protocol-level inconsistency — the Hub received more than the Verifier sent.
 
 | Alert | Severity | Condition | What it means |
 |---|---|---|---|
-| Relay delivery delayed | Warning | `Verifier.latestRelayedIndex() > Hub.transferTreeIndex(position)` AND the `TransferRootRelayed` event for the first missing index is older than `root_delay_threshold_seconds` | Transfer roots relayed by the Verifier are not being delivered to the Hub within the expected timeframe. The L2→L1 bridge message delivery may be stalled. |
-| Relay delivery delayed (very old) | Warning | Same as above, but the relay event is not found within the lookback window (500,000 L2 blocks) | The relay has been stalled for a very long time. |
+| **Relay root mismatch** | **Critical** | Indices are equal but `Verifier.provedTransferRoot(index) != Hub.transferRoot(position)` | The Verifier and Hub disagree on the transfer root at the same index. Protocol-level inconsistency. |
+| **Relay index inconsistency** | **Critical** | `Verifier.latestRelayedIndex() < Hub.transferTreeIndex(position)` | The Hub has received more transfer roots than the Verifier has relayed. Should never happen under normal protocol operation. |
+| Relay delivery delayed | Warning | `Verifier.latestRelayedIndex() > Hub.transferTreeIndex(position)` AND the oldest pending `TransferRootRelayed` event is older than `root_delay_threshold_seconds` | Transfer roots relayed by the Verifier are not being delivered to the Hub within the expected timeframe. The L2→L1 bridge message delivery may be stalled. |
+| Relay delivery delayed (very old) | Warning | Same as above, but no pending relay event is found within the lookback window (`verifier_event_lookback_blocks`) | The relay has been stalled for a very long time. |
 
 **Why this matters:** Transfer root relay is the mechanism by which L2 transfer activity is communicated back to L1. If relay delivery stalls, the Hub won't have up-to-date information about L2 transfers, which can delay or block crosschain settlements.
 
