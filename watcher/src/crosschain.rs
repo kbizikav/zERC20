@@ -17,6 +17,10 @@ const HUB_EVENT_LOOKBACK_BLOCKS: u64 = 50_000;
 /// Maximum block range per `eth_getLogs` request (RPC provider limit).
 const HUB_EVENT_CHUNK_SIZE: u64 = 10_000;
 
+/// Lookback window for verifier relay event queries.
+/// L2 chains produce blocks much faster, so we use a larger window.
+const VERIFIER_EVENT_LOOKBACK_BLOCKS: u64 = 500_000;
+
 pub async fn check_crosschain(tokens: &[TokenConfig], root_delay_threshold: u64) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
@@ -349,6 +353,187 @@ async fn check_single_config(
                     "[{}] failed to query hub event for '{}': {:?}",
                     token_name, label, err
                 );
+            }
+        }
+
+        // --- Relay delivery check (Verifier → Hub) ---
+        let eid = match token.eid {
+            Some(e) => e,
+            None => continue,
+        };
+
+        let v_relayed_index = match verifier.latest_relayed_index().await {
+            Ok(idx) => idx,
+            Err(err) => {
+                error!(
+                    "[{}] failed to read latest_relayed_index for '{}': {:?}",
+                    token_name, label, err
+                );
+                continue;
+            }
+        };
+
+        if v_relayed_index == 0 {
+            continue;
+        }
+
+        let position = match hub.eid_position(eid).await {
+            Ok(p) => p,
+            Err(err) => {
+                error!(
+                    "[{}] failed to read eid_position for '{}' (eid={}): {:?}",
+                    token_name, label, eid, err
+                );
+                continue;
+            }
+        };
+
+        if position == 0 {
+            info!(
+                "[{}] eid_position is 0 for '{}' (eid={}), skipping relay check",
+                token_name, label, eid
+            );
+            continue;
+        }
+
+        let hub_tree_index = match hub.transfer_tree_index(position - 1).await {
+            Ok(idx) => idx,
+            Err(err) => {
+                error!(
+                    "[{}] failed to read transfer_tree_index for '{}': {:?}",
+                    token_name, label, err
+                );
+                continue;
+            }
+        };
+
+        if v_relayed_index == hub_tree_index {
+            info!(
+                "[{}] Relay in sync: {} — relayedIndex={}, hubTreeIndex={}",
+                token_name, label, v_relayed_index, hub_tree_index
+            );
+        } else if v_relayed_index > hub_tree_index {
+            let next_expected = hub_tree_index + 1;
+            match verifier
+                .relay_event_timestamp(
+                    next_expected,
+                    VERIFIER_EVENT_LOOKBACK_BLOCKS,
+                    HUB_EVENT_CHUNK_SIZE,
+                )
+                .await
+            {
+                Ok(Some(event_ts)) => {
+                    let delay = now.saturating_sub(event_ts);
+                    if delay > root_delay_threshold {
+                        let delay_min = delay / 60;
+                        info!(
+                            "[{}] RELAY DELAYED: {} — relayedIndex={}, hubTreeIndex={}, delay={}m",
+                            token_name, label, v_relayed_index, hub_tree_index, delay_min
+                        );
+                        alerts.push(Alert {
+                            severity: Severity::Warning,
+                            domain: "crosschain".to_string(),
+                            title: format!("[{}] Relay delivery delayed: {}", token_name, label),
+                            description: format!(
+                                "[**{}**] Verifier **{}** (chain {}) relayed index {} but hub only received up to {}. Transfer root index {} was relayed **{}m ago** (threshold {}m).",
+                                token_name,
+                                label,
+                                token.chain_id,
+                                v_relayed_index,
+                                hub_tree_index,
+                                next_expected,
+                                delay_min,
+                                root_delay_threshold / 60,
+                            ),
+                            fields: vec![
+                                AlertField {
+                                    name: "Token".to_string(),
+                                    value: label.clone(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Chain".to_string(),
+                                    value: token.chain_id.to_string(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Delay".to_string(),
+                                    value: format!("{}m", delay_min),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Verifier relayedIndex".to_string(),
+                                    value: v_relayed_index.to_string(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Hub treeIndex".to_string(),
+                                    value: hub_tree_index.to_string(),
+                                    inline: true,
+                                },
+                            ],
+                        });
+                    } else {
+                        info!(
+                            "[{}] Relay propagating: {} — relayedIndex={}, hubTreeIndex={}, delay={}s (within threshold {}s)",
+                            token_name,
+                            label,
+                            v_relayed_index,
+                            hub_tree_index,
+                            delay,
+                            root_delay_threshold
+                        );
+                    }
+                }
+                Ok(None) => {
+                    info!(
+                        "[{}] RELAY DELAYED: {} — relay event for index {} not found in lookback (very old)",
+                        token_name, label, next_expected
+                    );
+                    alerts.push(Alert {
+                        severity: Severity::Warning,
+                        domain: "crosschain".to_string(),
+                        title: format!("[{}] Relay delivery delayed: {}", token_name, label),
+                        description: format!(
+                            "[**{}**] Verifier **{}** (chain {}) relayed index {} but hub only received up to {}. Relay event for index {} was not found in the last {} blocks (very old).",
+                            token_name,
+                            label,
+                            token.chain_id,
+                            v_relayed_index,
+                            hub_tree_index,
+                            next_expected,
+                            VERIFIER_EVENT_LOOKBACK_BLOCKS,
+                        ),
+                        fields: vec![
+                            AlertField {
+                                name: "Token".to_string(),
+                                value: label.clone(),
+                                inline: true,
+                            },
+                            AlertField {
+                                name: "Chain".to_string(),
+                                value: token.chain_id.to_string(),
+                                inline: true,
+                            },
+                            AlertField {
+                                name: "Verifier relayedIndex".to_string(),
+                                value: v_relayed_index.to_string(),
+                                inline: true,
+                            },
+                            AlertField {
+                                name: "Hub treeIndex".to_string(),
+                                value: hub_tree_index.to_string(),
+                                inline: true,
+                            },
+                        ],
+                    });
+                }
+                Err(err) => {
+                    error!(
+                        "[{}] failed to query relay event for '{}': {:?}",
+                        token_name, label, err
+                    );
+                }
             }
         }
     }

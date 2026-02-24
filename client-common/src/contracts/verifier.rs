@@ -1,9 +1,10 @@
 #![allow(clippy::too_many_arguments)]
 
 use alloy::{
+    eips::BlockNumberOrTag,
     network::Ethereum,
     primitives::{Address, B256, Bytes, U256},
-    providers::PendingTransactionBuilder,
+    providers::{PendingTransactionBuilder, Provider},
     rpc::types::TransactionReceipt,
     sol,
 };
@@ -469,6 +470,65 @@ impl VerifierContract {
             }
         }
         Err(ContractError::MissingEvent("VerifiersSet"))
+    }
+
+    pub async fn latest_block(&self) -> ContractResult<u64> {
+        self.provider
+            .get_block_number()
+            .await
+            .map_err(|err| ContractError::transport("get_block_number", err))
+    }
+
+    /// Query `TransferRootRelayed` events within a lookback window and return
+    /// the block timestamp for the given `target_index`.
+    ///
+    /// Uses the same chunked reverse-scan pattern as
+    /// `HubContract::aggregation_event_info`.
+    pub async fn relay_event_timestamp(
+        &self,
+        target_index: u64,
+        lookback_blocks: u64,
+        chunk_size: u64,
+    ) -> ContractResult<Option<u64>> {
+        let latest = self.latest_block().await?;
+        let earliest = latest.saturating_sub(lookback_blocks);
+
+        let contract = Verifier::new(self.address, self.provider.clone());
+        let mut to = latest;
+
+        while to > earliest {
+            let from = to.saturating_sub(chunk_size).max(earliest);
+
+            let events = contract
+                .event_filter::<Verifier::TransferRootRelayed>()
+                .address(self.address)
+                .from_block(from)
+                .to_block(to)
+                .query()
+                .await?;
+
+            for (event, log) in &events {
+                if event.index == target_index {
+                    let block_number = log.block_number.unwrap_or_default();
+                    let block = self
+                        .provider
+                        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+                        .await
+                        .map_err(|err| ContractError::transport("get_block_by_number", err))?;
+                    let Some(block) = block else {
+                        return Err(ContractError::BlockNotFound(block_number));
+                    };
+                    return Ok(Some(block.header.timestamp));
+                }
+            }
+
+            if from == earliest {
+                break;
+            }
+            to = from.saturating_sub(1);
+        }
+
+        Ok(None)
     }
 }
 

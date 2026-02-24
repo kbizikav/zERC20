@@ -325,9 +325,29 @@ async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<Disc
             }
         };
 
+        // Relay status (Verifier → Hub)
+        let relay_status = match (token.eid, verifier.latest_relayed_index().await) {
+            (Some(eid), Ok(v_relayed)) if v_relayed > 0 => match hub.eid_position(eid).await {
+                Ok(pos) if pos > 0 => match hub.transfer_tree_index(pos - 1).await {
+                    Ok(hub_idx) if hub_idx == v_relayed => {
+                        format!(" relay={}", v_relayed)
+                    }
+                    Ok(hub_idx) => {
+                        format!(" relay={}/{}", hub_idx, v_relayed)
+                    }
+                    Err(_) => " relay=error".to_string(),
+                },
+                Ok(_) => " relay=no-pos".to_string(),
+                Err(_) => " relay=error".to_string(),
+            },
+            (None, _) => String::new(),
+            (_, Ok(_)) => String::new(),
+            (_, Err(_)) => " relay=error".to_string(),
+        };
+
         lines.push(format!(
-            "{}: aggSeq={} root={}",
-            label, v_agg_seq, root_status
+            "{}: aggSeq={} root={}{}",
+            label, v_agg_seq, root_status, relay_status
         ));
     }
 
