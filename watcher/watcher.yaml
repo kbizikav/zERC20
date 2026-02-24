@@ -96,6 +96,7 @@ indexer:
 # Crosschain root sync delay detection
 crosschain:
   root_delay_threshold_seconds: 2400
-  # hub_event_lookback_blocks: 50000      # Hub event lookback window (~7 days on Ethereum)
-  # event_chunk_size: 10000               # Max block range per eth_getLogs request
-  # verifier_event_lookback_blocks: 500000 # Verifier relay event lookback window (L2)
+  # hub_event_lookback_blocks: 50000        # Hub event lookback window (~7 days on Ethereum)
+  # hub_event_chunk_size: 10000             # Hub eth_getLogs chunk size
+  # verifier_event_lookback_blocks: 500000  # Verifier relay event lookback window (L2)
+  # verifier_event_chunk_size: 10000        # Verifier eth_getLogs chunk size

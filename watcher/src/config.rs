@@ -55,42 +55,25 @@ pub struct ChainConfig {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
 pub struct CrosschainConfig {
-    #[serde(default = "default_root_delay_threshold")]
     pub root_delay_threshold_seconds: u64,
-    #[serde(default = "default_hub_event_lookback_blocks")]
     pub hub_event_lookback_blocks: u64,
-    #[serde(default = "default_event_chunk_size")]
-    pub event_chunk_size: u64,
-    #[serde(default = "default_verifier_event_lookback_blocks")]
+    pub hub_event_chunk_size: u64,
     pub verifier_event_lookback_blocks: u64,
+    pub verifier_event_chunk_size: u64,
 }
 
 impl Default for CrosschainConfig {
     fn default() -> Self {
         Self {
-            root_delay_threshold_seconds: default_root_delay_threshold(),
-            hub_event_lookback_blocks: default_hub_event_lookback_blocks(),
-            event_chunk_size: default_event_chunk_size(),
-            verifier_event_lookback_blocks: default_verifier_event_lookback_blocks(),
+            root_delay_threshold_seconds: 2400,
+            hub_event_lookback_blocks: 50_000,
+            hub_event_chunk_size: 10_000,
+            verifier_event_lookback_blocks: 500_000,
+            verifier_event_chunk_size: 10_000,
         }
     }
-}
-
-fn default_root_delay_threshold() -> u64 {
-    2400
-}
-
-fn default_hub_event_lookback_blocks() -> u64 {
-    50_000
-}
-
-fn default_event_chunk_size() -> u64 {
-    10_000
-}
-
-fn default_verifier_event_lookback_blocks() -> u64 {
-    500_000
 }
 
 #[derive(Debug, Clone, Deserialize)]

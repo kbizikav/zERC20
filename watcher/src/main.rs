@@ -154,11 +154,7 @@ async fn run_checks(
         .any(|t| t.crosschain_config_path.is_some());
     if has_crosschain {
         info!("running crosschain checks...");
-        let cc = config
-            .crosschain
-            .as_ref()
-            .cloned()
-            .unwrap_or_default();
+        let cc = config.crosschain.clone().unwrap_or_default();
         let alerts = crosschain::check_crosschain(&config.tokens, &cc).await;
         all_alerts.extend(alerts);
     }

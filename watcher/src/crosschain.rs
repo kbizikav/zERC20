@@ -218,7 +218,7 @@ async fn check_broadcast(
             .aggregation_event_info(
                 target_seq,
                 cc.hub_event_lookback_blocks,
-                cc.event_chunk_size,
+                cc.hub_event_chunk_size,
             )
             .await
             .inspect(|&info| {
@@ -616,7 +616,7 @@ async fn check_relay_delay(
         .oldest_pending_relay_event(
             hub_tree_index,
             cc.verifier_event_lookback_blocks,
-            cc.event_chunk_size,
+            cc.verifier_event_chunk_size,
         )
         .await
     {
