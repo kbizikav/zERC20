@@ -6,44 +6,16 @@ use alloy::providers::Provider;
 use anyhow::{Context, Result};
 use api_types::indexer::TokenStatusResponse;
 use client_common::{
-    contracts::{hub::HubContract, utils::get_provider, verifier::VerifierContract},
-    tokens::{TokensFile, load_tokens_from_path},
+    contracts::{
+        hub::HubContract, utils::get_provider, verifier::VerifierContract, z_erc20::ZErc20Contract,
+    },
+    tokens::{TokenEntry, TokensFile, load_tokens_from_path},
 };
 use log::{error, info};
 
 use crate::alert::{DiscordEmbed, DiscordField};
 use crate::balance::format_wei_as_eth;
 use crate::config::{AccountConfig, ChainConfig, TokenConfig, WatcherConfig};
-
-/// Fetch the minimum `latestProvedIndex` across all verifiers for a token config.
-async fn fetch_min_proved_index(config_path: &str) -> Result<Option<u64>> {
-    let tokens_file: TokensFile =
-        load_tokens_from_path(config_path).with_context(|| format!("loading {}", config_path))?;
-
-    let mut min_proved: Option<u64> = None;
-    for token in &tokens_file.tokens {
-        let provider = match token.provider() {
-            Ok(p) => p,
-            Err(err) => {
-                error!("failed to create provider for '{}': {:?}", token.label, err);
-                continue;
-            }
-        };
-        let verifier = VerifierContract::new(provider, token.verifier_address);
-        match verifier.latest_proved_index().await {
-            Ok(idx) => {
-                min_proved = Some(min_proved.map_or(idx, |m: u64| m.min(idx)));
-            }
-            Err(err) => {
-                error!(
-                    "failed to read latestProvedIndex for '{}': {:?}",
-                    token.label, err
-                );
-            }
-        }
-    }
-    Ok(min_proved)
-}
 
 /// Collect system-wide stats and return Discord embeds for reporting.
 pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
@@ -142,7 +114,7 @@ async fn get_balance(address: Address, chain_cfg: &ChainConfig) -> Result<U256> 
         .context("failed to get balance")
 }
 
-/// Indexer stats: tree_synced_index and latestProvedIndex for each token.
+/// Indexer stats: on-chain index, tree_synced_index, and latestProvedIndex per chain.
 async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
     let client = reqwest::Client::new();
 
@@ -153,10 +125,10 @@ async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
 
     let mut lines = Vec::new();
     lines.push(format!(
-        "{:<12} {:>12} {:>12}",
-        "token", "tree_synced", "proved"
+        "{:<8} {:<12} {:>8} {:>8} {:>8}",
+        "token", "chain", "onchain", "synced", "proved"
     ));
-    lines.push("-".repeat(38));
+    lines.push("-".repeat(48));
 
     let mut has_data = false;
 
@@ -166,22 +138,22 @@ async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
             None => continue,
         };
 
-        // Fetch tree_synced_index from /status
+        // Fetch per-chain statuses from indexer
         let status_url = format!("{}/status", base_url);
-        let tree_synced = match client
+        let statuses: Vec<TokenStatusResponse> = match client
             .get(&status_url)
             .send()
             .await
             .and_then(|r| Ok(r.error_for_status()?))
         {
-            Ok(resp) => match resp.json::<Vec<TokenStatusResponse>>().await {
-                Ok(statuses) => statuses.first().and_then(|s| s.tree_synced_index),
+            Ok(resp) => match resp.json().await {
+                Ok(s) => s,
                 Err(err) => {
                     error!(
                         "failed to parse indexer status for {}: {:?}",
                         token.name, err
                     );
-                    None
+                    continue;
                 }
             },
             Err(err) => {
@@ -189,29 +161,55 @@ async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
                     "failed to fetch indexer status for {}: {:?}",
                     token.name, err
                 );
-                None
+                continue;
             }
         };
 
-        // Fetch latestProvedIndex from verifier
-        let proved = match &token.crosschain_config_path {
-            Some(path) => match fetch_min_proved_index(path).await {
-                Ok(idx) => idx,
+        // Load crosschain config for contract access
+        let token_entries: Vec<TokenEntry> = match &token.crosschain_config_path {
+            Some(path) => match load_tokens_from_path(path) {
+                Ok(tf) => tf.tokens,
                 Err(err) => {
-                    error!("failed to fetch proved index for {}: {:?}", token.name, err);
-                    None
+                    error!(
+                        "failed to load crosschain config for stats {}: {:?}",
+                        token.name, err
+                    );
+                    vec![]
                 }
             },
-            None => None,
+            None => vec![],
         };
 
-        lines.push(format!(
-            "{:<12} {:>12} {:>12}",
-            token.name,
-            fmt(tree_synced),
-            fmt(proved),
-        ));
-        has_data = true;
+        for status in &statuses {
+            let entry = token_entries.iter().find(|e| e.chain_id == status.chain_id);
+            let chain_label = entry.map(|e| e.label.as_str()).unwrap_or("?");
+
+            let onchain = match entry {
+                Some(e) => match fetch_onchain_index(e).await {
+                    Ok(idx) => Some(idx),
+                    Err(_) => None,
+                },
+                None => None,
+            };
+
+            let proved = match entry {
+                Some(e) => match fetch_proved_index(e).await {
+                    Ok(idx) => Some(idx),
+                    Err(_) => None,
+                },
+                None => None,
+            };
+
+            lines.push(format!(
+                "{:<8} {:<12} {:>8} {:>8} {:>8}",
+                token.name,
+                chain_label,
+                fmt(onchain),
+                fmt(status.tree_synced_index),
+                fmt(proved),
+            ));
+            has_data = true;
+        }
     }
 
     if !has_data {
@@ -224,6 +222,23 @@ async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
         color: 0x3498DB,
         fields: vec![],
     })
+}
+
+/// Fetch on-chain tree index from the zERC20 token contract.
+async fn fetch_onchain_index(entry: &TokenEntry) -> Result<u64> {
+    let provider = entry.provider()?;
+    let contract = ZErc20Contract::new(provider, entry.token_address);
+    contract.index().await.context("ZErc20.index() call failed")
+}
+
+/// Fetch latestProvedIndex from the verifier contract.
+async fn fetch_proved_index(entry: &TokenEntry) -> Result<u64> {
+    let provider = entry.provider()?;
+    let verifier = VerifierContract::new(provider, entry.verifier_address);
+    verifier
+        .latest_proved_index()
+        .await
+        .context("Verifier.latestProvedIndex() call failed")
 }
 
 /// Crosschain stats: hub aggSeq/root and verifier sync status.
