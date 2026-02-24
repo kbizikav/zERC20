@@ -17,16 +17,25 @@ pub struct WatcherConfig {
     pub chains: HashMap<String, ChainConfig>,
 
     #[serde(default)]
-    pub indexer: Option<IndexerConfig>,
+    pub tokens: Vec<TokenConfig>,
 
     #[serde(default)]
-    pub crosschain: Option<CrosschainConfig>,
+    pub indexer: Option<IndexerConfig>,
 
     #[serde(default)]
     pub alert: AlertConfig,
 
     #[serde(default)]
     pub stats_interval_seconds: Option<u64>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct TokenConfig {
+    pub name: String,
+    #[serde(default)]
+    pub indexer_url: Option<String>,
+    #[serde(default)]
+    pub crosschain_config_path: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -46,22 +55,10 @@ pub struct ChainConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct IndexerConfig {
-    pub tokens: Vec<IndexerTokenEntry>,
     #[serde(default = "default_stale_threshold")]
     pub stale_threshold_cycles: u32,
     #[serde(default = "default_max_index_gap")]
     pub max_index_gap: u64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub struct IndexerTokenEntry {
-    pub name: String,
-    pub status_url: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct CrosschainConfig {
-    pub token_config_paths: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

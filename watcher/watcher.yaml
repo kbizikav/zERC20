@@ -71,24 +71,22 @@ chains:
     rpc_url: "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
     explorer: "https://testnet.bscscan.com/address/"
 
-# Domain 2: Indexer monitoring
+# Token-level monitoring (indexer + crosschain)
+tokens:
+  - name: zUSDC
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zusdc"
+    crosschain_config_path: "config/deployed/mainnet/tokens.zusdc.mainnet.json"
+  - name: zETH
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zeth"
+    crosschain_config_path: "config/deployed/mainnet/tokens.zeth.mainnet.json"
+  - name: zBNB
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zbnb"
+    crosschain_config_path: "config/deployed/mainnet/tokens.zbnb.mainnet.json"
+
+# Indexer thresholds
 indexer:
-  tokens:
-    - name: zUSDC
-      status_url: "https://v1.mainnet.api.zerc20.io/indexer/zusdc"
-    - name: zETH
-      status_url: "https://v1.mainnet.api.zerc20.io/indexer/zeth"
-    - name: zBNB
-      status_url: "https://v1.mainnet.api.zerc20.io/indexer/zbnb"
   stale_threshold_cycles: 5
   max_index_gap: 100
-
-# Domain 3: Crosschain monitoring
-crosschain:
-  token_config_paths:
-    - "config/deployed/mainnet/tokens.zeth.mainnet.json"
-    - "config/deployed/mainnet/tokens.zusdc.mainnet.json"
-    - "config/deployed/mainnet/tokens.zbnb.mainnet.json"
 
 # Alert control
 alert:

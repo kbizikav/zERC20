@@ -7,12 +7,16 @@ use client_common::{
 use log::{error, info};
 
 use crate::alert::{Alert, AlertField, Severity};
-use crate::config::CrosschainConfig;
+use crate::config::TokenConfig;
 
-pub async fn check_crosschain(config: &CrosschainConfig) -> Vec<Alert> {
+pub async fn check_crosschain(tokens: &[TokenConfig]) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
-    for path in &config.token_config_paths {
+    for token in tokens {
+        let path = match token.crosschain_config_path.as_ref() {
+            Some(p) => p,
+            None => continue,
+        };
         match check_single_config(path).await {
             Ok(mut a) => alerts.append(&mut a),
             Err(err) => {

@@ -13,7 +13,7 @@ use log::{error, info};
 
 use crate::alert::{DiscordEmbed, DiscordField};
 use crate::balance::format_wei_as_eth;
-use crate::config::{AccountConfig, ChainConfig, CrosschainConfig, IndexerConfig, WatcherConfig};
+use crate::config::{AccountConfig, ChainConfig, TokenConfig, WatcherConfig};
 
 /// Collect system-wide stats and return Discord embeds for reporting.
 pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
@@ -27,19 +27,21 @@ pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
         }
     }
 
-    if let Some(indexer_cfg) = config.indexer.as_ref() {
+    if config.indexer.is_some() && !config.tokens.is_empty() {
         info!("collecting indexer stats...");
-        match collect_indexer_stats(indexer_cfg).await {
-            Some(embed) => embeds.push(embed),
-            None => {}
+        if let Some(embed) = collect_indexer_stats(&config.tokens).await {
+            embeds.push(embed);
         }
     }
 
-    if let Some(cc_cfg) = config.crosschain.as_ref() {
+    let has_crosschain = config
+        .tokens
+        .iter()
+        .any(|t| t.crosschain_config_path.is_some());
+    if has_crosschain {
         info!("collecting crosschain stats...");
-        match collect_crosschain_stats(cc_cfg).await {
-            Some(embed) => embeds.push(embed),
-            None => {}
+        if let Some(embed) = collect_crosschain_stats(&config.tokens).await {
+            embeds.push(embed);
         }
     }
 
@@ -111,30 +113,34 @@ async fn get_balance(address: Address, chain_cfg: &ChainConfig) -> Result<U256> 
 }
 
 /// Indexer stats: pipeline stage indices for each token.
-async fn collect_indexer_stats(config: &IndexerConfig) -> Option<DiscordEmbed> {
+async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
     let client = reqwest::Client::new();
     let mut token_statuses: Vec<(String, Vec<TokenStatusResponse>)> = Vec::new();
 
-    for entry in &config.tokens {
+    for token in tokens {
+        let url = match token.indexer_url.as_ref() {
+            Some(u) => u,
+            None => continue,
+        };
         match client
-            .get(&entry.status_url)
+            .get(url)
             .send()
             .await
             .and_then(|r| Ok(r.error_for_status()?))
         {
             Ok(resp) => match resp.json::<Vec<TokenStatusResponse>>().await {
-                Ok(s) => token_statuses.push((entry.name.clone(), s)),
+                Ok(s) => token_statuses.push((token.name.clone(), s)),
                 Err(err) => {
                     error!(
                         "failed to parse indexer status for {}: {:?}",
-                        entry.name, err
+                        token.name, err
                     );
                 }
             },
             Err(err) => {
                 error!(
                     "failed to fetch indexer status for {}: {:?}",
-                    entry.name, err
+                    token.name, err
                 );
             }
         }
@@ -179,17 +185,21 @@ async fn collect_indexer_stats(config: &IndexerConfig) -> Option<DiscordEmbed> {
 }
 
 /// Crosschain stats: hub aggSeq/root and verifier sync status.
-async fn collect_crosschain_stats(config: &CrosschainConfig) -> Option<DiscordEmbed> {
+async fn collect_crosschain_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
     let mut fields = Vec::new();
 
-    for path in &config.token_config_paths {
-        match collect_single_crosschain(path).await {
+    for token in tokens {
+        let path = match token.crosschain_config_path.as_ref() {
+            Some(p) => p,
+            None => continue,
+        };
+        match collect_single_crosschain(&token.name, path).await {
             Ok(Some(field)) => fields.push(field),
             Ok(None) => {}
             Err(err) => {
-                error!("crosschain stats failed for {}: {:?}", path, err);
+                error!("crosschain stats failed for {}: {:?}", token.name, err);
                 fields.push(DiscordField {
-                    name: path.clone(),
+                    name: token.name.clone(),
                     value: "```\nERROR\n```".to_string(),
                     inline: false,
                 });
@@ -209,7 +219,7 @@ async fn collect_crosschain_stats(config: &CrosschainConfig) -> Option<DiscordEm
     })
 }
 
-async fn collect_single_crosschain(path: &str) -> Result<Option<DiscordField>> {
+async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<DiscordField>> {
     let tokens_file: TokensFile =
         load_tokens_from_path(path).with_context(|| format!("loading {}", path))?;
 
@@ -264,15 +274,8 @@ async fn collect_single_crosschain(path: &str) -> Result<Option<DiscordField>> {
         ));
     }
 
-    // Use the config file basename as the field name
-    let name = std::path::Path::new(path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or(path)
-        .to_string();
-
     Ok(Some(DiscordField {
-        name,
+        name: name.to_string(),
         value: format!("```\n{}\n```", lines.join("\n")),
         inline: false,
     }))

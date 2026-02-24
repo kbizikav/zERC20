@@ -5,7 +5,7 @@ use api_types::indexer::TokenStatusResponse;
 use log::{error, info, warn};
 
 use crate::alert::{Alert, AlertField, Severity};
-use crate::config::IndexerConfig;
+use crate::config::{IndexerConfig, TokenConfig};
 
 /// Snapshot of index values for a single token, used for stale and regression detection.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,6 +73,7 @@ fn token_key(status: &TokenStatusResponse) -> String {
 
 pub struct IndexerMonitor {
     config: IndexerConfig,
+    tokens: Vec<TokenConfig>,
     client: reqwest::Client,
     /// Previous snapshots keyed by `chain_id:token_address`.
     prev_snapshots: HashMap<String, TokenSnapshot>,
@@ -81,9 +82,10 @@ pub struct IndexerMonitor {
 }
 
 impl IndexerMonitor {
-    pub fn new(config: IndexerConfig) -> Self {
+    pub fn new(config: IndexerConfig, tokens: Vec<TokenConfig>) -> Self {
         Self {
             config,
+            tokens,
             client: reqwest::Client::new(),
             prev_snapshots: HashMap::new(),
             stale_counts: HashMap::new(),
@@ -115,24 +117,24 @@ impl IndexerMonitor {
 
     async fn fetch_status(&self) -> Result<Vec<TokenStatusResponse>> {
         let mut all = Vec::new();
-        for entry in &self.config.tokens {
-            let resp = self
-                .client
-                .get(&entry.status_url)
-                .send()
-                .await
-                .with_context(|| {
-                    format!(
-                        "failed to GET indexer status for {} from {}",
-                        entry.name, entry.status_url
-                    )
-                })?;
+        for token in &self.tokens {
+            let url = match token.indexer_url.as_ref() {
+                Some(u) => u,
+                None => continue,
+            };
+
+            let resp = self.client.get(url).send().await.with_context(|| {
+                format!(
+                    "failed to GET indexer status for {} from {}",
+                    token.name, url
+                )
+            })?;
 
             if !resp.status().is_success() {
                 anyhow::bail!(
                     "indexer status for {} from {} returned HTTP {}",
-                    entry.name,
-                    entry.status_url,
+                    token.name,
+                    url,
                     resp.status()
                 );
             }
@@ -140,13 +142,13 @@ impl IndexerMonitor {
             let mut statuses: Vec<TokenStatusResponse> = resp.json().await.with_context(|| {
                 format!(
                     "failed to deserialize response for {} from {}",
-                    entry.name, entry.status_url
+                    token.name, url
                 )
             })?;
 
             // Override label with the configured token name
             for s in &mut statuses {
-                s.label = entry.name.clone();
+                s.label = token.name.clone();
             }
             all.extend(statuses);
         }

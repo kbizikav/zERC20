@@ -54,7 +54,7 @@ async fn main() -> Result<()> {
     let mut indexer_monitor = config
         .indexer
         .as_ref()
-        .map(|cfg| IndexerMonitor::new(cfg.clone()));
+        .map(|cfg| IndexerMonitor::new(cfg.clone(), config.tokens.clone()));
 
     let stats_interval = config
         .stats_interval_seconds
@@ -142,9 +142,13 @@ async fn run_checks(
     }
 
     // Domain 3: Crosschain checks
-    if let Some(cc_config) = config.crosschain.as_ref() {
+    let has_crosschain = config
+        .tokens
+        .iter()
+        .any(|t| t.crosschain_config_path.is_some());
+    if has_crosschain {
         info!("running crosschain checks...");
-        let alerts = crosschain::check_crosschain(cc_config).await;
+        let alerts = crosschain::check_crosschain(&config.tokens).await;
         all_alerts.extend(alerts);
     }
 
