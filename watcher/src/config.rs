@@ -46,11 +46,17 @@ pub struct ChainConfig {
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct IndexerConfig {
-    pub status_urls: Vec<String>,
+    pub tokens: Vec<IndexerTokenEntry>,
     #[serde(default = "default_stale_threshold")]
     pub stale_threshold_cycles: u32,
     #[serde(default = "default_max_index_gap")]
     pub max_index_gap: u64,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IndexerTokenEntry {
+    pub name: String,
+    pub status_url: String,
 }
 
 #[derive(Debug, Deserialize)]

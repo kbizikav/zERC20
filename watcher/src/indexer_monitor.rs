@@ -115,26 +115,39 @@ impl IndexerMonitor {
 
     async fn fetch_status(&self) -> Result<Vec<TokenStatusResponse>> {
         let mut all = Vec::new();
-        for url in &self.config.status_urls {
+        for entry in &self.config.tokens {
             let resp = self
                 .client
-                .get(url)
+                .get(&entry.status_url)
                 .send()
                 .await
-                .with_context(|| format!("failed to GET indexer status from {}", url))?;
+                .with_context(|| {
+                    format!(
+                        "failed to GET indexer status for {} from {}",
+                        entry.name, entry.status_url
+                    )
+                })?;
 
             if !resp.status().is_success() {
                 anyhow::bail!(
-                    "indexer status from {} returned HTTP {}",
-                    url,
+                    "indexer status for {} from {} returned HTTP {}",
+                    entry.name,
+                    entry.status_url,
                     resp.status()
                 );
             }
 
-            let statuses: Vec<TokenStatusResponse> = resp
-                .json()
-                .await
-                .with_context(|| format!("failed to deserialize response from {}", url))?;
+            let mut statuses: Vec<TokenStatusResponse> = resp.json().await.with_context(|| {
+                format!(
+                    "failed to deserialize response for {} from {}",
+                    entry.name, entry.status_url
+                )
+            })?;
+
+            // Override label with the configured token name
+            for s in &mut statuses {
+                s.label = entry.name.clone();
+            }
             all.extend(statuses);
         }
         Ok(all)

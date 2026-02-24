@@ -113,27 +113,34 @@ async fn get_balance(address: Address, chain_cfg: &ChainConfig) -> Result<U256> 
 /// Indexer stats: pipeline stage indices for each token.
 async fn collect_indexer_stats(config: &IndexerConfig) -> Option<DiscordEmbed> {
     let client = reqwest::Client::new();
-    let mut statuses: Vec<TokenStatusResponse> = Vec::new();
-    for url in &config.status_urls {
+    let mut token_statuses: Vec<(String, Vec<TokenStatusResponse>)> = Vec::new();
+
+    for entry in &config.tokens {
         match client
-            .get(url)
+            .get(&entry.status_url)
             .send()
             .await
             .and_then(|r| Ok(r.error_for_status()?))
         {
             Ok(resp) => match resp.json::<Vec<TokenStatusResponse>>().await {
-                Ok(s) => statuses.extend(s),
+                Ok(s) => token_statuses.push((entry.name.clone(), s)),
                 Err(err) => {
-                    error!("failed to parse indexer status from {}: {:?}", url, err);
+                    error!(
+                        "failed to parse indexer status for {}: {:?}",
+                        entry.name, err
+                    );
                 }
             },
             Err(err) => {
-                error!("failed to fetch indexer status from {}: {:?}", url, err);
+                error!(
+                    "failed to fetch indexer status for {}: {:?}",
+                    entry.name, err
+                );
             }
         }
     }
 
-    if statuses.is_empty() {
+    if token_statuses.is_empty() {
         return None;
     }
 
@@ -144,20 +151,23 @@ async fn collect_indexer_stats(config: &IndexerConfig) -> Option<DiscordEmbed> {
     ));
     lines.push("-".repeat(60));
 
-    for s in &statuses {
-        let fmt = |v: Option<u64>| match v {
-            Some(n) => n.to_string(),
-            None => "-".to_string(),
-        };
-        lines.push(format!(
-            "{:<12} {:>8} {:>8} {:>8} {:>8} {:>8}",
-            s.label,
-            fmt(s.events_synced_index),
-            fmt(s.tree_synced_index),
-            fmt(s.ivc_generated_index),
-            fmt(s.onchain_reserved_index),
-            fmt(s.onchain_proved_index),
-        ));
+    let fmt = |v: Option<u64>| match v {
+        Some(n) => n.to_string(),
+        None => "-".to_string(),
+    };
+
+    for (name, statuses) in &token_statuses {
+        for s in statuses {
+            lines.push(format!(
+                "{:<12} {:>8} {:>8} {:>8} {:>8} {:>8}",
+                name,
+                fmt(s.events_synced_index),
+                fmt(s.tree_synced_index),
+                fmt(s.ivc_generated_index),
+                fmt(s.onchain_reserved_index),
+                fmt(s.onchain_proved_index),
+            ));
+        }
     }
 
     Some(DiscordEmbed {
