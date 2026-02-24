@@ -7,9 +7,9 @@ use std::{
 #[cfg(not(target_arch = "wasm32"))]
 use std::{fs, path::Path};
 
-use crate::contracts::utils::{get_provider, get_provider_with_fallback, NormalProvider};
+use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
 use alloy::primitives::Address;
-use anyhow::{anyhow, bail, Context, Result};
+use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
