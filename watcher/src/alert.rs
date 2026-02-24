@@ -115,10 +115,15 @@ impl AlertManager {
         }
 
         // Max 10 embeds per request (Discord limit; Slack has no such limit but we keep consistent)
+        let mut send_errors: Vec<String> = Vec::new();
         for chunk in filtered.chunks(10) {
             let embeds: Vec<Embed> = chunk.iter().map(alert_to_embed).collect();
-            self.send_to_backends(&embeds).await?;
+            if let Err(err) = self.send_to_backends(&embeds).await {
+                send_errors.push(err.to_string());
+            }
 
+            // Record cooldown regardless of partial backend failures so that
+            // successfully delivered alerts are not re-sent every cycle.
             for alert in chunk {
                 let key = alert.dedup_key();
                 self.last_sent.insert(key, now);
@@ -129,7 +134,11 @@ impl AlertManager {
         self.last_sent
             .retain(|_, last| now.duration_since(*last) < self.cooldown * 2);
 
-        Ok(())
+        if send_errors.is_empty() {
+            Ok(())
+        } else {
+            anyhow::bail!("alert send failures: {}", send_errors.join("; "))
+        }
     }
 
     /// Send pre-built embeds directly (no cooldown filtering).

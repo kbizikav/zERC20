@@ -92,7 +92,8 @@ services:
     restart: unless-stopped
     environment:
       WATCHER_CONFIG_PATH: /app/config/watcher.yaml
-      DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL:?DISCORD_WEBHOOK_URL must be set in .env}"
+      DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL:-}"
+      SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-}"
       ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
       RUST_LOG: info
     volumes:

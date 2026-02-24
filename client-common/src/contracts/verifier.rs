@@ -518,7 +518,7 @@ impl VerifierContract {
         let mut oldest: Option<(u64, u64)> = None; // (relay_index, block_number)
 
         while to > earliest {
-            let from = to.saturating_sub(chunk_size).max(earliest);
+            let from = to.saturating_sub(chunk_size - 1).max(earliest);
 
             let events = contract
                 .event_filter::<Verifier::TransferRootRelayed>()

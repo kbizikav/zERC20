@@ -405,7 +405,7 @@ impl HubContract {
         let mut to = latest;
 
         while to > earliest {
-            let from = to.saturating_sub(chunk_size).max(earliest);
+            let from = to.saturating_sub(chunk_size - 1).max(earliest);
 
             let events = contract
                 .event_filter::<Hub::AggregationRootUpdated>()
