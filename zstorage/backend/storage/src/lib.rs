@@ -335,4 +335,10 @@ fn recover_address_from_signature(
 }
 
 #[cfg(target_arch = "wasm32")]
+#[query]
+fn get_cycles() -> u128 {
+    ic_cdk::api::canister_cycle_balance()
+}
+
+#[cfg(target_arch = "wasm32")]
 ic_cdk::export_candid!();

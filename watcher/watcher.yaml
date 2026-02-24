@@ -1,0 +1,126 @@
+discord_webhook_url: "${DISCORD_WEBHOOK_URL:-}"
+slack_webhook_url: "${SLACK_WEBHOOK_URL:-}"
+interval_seconds: 300
+# Stats report (optional, 0 or omit to disable)
+stats_interval_seconds: 86400
+
+# Alert control
+alert:
+  cooldown_seconds: 3600
+
+chains:
+  ethereum:
+    rpc_url: "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://etherscan.io/address/"
+  base:
+    rpc_url: "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://basescan.org/address/"
+  arbitrum:
+    rpc_url: "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://arbiscan.io/address/"
+  bnb:
+    rpc_url: "https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://bscscan.com/address/"
+  sepolia:
+    rpc_url: "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia.etherscan.io/address/"
+  optimism_sepolia:
+    rpc_url: "https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia-optimism.etherscan.io/address/"
+  arbitrum_sepolia:
+    rpc_url: "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia.arbiscan.io/address/"
+  bnb_testnet:
+    rpc_url: "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://testnet.bscscan.com/address/"
+
+# Balance monitoring
+accounts:
+  # ===== Mainnet =====
+  - name: mainnet_fee_manager
+    address: "${MAINNET_FEE_MANAGER_ADDRESS}"
+    required_balance: "0.01"
+    chains: [ethereum, base, arbitrum]
+
+  - name: mainnet_relayer_zusdc
+    address: "${MAINNET_RELAYER_ZUSDC_ADDRESS}"
+    required_balance: "0.1"
+    chains: [ethereum, base, arbitrum]
+
+  - name: mainnet_relayer_zeth
+    address: "${MAINNET_RELAYER_ZETH_ADDRESS}"
+    required_balance: "0.1"
+    chains: [ethereum, base, arbitrum]
+
+  - name: mainnet_relayer_zbnb
+    address: "${MAINNET_RELAYER_ZBNB_ADDRESS}"
+    required_balance: "0.1"
+    chains: [ethereum, base, arbitrum, bnb]
+
+  # ===== Testnet =====
+  - name: testnet_fee_manager
+    address: "${TESTNET_FEE_MANAGER_ADDRESS}"
+    required_balance: "0.01"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia]
+
+  - name: testnet_relayer_zusdc
+    address: "${TESTNET_RELAYER_ZUSDC_ADDRESS}"
+    required_balance: "0.1"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia]
+
+  - name: testnet_relayer_zeth
+    address: "${TESTNET_RELAYER_ZETH_ADDRESS}"
+    required_balance: "0.1"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia]
+
+  - name: testnet_relayer_zbnb
+    address: "${TESTNET_RELAYER_ZBNB_ADDRESS}"
+    required_balance: "0.1"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia, bnb_testnet]
+
+# Token-level monitoring (indexer + crosschain)
+tokens:
+  - name: zUSDC
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zusdc"
+    crosschain_config_path: "../config/deployed/mainnet/tokens.zusdc.mainnet.json"
+  - name: zETH
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zeth"
+    crosschain_config_path: "../config/deployed/mainnet/tokens.zeth.mainnet.json"
+  - name: zBNB
+    indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zbnb"
+    crosschain_config_path: "../config/deployed/mainnet/tokens.zbnb.mainnet.json"
+  - name: zUSDC (testnet)
+    indexer_url: "https://beta-v1.api.zerc20.io/indexer/zusdc"
+    crosschain_config_path: "../config/deployed/testnet/tokens.zusdc.testnet.json"
+  - name: zETH (testnet)
+    indexer_url: "https://beta-v1.api.zerc20.io/indexer/zeth"
+    crosschain_config_path: "../config/deployed/testnet/tokens.zeth.testnet.json"
+  - name: zBNB (testnet)
+    indexer_url: "https://beta-v1.api.zerc20.io/indexer/zbnb"
+    crosschain_config_path: "../config/deployed/testnet/tokens.zbnb.testnet.json"
+
+# Indexer thresholds
+indexer:
+  stale_threshold_cycles: 5
+
+# ICP canister cycle monitoring
+icp:
+  # replica_url: "https://ic0.app"
+  # cycle_threshold: 2000000000000  # 2T cycles
+  canisters:
+    - name: mainnet_key_manager
+      canister_id: "ub5gn-myaaa-aaaah-qrs2a-cai"
+    - name: mainnet_storage
+      canister_id: "ug4az-baaaa-aaaah-qrs2q-cai"
+    - name: testnet_key_manager
+      canister_id: "3gshj-ayaaa-aaaac-a4wfq-cai"
+    - name: testnet_storage
+      canister_id: "46fkw-kqaaa-aaaac-a5a3q-cai"
+
+# Crosschain root sync delay detection
+crosschain:
+  root_delay_threshold_seconds: 2400
+  # hub_event_lookback_blocks: 50000        # Hub event lookback window (~7 days on Ethereum)
+  # hub_event_chunk_size: 10000             # Hub eth_getLogs chunk size
+  # verifier_event_lookback_blocks: 500000  # Verifier relay event lookback window (L2)
+  # verifier_event_chunk_size: 10000        # Verifier eth_getLogs chunk size

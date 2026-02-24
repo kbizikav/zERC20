@@ -1,4 +1,5 @@
 use alloy::{
+    eips::BlockNumberOrTag,
     network::Ethereum,
     primitives::{Address, B256, Bytes, U256},
     providers::{PendingTransactionBuilder, Provider},
@@ -45,6 +46,12 @@ impl From<Hub::tokenInfosReturn> for HubTokenInfo {
             token: value.token,
         }
     }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct AggregationEventInfo {
+    pub root: U256,
+    pub block_timestamp: u64,
 }
 
 #[derive(Debug, Clone)]
@@ -363,5 +370,75 @@ impl HubContract {
             .get_block_number()
             .await
             .map_err(|err| ContractError::transport("get_block_number", err))
+    }
+
+    /// Return the timestamp (unix seconds) of the given block number.
+    pub async fn block_timestamp(&self, block_number: u64) -> ContractResult<u64> {
+        let block = self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Number(block_number))
+            .await
+            .map_err(|err| ContractError::transport("get_block_by_number", err))?;
+        let Some(block) = block else {
+            return Err(ContractError::BlockNotFound(block_number));
+        };
+        Ok(block.header.timestamp)
+    }
+
+    /// Query `AggregationRootUpdated` events within a lookback window and return
+    /// the emitted root and block timestamp for the given `target_agg_seq`.
+    ///
+    /// The lookback window is split into chunks of `chunk_size` blocks (most RPC
+    /// providers cap `eth_getLogs` at 10 000 blocks per request). Chunks are
+    /// scanned from the most recent blocks backwards so that recent events are
+    /// found quickly.
+    pub async fn aggregation_event_info(
+        &self,
+        target_agg_seq: u64,
+        lookback_blocks: u64,
+        chunk_size: u64,
+    ) -> ContractResult<Option<AggregationEventInfo>> {
+        let latest = self.latest_block().await?;
+        let earliest = latest.saturating_sub(lookback_blocks);
+
+        let contract = Hub::new(self.address, self.provider.clone());
+        let mut to = latest;
+
+        while to > earliest {
+            let from = to.saturating_sub(chunk_size - 1).max(earliest);
+
+            let events = contract
+                .event_filter::<Hub::AggregationRootUpdated>()
+                .address(self.address)
+                .from_block(from)
+                .to_block(to)
+                .query()
+                .await?;
+
+            for (event, log) in &events {
+                if event.aggSeq == target_agg_seq {
+                    let block_number = log.block_number.unwrap_or_default();
+                    let block = self
+                        .provider
+                        .get_block_by_number(BlockNumberOrTag::Number(block_number))
+                        .await
+                        .map_err(|err| ContractError::transport("get_block_by_number", err))?;
+                    let Some(block) = block else {
+                        return Err(ContractError::BlockNotFound(block_number));
+                    };
+                    return Ok(Some(AggregationEventInfo {
+                        root: event.root,
+                        block_timestamp: block.header.timestamp,
+                    }));
+                }
+            }
+
+            if from == earliest {
+                break;
+            }
+            to = from.saturating_sub(1);
+        }
+
+        Ok(None)
     }
 }

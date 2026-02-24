@@ -1,9 +1,10 @@
 #![allow(clippy::too_many_arguments)]
 
 use alloy::{
+    eips::BlockNumberOrTag,
     network::Ethereum,
     primitives::{Address, B256, Bytes, U256},
-    providers::PendingTransactionBuilder,
+    providers::{PendingTransactionBuilder, Provider},
     rpc::types::TransactionReceipt,
     sol,
 };
@@ -19,6 +20,12 @@ sol!(
     Verifier,
     "abi/Verifier.json",
 );
+
+#[derive(Debug, Clone, Copy)]
+pub struct RelayEventInfo {
+    pub index: u64,
+    pub block_timestamp: u64,
+}
 
 #[derive(Debug, Clone)]
 pub struct GlobalRootSavedEvent {
@@ -469,6 +476,91 @@ impl VerifierContract {
             }
         }
         Err(ContractError::MissingEvent("VerifiersSet"))
+    }
+
+    pub async fn latest_block(&self) -> ContractResult<u64> {
+        self.provider
+            .get_block_number()
+            .await
+            .map_err(|err| ContractError::transport("get_block_number", err))
+    }
+
+    /// Return the timestamp (unix seconds) of the given block number.
+    pub async fn block_timestamp(&self, block_number: u64) -> ContractResult<u64> {
+        let block = self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Number(block_number))
+            .await
+            .map_err(|err| ContractError::transport("get_block_by_number", err))?;
+        let Some(block) = block else {
+            return Err(ContractError::BlockNotFound(block_number));
+        };
+        Ok(block.header.timestamp)
+    }
+
+    /// Scan `TransferRootRelayed` events (newest → oldest) and return the
+    /// oldest event whose index is greater than `hub_tree_index`.
+    ///
+    /// This finds the longest-pending relay that the hub has not yet received,
+    /// accounting for the fact that relays may skip indices.
+    pub async fn oldest_pending_relay_event(
+        &self,
+        hub_tree_index: u64,
+        lookback_blocks: u64,
+        chunk_size: u64,
+    ) -> ContractResult<Option<RelayEventInfo>> {
+        let latest = self.latest_block().await?;
+        let earliest = latest.saturating_sub(lookback_blocks);
+
+        let contract = Verifier::new(self.address, self.provider.clone());
+        let mut to = latest;
+        // Track the oldest matching event by block number (lowest = oldest).
+        let mut oldest: Option<(u64, u64)> = None; // (relay_index, block_number)
+
+        while to > earliest {
+            let from = to.saturating_sub(chunk_size - 1).max(earliest);
+
+            let events = contract
+                .event_filter::<Verifier::TransferRootRelayed>()
+                .address(self.address)
+                .from_block(from)
+                .to_block(to)
+                .query()
+                .await?;
+
+            // Events within a chunk are in ascending block order, so the first
+            // match is the oldest in this chunk.  Since chunks are processed
+            // newest → oldest, each new first-match is older than the previous.
+            if let Some((event, log)) = events
+                .iter()
+                .find(|(event, _)| event.index > hub_tree_index)
+            {
+                oldest = Some((event.index, log.block_number.unwrap_or_default()));
+            }
+
+            if from == earliest {
+                break;
+            }
+            to = from.saturating_sub(1);
+        }
+
+        let Some((index, block_number)) = oldest else {
+            return Ok(None);
+        };
+
+        let block = self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Number(block_number))
+            .await
+            .map_err(|err| ContractError::transport("get_block_by_number", err))?;
+        let Some(block) = block else {
+            return Err(ContractError::BlockNotFound(block_number));
+        };
+
+        Ok(Some(RelayEventInfo {
+            index,
+            block_timestamp: block.header.timestamp,
+        }))
     }
 }
 

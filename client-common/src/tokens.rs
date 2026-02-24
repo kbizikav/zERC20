@@ -199,7 +199,7 @@ pub fn load_tokens_from_path(path: impl AsRef<Path>) -> Result<TokensFile> {
 /// Expands environment variable placeholders in the format `${VAR}`.
 ///
 /// Returns an error if a referenced environment variable is not defined.
-fn expand_env_vars(contents: &str) -> Result<String> {
+pub fn expand_env_vars(contents: &str) -> Result<String> {
     let mut result = String::with_capacity(contents.len());
     let mut chars = contents.chars().peekable();
 
@@ -214,12 +214,21 @@ fn expand_env_vars(contents: &str) -> Result<String> {
                     None => bail!("unclosed environment variable placeholder: ${{{var_name}"),
                 }
             }
+            // Support ${VAR:-default} syntax
+            let (var_name, default_value) = match var_name.find(":-") {
+                Some(pos) => (&var_name[..pos], Some(&var_name[pos + 2..])),
+                None => (var_name.as_str(), None),
+            };
             if var_name.is_empty() {
                 bail!("empty environment variable name in placeholder");
             }
-            let value = env::var(&var_name)
-                .with_context(|| format!("environment variable '{var_name}' is not defined"))?;
-            result.push_str(&value);
+            match (env::var(var_name), default_value) {
+                (Ok(value), _) => result.push_str(&value),
+                (Err(_), Some(default)) => result.push_str(default),
+                (Err(_), None) => {
+                    bail!("environment variable '{var_name}' is not defined")
+                }
+            }
         } else {
             result.push(ch);
         }
