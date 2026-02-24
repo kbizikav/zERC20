@@ -179,9 +179,8 @@ async fn check_single_config(
                         HUB_EVENT_CHUNK_SIZE,
                     )
                     .await
-                    .map(|info| {
+                    .inspect(|&info| {
                         event_cache.insert(target_seq, info);
-                        info
                     }),
             };
 

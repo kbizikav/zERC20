@@ -23,9 +23,8 @@ pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
 
     if !config.accounts.is_empty() {
         info!("collecting balance stats...");
-        match collect_balance_stats(&config.accounts, &config.chains).await {
-            Some(embed) => embeds.push(embed),
-            None => {}
+        if let Some(embed) = collect_balance_stats(&config.accounts, &config.chains).await {
+            embeds.push(embed);
         }
     }
 
@@ -144,7 +143,7 @@ async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
             .get(&status_url)
             .send()
             .await
-            .and_then(|r| Ok(r.error_for_status()?))
+            .and_then(|r| r.error_for_status())
         {
             Ok(resp) => match resp.json().await {
                 Ok(s) => s,
@@ -185,18 +184,12 @@ async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
             let chain_label = entry.map(|e| e.label.as_str()).unwrap_or("?");
 
             let onchain = match entry {
-                Some(e) => match fetch_onchain_index(e).await {
-                    Ok(idx) => Some(idx),
-                    Err(_) => None,
-                },
+                Some(e) => fetch_onchain_index(e).await.ok(),
                 None => None,
             };
 
             let proved = match entry {
-                Some(e) => match fetch_proved_index(e).await {
-                    Ok(idx) => Some(idx),
-                    Err(_) => None,
-                },
+                Some(e) => fetch_proved_index(e).await.ok(),
                 None => None,
             };
 

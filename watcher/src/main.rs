@@ -114,15 +114,15 @@ async fn main() -> Result<()> {
         }
 
         // Stats report
-        if let (Some(interval), Some(last)) = (stats_interval, &mut last_stats_sent) {
-            if last.elapsed() >= interval {
-                info!("collecting stats report...");
-                let embeds = stats::collect_stats(&config).await;
-                if let Err(err) = alert_manager.send_embeds(embeds).await {
-                    error!("failed to send stats: {:?}", err);
-                }
-                *last = Instant::now();
+        if let (Some(interval), Some(last)) = (stats_interval, &mut last_stats_sent)
+            && last.elapsed() >= interval
+        {
+            info!("collecting stats report...");
+            let embeds = stats::collect_stats(&config).await;
+            if let Err(err) = alert_manager.send_embeds(embeds).await {
+                error!("failed to send stats: {:?}", err);
             }
+            *last = Instant::now();
         }
     }
 }

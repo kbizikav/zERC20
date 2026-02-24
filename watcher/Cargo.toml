@@ -14,7 +14,5 @@ env_logger = { workspace = true }
 log = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
-serde_json = { workspace = true }
 serde_yaml = "0.9"
-thiserror = { workspace = true }
 tokio = { workspace = true, features = ["full"] }
