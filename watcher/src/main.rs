@@ -154,7 +154,12 @@ async fn run_checks(
         .any(|t| t.crosschain_config_path.is_some());
     if has_crosschain {
         info!("running crosschain checks...");
-        let alerts = crosschain::check_crosschain(&config.tokens).await;
+        let root_delay_threshold = config
+            .crosschain
+            .as_ref()
+            .map(|c| c.root_delay_threshold_seconds)
+            .unwrap_or(2400);
+        let alerts = crosschain::check_crosschain(&config.tokens, root_delay_threshold).await;
         all_alerts.extend(alerts);
     }
 

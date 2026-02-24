@@ -5,11 +5,19 @@ use client_common::{
     tokens::{TokensFile, load_tokens_from_path},
 };
 use log::{error, info};
+use std::collections::HashMap;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::alert::{Alert, AlertField, Severity};
 use crate::config::TokenConfig;
 
-pub async fn check_crosschain(tokens: &[TokenConfig]) -> Vec<Alert> {
+/// Lookback window for hub event queries (~7 days on Ethereum).
+const HUB_EVENT_LOOKBACK_BLOCKS: u64 = 50_000;
+
+/// Maximum block range per `eth_getLogs` request (RPC provider limit).
+const HUB_EVENT_CHUNK_SIZE: u64 = 10_000;
+
+pub async fn check_crosschain(tokens: &[TokenConfig], root_delay_threshold: u64) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
     for token in tokens {
@@ -17,7 +25,7 @@ pub async fn check_crosschain(tokens: &[TokenConfig]) -> Vec<Alert> {
             Some(p) => p,
             None => continue,
         };
-        match check_single_config(path).await {
+        match check_single_config(path, root_delay_threshold).await {
             Ok(mut a) => alerts.append(&mut a),
             Err(err) => {
                 error!("crosschain check failed for {}: {:?}", path, err);
@@ -38,7 +46,7 @@ pub async fn check_crosschain(tokens: &[TokenConfig]) -> Vec<Alert> {
     alerts
 }
 
-async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
+async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Vec<Alert>> {
     let tokens_file: TokensFile =
         load_tokens_from_path(path).with_context(|| format!("loading {}", path))?;
 
@@ -62,7 +70,16 @@ async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
         return Ok(Vec::new());
     }
 
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+
     let mut alerts = Vec::new();
+
+    // Cache: aggSeq → Option<timestamp>. Queried once per distinct aggSeq,
+    // shared across all verifiers in this token config.
+    let mut ts_cache: HashMap<u64, Option<u64>> = HashMap::new();
 
     for token in &tokens_file.tokens {
         let label = &token.label;
@@ -84,9 +101,6 @@ async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
             }
         };
 
-        // Root sync check: uses the same logic as crosschain-job's has_current_root().
-        // A verifier is in sync if its root at latest_agg_seq matches the hub's current root,
-        // regardless of whether the aggSeq values match.
         if v_agg_seq == 0 {
             info!("ROOT NOT SYNCED: {} — verifier aggSeq is 0", label);
             alerts.push(Alert {
@@ -164,45 +178,139 @@ async fn check_single_config(path: &str) -> Result<Vec<Alert>> {
             continue;
         }
 
-        // Warning: verifier's latest root doesn't match hub's current root.
-        // This means the broadcast hasn't reached this verifier yet.
-        let has_current_root = v_root == hub_root && v_root != U256::ZERO;
-        if !has_current_root {
-            info!(
-                "ROOT NOT SYNCED: {} — verifier_root={:#x} (seq={}), hub_root={:#x} (seq={})",
-                label, v_root, v_agg_seq, hub_root, hub_agg_seq
-            );
-            alerts.push(Alert {
-                severity: Severity::Warning,
-                domain: "crosschain".to_string(),
-                title: format!("Root not synced: {}", label),
-                description: format!(
-                    "Verifier **{}** (chain {}) does not have the hub's current aggregation root. Broadcast may be pending.",
-                    label, token.chain_id,
-                ),
-                fields: vec![
-                    AlertField {
-                        name: "Token".to_string(),
-                        value: label.clone(),
-                        inline: true,
-                    },
-                    AlertField {
-                        name: "Chain".to_string(),
-                        value: token.chain_id.to_string(),
-                        inline: true,
-                    },
-                    AlertField {
-                        name: "Hub root".to_string(),
-                        value: format!("{:#x}", hub_root),
-                        inline: false,
-                    },
-                    AlertField {
-                        name: "Verifier root".to_string(),
-                        value: format!("{:#x}", v_root),
-                        inline: false,
-                    },
-                ],
-            });
+        // Delay check: verifier is behind the hub
+        if v_agg_seq < hub_agg_seq {
+            let first_missing_seq = v_agg_seq + 1;
+
+            // Look up the timestamp, using cache to avoid redundant RPC calls.
+            let cached = ts_cache.get(&first_missing_seq).copied();
+            let ts_result = match cached {
+                Some(ts) => Ok(ts),
+                None => hub
+                    .aggregation_event_timestamp(
+                        first_missing_seq,
+                        HUB_EVENT_LOOKBACK_BLOCKS,
+                        HUB_EVENT_CHUNK_SIZE,
+                    )
+                    .await
+                    .map(|ts| {
+                        ts_cache.insert(first_missing_seq, ts);
+                        ts
+                    }),
+            };
+
+            match ts_result {
+                Ok(Some(event_ts)) => {
+                    let delay = now.saturating_sub(event_ts);
+                    if delay > root_delay_threshold {
+                        let delay_min = delay / 60;
+                        info!(
+                            "ROOT SYNC DELAYED: {} — behind by {} seq(s), delay {}m (threshold {}s)",
+                            label,
+                            hub_agg_seq - v_agg_seq,
+                            delay_min,
+                            root_delay_threshold
+                        );
+                        alerts.push(Alert {
+                            severity: Severity::Warning,
+                            domain: "crosschain".to_string(),
+                            title: format!("Root sync delayed: {}", label),
+                            description: format!(
+                                "Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was emitted **{}m ago** (threshold {}m).",
+                                label,
+                                token.chain_id,
+                                hub_agg_seq - v_agg_seq,
+                                first_missing_seq,
+                                delay_min,
+                                root_delay_threshold / 60,
+                            ),
+                            fields: vec![
+                                AlertField {
+                                    name: "Token".to_string(),
+                                    value: label.clone(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Chain".to_string(),
+                                    value: token.chain_id.to_string(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Delay".to_string(),
+                                    value: format!("{}m", delay_min),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Verifier aggSeq".to_string(),
+                                    value: v_agg_seq.to_string(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Hub aggSeq".to_string(),
+                                    value: hub_agg_seq.to_string(),
+                                    inline: true,
+                                },
+                            ],
+                        });
+                    } else {
+                        info!(
+                            "Root propagating: {} — behind by {} seq(s), delay {}s (within threshold {}s)",
+                            label,
+                            hub_agg_seq - v_agg_seq,
+                            delay,
+                            root_delay_threshold,
+                        );
+                    }
+                }
+                Ok(None) => {
+                    // Event not found in lookback window — very old lag
+                    info!(
+                        "ROOT SYNC DELAYED: {} — aggSeq {} not found in lookback (very old)",
+                        label, first_missing_seq
+                    );
+                    alerts.push(Alert {
+                        severity: Severity::Warning,
+                        domain: "crosschain".to_string(),
+                        title: format!("Root sync delayed: {}", label),
+                        description: format!(
+                            "Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was not found in the last {} blocks (very old).",
+                            label,
+                            token.chain_id,
+                            hub_agg_seq - v_agg_seq,
+                            first_missing_seq,
+                            HUB_EVENT_LOOKBACK_BLOCKS,
+                        ),
+                        fields: vec![
+                            AlertField {
+                                name: "Token".to_string(),
+                                value: label.clone(),
+                                inline: true,
+                            },
+                            AlertField {
+                                name: "Chain".to_string(),
+                                value: token.chain_id.to_string(),
+                                inline: true,
+                            },
+                            AlertField {
+                                name: "Verifier aggSeq".to_string(),
+                                value: v_agg_seq.to_string(),
+                                inline: true,
+                            },
+                            AlertField {
+                                name: "Hub aggSeq".to_string(),
+                                value: hub_agg_seq.to_string(),
+                                inline: true,
+                            },
+                        ],
+                    });
+                }
+                Err(err) => {
+                    error!(
+                        "failed to query hub event timestamp for '{}': {:?}",
+                        label, err
+                    );
+                }
+            }
         }
     }
 

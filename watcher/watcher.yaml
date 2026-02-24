@@ -83,6 +83,10 @@ tokens:
     indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zbnb"
     crosschain_config_path: "../config/deployed/mainnet/tokens.zbnb.mainnet.json"
 
+# Crosschain root sync delay detection
+crosschain:
+  root_delay_threshold_seconds: 2400
+
 # Indexer thresholds
 indexer:
   stale_threshold_cycles: 5

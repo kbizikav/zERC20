@@ -23,6 +23,9 @@ pub struct WatcherConfig {
     pub indexer: Option<IndexerConfig>,
 
     #[serde(default)]
+    pub crosschain: Option<CrosschainConfig>,
+
+    #[serde(default)]
     pub alert: AlertConfig,
 
     #[serde(default)]
@@ -51,6 +54,16 @@ pub struct ChainConfig {
     pub rpc_url: String,
     #[serde(default)]
     pub explorer: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct CrosschainConfig {
+    #[serde(default = "default_root_delay_threshold")]
+    pub root_delay_threshold_seconds: u64,
+}
+
+fn default_root_delay_threshold() -> u64 {
+    2400
 }
 
 #[derive(Debug, Clone, Deserialize)]
