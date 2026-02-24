@@ -10,19 +10,9 @@ use std::collections::HashMap;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::alert::{Alert, AlertField, Severity};
-use crate::config::TokenConfig;
+use crate::config::{CrosschainConfig, TokenConfig};
 
-/// Lookback window for hub event queries (~7 days on Ethereum).
-const HUB_EVENT_LOOKBACK_BLOCKS: u64 = 50_000;
-
-/// Maximum block range per `eth_getLogs` request (RPC provider limit).
-const HUB_EVENT_CHUNK_SIZE: u64 = 10_000;
-
-/// Lookback window for verifier relay event queries.
-/// L2 chains produce blocks much faster, so we use a larger window.
-const VERIFIER_EVENT_LOOKBACK_BLOCKS: u64 = 500_000;
-
-pub async fn check_crosschain(tokens: &[TokenConfig], root_delay_threshold: u64) -> Vec<Alert> {
+pub async fn check_crosschain(tokens: &[TokenConfig], cc: &CrosschainConfig) -> Vec<Alert> {
     let mut alerts = Vec::new();
 
     for token in tokens {
@@ -30,7 +20,7 @@ pub async fn check_crosschain(tokens: &[TokenConfig], root_delay_threshold: u64)
             Some(p) => p,
             None => continue,
         };
-        match check_single_config(&token.name, path, root_delay_threshold).await {
+        match check_single_config(&token.name, path, cc).await {
             Ok(mut a) => alerts.append(&mut a),
             Err(err) => {
                 error!(
@@ -57,7 +47,7 @@ pub async fn check_crosschain(tokens: &[TokenConfig], root_delay_threshold: u64)
 async fn check_single_config(
     token_name: &str,
     path: &str,
-    root_delay_threshold: u64,
+    cc: &CrosschainConfig,
 ) -> Result<Vec<Alert>> {
     let tokens_file: TokensFile =
         load_tokens_from_path(path).with_context(|| format!("loading {}", path))?;
@@ -128,7 +118,7 @@ async fn check_single_config(
                 v_agg_seq,
                 hub_agg_seq,
                 now,
-                root_delay_threshold,
+                cc,
                 &mut event_cache,
             )
             .await,
@@ -149,7 +139,7 @@ async fn check_single_config(
                 &verifier,
                 eid,
                 now,
-                root_delay_threshold,
+                cc,
             )
             .await,
         );
@@ -170,7 +160,7 @@ async fn check_broadcast(
     v_agg_seq: u64,
     hub_agg_seq: u64,
     now: u64,
-    root_delay_threshold: u64,
+    cc: &CrosschainConfig,
     event_cache: &mut HashMap<u64, Option<AggregationEventInfo>>,
 ) -> Vec<Alert> {
     if v_agg_seq == 0 {
@@ -227,8 +217,8 @@ async fn check_broadcast(
         None => hub
             .aggregation_event_info(
                 target_seq,
-                HUB_EVENT_LOOKBACK_BLOCKS,
-                HUB_EVENT_CHUNK_SIZE,
+                cc.hub_event_lookback_blocks,
+                cc.event_chunk_size,
             )
             .await
             .inspect(|&info| {
@@ -250,7 +240,7 @@ async fn check_broadcast(
         v_agg_seq,
         hub_agg_seq,
         now,
-        root_delay_threshold,
+        cc,
         event_result,
     )
     .await
@@ -334,10 +324,11 @@ async fn check_broadcast_delay(
     v_agg_seq: u64,
     hub_agg_seq: u64,
     now: u64,
-    root_delay_threshold: u64,
+    cc: &CrosschainConfig,
     event_result: ContractResult<Option<AggregationEventInfo>>,
 ) -> Vec<Alert> {
     let first_missing_seq = v_agg_seq + 1;
+    let root_delay_threshold = cc.root_delay_threshold_seconds;
 
     match event_result {
         Ok(Some(event_info)) => {
@@ -409,11 +400,11 @@ async fn check_broadcast_delay(
         Ok(None) => {
             // Event not found in lookback window — estimate minimum delay
             // from the timestamp of the earliest scanned block.
-            let min_delay_desc = match hub_lookback_min_delay(hub, now).await {
+            let min_delay_desc = match hub_lookback_min_delay(hub, cc.hub_event_lookback_blocks, now).await {
                 Some(d) => format!("at least **{}m ago**", d / 60),
                 None => format!(
                     "not found in the last {} blocks",
-                    HUB_EVENT_LOOKBACK_BLOCKS
+                    cc.hub_event_lookback_blocks
                 ),
             };
             info!(
@@ -484,7 +475,7 @@ async fn check_relay(
     verifier: &VerifierContract,
     eid: u32,
     now: u64,
-    root_delay_threshold: u64,
+    cc: &CrosschainConfig,
 ) -> Vec<Alert> {
     let v_relayed_index = match verifier.latest_relayed_index().await {
         Ok(idx) => idx,
@@ -568,7 +559,7 @@ async fn check_relay(
         v_relayed_index,
         hub_tree_index,
         now,
-        root_delay_threshold,
+        cc,
     )
     .await
 }
@@ -583,15 +574,16 @@ async fn check_relay_delay(
     v_relayed_index: u64,
     hub_tree_index: u64,
     now: u64,
-    root_delay_threshold: u64,
+    cc: &CrosschainConfig,
 ) -> Vec<Alert> {
     let next_expected = hub_tree_index + 1;
+    let root_delay_threshold = cc.root_delay_threshold_seconds;
 
     match verifier
         .relay_event_timestamp(
             next_expected,
-            VERIFIER_EVENT_LOOKBACK_BLOCKS,
-            HUB_EVENT_CHUNK_SIZE,
+            cc.verifier_event_lookback_blocks,
+            cc.event_chunk_size,
         )
         .await
     {
@@ -662,11 +654,11 @@ async fn check_relay_delay(
         Ok(None) => {
             // Event not found in lookback window — estimate minimum delay
             // from the timestamp of the earliest scanned block.
-            let min_delay_desc = match verifier_lookback_min_delay(verifier, now).await {
+            let min_delay_desc = match verifier_lookback_min_delay(verifier, cc.verifier_event_lookback_blocks, now).await {
                 Some(d) => format!("at least **{}m ago**", d / 60),
                 None => format!(
                     "not found in the last {} blocks",
-                    VERIFIER_EVENT_LOOKBACK_BLOCKS
+                    cc.verifier_event_lookback_blocks
                 ),
             };
             info!(
@@ -807,18 +799,18 @@ async fn check_relay_root_match(
 /// Estimate the minimum delay for a hub event that fell outside the lookback
 /// window by fetching the timestamp of the earliest scanned block.
 /// Returns `Some(seconds)` or `None` if the RPC call fails.
-async fn hub_lookback_min_delay(hub: &HubContract, now: u64) -> Option<u64> {
+async fn hub_lookback_min_delay(hub: &HubContract, lookback_blocks: u64, now: u64) -> Option<u64> {
     let latest = hub.latest_block().await.ok()?;
-    let earliest = latest.saturating_sub(HUB_EVENT_LOOKBACK_BLOCKS);
+    let earliest = latest.saturating_sub(lookback_blocks);
     let ts = hub.block_timestamp(earliest).await.ok()?;
     Some(now.saturating_sub(ts))
 }
 
 /// Estimate the minimum delay for a verifier relay event that fell outside
 /// the lookback window.
-async fn verifier_lookback_min_delay(verifier: &VerifierContract, now: u64) -> Option<u64> {
+async fn verifier_lookback_min_delay(verifier: &VerifierContract, lookback_blocks: u64, now: u64) -> Option<u64> {
     let latest = verifier.latest_block().await.ok()?;
-    let earliest = latest.saturating_sub(VERIFIER_EVENT_LOOKBACK_BLOCKS);
+    let earliest = latest.saturating_sub(lookback_blocks);
     let ts = verifier.block_timestamp(earliest).await.ok()?;
     Some(now.saturating_sub(ts))
 }

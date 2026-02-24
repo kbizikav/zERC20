@@ -10,12 +10,16 @@ pub struct WatcherConfig {
     pub discord_webhook_url: String,
     #[serde(default = "default_interval")]
     pub interval_seconds: u64,
+    #[serde(default)]
+    pub stats_interval_seconds: Option<u64>,
 
     #[serde(default)]
-    pub accounts: Vec<AccountConfig>,
+    pub alert: AlertConfig,
+
     #[serde(default)]
     pub chains: HashMap<String, ChainConfig>,
-
+    #[serde(default)]
+    pub accounts: Vec<AccountConfig>,
     #[serde(default)]
     pub tokens: Vec<TokenConfig>,
 
@@ -24,12 +28,6 @@ pub struct WatcherConfig {
 
     #[serde(default)]
     pub crosschain: Option<CrosschainConfig>,
-
-    #[serde(default)]
-    pub alert: AlertConfig,
-
-    #[serde(default)]
-    pub stats_interval_seconds: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -60,10 +58,39 @@ pub struct ChainConfig {
 pub struct CrosschainConfig {
     #[serde(default = "default_root_delay_threshold")]
     pub root_delay_threshold_seconds: u64,
+    #[serde(default = "default_hub_event_lookback_blocks")]
+    pub hub_event_lookback_blocks: u64,
+    #[serde(default = "default_event_chunk_size")]
+    pub event_chunk_size: u64,
+    #[serde(default = "default_verifier_event_lookback_blocks")]
+    pub verifier_event_lookback_blocks: u64,
+}
+
+impl Default for CrosschainConfig {
+    fn default() -> Self {
+        Self {
+            root_delay_threshold_seconds: default_root_delay_threshold(),
+            hub_event_lookback_blocks: default_hub_event_lookback_blocks(),
+            event_chunk_size: default_event_chunk_size(),
+            verifier_event_lookback_blocks: default_verifier_event_lookback_blocks(),
+        }
+    }
 }
 
 fn default_root_delay_threshold() -> u64 {
     2400
+}
+
+fn default_hub_event_lookback_blocks() -> u64 {
+    50_000
+}
+
+fn default_event_chunk_size() -> u64 {
+    10_000
+}
+
+fn default_verifier_event_lookback_blocks() -> u64 {
+    500_000
 }
 
 #[derive(Debug, Clone, Deserialize)]

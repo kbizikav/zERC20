@@ -1,7 +1,39 @@
 discord_webhook_url: "${DISCORD_WEBHOOK_URL}"
 interval_seconds: 300
+# Stats report (optional, 0 or omit to disable)
+stats_interval_seconds: 3600
 
-# Domain 1: Balance monitoring
+# Alert control
+alert:
+  cooldown_seconds: 3600
+
+chains:
+  ethereum:
+    rpc_url: "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://etherscan.io/address/"
+  base:
+    rpc_url: "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://basescan.org/address/"
+  arbitrum:
+    rpc_url: "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://arbiscan.io/address/"
+  bnb:
+    rpc_url: "https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://bscscan.com/address/"
+  sepolia:
+    rpc_url: "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia.etherscan.io/address/"
+  optimism_sepolia:
+    rpc_url: "https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia-optimism.etherscan.io/address/"
+  arbitrum_sepolia:
+    rpc_url: "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia.arbiscan.io/address/"
+  bnb_testnet:
+    rpc_url: "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://testnet.bscscan.com/address/"
+
+# Balance monitoring
 accounts:
   # ===== Mainnet =====
   - name: mainnet_fee_manager
@@ -45,32 +77,6 @@ accounts:
     required_balance: "0.1"
     chains: [sepolia, optimism_sepolia, arbitrum_sepolia, bnb_testnet]
 
-chains:
-  ethereum:
-    rpc_url: "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://etherscan.io/address/"
-  base:
-    rpc_url: "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://basescan.org/address/"
-  arbitrum:
-    rpc_url: "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://arbiscan.io/address/"
-  bnb:
-    rpc_url: "https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://bscscan.com/address/"
-  sepolia:
-    rpc_url: "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://sepolia.etherscan.io/address/"
-  optimism_sepolia:
-    rpc_url: "https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://sepolia-optimism.etherscan.io/address/"
-  arbitrum_sepolia:
-    rpc_url: "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://sepolia.arbiscan.io/address/"
-  bnb_testnet:
-    rpc_url: "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
-    explorer: "https://testnet.bscscan.com/address/"
-
 # Token-level monitoring (indexer + crosschain)
 tokens:
   - name: zUSDC
@@ -83,17 +89,13 @@ tokens:
     indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zbnb"
     crosschain_config_path: "../config/deployed/mainnet/tokens.zbnb.mainnet.json"
 
-# Crosschain root sync delay detection
-crosschain:
-  root_delay_threshold_seconds: 2400
-
 # Indexer thresholds
 indexer:
   stale_threshold_cycles: 5
 
-# Alert control
-alert:
-  cooldown_seconds: 3600
-
-# Stats report (optional, 0 or omit to disable)
-stats_interval_seconds: 3600
+# Crosschain root sync delay detection
+crosschain:
+  root_delay_threshold_seconds: 2400
+  # hub_event_lookback_blocks: 50000      # Hub event lookback window (~7 days on Ethereum)
+  # event_chunk_size: 10000               # Max block range per eth_getLogs request
+  # verifier_event_lookback_blocks: 500000 # Verifier relay event lookback window (L2)
