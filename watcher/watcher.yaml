@@ -56,7 +56,7 @@ chains:
     rpc_url: "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
     explorer: "https://arbiscan.io/address/"
   bnb:
-    rpc_url: "${BNB_RPC_URL}"
+    rpc_url: "https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
     explorer: "https://bscscan.com/address/"
   sepolia:
     rpc_url: "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
@@ -68,7 +68,7 @@ chains:
     rpc_url: "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
     explorer: "https://sepolia.arbiscan.io/address/"
   bnb_testnet:
-    rpc_url: "${BNB_TESTNET_RPC_URL}"
+    rpc_url: "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
     explorer: "https://testnet.bscscan.com/address/"
 
 # Domain 2: Indexer monitoring
