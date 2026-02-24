@@ -43,6 +43,12 @@ async fn main() -> Result<()> {
     env_logger::init();
 
     let cli = Cli::parse();
+
+    // Also load .env from the config file's directory (e.g. watcher/.env)
+    if let Some(config_dir) = cli.config.parent() {
+        dotenvy::from_path(config_dir.join(".env")).ok();
+    }
+
     let config = load_config(&cli.config)?;
     info!("loaded config from {}", cli.config.display());
 
