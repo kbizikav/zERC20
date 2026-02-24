@@ -73,7 +73,10 @@ chains:
 
 # Domain 2: Indexer monitoring
 indexer:
-  status_url: "http://localhost:8080/indexer/status"
+  status_urls:
+    - "https://v1.mainnet.api.zerc20.io/indexer/zusdc"
+    - "https://v1.mainnet.api.zerc20.io/indexer/zeth"
+    - "https://v1.mainnet.api.zerc20.io/indexer/zbnb"
   stale_threshold_cycles: 5
   max_index_gap: 100
 

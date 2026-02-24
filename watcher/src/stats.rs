@@ -113,24 +113,25 @@ async fn get_balance(address: Address, chain_cfg: &ChainConfig) -> Result<U256> 
 /// Indexer stats: pipeline stage indices for each token.
 async fn collect_indexer_stats(config: &IndexerConfig) -> Option<DiscordEmbed> {
     let client = reqwest::Client::new();
-    let statuses: Vec<TokenStatusResponse> = match client
-        .get(&config.status_url)
-        .send()
-        .await
-        .and_then(|r| Ok(r.error_for_status()?))
-    {
-        Ok(resp) => match resp.json().await {
-            Ok(s) => s,
+    let mut statuses: Vec<TokenStatusResponse> = Vec::new();
+    for url in &config.status_urls {
+        match client
+            .get(url)
+            .send()
+            .await
+            .and_then(|r| Ok(r.error_for_status()?))
+        {
+            Ok(resp) => match resp.json::<Vec<TokenStatusResponse>>().await {
+                Ok(s) => statuses.extend(s),
+                Err(err) => {
+                    error!("failed to parse indexer status from {}: {:?}", url, err);
+                }
+            },
             Err(err) => {
-                error!("failed to parse indexer status: {:?}", err);
-                return None;
+                error!("failed to fetch indexer status from {}: {:?}", url, err);
             }
-        },
-        Err(err) => {
-            error!("failed to fetch indexer status: {:?}", err);
-            return None;
         }
-    };
+    }
 
     if statuses.is_empty() {
         return None;

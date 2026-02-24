@@ -106,10 +106,7 @@ impl IndexerMonitor {
                     severity: Severity::Critical,
                     domain: "indexer".to_string(),
                     title: "Indexer unreachable".to_string(),
-                    description: format!(
-                        "Failed to reach indexer at `{}`: {}",
-                        self.config.status_url, err
-                    ),
+                    description: format!("Failed to reach indexer: {}", err),
                     fields: vec![],
                 }]
             }
@@ -117,25 +114,30 @@ impl IndexerMonitor {
     }
 
     async fn fetch_status(&self) -> Result<Vec<TokenStatusResponse>> {
-        let resp = self
-            .client
-            .get(&self.config.status_url)
-            .send()
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to GET indexer status from {}",
-                    self.config.status_url
-                )
-            })?;
+        let mut all = Vec::new();
+        for url in &self.config.status_urls {
+            let resp = self
+                .client
+                .get(url)
+                .send()
+                .await
+                .with_context(|| format!("failed to GET indexer status from {}", url))?;
 
-        if !resp.status().is_success() {
-            anyhow::bail!("indexer status returned HTTP {}", resp.status());
+            if !resp.status().is_success() {
+                anyhow::bail!(
+                    "indexer status from {} returned HTTP {}",
+                    url,
+                    resp.status()
+                );
+            }
+
+            let statuses: Vec<TokenStatusResponse> = resp
+                .json()
+                .await
+                .with_context(|| format!("failed to deserialize response from {}", url))?;
+            all.extend(statuses);
         }
-
-        resp.json::<Vec<TokenStatusResponse>>()
-            .await
-            .context("failed to deserialize indexer status response")
+        Ok(all)
     }
 
     /// Check that adjacent pipeline stages don't have excessive gaps.
