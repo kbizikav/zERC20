@@ -151,6 +151,7 @@ async fn check_single_config(
 // ─── Broadcast (H->V) ───────────────────────────────────────────────────────
 
 /// Check whether the hub's aggregation root has been broadcast to this verifier.
+#[allow(clippy::too_many_arguments)]
 async fn check_broadcast(
     token_name: &str,
     label: &str,
@@ -316,6 +317,7 @@ fn check_broadcast_root(
 
 /// Verifier is behind the hub (v_agg_seq < hub_agg_seq) — check how long
 /// the first missing root has been available on the hub.
+#[allow(clippy::too_many_arguments)]
 async fn check_broadcast_delay(
     token_name: &str,
     label: &str,
@@ -468,6 +470,7 @@ async fn check_broadcast_delay(
 
 /// Check whether the verifier's relayed transfer roots have been delivered to
 /// the hub.
+#[allow(clippy::too_many_arguments)]
 async fn check_relay(
     token_name: &str,
     label: &str,
@@ -604,6 +607,7 @@ async fn check_relay(
 
 /// Verifier has relayed more than the hub has received — find the oldest
 /// pending relay event (index > hub_tree_index) and check its age.
+#[allow(clippy::too_many_arguments)]
 async fn check_relay_delay(
     token_name: &str,
     label: &str,
