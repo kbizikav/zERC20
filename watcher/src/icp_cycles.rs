@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use candid::{Decode, Encode, Principal};
-use ic_agent::identity::AnonymousIdentity;
 use ic_agent::Agent;
+use ic_agent::identity::AnonymousIdentity;
 use log::{error, info};
 
 use crate::alert::{Alert, AlertField, Severity};

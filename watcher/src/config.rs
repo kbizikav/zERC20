@@ -7,7 +7,10 @@ use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 pub struct WatcherConfig {
-    pub discord_webhook_url: String,
+    #[serde(default)]
+    pub discord_webhook_url: Option<String>,
+    #[serde(default)]
+    pub slack_webhook_url: Option<String>,
     #[serde(default = "default_interval")]
     pub interval_seconds: u64,
     #[serde(default)]

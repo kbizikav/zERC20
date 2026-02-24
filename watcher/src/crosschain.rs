@@ -400,13 +400,14 @@ async fn check_broadcast_delay(
         Ok(None) => {
             // Event not found in lookback window — estimate minimum delay
             // from the timestamp of the earliest scanned block.
-            let min_delay_desc = match hub_lookback_min_delay(hub, cc.hub_event_lookback_blocks, now).await {
-                Some(d) => format!("at least **{}m ago**", d / 60),
-                None => format!(
-                    "not found in the last {} blocks",
-                    cc.hub_event_lookback_blocks
-                ),
-            };
+            let min_delay_desc =
+                match hub_lookback_min_delay(hub, cc.hub_event_lookback_blocks, now).await {
+                    Some(d) => format!("at least **{}m ago**", d / 60),
+                    None => format!(
+                        "not found in the last {} blocks",
+                        cc.hub_event_lookback_blocks
+                    ),
+                };
             info!(
                 "[{}] [H->V] BROADCAST DELAYED: {} — aggSeq {} {} (threshold {}m)",
                 token_name,
@@ -554,7 +555,10 @@ async fn check_relay(
         return vec![Alert {
             severity: Severity::Critical,
             domain: "crosschain".to_string(),
-            title: format!("[{}] [V->H] Relay index inconsistency: {}", token_name, label),
+            title: format!(
+                "[{}] [V->H] Relay index inconsistency: {}",
+                token_name, label
+            ),
             description: format!(
                 "[**{}**] Verifier **{}** (chain {}) has relayed index {} but hub received up to {}. Hub has more than verifier relayed.",
                 token_name, label, chain_id, v_relayed_index, hub_tree_index,
@@ -620,7 +624,10 @@ async fn check_relay_delay(
         )
         .await
     {
-        Ok(Some(RelayEventInfo { index: oldest_index, block_timestamp })) => {
+        Ok(Some(RelayEventInfo {
+            index: oldest_index,
+            block_timestamp,
+        })) => {
             let delay = now.saturating_sub(block_timestamp);
             if delay > root_delay_threshold {
                 let delay_min = delay / 60;
@@ -679,12 +686,7 @@ async fn check_relay_delay(
             } else {
                 info!(
                     "[{}] [V->H] Relay propagating: {} — relayed={}, hub={}, delay={}s (within {}s)",
-                    token_name,
-                    label,
-                    v_relayed_index,
-                    hub_tree_index,
-                    delay,
-                    root_delay_threshold
+                    token_name, label, v_relayed_index, hub_tree_index, delay, root_delay_threshold
                 );
                 vec![]
             }
@@ -692,13 +694,16 @@ async fn check_relay_delay(
         Ok(None) => {
             // No pending relay event found in lookback window — estimate
             // minimum delay from the earliest scanned block.
-            let min_delay_desc = match verifier_lookback_min_delay(verifier, cc.verifier_event_lookback_blocks, now).await {
-                Some(d) => format!("at least **{}m ago**", d / 60),
-                None => format!(
-                    "not found in the last {} blocks",
-                    cc.verifier_event_lookback_blocks
-                ),
-            };
+            let min_delay_desc =
+                match verifier_lookback_min_delay(verifier, cc.verifier_event_lookback_blocks, now)
+                    .await
+                {
+                    Some(d) => format!("at least **{}m ago**", d / 60),
+                    None => format!(
+                        "not found in the last {} blocks",
+                        cc.verifier_event_lookback_blocks
+                    ),
+                };
             info!(
                 "[{}] [V->H] RELAY DELAYED: {} — no pending relay event in lookback, {} (threshold {}m)",
                 token_name,
@@ -844,7 +849,11 @@ async fn hub_lookback_min_delay(hub: &HubContract, lookback_blocks: u64, now: u6
 
 /// Estimate the minimum delay for a verifier relay event that fell outside
 /// the lookback window.
-async fn verifier_lookback_min_delay(verifier: &VerifierContract, lookback_blocks: u64, now: u64) -> Option<u64> {
+async fn verifier_lookback_min_delay(
+    verifier: &VerifierContract,
+    lookback_blocks: u64,
+    now: u64,
+) -> Option<u64> {
     let latest = verifier.latest_block().await.ok()?;
     let earliest = latest.saturating_sub(lookback_blocks);
     let ts = verifier.block_timestamp(earliest).await.ok()?;

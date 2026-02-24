@@ -14,7 +14,7 @@ use clap::Parser;
 use log::{error, info};
 use tokio::time::{self, MissedTickBehavior};
 
-use alert::{Alert, AlertManager};
+use alert::{Alert, AlertManager, WebhookBackend};
 use config::load_config;
 use indexer_monitor::IndexerMonitor;
 
@@ -53,10 +53,14 @@ async fn main() -> Result<()> {
     let config = load_config(&cli.config)?;
     info!("loaded config from {}", cli.config.display());
 
-    let mut alert_manager = AlertManager::new(
-        config.discord_webhook_url.clone(),
-        config.alert.cooldown_seconds,
-    );
+    let mut backends = Vec::new();
+    if let Some(url) = &config.discord_webhook_url {
+        backends.push(WebhookBackend::Discord(url.clone()));
+    }
+    if let Some(url) = &config.slack_webhook_url {
+        backends.push(WebhookBackend::Slack(url.clone()));
+    }
+    let mut alert_manager = AlertManager::new(backends, config.alert.cooldown_seconds);
 
     let mut indexer_monitor = config
         .indexer

@@ -15,13 +15,13 @@ use log::{error, info};
 
 use candid::{Decode, Encode, Principal};
 
-use crate::alert::{DiscordEmbed, DiscordField};
+use crate::alert::{Embed, EmbedField};
 use crate::balance::format_wei_as_eth;
 use crate::config::{AccountConfig, ChainConfig, IcpConfig, TokenConfig, WatcherConfig};
 use crate::icp_cycles;
 
 /// Collect system-wide stats and return Discord embeds for reporting.
-pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
+pub async fn collect_stats(config: &WatcherConfig) -> Vec<Embed> {
     let mut embeds = Vec::new();
 
     if !config.accounts.is_empty() {
@@ -63,7 +63,7 @@ pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
 async fn collect_balance_stats(
     accounts: &[AccountConfig],
     chains: &HashMap<String, ChainConfig>,
-) -> Option<DiscordEmbed> {
+) -> Option<Embed> {
     let mut lines = Vec::new();
 
     for account in accounts {
@@ -107,7 +107,7 @@ async fn collect_balance_stats(
         return None;
     }
 
-    Some(DiscordEmbed {
+    Some(Embed {
         title: "Balance Stats".to_string(),
         description: format!("```\n{}\n```", lines.join("\n")),
         color: 0x2ECC71,
@@ -124,7 +124,7 @@ async fn get_balance(address: Address, chain_cfg: &ChainConfig) -> Result<U256> 
 }
 
 /// Indexer stats: on-chain index, tree_synced_index, and latestProvedIndex per chain.
-async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
+async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<Embed> {
     let client = reqwest::Client::new();
 
     let fmt = |v: Option<u64>| match v {
@@ -219,7 +219,7 @@ async fn collect_indexer_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
         return None;
     }
 
-    Some(DiscordEmbed {
+    Some(Embed {
         title: "Indexer Stats".to_string(),
         description: format!("```\n{}\n```", lines.join("\n")),
         color: 0x3498DB,
@@ -245,7 +245,7 @@ async fn fetch_proved_index(entry: &TokenEntry) -> Result<u64> {
 }
 
 /// Crosschain stats: hub aggSeq/root and verifier sync status.
-async fn collect_crosschain_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed> {
+async fn collect_crosschain_stats(tokens: &[TokenConfig]) -> Option<Embed> {
     let mut fields = Vec::new();
 
     for token in tokens {
@@ -258,7 +258,7 @@ async fn collect_crosschain_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed
             Ok(None) => {}
             Err(err) => {
                 error!("crosschain stats failed for {}: {:?}", token.name, err);
-                fields.push(DiscordField {
+                fields.push(EmbedField {
                     name: token.name.clone(),
                     value: "```\nERROR\n```".to_string(),
                     inline: false,
@@ -271,7 +271,7 @@ async fn collect_crosschain_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed
         return None;
     }
 
-    Some(DiscordEmbed {
+    Some(Embed {
         title: "Crosschain Stats".to_string(),
         description: String::new(),
         color: 0x3498DB,
@@ -293,7 +293,7 @@ async fn collect_crosschain_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed
 /// V->H relay  : relayed -> hub_received  (transfer root delivery)
 /// H->V broadcast: hub_aggSeq -> v_aggSeq (aggregation root delivery)
 /// Gap counts (-N) are shown when the destination is behind.
-async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<DiscordField>> {
+async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<EmbedField>> {
     let tokens_file: TokensFile =
         load_tokens_from_path(path).with_context(|| format!("loading {}", path))?;
 
@@ -393,7 +393,7 @@ async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<Disc
         ));
     }
 
-    Ok(Some(DiscordField {
+    Ok(Some(EmbedField {
         name: name.to_string(),
         value: format!("```\n{}\n```", lines.join("\n")),
         inline: false,
@@ -401,7 +401,7 @@ async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<Disc
 }
 
 /// ICP canister cycle stats.
-async fn collect_icp_stats(config: &IcpConfig) -> Option<DiscordEmbed> {
+async fn collect_icp_stats(config: &IcpConfig) -> Option<Embed> {
     let agent = match icp_cycles::build_agent(&config.replica_url).await {
         Ok(a) => a,
         Err(err) => {
@@ -428,10 +428,7 @@ async fn collect_icp_stats(config: &IcpConfig) -> Option<DiscordEmbed> {
                 lines.push(format!("{:<30} {}", canister.name, formatted));
             }
             Err(err) => {
-                error!(
-                    "failed to query cycles for '{}': {:?}",
-                    canister.name, err
-                );
+                error!("failed to query cycles for '{}': {:?}", canister.name, err);
                 lines.push(format!("{:<30} ERROR", canister.name));
             }
         }
@@ -441,7 +438,7 @@ async fn collect_icp_stats(config: &IcpConfig) -> Option<DiscordEmbed> {
         return None;
     }
 
-    Some(DiscordEmbed {
+    Some(Embed {
         title: "ICP Canister Cycles".to_string(),
         description: format!("```\n{}\n```", lines.join("\n")),
         color: 0x9B59B6,
