@@ -1,6 +1,6 @@
 # zERC20 Watcher
 
-A monitoring daemon that continuously checks the health of the zERC20 system and sends alerts to Discord. It covers three domains: **balance monitoring**, **indexer pipeline tracking**, and **crosschain root synchronization**.
+A monitoring daemon that continuously checks the health of the zERC20 system and sends alerts to Discord and Slack. It covers three domains: **balance monitoring**, **indexer pipeline tracking**, and **crosschain root synchronization**.
 
 ## Architecture Overview
 
@@ -19,22 +19,24 @@ A monitoring daemon that continuously checks the health of the zERC20 system and
                        |                  |
                  AlertManager        Stats Reporter
                        |                  |
-                   Discord Webhook    Discord Webhook
+                  Discord / Slack   Discord / Slack
 ```
 
-Each cycle executes all three monitoring domains, collects alerts, applies cooldown-based deduplication, and posts filtered alerts to Discord. An optional stats reporter sends periodic system-wide status summaries.
+Each cycle executes all three monitoring domains, collects alerts, applies cooldown-based deduplication, and posts filtered alerts to the configured webhook backends (Discord, Slack, or both). An optional stats reporter sends periodic system-wide status summaries.
 
 ## Quick Start
 
 ```bash
+cd watcher/
+
 # 1. Copy and fill in environment variables
-cp watcher/.env.example watcher/.env
+cp .env.example .env
 
 # 2. Run in continuous mode
-cargo run --bin zerc20-watcher -- --config watcher/watcher.yaml
+cargo run --bin zerc20-watcher
 
 # 3. Or run once and exit
-cargo run --bin zerc20-watcher -- --config watcher/watcher.yaml --once
+cargo run --bin zerc20-watcher -- --once
 ```
 
 ## Configuration
@@ -194,18 +196,20 @@ These checks verify that transfer roots relayed from each Verifier are actually 
 
 Alerts are deduplicated by a key of `{domain}:{severity}:{title}`. If the same alert fires again within the cooldown period (default: 1 hour), it is suppressed. This prevents alert fatigue during prolonged incidents.
 
-### Discord Integration
+### Webhook Integration
 
-Alerts are sent as Discord webhook embeds, batched in groups of up to 10 (Discord's per-message limit). Each embed includes:
+Alerts are sent to all configured webhook backends (Discord and/or Slack), batched in groups of up to 10. Each embed/attachment includes:
 - Title and description
 - Severity and domain fields
 - Context-specific fields (chain, indices, delays, etc.)
+
+If one backend fails, delivery to the others continues independently.
 
 ---
 
 ## Stats Reporter
 
-When `stats_interval_seconds > 0`, the watcher periodically sends a comprehensive status report to Discord containing three embeds:
+When `stats_interval_seconds > 0`, the watcher periodically sends a comprehensive status report containing up to four embeds:
 
 **Balance Stats** — Current ETH balance for every monitored account on every chain.
 
@@ -225,7 +229,7 @@ watcher/
   src/
     main.rs             # Entry point, CLI parsing, main loop
     config.rs           # Configuration structures and YAML loading
-    alert.rs            # Alert types, deduplication, Discord webhook
+    alert.rs            # Alert types, deduplication, webhook backends
     balance.rs          # Balance monitoring domain
     indexer_monitor.rs  # Indexer pipeline staleness detection
     crosschain.rs       # Crosschain root sync and relay monitoring

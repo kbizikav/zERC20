@@ -21,7 +21,7 @@ use indexer_monitor::IndexerMonitor;
 #[derive(Parser, Debug)]
 #[command(
     name = "zerc20-watcher",
-    about = "Monitors zERC20 system health and sends Discord alerts"
+    about = "Monitors zERC20 system health and sends alerts"
 )]
 struct Cli {
     /// Path to the watcher YAML config file.
@@ -29,7 +29,7 @@ struct Cli {
         long,
         env = "WATCHER_CONFIG_PATH",
         value_name = "PATH",
-        default_value = "watcher/watcher.yaml"
+        default_value = "watcher.yaml"
     )]
     config: PathBuf,
 
