@@ -1,5 +1,5 @@
 discord_webhook_url: "${DISCORD_WEBHOOK_URL}"
-interval_seconds: 60
+interval_seconds: 300
 
 # Domain 1: Balance monitoring
 accounts:
