@@ -276,6 +276,20 @@ async fn collect_crosschain_stats(tokens: &[TokenConfig]) -> Option<DiscordEmbed
     })
 }
 
+/// Crosschain stats formatted as a pipeline table:
+///
+/// ```text
+/// Hub aggSeq=5
+///
+///              V->H relay   H->V broadcast
+/// base          100->100          5->5
+/// arb           100->95 (-5)      5->4 (-1)
+/// scroll             -           5->3 (-2)
+/// ```
+///
+/// V->H relay  : relayed -> hub_received  (transfer root delivery)
+/// H->V broadcast: hub_aggSeq -> v_aggSeq (aggregation root delivery)
+/// Gap counts (-N) are shown when the destination is behind.
 async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<DiscordField>> {
     let tokens_file: TokensFile =
         load_tokens_from_path(path).with_context(|| format!("loading {}", path))?;
@@ -288,66 +302,91 @@ async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<Disc
     let hub_provider = hub_entry.provider()?;
     let hub = HubContract::new(hub_provider, hub_entry.hub_address);
     let hub_agg_seq = hub.agg_seq().await.context("hub agg_seq")?;
-    let hub_root = hub
-        .current_aggregation_root()
-        .await
-        .context("hub current_aggregation_root")?;
 
-    let mut lines = Vec::new();
-    lines.push(format!("Hub  aggSeq={} root={:#x}", hub_agg_seq, hub_root));
+    // Collect per-chain rows: (label, relay_col, broadcast_col)
+    let mut rows: Vec<(String, String, String)> = Vec::new();
 
     for token in &tokens_file.tokens {
-        let label = &token.label;
+        let label = token.label.clone();
         let provider = match token.provider() {
             Ok(p) => p,
-            Err(err) => {
-                lines.push(format!("{}: ERROR ({})", label, err));
+            Err(_) => {
+                rows.push((label, "err".into(), "err".into()));
                 continue;
             }
         };
 
         let verifier = VerifierContract::new(provider, token.verifier_address);
-        let v_agg_seq = match verifier.latest_agg_seq().await {
-            Ok(s) => s,
-            Err(err) => {
-                lines.push(format!("{}: ERROR ({})", label, err));
-                continue;
-            }
+
+        // H->V broadcast: hub_aggSeq -> v_aggSeq
+        let broadcast_col = match verifier.latest_agg_seq().await {
+            Ok(v_seq) if v_seq == hub_agg_seq => format!("{}->{}", hub_agg_seq, v_seq),
+            Ok(v_seq) => format!(
+                "{}->{} (-{})",
+                hub_agg_seq,
+                v_seq,
+                hub_agg_seq.saturating_sub(v_seq)
+            ),
+            Err(_) => "err".into(),
         };
 
-        let root_status = if v_agg_seq == 0 {
-            "no root".to_string()
-        } else {
-            match verifier.global_transfer_root(v_agg_seq).await {
-                Ok(v_root) if v_root == hub_root && v_root != U256::ZERO => "synced".to_string(),
-                Ok(_) => "not synced".to_string(),
-                Err(_) => "error".to_string(),
-            }
-        };
-
-        // Relay status (Verifier → Hub)
-        let relay_status = match (token.eid, verifier.latest_relayed_index().await) {
-            (Some(eid), Ok(v_relayed)) if v_relayed > 0 => match hub.eid_position(eid).await {
-                Ok(pos) if pos > 0 => match hub.transfer_tree_index(pos - 1).await {
-                    Ok(hub_idx) if hub_idx == v_relayed => {
-                        format!(" relay={}", v_relayed)
-                    }
-                    Ok(hub_idx) => {
-                        format!(" relay={}/{}", hub_idx, v_relayed)
-                    }
-                    Err(_) => " relay=error".to_string(),
+        // V->H relay: v_relayed -> hub_received
+        let relay_col = match token.eid {
+            None => "-".into(),
+            Some(eid) => match verifier.latest_relayed_index().await {
+                Ok(0) => "-".into(),
+                Ok(v_relayed) => match hub.eid_position(eid).await {
+                    Ok(pos) if pos > 0 => match hub.transfer_tree_index(pos - 1).await {
+                        Ok(hub_idx) if hub_idx == v_relayed => {
+                            format!("{}->{}", v_relayed, hub_idx)
+                        }
+                        Ok(hub_idx) => format!(
+                            "{}->{} (-{})",
+                            v_relayed,
+                            hub_idx,
+                            v_relayed.saturating_sub(hub_idx)
+                        ),
+                        Err(_) => "err".into(),
+                    },
+                    _ => "err".into(),
                 },
-                Ok(_) => " relay=no-pos".to_string(),
-                Err(_) => " relay=error".to_string(),
+                Err(_) => "err".into(),
             },
-            (None, _) => String::new(),
-            (_, Ok(_)) => String::new(),
-            (_, Err(_)) => " relay=error".to_string(),
         };
 
+        rows.push((label, relay_col, broadcast_col));
+    }
+
+    if rows.is_empty() {
+        return Ok(None);
+    }
+
+    // Calculate column widths for alignment
+    let lw = rows.iter().map(|r| r.0.len()).max().unwrap_or(0).max(5);
+    let rw = rows
+        .iter()
+        .map(|r| r.1.len())
+        .max()
+        .unwrap_or(0)
+        .max("V->H relay".len());
+    let bw = rows
+        .iter()
+        .map(|r| r.2.len())
+        .max()
+        .unwrap_or(0)
+        .max("H->V broadcast".len());
+
+    let mut lines = Vec::new();
+    lines.push(format!("Hub aggSeq={}", hub_agg_seq));
+    lines.push(String::new());
+    lines.push(format!(
+        "{0:<1$}  {2:>3$}  {4:>5$}",
+        "", lw, "V->H relay", rw, "H->V broadcast", bw,
+    ));
+    for (label, relay, broadcast) in &rows {
         lines.push(format!(
-            "{}: aggSeq={} root={}{}",
-            label, v_agg_seq, root_status, relay_status
+            "{0:<1$}  {2:>3$}  {4:>5$}",
+            label, lw, relay, rw, broadcast, bw,
         ));
     }
 

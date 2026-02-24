@@ -116,213 +116,22 @@ async fn check_single_config(
             }
         };
 
-        if v_agg_seq == 0 {
-            info!(
-                "[{}] ROOT NOT SYNCED: {} — verifier aggSeq is 0",
-                token_name, label
-            );
-            alerts.push(Alert {
-                severity: Severity::Warning,
-                domain: "crosschain".to_string(),
-                title: format!("[{}] Root not synced: {}", token_name, label),
-                description: format!(
-                    "[**{}**] Verifier **{}** (chain {}) has not received any aggregation root yet (aggSeq=0).",
-                    token_name, label, token.chain_id,
-                ),
-                fields: vec![
-                    AlertField {
-                        name: "Token".to_string(),
-                        value: label.clone(),
-                        inline: true,
-                    },
-                    AlertField {
-                        name: "Chain".to_string(),
-                        value: token.chain_id.to_string(),
-                        inline: true,
-                    },
-                ],
-            });
-            continue;
-        }
-
-        let v_root = match verifier.global_transfer_root(v_agg_seq).await {
-            Ok(r) => r,
-            Err(err) => {
-                error!(
-                    "[{}] failed to read global_transfer_root for '{}': {:?}",
-                    token_name, label, err
-                );
-                continue;
-            }
-        };
-
-        // Look up the hub event for the verifier's aggSeq (for root comparison)
-        // or the first missing aggSeq (for delay check). Uses cache to avoid
-        // redundant RPC calls when multiple verifiers share the same aggSeq.
-        let target_seq = if v_agg_seq == hub_agg_seq {
-            v_agg_seq
-        } else {
-            v_agg_seq + 1
-        };
-
-        let cached = event_cache.get(&target_seq).copied();
-        let event_result = match cached {
-            Some(info) => Ok(info),
-            None => hub
-                .aggregation_event_info(target_seq, HUB_EVENT_LOOKBACK_BLOCKS, HUB_EVENT_CHUNK_SIZE)
-                .await
-                .map(|info| {
-                    event_cache.insert(target_seq, info);
-                    info
-                }),
-        };
-
-        // Critical: same aggSeq but different root → protocol-level inconsistency.
-        // Compare against the root from the broadcast event, not currentAggregationRoot().
-        if v_agg_seq == hub_agg_seq {
-            match event_result {
-                Ok(Some(hub_event)) => {
-                    if v_root != hub_event.root && v_root != alloy::primitives::U256::ZERO {
-                        info!(
-                            "[{}] ROOT MISMATCH: {} — same aggSeq={}, hub_root={:#x}, verifier_root={:#x}",
-                            token_name, label, hub_agg_seq, hub_event.root, v_root
-                        );
-                        alerts.push(Alert {
-                            severity: Severity::Critical,
-                            domain: "crosschain".to_string(),
-                            title: format!("[{}] Root mismatch: {}", token_name, label),
-                            description: format!(
-                                "[**{}**] Verifier **{}** (chain {}) has a **different root** at the same aggSeq {} as the hub.",
-                                token_name, label, token.chain_id, v_agg_seq,
-                            ),
-                            fields: vec![
-                                AlertField {
-                                    name: "Token".to_string(),
-                                    value: label.clone(),
-                                    inline: true,
-                                },
-                                AlertField {
-                                    name: "aggSeq".to_string(),
-                                    value: v_agg_seq.to_string(),
-                                    inline: true,
-                                },
-                                AlertField {
-                                    name: "Hub root".to_string(),
-                                    value: format!("{:#x}", hub_event.root),
-                                    inline: false,
-                                },
-                                AlertField {
-                                    name: "Verifier root".to_string(),
-                                    value: format!("{:#x}", v_root),
-                                    inline: false,
-                                },
-                            ],
-                        });
-                    }
-                }
-                Ok(None) => {
-                    info!(
-                        "[{}] hub event for aggSeq {} not found in lookback for '{}'",
-                        token_name, hub_agg_seq, label
-                    );
-                }
-                Err(err) => {
-                    error!(
-                        "[{}] failed to query hub event for '{}': {:?}",
-                        token_name, label, err
-                    );
-                }
-            }
-            continue;
-        }
-
-        // Delay check: verifier is behind the hub (v_agg_seq < hub_agg_seq)
-        let first_missing_seq = v_agg_seq + 1;
-
-        match event_result {
-            Ok(Some(event_info)) => {
-                let delay = now.saturating_sub(event_info.block_timestamp);
-                if delay > root_delay_threshold {
-                    let delay_min = delay / 60;
-                    info!(
-                        "[{}] ROOT SYNC DELAYED: {} — behind by {} seq(s), delay {}m (threshold {}s)",
-                        token_name,
-                        label,
-                        hub_agg_seq - v_agg_seq,
-                        delay_min,
-                        root_delay_threshold
-                    );
-                    alerts.push(Alert {
-                        severity: Severity::Warning,
-                        domain: "crosschain".to_string(),
-                        title: format!("[{}] Root sync delayed: {}", token_name, label),
-                        description: format!(
-                            "[**{}**] Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was emitted **{}m ago** (threshold {}m).",
-                            token_name,
-                            label,
-                            token.chain_id,
-                            hub_agg_seq - v_agg_seq,
-                            first_missing_seq,
-                            delay_min,
-                            root_delay_threshold / 60,
-                        ),
-                        fields: vec![
-                            AlertField {
-                                name: "Token".to_string(),
-                                value: label.clone(),
-                                inline: true,
-                            },
-                            AlertField {
-                                name: "Chain".to_string(),
-                                value: token.chain_id.to_string(),
-                                inline: true,
-                            },
-                            AlertField {
-                                name: "Delay".to_string(),
-                                value: format!("{}m", delay_min),
-                                inline: true,
-                            },
-                            AlertField {
-                                name: "Verifier aggSeq".to_string(),
-                                value: v_agg_seq.to_string(),
-                                inline: true,
-                            },
-                            AlertField {
-                                name: "Hub aggSeq".to_string(),
-                                value: hub_agg_seq.to_string(),
-                                inline: true,
-                            },
-                        ],
-                    });
-                } else {
-                    info!(
-                        "[{}] Root propagating: {} — behind by {} seq(s), delay {}s (within threshold {}s)",
-                        token_name,
-                        label,
-                        hub_agg_seq - v_agg_seq,
-                        delay,
-                        root_delay_threshold,
-                    );
-                }
-            }
-            Ok(None) => {
-                // Event not found in lookback window — very old lag
+        // ── Broadcast check (H->V) ──────────────────────────────────
+        // Wrapped in a labeled block so that early exits (`break`) do
+        // NOT skip the relay check that follows.
+        'broadcast: {
+            if v_agg_seq == 0 {
                 info!(
-                    "[{}] ROOT SYNC DELAYED: {} — aggSeq {} not found in lookback (very old)",
-                    token_name, label, first_missing_seq
+                    "[{}] [H->V] No root synced: {} (aggSeq=0)",
+                    token_name, label
                 );
                 alerts.push(Alert {
                     severity: Severity::Warning,
                     domain: "crosschain".to_string(),
-                    title: format!("[{}] Root sync delayed: {}", token_name, label),
+                    title: format!("[{}] [H->V] Root not synced: {}", token_name, label),
                     description: format!(
-                        "[**{}**] Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was not found in the last {} blocks (very old).",
-                        token_name,
-                        label,
-                        token.chain_id,
-                        hub_agg_seq - v_agg_seq,
-                        first_missing_seq,
-                        HUB_EVENT_LOOKBACK_BLOCKS,
+                        "[**{}**] Verifier **{}** (chain {}) has not received any aggregation root yet (aggSeq=0).",
+                        token_name, label, token.chain_id,
                     ),
                     fields: vec![
                         AlertField {
@@ -335,28 +144,236 @@ async fn check_single_config(
                             value: token.chain_id.to_string(),
                             inline: true,
                         },
-                        AlertField {
-                            name: "Verifier aggSeq".to_string(),
-                            value: v_agg_seq.to_string(),
-                            inline: true,
-                        },
-                        AlertField {
-                            name: "Hub aggSeq".to_string(),
-                            value: hub_agg_seq.to_string(),
-                            inline: true,
-                        },
                     ],
                 });
+                break 'broadcast;
             }
-            Err(err) => {
-                error!(
-                    "[{}] failed to query hub event for '{}': {:?}",
-                    token_name, label, err
-                );
+
+            let v_root = match verifier.global_transfer_root(v_agg_seq).await {
+                Ok(r) => r,
+                Err(err) => {
+                    error!(
+                        "[{}] [H->V] failed to read global_transfer_root for '{}': {:?}",
+                        token_name, label, err
+                    );
+                    break 'broadcast;
+                }
+            };
+
+            // Look up the hub event for the verifier's aggSeq (for root comparison)
+            // or the first missing aggSeq (for delay check). Uses cache to avoid
+            // redundant RPC calls when multiple verifiers share the same aggSeq.
+            let target_seq = if v_agg_seq == hub_agg_seq {
+                v_agg_seq
+            } else {
+                v_agg_seq + 1
+            };
+
+            let cached = event_cache.get(&target_seq).copied();
+            let event_result = match cached {
+                Some(info) => Ok(info),
+                None => hub
+                    .aggregation_event_info(
+                        target_seq,
+                        HUB_EVENT_LOOKBACK_BLOCKS,
+                        HUB_EVENT_CHUNK_SIZE,
+                    )
+                    .await
+                    .map(|info| {
+                        event_cache.insert(target_seq, info);
+                        info
+                    }),
+            };
+
+            if v_agg_seq == hub_agg_seq {
+                // Critical: same aggSeq but different root → protocol-level inconsistency.
+                // Compare against the root from the broadcast event, not currentAggregationRoot().
+                match event_result {
+                    Ok(Some(hub_event)) => {
+                        if v_root != hub_event.root && v_root != alloy::primitives::U256::ZERO {
+                            info!(
+                                "[{}] [H->V] ROOT MISMATCH: {} — aggSeq={}, hub={:#x}, verifier={:#x}",
+                                token_name, label, hub_agg_seq, hub_event.root, v_root
+                            );
+                            alerts.push(Alert {
+                                severity: Severity::Critical,
+                                domain: "crosschain".to_string(),
+                                title: format!(
+                                    "[{}] [H->V] Root mismatch: {}",
+                                    token_name, label
+                                ),
+                                description: format!(
+                                    "[**{}**] Verifier **{}** (chain {}) has a **different root** at the same aggSeq {} as the hub.",
+                                    token_name, label, token.chain_id, v_agg_seq,
+                                ),
+                                fields: vec![
+                                    AlertField {
+                                        name: "Token".to_string(),
+                                        value: label.clone(),
+                                        inline: true,
+                                    },
+                                    AlertField {
+                                        name: "aggSeq".to_string(),
+                                        value: v_agg_seq.to_string(),
+                                        inline: true,
+                                    },
+                                    AlertField {
+                                        name: "Hub root".to_string(),
+                                        value: format!("{:#x}", hub_event.root),
+                                        inline: false,
+                                    },
+                                    AlertField {
+                                        name: "Verifier root".to_string(),
+                                        value: format!("{:#x}", v_root),
+                                        inline: false,
+                                    },
+                                ],
+                            });
+                        }
+                    }
+                    Ok(None) => {
+                        info!(
+                            "[{}] [H->V] hub event for aggSeq {} not found in lookback for '{}'",
+                            token_name, hub_agg_seq, label
+                        );
+                    }
+                    Err(err) => {
+                        error!(
+                            "[{}] [H->V] failed to query hub event for '{}': {:?}",
+                            token_name, label, err
+                        );
+                    }
+                }
+            } else {
+                // Delay check: verifier is behind the hub (v_agg_seq < hub_agg_seq)
+                let first_missing_seq = v_agg_seq + 1;
+
+                match event_result {
+                    Ok(Some(event_info)) => {
+                        let delay = now.saturating_sub(event_info.block_timestamp);
+                        if delay > root_delay_threshold {
+                            let delay_min = delay / 60;
+                            info!(
+                                "[{}] [H->V] BROADCAST DELAYED: {} — behind {} seq(s), delay {}m (threshold {}m)",
+                                token_name,
+                                label,
+                                hub_agg_seq - v_agg_seq,
+                                delay_min,
+                                root_delay_threshold / 60,
+                            );
+                            alerts.push(Alert {
+                                severity: Severity::Warning,
+                                domain: "crosschain".to_string(),
+                                title: format!(
+                                    "[{}] [H->V] Broadcast delayed: {}",
+                                    token_name, label
+                                ),
+                                description: format!(
+                                    "[**{}**] Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was emitted **{}m ago** (threshold {}m).",
+                                    token_name,
+                                    label,
+                                    token.chain_id,
+                                    hub_agg_seq - v_agg_seq,
+                                    first_missing_seq,
+                                    delay_min,
+                                    root_delay_threshold / 60,
+                                ),
+                                fields: vec![
+                                    AlertField {
+                                        name: "Token".to_string(),
+                                        value: label.clone(),
+                                        inline: true,
+                                    },
+                                    AlertField {
+                                        name: "Chain".to_string(),
+                                        value: token.chain_id.to_string(),
+                                        inline: true,
+                                    },
+                                    AlertField {
+                                        name: "Delay".to_string(),
+                                        value: format!("{}m", delay_min),
+                                        inline: true,
+                                    },
+                                    AlertField {
+                                        name: "Verifier aggSeq".to_string(),
+                                        value: v_agg_seq.to_string(),
+                                        inline: true,
+                                    },
+                                    AlertField {
+                                        name: "Hub aggSeq".to_string(),
+                                        value: hub_agg_seq.to_string(),
+                                        inline: true,
+                                    },
+                                ],
+                            });
+                        } else {
+                            info!(
+                                "[{}] [H->V] Broadcast propagating: {} — behind {} seq(s), delay {}s (within {}s)",
+                                token_name,
+                                label,
+                                hub_agg_seq - v_agg_seq,
+                                delay,
+                                root_delay_threshold,
+                            );
+                        }
+                    }
+                    Ok(None) => {
+                        // Event not found in lookback window — very old lag
+                        info!(
+                            "[{}] [H->V] BROADCAST DELAYED: {} — aggSeq {} not found in lookback (very old)",
+                            token_name, label, first_missing_seq
+                        );
+                        alerts.push(Alert {
+                            severity: Severity::Warning,
+                            domain: "crosschain".to_string(),
+                            title: format!(
+                                "[{}] [H->V] Broadcast delayed: {}",
+                                token_name, label
+                            ),
+                            description: format!(
+                                "[**{}**] Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was not found in the last {} blocks (very old).",
+                                token_name,
+                                label,
+                                token.chain_id,
+                                hub_agg_seq - v_agg_seq,
+                                first_missing_seq,
+                                HUB_EVENT_LOOKBACK_BLOCKS,
+                            ),
+                            fields: vec![
+                                AlertField {
+                                    name: "Token".to_string(),
+                                    value: label.clone(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Chain".to_string(),
+                                    value: token.chain_id.to_string(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Verifier aggSeq".to_string(),
+                                    value: v_agg_seq.to_string(),
+                                    inline: true,
+                                },
+                                AlertField {
+                                    name: "Hub aggSeq".to_string(),
+                                    value: hub_agg_seq.to_string(),
+                                    inline: true,
+                                },
+                            ],
+                        });
+                    }
+                    Err(err) => {
+                        error!(
+                            "[{}] [H->V] failed to query hub event for '{}': {:?}",
+                            token_name, label, err
+                        );
+                    }
+                }
             }
         }
 
-        // --- Relay delivery check (Verifier → Hub) ---
+        // ── Relay check (V->H) ──────────────────────────────────────
         let eid = match token.eid {
             Some(e) => e,
             None => continue,
@@ -366,7 +383,7 @@ async fn check_single_config(
             Ok(idx) => idx,
             Err(err) => {
                 error!(
-                    "[{}] failed to read latest_relayed_index for '{}': {:?}",
+                    "[{}] [V->H] failed to read latest_relayed_index for '{}': {:?}",
                     token_name, label, err
                 );
                 continue;
@@ -381,7 +398,7 @@ async fn check_single_config(
             Ok(p) => p,
             Err(err) => {
                 error!(
-                    "[{}] failed to read eid_position for '{}' (eid={}): {:?}",
+                    "[{}] [V->H] failed to read eid_position for '{}' (eid={}): {:?}",
                     token_name, label, eid, err
                 );
                 continue;
@@ -390,7 +407,7 @@ async fn check_single_config(
 
         if position == 0 {
             info!(
-                "[{}] eid_position is 0 for '{}' (eid={}), skipping relay check",
+                "[{}] [V->H] eid_position is 0 for '{}' (eid={}), skipping relay check",
                 token_name, label, eid
             );
             continue;
@@ -400,7 +417,7 @@ async fn check_single_config(
             Ok(idx) => idx,
             Err(err) => {
                 error!(
-                    "[{}] failed to read transfer_tree_index for '{}': {:?}",
+                    "[{}] [V->H] failed to read transfer_tree_index for '{}': {:?}",
                     token_name, label, err
                 );
                 continue;
@@ -409,8 +426,8 @@ async fn check_single_config(
 
         if v_relayed_index == hub_tree_index {
             info!(
-                "[{}] Relay in sync: {} — relayedIndex={}, hubTreeIndex={}",
-                token_name, label, v_relayed_index, hub_tree_index
+                "[{}] [V->H] Relay synced: {} — index={}",
+                token_name, label, v_relayed_index
             );
         } else if v_relayed_index > hub_tree_index {
             let next_expected = hub_tree_index + 1;
@@ -427,13 +444,16 @@ async fn check_single_config(
                     if delay > root_delay_threshold {
                         let delay_min = delay / 60;
                         info!(
-                            "[{}] RELAY DELAYED: {} — relayedIndex={}, hubTreeIndex={}, delay={}m",
+                            "[{}] [V->H] RELAY DELAYED: {} — relayed={}, hub={}, delay={}m",
                             token_name, label, v_relayed_index, hub_tree_index, delay_min
                         );
                         alerts.push(Alert {
                             severity: Severity::Warning,
                             domain: "crosschain".to_string(),
-                            title: format!("[{}] Relay delivery delayed: {}", token_name, label),
+                            title: format!(
+                                "[{}] [V->H] Relay delayed: {}",
+                                token_name, label
+                            ),
                             description: format!(
                                 "[**{}**] Verifier **{}** (chain {}) relayed index {} but hub only received up to {}. Transfer root index {} was relayed **{}m ago** (threshold {}m).",
                                 token_name,
@@ -462,12 +482,12 @@ async fn check_single_config(
                                     inline: true,
                                 },
                                 AlertField {
-                                    name: "Verifier relayedIndex".to_string(),
+                                    name: "Verifier relayed".to_string(),
                                     value: v_relayed_index.to_string(),
                                     inline: true,
                                 },
                                 AlertField {
-                                    name: "Hub treeIndex".to_string(),
+                                    name: "Hub received".to_string(),
                                     value: hub_tree_index.to_string(),
                                     inline: true,
                                 },
@@ -475,7 +495,7 @@ async fn check_single_config(
                         });
                     } else {
                         info!(
-                            "[{}] Relay propagating: {} — relayedIndex={}, hubTreeIndex={}, delay={}s (within threshold {}s)",
+                            "[{}] [V->H] Relay propagating: {} — relayed={}, hub={}, delay={}s (within {}s)",
                             token_name,
                             label,
                             v_relayed_index,
@@ -487,13 +507,13 @@ async fn check_single_config(
                 }
                 Ok(None) => {
                     info!(
-                        "[{}] RELAY DELAYED: {} — relay event for index {} not found in lookback (very old)",
+                        "[{}] [V->H] RELAY DELAYED: {} — index {} not found in lookback (very old)",
                         token_name, label, next_expected
                     );
                     alerts.push(Alert {
                         severity: Severity::Warning,
                         domain: "crosschain".to_string(),
-                        title: format!("[{}] Relay delivery delayed: {}", token_name, label),
+                        title: format!("[{}] [V->H] Relay delayed: {}", token_name, label),
                         description: format!(
                             "[**{}**] Verifier **{}** (chain {}) relayed index {} but hub only received up to {}. Relay event for index {} was not found in the last {} blocks (very old).",
                             token_name,
@@ -516,12 +536,12 @@ async fn check_single_config(
                                 inline: true,
                             },
                             AlertField {
-                                name: "Verifier relayedIndex".to_string(),
+                                name: "Verifier relayed".to_string(),
                                 value: v_relayed_index.to_string(),
                                 inline: true,
                             },
                             AlertField {
-                                name: "Hub treeIndex".to_string(),
+                                name: "Hub received".to_string(),
                                 value: hub_tree_index.to_string(),
                                 inline: true,
                             },
@@ -530,7 +550,7 @@ async fn check_single_config(
                 }
                 Err(err) => {
                     error!(
-                        "[{}] failed to query relay event for '{}': {:?}",
+                        "[{}] [V->H] failed to query relay event for '{}': {:?}",
                         token_name, label, err
                     );
                 }
