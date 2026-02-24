@@ -25,17 +25,20 @@ pub async fn check_crosschain(tokens: &[TokenConfig], root_delay_threshold: u64)
             Some(p) => p,
             None => continue,
         };
-        match check_single_config(path, root_delay_threshold).await {
+        match check_single_config(&token.name, path, root_delay_threshold).await {
             Ok(mut a) => alerts.append(&mut a),
             Err(err) => {
-                error!("crosschain check failed for {}: {:?}", path, err);
+                error!(
+                    "[{}] crosschain check failed for {}: {:?}",
+                    token.name, path, err
+                );
                 alerts.push(Alert {
                     severity: Severity::Critical,
                     domain: "crosschain".to_string(),
-                    title: format!("Config load failed: {}", path),
+                    title: format!("[{}] Config load failed: {}", token.name, path),
                     description: format!(
-                        "Failed to load or process token config `{}`: {}",
-                        path, err
+                        "[**{}**] Failed to load or process token config `{}`: {}",
+                        token.name, path, err
                     ),
                     fields: vec![],
                 });
@@ -46,7 +49,11 @@ pub async fn check_crosschain(tokens: &[TokenConfig], root_delay_threshold: u64)
     alerts
 }
 
-async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Vec<Alert>> {
+async fn check_single_config(
+    token_name: &str,
+    path: &str,
+    root_delay_threshold: u64,
+) -> Result<Vec<Alert>> {
     let tokens_file: TokensFile =
         load_tokens_from_path(path).with_context(|| format!("loading {}", path))?;
 
@@ -66,7 +73,10 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
         .context("failed to read hub current_aggregation_root")?;
 
     if hub_root == U256::ZERO {
-        info!("hub aggregation root is zero, skipping crosschain checks for {path}");
+        info!(
+            "[{}] hub aggregation root is zero, skipping crosschain checks",
+            token_name
+        );
         return Ok(Vec::new());
     }
 
@@ -86,7 +96,10 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
         let provider = match token.provider() {
             Ok(p) => p,
             Err(err) => {
-                error!("failed to create provider for '{}': {:?}", label, err);
+                error!(
+                    "[{}] failed to create provider for '{}': {:?}",
+                    token_name, label, err
+                );
                 continue;
             }
         };
@@ -96,20 +109,26 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
         let v_agg_seq = match verifier.latest_agg_seq().await {
             Ok(seq) => seq,
             Err(err) => {
-                error!("failed to read latest_agg_seq for '{}': {:?}", label, err);
+                error!(
+                    "[{}] failed to read latest_agg_seq for '{}': {:?}",
+                    token_name, label, err
+                );
                 continue;
             }
         };
 
         if v_agg_seq == 0 {
-            info!("ROOT NOT SYNCED: {} — verifier aggSeq is 0", label);
+            info!(
+                "[{}] ROOT NOT SYNCED: {} — verifier aggSeq is 0",
+                token_name, label
+            );
             alerts.push(Alert {
                 severity: Severity::Warning,
                 domain: "crosschain".to_string(),
-                title: format!("Root not synced: {}", label),
+                title: format!("[{}] Root not synced: {}", token_name, label),
                 description: format!(
-                    "Verifier **{}** (chain {}) has not received any aggregation root yet (aggSeq=0).",
-                    label, token.chain_id,
+                    "[**{}**] Verifier **{}** (chain {}) has not received any aggregation root yet (aggSeq=0).",
+                    token_name, label, token.chain_id,
                 ),
                 fields: vec![
                     AlertField {
@@ -131,8 +150,8 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
             Ok(r) => r,
             Err(err) => {
                 error!(
-                    "failed to read global_transfer_root for '{}': {:?}",
-                    label, err
+                    "[{}] failed to read global_transfer_root for '{}': {:?}",
+                    token_name, label, err
                 );
                 continue;
             }
@@ -141,16 +160,16 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
         // Critical: same aggSeq but different root → protocol-level inconsistency
         if v_agg_seq == hub_agg_seq && v_root != hub_root && v_root != U256::ZERO {
             info!(
-                "ROOT MISMATCH: {} — same aggSeq={}, hub_root={:#x}, verifier_root={:#x}",
-                label, hub_agg_seq, hub_root, v_root
+                "[{}] ROOT MISMATCH: {} — same aggSeq={}, hub_root={:#x}, verifier_root={:#x}",
+                token_name, label, hub_agg_seq, hub_root, v_root
             );
             alerts.push(Alert {
                 severity: Severity::Critical,
                 domain: "crosschain".to_string(),
-                title: format!("Root mismatch: {}", label),
+                title: format!("[{}] Root mismatch: {}", token_name, label),
                 description: format!(
-                    "Verifier **{}** (chain {}) has a **different root** at the same aggSeq {} as the hub.",
-                    label, token.chain_id, v_agg_seq,
+                    "[**{}**] Verifier **{}** (chain {}) has a **different root** at the same aggSeq {} as the hub.",
+                    token_name, label, token.chain_id, v_agg_seq,
                 ),
                 fields: vec![
                     AlertField {
@@ -205,7 +224,8 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
                     if delay > root_delay_threshold {
                         let delay_min = delay / 60;
                         info!(
-                            "ROOT SYNC DELAYED: {} — behind by {} seq(s), delay {}m (threshold {}s)",
+                            "[{}] ROOT SYNC DELAYED: {} — behind by {} seq(s), delay {}m (threshold {}s)",
+                            token_name,
                             label,
                             hub_agg_seq - v_agg_seq,
                             delay_min,
@@ -214,9 +234,10 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
                         alerts.push(Alert {
                             severity: Severity::Warning,
                             domain: "crosschain".to_string(),
-                            title: format!("Root sync delayed: {}", label),
+                            title: format!("[{}] Root sync delayed: {}", token_name, label),
                             description: format!(
-                                "Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was emitted **{}m ago** (threshold {}m).",
+                                "[**{}**] Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was emitted **{}m ago** (threshold {}m).",
+                                token_name,
                                 label,
                                 token.chain_id,
                                 hub_agg_seq - v_agg_seq,
@@ -254,7 +275,8 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
                         });
                     } else {
                         info!(
-                            "Root propagating: {} — behind by {} seq(s), delay {}s (within threshold {}s)",
+                            "[{}] Root propagating: {} — behind by {} seq(s), delay {}s (within threshold {}s)",
+                            token_name,
                             label,
                             hub_agg_seq - v_agg_seq,
                             delay,
@@ -265,15 +287,16 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
                 Ok(None) => {
                     // Event not found in lookback window — very old lag
                     info!(
-                        "ROOT SYNC DELAYED: {} — aggSeq {} not found in lookback (very old)",
-                        label, first_missing_seq
+                        "[{}] ROOT SYNC DELAYED: {} — aggSeq {} not found in lookback (very old)",
+                        token_name, label, first_missing_seq
                     );
                     alerts.push(Alert {
                         severity: Severity::Warning,
                         domain: "crosschain".to_string(),
-                        title: format!("Root sync delayed: {}", label),
+                        title: format!("[{}] Root sync delayed: {}", token_name, label),
                         description: format!(
-                            "Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was not found in the last {} blocks (very old).",
+                            "[**{}**] Verifier **{}** (chain {}) is behind by {} seq(s). First missing aggSeq {} was not found in the last {} blocks (very old).",
+                            token_name,
                             label,
                             token.chain_id,
                             hub_agg_seq - v_agg_seq,
@@ -306,8 +329,8 @@ async fn check_single_config(path: &str, root_delay_threshold: u64) -> Result<Ve
                 }
                 Err(err) => {
                     error!(
-                        "failed to query hub event timestamp for '{}': {:?}",
-                        label, err
+                        "[{}] failed to query hub event timestamp for '{}': {:?}",
+                        token_name, label, err
                     );
                 }
             }
