@@ -179,5 +179,10 @@ pub fn context_for_address(address: &Address) -> Vec<u8> {
     context
 }
 
+#[query]
+fn get_cycles() -> u128 {
+    ic_cdk::api::canister_cycle_balance()
+}
+
 #[cfg(target_arch = "wasm32")]
 ic_cdk::export_candid!();

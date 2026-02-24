@@ -15,4 +15,6 @@ log = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
 serde = { workspace = true }
 serde_yaml = "0.9"
+ic-agent = { workspace = true }
+candid = { workspace = true }
 tokio = { workspace = true, features = ["full"] }

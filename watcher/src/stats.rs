@@ -13,9 +13,12 @@ use client_common::{
 };
 use log::{error, info};
 
+use candid::{Decode, Encode, Principal};
+
 use crate::alert::{DiscordEmbed, DiscordField};
 use crate::balance::format_wei_as_eth;
-use crate::config::{AccountConfig, ChainConfig, TokenConfig, WatcherConfig};
+use crate::config::{AccountConfig, ChainConfig, IcpConfig, TokenConfig, WatcherConfig};
+use crate::icp_cycles;
 
 /// Collect system-wide stats and return Discord embeds for reporting.
 pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
@@ -42,6 +45,13 @@ pub async fn collect_stats(config: &WatcherConfig) -> Vec<DiscordEmbed> {
     if has_crosschain {
         info!("collecting crosschain stats...");
         if let Some(embed) = collect_crosschain_stats(&config.tokens).await {
+            embeds.push(embed);
+        }
+    }
+
+    if let Some(icp_config) = &config.icp {
+        info!("collecting ICP cycle stats...");
+        if let Some(embed) = collect_icp_stats(icp_config).await {
             embeds.push(embed);
         }
     }
@@ -388,4 +398,70 @@ async fn collect_single_crosschain(name: &str, path: &str) -> Result<Option<Disc
         value: format!("```\n{}\n```", lines.join("\n")),
         inline: false,
     }))
+}
+
+/// ICP canister cycle stats.
+async fn collect_icp_stats(config: &IcpConfig) -> Option<DiscordEmbed> {
+    let agent = match icp_cycles::build_agent(&config.replica_url).await {
+        Ok(a) => a,
+        Err(err) => {
+            error!("failed to build IC agent for stats: {:?}", err);
+            return None;
+        }
+    };
+
+    let mut lines = Vec::new();
+
+    for canister in &config.canisters {
+        let principal = match Principal::from_text(&canister.canister_id) {
+            Ok(p) => p,
+            Err(err) => {
+                error!("invalid canister ID '{}': {}", canister.canister_id, err);
+                lines.push(format!("{:<30} ERROR", canister.name));
+                continue;
+            }
+        };
+
+        match query_canister_cycles(&agent, &principal).await {
+            Ok(cycles) => {
+                let formatted = format_cycles_for_stats(cycles);
+                lines.push(format!("{:<30} {}", canister.name, formatted));
+            }
+            Err(err) => {
+                error!(
+                    "failed to query cycles for '{}': {:?}",
+                    canister.name, err
+                );
+                lines.push(format!("{:<30} ERROR", canister.name));
+            }
+        }
+    }
+
+    if lines.is_empty() {
+        return None;
+    }
+
+    Some(DiscordEmbed {
+        title: "ICP Canister Cycles".to_string(),
+        description: format!("```\n{}\n```", lines.join("\n")),
+        color: 0x9B59B6,
+        fields: vec![],
+    })
+}
+
+async fn query_canister_cycles(agent: &ic_agent::Agent, canister_id: &Principal) -> Result<u128> {
+    let response = agent
+        .query(canister_id, "get_cycles")
+        .with_arg(Encode!().context("failed to encode args")?)
+        .call()
+        .await
+        .context("get_cycles query failed")?;
+    Decode!(&response, u128).context("failed to decode get_cycles response")
+}
+
+fn format_cycles_for_stats(cycles: u128) -> String {
+    let trillion = 1_000_000_000_000u128;
+    let whole = cycles / trillion;
+    let frac = (cycles % trillion) / 1_000_000_000;
+    format!("{}.{:03}T cycles", whole, frac)
 }

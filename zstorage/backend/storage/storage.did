@@ -39,6 +39,7 @@ type SubmitInvoiceResult = variant { Ok : null; Err : text };
 type ListInvoicesResult = variant { Ok : vec blob; Err : text };
 
 service : (opt InitArgs) -> {
+  get_cycles : () -> (nat) query;
   submit_announcement : (AnnouncementInput) -> (SubmitAnnouncementResult);
   submit_invoice : (InvoiceSubmission) -> (SubmitInvoiceResult);
   list_invoices : (blob, text) -> (ListInvoicesResult) query;

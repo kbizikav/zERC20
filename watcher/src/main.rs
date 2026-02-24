@@ -2,6 +2,7 @@ mod alert;
 mod balance;
 mod config;
 mod crosschain;
+mod icp_cycles;
 mod indexer_monitor;
 mod stats;
 
@@ -156,6 +157,13 @@ async fn run_checks(
         info!("running crosschain checks...");
         let cc = config.crosschain.clone().unwrap_or_default();
         let alerts = crosschain::check_crosschain(&config.tokens, &cc).await;
+        all_alerts.extend(alerts);
+    }
+
+    // Domain 4: ICP canister cycle checks
+    if let Some(icp_config) = &config.icp {
+        info!("running ICP cycle checks...");
+        let alerts = icp_cycles::check_icp_cycles(icp_config).await;
         all_alerts.extend(alerts);
     }
 

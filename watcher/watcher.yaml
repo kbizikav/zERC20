@@ -93,6 +93,20 @@ tokens:
 indexer:
   stale_threshold_cycles: 5
 
+# ICP canister cycle monitoring
+icp:
+  # replica_url: "https://ic0.app"
+  # cycle_threshold: 5000000000000  # 5T cycles
+  canisters:
+    - name: mainnet_key_manager
+      canister_id: "ub5gn-myaaa-aaaah-qrs2a-cai"
+    - name: mainnet_storage
+      canister_id: "ug4az-baaaa-aaaah-qrs2q-cai"
+    - name: testnet_key_manager
+      canister_id: "3gshj-ayaaa-aaaac-a4wfq-cai"
+    - name: testnet_storage
+      canister_id: "46fkw-kqaaa-aaaac-a5a3q-cai"
+
 # Crosschain root sync delay detection
 crosschain:
   root_delay_threshold_seconds: 2400

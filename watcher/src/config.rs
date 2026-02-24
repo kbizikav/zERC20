@@ -28,6 +28,9 @@ pub struct WatcherConfig {
 
     #[serde(default)]
     pub crosschain: Option<CrosschainConfig>,
+
+    #[serde(default)]
+    pub icp: Option<IcpConfig>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -92,6 +95,30 @@ impl Default for AlertConfig {
     fn default() -> Self {
         Self {
             cooldown_seconds: default_cooldown(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct IcpCanisterConfig {
+    pub name: String,
+    pub canister_id: String,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct IcpConfig {
+    pub replica_url: String,
+    pub cycle_threshold: u64,
+    pub canisters: Vec<IcpCanisterConfig>,
+}
+
+impl Default for IcpConfig {
+    fn default() -> Self {
+        Self {
+            replica_url: "https://ic0.app".to_string(),
+            cycle_threshold: 5_000_000_000_000,
+            canisters: vec![],
         }
     }
 }

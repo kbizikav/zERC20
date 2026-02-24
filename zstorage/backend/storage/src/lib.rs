@@ -334,5 +334,10 @@ fn recover_address_from_signature(
         .map_err(|err| format!("failed to recover address: {err}"))
 }
 
+#[query]
+fn get_cycles() -> u128 {
+    ic_cdk::api::canister_cycle_balance()
+}
+
 #[cfg(target_arch = "wasm32")]
 ic_cdk::export_candid!();
