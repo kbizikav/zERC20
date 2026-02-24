@@ -113,6 +113,23 @@ impl AlertManager {
         Ok(())
     }
 
+    /// Send pre-built embeds directly (no cooldown filtering).
+    pub async fn send_embeds(&self, embeds: Vec<DiscordEmbed>) -> Result<()> {
+        if embeds.is_empty() {
+            return Ok(());
+        }
+        for chunk in embeds.chunks(10) {
+            let payload = DiscordWebhookPayload {
+                embeds: chunk.to_vec(),
+                username: Some("zERC20 Watcher".to_string()),
+            };
+            self.post_webhook(&payload)
+                .await
+                .with_context(|| format!("failed to send {} embed(s) to Discord", chunk.len()))?;
+        }
+        Ok(())
+    }
+
     async fn post_webhook(&self, payload: &DiscordWebhookPayload) -> Result<()> {
         let resp = self
             .client
@@ -136,25 +153,25 @@ impl AlertManager {
 }
 
 #[derive(Serialize)]
-struct DiscordWebhookPayload {
-    embeds: Vec<DiscordEmbed>,
+pub struct DiscordWebhookPayload {
+    pub embeds: Vec<DiscordEmbed>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    username: Option<String>,
+    pub username: Option<String>,
 }
 
-#[derive(Serialize)]
-struct DiscordEmbed {
-    title: String,
-    description: String,
-    color: u32,
-    fields: Vec<DiscordField>,
+#[derive(Clone, Serialize)]
+pub struct DiscordEmbed {
+    pub title: String,
+    pub description: String,
+    pub color: u32,
+    pub fields: Vec<DiscordField>,
 }
 
-#[derive(Serialize)]
-struct DiscordField {
-    name: String,
-    value: String,
-    inline: bool,
+#[derive(Clone, Serialize)]
+pub struct DiscordField {
+    pub name: String,
+    pub value: String,
+    pub inline: bool,
 }
 
 fn alert_to_embed(alert: &Alert) -> DiscordEmbed {

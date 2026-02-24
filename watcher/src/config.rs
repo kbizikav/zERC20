@@ -24,6 +24,9 @@ pub struct WatcherConfig {
 
     #[serde(default)]
     pub alert: AlertConfig,
+
+    #[serde(default)]
+    pub stats_interval_seconds: Option<u64>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -169,7 +169,7 @@ async fn check_single_balance(
     Ok(None)
 }
 
-fn format_wei_as_eth(wei: U256) -> String {
+pub fn format_wei_as_eth(wei: U256) -> String {
     let one_eth = U256::from(10u64).pow(U256::from(18));
     let integer = wei / one_eth;
     let remainder = wei % one_eth;

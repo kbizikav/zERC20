@@ -1,0 +1,92 @@
+discord_webhook_url: "${DISCORD_WEBHOOK_URL}"
+interval_seconds: 60
+
+# Domain 1: Balance monitoring
+accounts:
+  # ===== Mainnet =====
+  - name: mainnet_fee_manager
+    address: "${MAINNET_FEE_MANAGER_ADDRESS}"
+    required_balance: "0.01"
+    chains: [ethereum, base, arbitrum]
+
+  - name: mainnet_relayer_zusdc
+    address: "${MAINNET_RELAYER_ZUSDC_ADDRESS}"
+    required_balance: "0.1"
+    chains: [ethereum, base, arbitrum]
+
+  - name: mainnet_relayer_zeth
+    address: "${MAINNET_RELAYER_ZETH_ADDRESS}"
+    required_balance: "0.1"
+    chains: [ethereum, base, arbitrum]
+
+  - name: mainnet_relayer_zbnb
+    address: "${MAINNET_RELAYER_ZBNB_ADDRESS}"
+    required_balance: "0.1"
+    chains: [ethereum, base, arbitrum, bnb]
+
+  # ===== Testnet =====
+  - name: testnet_fee_manager
+    address: "${TESTNET_FEE_MANAGER_ADDRESS}"
+    required_balance: "0.01"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia]
+
+  - name: testnet_relayer_zusdc
+    address: "${TESTNET_RELAYER_ZUSDC_ADDRESS}"
+    required_balance: "0.1"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia]
+
+  - name: testnet_relayer_zeth
+    address: "${TESTNET_RELAYER_ZETH_ADDRESS}"
+    required_balance: "0.1"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia]
+
+  - name: testnet_relayer_zbnb
+    address: "${TESTNET_RELAYER_ZBNB_ADDRESS}"
+    required_balance: "0.1"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia, bnb_testnet]
+
+chains:
+  ethereum:
+    rpc_url: "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://etherscan.io/address/"
+  base:
+    rpc_url: "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://basescan.org/address/"
+  arbitrum:
+    rpc_url: "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://arbiscan.io/address/"
+  bnb:
+    rpc_url: "${BNB_RPC_URL}"
+    explorer: "https://bscscan.com/address/"
+  sepolia:
+    rpc_url: "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia.etherscan.io/address/"
+  optimism_sepolia:
+    rpc_url: "https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia-optimism.etherscan.io/address/"
+  arbitrum_sepolia:
+    rpc_url: "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    explorer: "https://sepolia.arbiscan.io/address/"
+  bnb_testnet:
+    rpc_url: "${BNB_TESTNET_RPC_URL}"
+    explorer: "https://testnet.bscscan.com/address/"
+
+# Domain 2: Indexer monitoring
+indexer:
+  status_url: "http://localhost:8080/indexer/status"
+  stale_threshold_cycles: 5
+  max_index_gap: 100
+
+# Domain 3: Crosschain monitoring
+crosschain:
+  token_config_paths:
+    - "config/deployed/mainnet/tokens.zeth.mainnet.json"
+    - "config/deployed/mainnet/tokens.zusdc.mainnet.json"
+    - "config/deployed/mainnet/tokens.zbnb.mainnet.json"
+
+# Alert control
+alert:
+  cooldown_seconds: 3600
+
+# Stats report (optional, 0 or omit to disable)
+stats_interval_seconds: 3600

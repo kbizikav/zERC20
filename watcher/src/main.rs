@@ -3,8 +3,10 @@ mod balance;
 mod config;
 mod crosschain;
 mod indexer_monitor;
+mod stats;
 
 use std::path::PathBuf;
+use std::time::Instant;
 
 use anyhow::Result;
 use clap::Parser;
@@ -26,7 +28,7 @@ struct Cli {
         long,
         env = "WATCHER_CONFIG_PATH",
         value_name = "PATH",
-        default_value = "config/watcher.yaml"
+        default_value = "watcher/watcher.yaml"
     )]
     config: PathBuf,
 
@@ -54,6 +56,11 @@ async fn main() -> Result<()> {
         .as_ref()
         .map(|cfg| IndexerMonitor::new(cfg.clone()));
 
+    let stats_interval = config
+        .stats_interval_seconds
+        .filter(|&s| s > 0)
+        .map(std::time::Duration::from_secs);
+
     if cli.once {
         let alerts = run_checks(&config, &mut indexer_monitor).await;
         if alerts.is_empty() {
@@ -64,6 +71,15 @@ async fn main() -> Result<()> {
                 error!("failed to send alerts: {:?}", err);
             }
         }
+
+        if stats_interval.is_some() {
+            info!("collecting stats report...");
+            let embeds = stats::collect_stats(&config).await;
+            if let Err(err) = alert_manager.send_embeds(embeds).await {
+                error!("failed to send stats: {:?}", err);
+            }
+        }
+
         return Ok(());
     }
 
@@ -75,6 +91,9 @@ async fn main() -> Result<()> {
     let mut ticker = time::interval(std::time::Duration::from_secs(config.interval_seconds));
     ticker.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
+    // Track last stats send time; start far enough in the past to trigger on first eligible tick
+    let mut last_stats_sent = stats_interval.map(|dur| Instant::now() - dur);
+
     loop {
         ticker.tick().await;
 
@@ -85,6 +104,18 @@ async fn main() -> Result<()> {
             info!("check cycle complete, {} alert(s)", alerts.len());
             if let Err(err) = alert_manager.send_alerts(alerts).await {
                 error!("failed to send alerts: {:?}", err);
+            }
+        }
+
+        // Stats report
+        if let (Some(interval), Some(last)) = (stats_interval, &mut last_stats_sent) {
+            if last.elapsed() >= interval {
+                info!("collecting stats report...");
+                let embeds = stats::collect_stats(&config).await;
+                if let Err(err) = alert_manager.send_embeds(embeds).await {
+                    error!("failed to send stats: {:?}", err);
+                }
+                *last = Instant::now();
             }
         }
     }
