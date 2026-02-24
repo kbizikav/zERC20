@@ -424,10 +424,26 @@ async fn check_single_config(
         };
 
         if v_relayed_index == hub_tree_index {
-            info!(
-                "[{}] [V->H] Relay synced: {} — index={}",
-                token_name, label, v_relayed_index
-            );
+            // Index is synced — verify that the roots match.
+            match check_relay_root_match(
+                token_name,
+                label,
+                token.chain_id,
+                &verifier,
+                &hub,
+                v_relayed_index,
+                position,
+            )
+            .await
+            {
+                Some(alert) => alerts.push(alert),
+                None => {
+                    info!(
+                        "[{}] [V->H] Relay synced: {} — index={}",
+                        token_name, label, v_relayed_index
+                    );
+                }
+            }
         } else if v_relayed_index > hub_tree_index {
             let next_expected = hub_tree_index + 1;
             match verifier
@@ -558,4 +574,80 @@ async fn check_single_config(
     }
 
     Ok(alerts)
+}
+
+/// Compare the transfer root on the verifier (proved) against the root stored
+/// on the hub for the same index. A mismatch is a critical protocol-level
+/// inconsistency.
+async fn check_relay_root_match(
+    token_name: &str,
+    label: &str,
+    chain_id: u64,
+    verifier: &VerifierContract,
+    hub: &HubContract,
+    relayed_index: u64,
+    position: u64,
+) -> Option<Alert> {
+    let v_root = match verifier.proved_transfer_root(relayed_index).await {
+        Ok(r) => r,
+        Err(err) => {
+            error!(
+                "[{}] [V->H] failed to read proved_transfer_root for '{}': {:?}",
+                token_name, label, err
+            );
+            return None;
+        }
+    };
+
+    let hub_root = match hub.transfer_root(position - 1).await {
+        Ok(r) => r,
+        Err(err) => {
+            error!(
+                "[{}] [V->H] failed to read hub transfer_root for '{}': {:?}",
+                token_name, label, err
+            );
+            return None;
+        }
+    };
+
+    if v_root == hub_root {
+        return None;
+    }
+
+    info!(
+        "[{}] [V->H] ROOT MISMATCH: {} — index={}, verifier={:#x}, hub={:#x}",
+        token_name, label, relayed_index, v_root, hub_root
+    );
+
+    Some(Alert {
+        severity: Severity::Critical,
+        domain: "crosschain".to_string(),
+        title: format!("[{}] [V->H] Relay root mismatch: {}", token_name, label),
+        description: format!(
+            "[**{}**] Verifier **{}** (chain {}) proved root differs from hub root at the same index {}.",
+            token_name, label, chain_id, relayed_index,
+        ),
+        fields: vec![
+            AlertField {
+                name: "Token".to_string(),
+                value: label.to_string(),
+                inline: true,
+            },
+            AlertField {
+                name: "Index".to_string(),
+                value: relayed_index.to_string(),
+                inline: true,
+            },
+            AlertField {
+                name: "Verifier root".to_string(),
+                value: format!("{:#x}", v_root),
+                inline: false,
+            },
+            AlertField {
+                name: "Hub root".to_string(),
+                value: format!("{:#x}", hub_root),
+                inline: false,
+            },
+        ],
+    })
 }
