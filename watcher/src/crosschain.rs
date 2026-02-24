@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use client_common::{
     contracts::ContractResult,
     contracts::hub::{AggregationEventInfo, HubContract},
-    contracts::verifier::VerifierContract,
+    contracts::verifier::{RelayEventInfo, VerifierContract},
     tokens::{TokensFile, load_tokens_from_path},
 };
 use log::{error, info};
@@ -547,7 +547,41 @@ async fn check_relay(
     }
 
     if v_relayed_index < hub_tree_index {
-        return vec![];
+        info!(
+            "[{}] [V->H] INDEX INCONSISTENCY: {} — v_relayed={}, hub={}",
+            token_name, label, v_relayed_index, hub_tree_index
+        );
+        return vec![Alert {
+            severity: Severity::Critical,
+            domain: "crosschain".to_string(),
+            title: format!("[{}] [V->H] Relay index inconsistency: {}", token_name, label),
+            description: format!(
+                "[**{}**] Verifier **{}** (chain {}) has relayed index {} but hub received up to {}. Hub has more than verifier relayed.",
+                token_name, label, chain_id, v_relayed_index, hub_tree_index,
+            ),
+            fields: vec![
+                AlertField {
+                    name: "Token".to_string(),
+                    value: label.to_string(),
+                    inline: true,
+                },
+                AlertField {
+                    name: "Chain".to_string(),
+                    value: chain_id.to_string(),
+                    inline: true,
+                },
+                AlertField {
+                    name: "Verifier relayed".to_string(),
+                    value: v_relayed_index.to_string(),
+                    inline: true,
+                },
+                AlertField {
+                    name: "Hub received".to_string(),
+                    value: hub_tree_index.to_string(),
+                    inline: true,
+                },
+            ],
+        }];
     }
 
     // v_relayed_index > hub_tree_index — check relay delay.
@@ -564,8 +598,8 @@ async fn check_relay(
     .await
 }
 
-/// Verifier has relayed more than the hub has received — check how long
-/// the first undelivered root has been pending.
+/// Verifier has relayed more than the hub has received — find the oldest
+/// pending relay event (index > hub_tree_index) and check its age.
 async fn check_relay_delay(
     token_name: &str,
     label: &str,
@@ -576,37 +610,36 @@ async fn check_relay_delay(
     now: u64,
     cc: &CrosschainConfig,
 ) -> Vec<Alert> {
-    let next_expected = hub_tree_index + 1;
     let root_delay_threshold = cc.root_delay_threshold_seconds;
 
     match verifier
-        .relay_event_timestamp(
-            next_expected,
+        .oldest_pending_relay_event(
+            hub_tree_index,
             cc.verifier_event_lookback_blocks,
             cc.event_chunk_size,
         )
         .await
     {
-        Ok(Some(event_ts)) => {
-            let delay = now.saturating_sub(event_ts);
+        Ok(Some(RelayEventInfo { index: oldest_index, block_timestamp })) => {
+            let delay = now.saturating_sub(block_timestamp);
             if delay > root_delay_threshold {
                 let delay_min = delay / 60;
                 info!(
-                    "[{}] [V->H] RELAY DELAYED: {} — relayed={}, hub={}, delay={}m",
-                    token_name, label, v_relayed_index, hub_tree_index, delay_min
+                    "[{}] [V->H] RELAY DELAYED: {} — relayed={}, hub={}, oldest_pending={}, delay={}m",
+                    token_name, label, v_relayed_index, hub_tree_index, oldest_index, delay_min
                 );
                 vec![Alert {
                     severity: Severity::Warning,
                     domain: "crosschain".to_string(),
                     title: format!("[{}] [V->H] Relay delayed: {}", token_name, label),
                     description: format!(
-                        "[**{}**] Verifier **{}** (chain {}) relayed index {} but hub only received up to {}. Transfer root index {} was relayed **{}m ago** (threshold {}m).",
+                        "[**{}**] Verifier **{}** (chain {}) relayed index {} but hub only received up to {}. Oldest pending relay (index {}) was emitted **{}m ago** (threshold {}m).",
                         token_name,
                         label,
                         chain_id,
                         v_relayed_index,
                         hub_tree_index,
-                        next_expected,
+                        oldest_index,
                         delay_min,
                         root_delay_threshold / 60,
                     ),
@@ -624,6 +657,11 @@ async fn check_relay_delay(
                         AlertField {
                             name: "Delay".to_string(),
                             value: format!("{}m", delay_min),
+                            inline: true,
+                        },
+                        AlertField {
+                            name: "Oldest pending".to_string(),
+                            value: oldest_index.to_string(),
                             inline: true,
                         },
                         AlertField {
@@ -652,8 +690,8 @@ async fn check_relay_delay(
             }
         }
         Ok(None) => {
-            // Event not found in lookback window — estimate minimum delay
-            // from the timestamp of the earliest scanned block.
+            // No pending relay event found in lookback window — estimate
+            // minimum delay from the earliest scanned block.
             let min_delay_desc = match verifier_lookback_min_delay(verifier, cc.verifier_event_lookback_blocks, now).await {
                 Some(d) => format!("at least **{}m ago**", d / 60),
                 None => format!(
@@ -662,10 +700,9 @@ async fn check_relay_delay(
                 ),
             };
             info!(
-                "[{}] [V->H] RELAY DELAYED: {} — index {} {} (threshold {}m)",
+                "[{}] [V->H] RELAY DELAYED: {} — no pending relay event in lookback, {} (threshold {}m)",
                 token_name,
                 label,
-                next_expected,
                 min_delay_desc,
                 root_delay_threshold / 60,
             );
@@ -674,13 +711,12 @@ async fn check_relay_delay(
                 domain: "crosschain".to_string(),
                 title: format!("[{}] [V->H] Relay delayed: {}", token_name, label),
                 description: format!(
-                    "[**{}**] Verifier **{}** (chain {}) relayed index {} but hub only received up to {}. Transfer root index {} was relayed {} (threshold {}m).",
+                    "[**{}**] Verifier **{}** (chain {}) relayed index {} but hub only received up to {}. Oldest pending relay {} (threshold {}m).",
                     token_name,
                     label,
                     chain_id,
                     v_relayed_index,
                     hub_tree_index,
-                    next_expected,
                     min_delay_desc,
                     root_delay_threshold / 60,
                 ),
