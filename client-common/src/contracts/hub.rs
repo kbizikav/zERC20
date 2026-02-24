@@ -48,6 +48,12 @@ impl From<Hub::tokenInfosReturn> for HubTokenInfo {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct AggregationEventInfo {
+    pub root: U256,
+    pub block_timestamp: u64,
+}
+
 #[derive(Debug, Clone)]
 pub struct AggregationRootUpdatedEvent {
     pub root: U256,
@@ -367,18 +373,18 @@ impl HubContract {
     }
 
     /// Query `AggregationRootUpdated` events within a lookback window and return
-    /// the block timestamp for the given `target_agg_seq`.
+    /// the emitted root and block timestamp for the given `target_agg_seq`.
     ///
     /// The lookback window is split into chunks of `chunk_size` blocks (most RPC
     /// providers cap `eth_getLogs` at 10 000 blocks per request). Chunks are
     /// scanned from the most recent blocks backwards so that recent events are
     /// found quickly.
-    pub async fn aggregation_event_timestamp(
+    pub async fn aggregation_event_info(
         &self,
         target_agg_seq: u64,
         lookback_blocks: u64,
         chunk_size: u64,
-    ) -> ContractResult<Option<u64>> {
+    ) -> ContractResult<Option<AggregationEventInfo>> {
         let latest = self.latest_block().await?;
         let earliest = latest.saturating_sub(lookback_blocks);
 
@@ -407,7 +413,10 @@ impl HubContract {
                     let Some(block) = block else {
                         return Err(ContractError::BlockNotFound(block_number));
                     };
-                    return Ok(Some(block.header.timestamp));
+                    return Ok(Some(AggregationEventInfo {
+                        root: event.root,
+                        block_timestamp: block.header.timestamp,
+                    }));
                 }
             }
 
