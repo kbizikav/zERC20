@@ -7,9 +7,9 @@ use std::{
 #[cfg(not(target_arch = "wasm32"))]
 use std::{fs, path::Path};
 
-use crate::contracts::utils::{NormalProvider, get_provider, get_provider_with_fallback};
+use crate::contracts::utils::{get_provider, get_provider_with_fallback, NormalProvider};
 use alloy::primitives::Address;
-use anyhow::{Context, Result, anyhow, bail};
+use anyhow::{anyhow, bail, Context, Result};
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize, Clone)]
@@ -214,12 +214,21 @@ pub fn expand_env_vars(contents: &str) -> Result<String> {
                     None => bail!("unclosed environment variable placeholder: ${{{var_name}"),
                 }
             }
+            // Support ${VAR:-default} syntax
+            let (var_name, default_value) = match var_name.find(":-") {
+                Some(pos) => (&var_name[..pos], Some(&var_name[pos + 2..])),
+                None => (var_name.as_str(), None),
+            };
             if var_name.is_empty() {
                 bail!("empty environment variable name in placeholder");
             }
-            let value = env::var(&var_name)
-                .with_context(|| format!("environment variable '{var_name}' is not defined"))?;
-            result.push_str(&value);
+            match (env::var(var_name), default_value) {
+                (Ok(value), _) => result.push_str(&value),
+                (Err(_), Some(default)) => result.push_str(default),
+                (Err(_), None) => {
+                    bail!("environment variable '{var_name}' is not defined")
+                }
+            }
         } else {
             result.push(ch);
         }

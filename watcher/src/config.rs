@@ -3,13 +3,21 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use client_common::tokens::expand_env_vars;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
+
+/// Deserialize an optional string, treating empty strings as `None`.
+fn empty_string_as_none<'de, D: Deserializer<'de>>(
+    deserializer: D,
+) -> Result<Option<String>, D::Error> {
+    let s: Option<String> = Option::deserialize(deserializer)?;
+    Ok(s.filter(|v| !v.is_empty()))
+}
 
 #[derive(Debug, Deserialize)]
 pub struct WatcherConfig {
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_string_as_none")]
     pub discord_webhook_url: Option<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "empty_string_as_none")]
     pub slack_webhook_url: Option<String>,
     #[serde(default = "default_interval")]
     pub interval_seconds: u64,
