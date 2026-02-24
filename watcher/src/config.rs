@@ -117,7 +117,7 @@ impl Default for IcpConfig {
     fn default() -> Self {
         Self {
             replica_url: "https://ic0.app".to_string(),
-            cycle_threshold: 5_000_000_000_000,
+            cycle_threshold: 2_000_000_000_000,
             canisters: vec![],
         }
     }

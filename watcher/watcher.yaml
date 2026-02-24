@@ -96,7 +96,7 @@ indexer:
 # ICP canister cycle monitoring
 icp:
   # replica_url: "https://ic0.app"
-  # cycle_threshold: 5000000000000  # 5T cycles
+  # cycle_threshold: 2000000000000  # 2T cycles
   canisters:
     - name: mainnet_key_manager
       canister_id: "ub5gn-myaaa-aaaah-qrs2a-cai"
