@@ -88,6 +88,15 @@ tokens:
   - name: zBNB
     indexer_url: "https://v1.mainnet.api.zerc20.io/indexer/zbnb"
     crosschain_config_path: "../config/deployed/mainnet/tokens.zbnb.mainnet.json"
+  - name: zUSDC (testnet)
+    indexer_url: "https://beta-v1.api.zerc20.io/indexer/zusdc"
+    crosschain_config_path: "../config/deployed/testnet/tokens.zusdc.testnet.json"
+  - name: zETH (testnet)
+    indexer_url: "https://beta-v1.api.zerc20.io/indexer/zeth"
+    crosschain_config_path: "../config/deployed/testnet/tokens.zeth.testnet.json"
+  - name: zBNB (testnet)
+    indexer_url: "https://beta-v1.api.zerc20.io/indexer/zbnb"
+    crosschain_config_path: "../config/deployed/testnet/tokens.zbnb.testnet.json"
 
 # Indexer thresholds
 indexer:

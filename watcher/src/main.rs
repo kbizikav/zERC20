@@ -82,6 +82,7 @@ async fn main() -> Result<()> {
         if stats_interval.is_some() {
             info!("collecting stats report...");
             let embeds = stats::collect_stats(&config).await;
+            info!("sending {} stats embed(s)...", embeds.len());
             if let Err(err) = alert_manager.send_embeds(embeds).await {
                 error!("failed to send stats: {:?}", err);
             }
@@ -120,6 +121,7 @@ async fn main() -> Result<()> {
         {
             info!("collecting stats report...");
             let embeds = stats::collect_stats(&config).await;
+            info!("sending {} stats embed(s)...", embeds.len());
             if let Err(err) = alert_manager.send_embeds(embeds).await {
                 error!("failed to send stats: {:?}", err);
             }
