@@ -479,6 +479,19 @@ impl VerifierContract {
             .map_err(|err| ContractError::transport("get_block_number", err))
     }
 
+    /// Return the timestamp (unix seconds) of the given block number.
+    pub async fn block_timestamp(&self, block_number: u64) -> ContractResult<u64> {
+        let block = self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Number(block_number))
+            .await
+            .map_err(|err| ContractError::transport("get_block_by_number", err))?;
+        let Some(block) = block else {
+            return Err(ContractError::BlockNotFound(block_number));
+        };
+        Ok(block.header.timestamp)
+    }
+
     /// Query `TransferRootRelayed` events within a lookback window and return
     /// the block timestamp for the given `target_index`.
     ///
