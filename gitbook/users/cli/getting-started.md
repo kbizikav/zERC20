@@ -5,7 +5,7 @@ This guide walks you through installing and using the zERC20 command-line interf
 ## Installation
 
 ```bash
-git clone https://github.com/InternetMaximalism/zerc20.git
+git clone https://github.com/kbizikav/zerc20.git
 cd zerc20/cli
 cargo install --path .
 ```
