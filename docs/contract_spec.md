@@ -61,11 +61,11 @@
 ### Fee Manager (`fee-manager/`)
 
 - Off-chain service that periodically adjusts `targetLiquidity` on all `LiquidityManager` contracts across chains to maintain balanced liquidity distribution.
-- Computes `targetLiquidity = total_underlying_balance / number_of_chains`, where `underlying_balance = balance - feeSurplus` for each chain.
+- Computes `targetLiquidity = total_underlying_balance / number_of_chains * target_ratio_bps / 10000`, where `underlying_balance = balance - feeSurplus` for each chain.
 - Calls `setFeeParams({ targetLiquidity, k })` on each `LiquidityManager` contract to update incentive parameters.
 - Requires `FEE_MANAGER_ROLE` on each `LiquidityManager` contract for authorization.
 - Automatically detects whether the underlying asset is native ETH (via ERC-7528 sentinel address `0xEeeeeEeeeEeEeeEeEeEeeEEEeeeeEeeeeeeeEEeE`) or an ERC20 token.
-- Configurable via environment variables: `FEE_MANAGER_PRIVATE_KEY` (required), `FEE_MANAGER_INTERVAL_SECS` (default 3600), `FEE_MANAGER_K_BPS` (default 1000, i.e., 10%).
+- Configurable via environment variables: `FEE_MANAGER_PRIVATE_KEY` (required), `FEE_MANAGER_INTERVAL_SECS` (default 3600), `FEE_MANAGER_K_BPS` (default 1000, i.e., 10%), `FEE_MANAGER_TARGET_RATIO_BPS` (default 8000, i.e., 80%).
 
 ## Key Flows
 

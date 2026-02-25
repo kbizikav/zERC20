@@ -16,8 +16,8 @@ Without these artifacts, you cannot run the indexer, decider-prover, or generate
 
 Always verify that the manifest digest displayed during `download` matches the official value.
 
-| Version | Manifest Digest |
-|---------|-----------------|
+| Version | Manifest Digest                                                    |
+| ------- | ------------------------------------------------------------------ |
 | `1.0.0` | `f8181f89d502cd5bebc4445c4305c6c692f92deb202a18ce5d7c41694b10a7a4` |
 | `1.1.0` | `f22882b901ac1585f665f3aa7c812dc688a0cc08d91f84c2af3c390448a85373` |
 
@@ -25,7 +25,7 @@ Always verify that the manifest digest displayed during `download` matches the o
 
 ```bash
 # Clone the repository
-git clone https://github.com/InternetMaximalism/zerc20.git
+git clone https://github.com/kbizikav/zerc20.git
 cd zerc20
 
 # Install the CLI
@@ -76,11 +76,11 @@ zerc20-circuit-setup download \
   --artifacts-dir ./nova_artifacts
 ```
 
-| Option | Environment Variable | Description |
-|--------|---------------------|-------------|
-| `--version` | `ARTIFACTS_VERSION` | Version to download |
-| `--base-url` | `ARTIFACTS_BASE_URL` | Public URL for artifacts |
-| `--artifacts-dir` | `NOVA_ARTIFACTS_DIR` | Local output directory |
+| Option            | Environment Variable | Description              |
+| ----------------- | -------------------- | ------------------------ |
+| `--version`       | `ARTIFACTS_VERSION`  | Version to download      |
+| `--base-url`      | `ARTIFACTS_BASE_URL` | Public URL for artifacts |
+| `--artifacts-dir` | `NOVA_ARTIFACTS_DIR` | Local output directory   |
 
 ### Test
 
