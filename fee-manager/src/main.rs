@@ -62,6 +62,16 @@ struct Cli {
     )]
     k_bps: u64,
 
+    /// Target liquidity ratio in basis points (8000 = 80%).
+    /// targetLiquidity = (total / chains) * ratio / 10000.
+    #[arg(
+        long,
+        env = "FEE_MANAGER_TARGET_RATIO_BPS",
+        value_name = "BPS",
+        default_value_t = 8000
+    )]
+    target_ratio_bps: u64,
+
     /// Run the job once and exit.
     #[arg(long, env = "JOB_ONCE", default_value_t = false)]
     once: bool,
@@ -90,6 +100,7 @@ struct FeeManagerJob {
     private_key: B256,
     interval: Duration,
     k_bps: u64,
+    target_ratio_bps: u64,
 }
 
 impl FeeManagerJob {
@@ -152,7 +163,8 @@ impl FeeManagerJob {
 
         // Step 2: Calculate target liquidity per chain
         let chain_count = U256::from(liquidities.len());
-        let target_liquidity = total_liquidity / chain_count;
+        let target_liquidity = total_liquidity / chain_count * U256::from(self.target_ratio_bps)
+            / U256::from(10_000u64);
         let k = U256::from(self.k_bps);
 
         info!(
@@ -161,8 +173,8 @@ impl FeeManagerJob {
             liquidities.len()
         );
         info!(
-            "Target per chain: {} (k: {} bps)",
-            target_liquidity, self.k_bps
+            "Target per chain: {} (ratio: {} bps, k: {} bps)",
+            target_liquidity, self.target_ratio_bps, self.k_bps
         );
 
         // Step 3: Update fee params on each chain
@@ -299,6 +311,13 @@ async fn main() -> Result<()> {
         );
     }
 
+    if cli.target_ratio_bps == 0 || cli.target_ratio_bps > 10_000 {
+        bail!(
+            "FEE_MANAGER_TARGET_RATIO_BPS must be between 1 and 10000, got {}",
+            cli.target_ratio_bps
+        );
+    }
+
     let tokens = load_tokens_config(&cli.tokens_file_path)?;
 
     // Filter tokens that have a liquidity_manager_address
@@ -350,6 +369,7 @@ async fn main() -> Result<()> {
         private_key,
         interval: Duration::from_secs(cli.interval_secs),
         k_bps: cli.k_bps,
+        target_ratio_bps: cli.target_ratio_bps,
     };
 
     if cli.once {
@@ -360,8 +380,8 @@ async fn main() -> Result<()> {
     }
 
     info!(
-        "fee-manager started; updating every {} seconds (Ctrl+C to stop)",
-        cli.interval_secs
+        "fee-manager started; updating every {} seconds, target ratio {} bps (Ctrl+C to stop)",
+        cli.interval_secs, cli.target_ratio_bps
     );
 
     let handle = tokio::spawn(async move {

@@ -205,7 +205,7 @@ Periodic maintenance worker that dynamically adjusts `targetLiquidity` on all `L
 The Fee Manager ensures balanced liquidity distribution across all chains by automatically updating fee parameters:
 
 ```
-targetLiquidity = total_underlying_balance / number_of_chains
+targetLiquidity = total_underlying_balance / number_of_chains * target_ratio_bps / 10000
 ```
 
 This eliminates manual parameter tuning and automatically adjusts incentives as liquidity flows between chains.
@@ -213,7 +213,7 @@ This eliminates manual parameter tuning and automatically adjusts incentives as 
 ### How It Works
 
 1. **Fetch Balances**: Query underlying token balance (`balance - feeSurplus`) from each LiquidityManager
-2. **Calculate Target**: Compute `targetLiquidity = total / chain_count`
+2. **Calculate Target**: Compute `targetLiquidity = total / chain_count * target_ratio_bps / 10000`
 3. **Update Parameters**: Call `setFeeParams({ targetLiquidity, k })` on each LiquidityManager
 4. **Repeat**: Sleep for configured interval (default: 1 hour)
 
@@ -236,6 +236,7 @@ struct FeeParams {
 | `FEE_MANAGER_PRIVATE_KEY` | — | Private key with `FEE_MANAGER_ROLE` on each LiquidityManager |
 | `FEE_MANAGER_INTERVAL_SECS` | `3600` | Interval between updates (seconds) |
 | `FEE_MANAGER_K_BPS` | `1000` | Incentive coefficient k in basis points (1000 = 10%) |
+| `FEE_MANAGER_TARGET_RATIO_BPS` | `8000` | Target liquidity ratio in basis points (8000 = 80%) |
 
 ### Native Token Support
 

@@ -40,10 +40,10 @@ Fees and rewards are calculated using a linear incentive curve based on two para
 **Target Liquidity (T)** is automatically calculated by a background service:
 
 ```
-Target = Total liquidity across all chains / Number of chains
+Target = Total liquidity across all chains / Number of chains × ratio
 ```
 
-This ensures each chain's target stays aligned with actual liquidity distribution. As liquidity flows between chains, targets adjust automatically.
+The default ratio is **80%**, meaning the target is set to 80% of the equal-share amount. This allows moderate liquidity fluctuations without triggering fees or rewards. As liquidity flows between chains, targets adjust automatically.
 
 ### The Formula
 

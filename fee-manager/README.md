@@ -10,7 +10,7 @@ The fee-manager calculates the optimal `targetLiquidity` for each chain based on
 the total underlying token liquidity across all chains:
 
 ```
-targetLiquidity = total_underlying_balance / number_of_chains
+targetLiquidity = total_underlying_balance / number_of_chains * target_ratio_bps / 10000
 ```
 
 This ensures that:
@@ -44,6 +44,7 @@ cp fee-manager/.env.example fee-manager/.env
 | `TOKENS_FILE_PATH`          | No       | `../config/tokens.json` | Path to token metadata file                             |
 | `FEE_MANAGER_INTERVAL_SECS` | No       | `3600`                  | Interval between fee parameter updates (seconds)        |
 | `FEE_MANAGER_K_BPS`         | No       | `1000`                  | Incentive coefficient k in basis points (1 = 0.01%)     |
+| `FEE_MANAGER_TARGET_RATIO_BPS` | No   | `8000`                  | Target liquidity ratio in basis points (8000 = 80%)     |
 | `RUST_LOG`                  | No       | `info`                  | Log level (trace, debug, info, warn, error)             |
 
 ### tokens.json Requirements
@@ -120,7 +121,7 @@ docker compose up -d
 1. **Fetch Balances**: Query underlying token balance held by each
    `LiquidityManager` contract across all configured chains.
 
-2. **Calculate Target**: Compute `targetLiquidity = total_balance / chain_count`.
+2. **Calculate Target**: Compute `targetLiquidity = total_balance / chain_count * target_ratio_bps / 10000`.
 
 3. **Update Parameters**: For each chain, call `setFeeParams({ targetLiquidity, k })`
    on the `LiquidityManager` contract.
