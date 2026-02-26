@@ -36,7 +36,7 @@ aws-sdk-s3 = "1.65"
 reqwest = { workspace = true, features = ["stream"] }
 
 # Progress bar
-indicatif = "0.18.3"
+indicatif = "0.18.4"
 
 # Bytes
 bytes = "1.0"
