@@ -20,7 +20,7 @@ resolver = "2"
 [workspace.dependencies]
 envy = "0.4.2"
 dotenvy = "0.15.7"
-env_logger = "0.11.8"
+env_logger = "0.11.9"
 log = "0.4.29"
 hex = "0.4.3"
 base64 = "0.22.1"
