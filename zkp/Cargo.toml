@@ -33,7 +33,7 @@ thiserror = { workspace = true }
 getrandom = { workspace = true }
 
 [dev-dependencies]
-revm = { version = "29.0.1", default-features = false }
+revm = { version = "33.1.0", default-features = false }
 criterion = "0.7"
 
 [[bench]]
