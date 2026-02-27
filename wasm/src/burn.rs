@@ -209,6 +209,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "PoW nonce search is too slow for CI in debug mode (~260s)"]
     fn build_burn_artifacts_match_full_burn_address() -> Result<()> {
         let seed =
             parse_b256_hex("0x2222222222222222222222222222222222222222222222222222222222222222")
@@ -242,6 +243,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "PoW nonce search is too slow for CI in debug mode (~184s)"]
     fn full_burn_address_round_trip() -> Result<()> {
         let seed =
             parse_b256_hex("0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")

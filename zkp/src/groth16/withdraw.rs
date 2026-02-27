@@ -157,6 +157,7 @@ mod tests {
     const DEPTH: usize = 4;
 
     #[test]
+    #[ignore = "Groth16 proof + EVM verification is too slow for CI in debug mode (~112s)"]
     fn test_single_withdraw_circuit() {
         let poseidon2_config = circom_poseidon2_config();
         let poseidon3_config = circom_poseidon3_config();
