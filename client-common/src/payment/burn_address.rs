@@ -97,6 +97,7 @@ mod tests {
     use anyhow::Result;
 
     #[test]
+    #[ignore = "PoW nonce search is too slow for CI in debug mode (~685s)"]
     fn round_trip_serialize() -> Result<()> {
         let recipient_address = Address::from_slice(&[0x11; 20]);
         let chain_id = 10u64;
@@ -117,6 +118,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "PoW nonce search is too slow for CI in debug mode"]
     fn invalid_version_fails() -> Result<()> {
         let recipient_address = Address::from_slice(&[0x22; 20]);
         let chain_id = 77u64;

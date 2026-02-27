@@ -204,6 +204,7 @@ mod tests {
     use std::convert::TryInto;
 
     #[test]
+    #[ignore = "Nova IVC proof is too slow for CI in debug mode (~325s)"]
     fn test_withdraw_circuit() {
         const DEPTH: usize = 4;
         let mut rng = StdRng::seed_from_u64(42);

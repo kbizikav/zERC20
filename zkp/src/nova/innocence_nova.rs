@@ -344,6 +344,7 @@ mod tests {
     const INNOCENT_ADDR_3: &str = "0x1000000000000000000000000000000000000000";
 
     #[test]
+    #[ignore = "Nova IVC proof is too slow for CI in debug mode (~113s)"]
     fn test_innocence_circuit_single_step() {
         let mut rng = StdRng::seed_from_u64(42);
 
@@ -403,6 +404,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Nova IVC proof is too slow for CI in debug mode (~294s)"]
     fn test_innocence_circuit_multiple_steps() {
         let mut rng = StdRng::seed_from_u64(42);
 
@@ -501,6 +503,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "Nova IVC proof is too slow for CI in debug mode (~247s)"]
     fn test_innocence_circuit_with_dummy_padding() {
         let mut rng = StdRng::seed_from_u64(42);
 

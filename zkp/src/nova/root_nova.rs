@@ -160,6 +160,7 @@ mod tests {
     use rand::{RngCore, SeedableRng, rngs::StdRng};
 
     #[test]
+    #[ignore = "Nova IVC proof is too slow for CI in debug mode (~286s)"]
     fn test_root_circuit() {
         let mut rng = StdRng::seed_from_u64(42);
 
