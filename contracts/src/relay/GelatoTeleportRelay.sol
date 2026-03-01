@@ -127,6 +127,7 @@ contract GelatoTeleportRelay is GelatoRelayContractsUtils, UUPSUpgradeable, Owna
     /// @dev Unwraps zERC20 to underlying via LiquidityManager, then pays Gelato.
     function _unwrapAndPayGelato(uint256 relayerFee, uint256 maxGelatoFee) internal {
         if (relayerFee > 0) {
+            // slither-disable-next-line unused-return
             LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));
         }
         _transferRelayFeeCapped(maxGelatoFee);

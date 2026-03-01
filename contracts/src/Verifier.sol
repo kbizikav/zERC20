@@ -574,6 +574,7 @@ contract Verifier is
         bytes calldata signature,
         address signer
     ) internal view {
+        // slither-disable-next-line timestamp
         require(block.timestamp <= deadline, RelayerFeeAuthorizationExpired(deadline, block.timestamp));
         require(relayerFee <= maxFee, RelayerFeeExceedsMax(relayerFee, maxFee));
         bytes32 structHash = keccak256(abi.encode(RELAYER_FEE_TYPEHASH, recipientHash, totalValue, maxFee, deadline));
