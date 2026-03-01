@@ -1,0 +1,68 @@
+export const gelatoTeleportRelayAbi = [
+  {
+    type: 'function',
+    name: 'relayTeleport',
+    inputs: [
+      { name: 'isGlobal', type: 'bool', internalType: 'bool' },
+      { name: 'rootHint', type: 'uint64', internalType: 'uint64' },
+      {
+        name: 'gr',
+        type: 'tuple',
+        internalType: 'struct GeneralRecipientLib.GeneralRecipient',
+        components: [
+          { name: 'chainId', type: 'uint64', internalType: 'uint64' },
+          { name: 'recipient', type: 'bytes32', internalType: 'bytes32' },
+          { name: 'tweak', type: 'bytes32', internalType: 'bytes32' },
+        ],
+      },
+      { name: 'proof', type: 'bytes', internalType: 'bytes' },
+      {
+        name: 'feeAuth',
+        type: 'tuple',
+        internalType: 'struct Verifier.RelayerFeeAuthorization',
+        components: [
+          { name: 'relayerFee', type: 'uint256', internalType: 'uint256' },
+          { name: 'maxFee', type: 'uint256', internalType: 'uint256' },
+          { name: 'deadline', type: 'uint64', internalType: 'uint64' },
+          { name: 'signature', type: 'bytes', internalType: 'bytes' },
+        ],
+      },
+      { name: 'maxGelatoFee', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'relaySingleTeleport',
+    inputs: [
+      { name: 'isGlobal', type: 'bool', internalType: 'bool' },
+      { name: 'rootHint', type: 'uint64', internalType: 'uint64' },
+      {
+        name: 'gr',
+        type: 'tuple',
+        internalType: 'struct GeneralRecipientLib.GeneralRecipient',
+        components: [
+          { name: 'chainId', type: 'uint64', internalType: 'uint64' },
+          { name: 'recipient', type: 'bytes32', internalType: 'bytes32' },
+          { name: 'tweak', type: 'bytes32', internalType: 'bytes32' },
+        ],
+      },
+      { name: 'proof', type: 'bytes', internalType: 'bytes' },
+      {
+        name: 'feeAuth',
+        type: 'tuple',
+        internalType: 'struct Verifier.RelayerFeeAuthorization',
+        components: [
+          { name: 'relayerFee', type: 'uint256', internalType: 'uint256' },
+          { name: 'maxFee', type: 'uint256', internalType: 'uint256' },
+          { name: 'deadline', type: 'uint64', internalType: 'uint64' },
+          { name: 'signature', type: 'bytes', internalType: 'bytes' },
+        ],
+      },
+      { name: 'maxGelatoFee', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+] as const;
