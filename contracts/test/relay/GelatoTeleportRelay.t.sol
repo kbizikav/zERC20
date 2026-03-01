@@ -129,8 +129,10 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         vm.prank(address(endpoint));
         verifier.lzReceive(origin, bytes32(uint256(1)), payload, address(0), bytes(""));
 
-        // Deploy GelatoTeleportRelay
-        relay = new GelatoTeleportRelay(address(verifier), address(manager), owner);
+        // Deploy GelatoTeleportRelay (impl + proxy)
+        GelatoTeleportRelay relayImpl = new GelatoTeleportRelay(address(verifier), address(manager));
+        bytes memory relayInit = abi.encodeCall(GelatoTeleportRelay.initialize, (owner));
+        relay = GelatoTeleportRelay(payable(address(new ERC1967Proxy(address(relayImpl), relayInit))));
 
         // Foundry default chainId 31337 maps to GELATO_RELAY_V2
         gelatoRelay = GELATO_RELAY_V2;
@@ -431,12 +433,80 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
 
     function testConstructorRevertsOnZeroVerifier() public {
         vm.expectRevert(GelatoTeleportRelay.ZeroAddress.selector);
-        new GelatoTeleportRelay(address(0), address(manager), owner);
+        new GelatoTeleportRelay(address(0), address(manager));
     }
 
     function testConstructorRevertsOnZeroLiquidityManager() public {
         vm.expectRevert(GelatoTeleportRelay.ZeroAddress.selector);
-        new GelatoTeleportRelay(address(verifier), address(0), owner);
+        new GelatoTeleportRelay(address(verifier), address(0));
+    }
+
+    // -----------------------------------------------------------------------
+    // Initialize / Upgrade
+    // -----------------------------------------------------------------------
+
+    function testInitialize() public view {
+        assertEq(relay.owner(), owner, "owner mismatch");
+    }
+
+    function testCannotReinitialize() public {
+        vm.expectRevert();
+        relay.initialize(address(0xBEEF));
+    }
+
+    function testAuthorizeUpgradeRevertsOnVerifierMismatch() public {
+        // Deploy a new impl with a different verifier
+        Verifier otherVerifierImpl = new Verifier(address(endpoint));
+        bytes memory otherVerifierInit = abi.encodeCall(
+            Verifier.initialize,
+            (
+                address(token),
+                HUB_EID,
+                address(this),
+                address(new MockWithdrawDecider()),
+                address(new MockWithdrawDecider()),
+                address(new MockWithdrawDecider()),
+                address(new MockSingleWithdrawVerifier()),
+                address(new MockSingleWithdrawVerifier())
+            )
+        );
+        Verifier otherVerifier = Verifier(address(new ERC1967Proxy(address(otherVerifierImpl), otherVerifierInit)));
+
+        GelatoTeleportRelay badImpl = new GelatoTeleportRelay(address(otherVerifier), address(manager));
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GelatoTeleportRelay.VerifierMismatch.selector, address(verifier), address(otherVerifier)
+            )
+        );
+        relay.upgradeToAndCall(address(badImpl), "");
+    }
+
+    function testAuthorizeUpgradeRevertsOnLiquidityManagerMismatch() public {
+        // Deploy a new LiquidityManager with different address
+        IncentiveLib.FeeParams memory params = IncentiveLib.FeeParams({targetLiquidity: 1_000 ether, k: 0});
+        LiquidityManager otherManagerImpl = new LiquidityManager(address(underlying), address(token));
+        bytes memory otherManagerInit = abi.encodeCall(LiquidityManager.initialize, (params, address(this)));
+        LiquidityManager otherManager =
+            LiquidityManager(payable(address(new ERC1967Proxy(address(otherManagerImpl), otherManagerInit))));
+
+        GelatoTeleportRelay badImpl = new GelatoTeleportRelay(address(verifier), address(otherManager));
+
+        vm.prank(owner);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                GelatoTeleportRelay.LiquidityManagerMismatch.selector, address(manager), address(otherManager)
+            )
+        );
+        relay.upgradeToAndCall(address(badImpl), "");
+    }
+
+    function testAuthorizeUpgradeSucceedsWithMatchingImmutables() public {
+        GelatoTeleportRelay newImpl = new GelatoTeleportRelay(address(verifier), address(manager));
+
+        vm.prank(owner);
+        relay.upgradeToAndCall(address(newImpl), "");
     }
 
     // -----------------------------------------------------------------------

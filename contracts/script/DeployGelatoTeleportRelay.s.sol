@@ -32,13 +32,17 @@ contract DeployGelatoTeleportRelay is DeterministicDeployer {
         bytes32 baseSalt = _loadBaseSalt();
         console2.log("Deploying GelatoTeleportRelay at block", block.number);
 
-        bytes memory creationCode = abi.encodePacked(
-            type(GelatoTeleportRelay).creationCode, abi.encode(verifier_, liquidityManager_, relayOwner)
-        );
-        GelatoTeleportRelay relay =
-            GelatoTeleportRelay(payable(_deploy3(broadcaster, baseSalt, "GELATO_TELEPORT_RELAY", creationCode)));
+        // Deploy implementation
+        bytes memory implCode =
+            abi.encodePacked(type(GelatoTeleportRelay).creationCode, abi.encode(verifier_, liquidityManager_));
+        address impl = _deploy3(broadcaster, baseSalt, "GELATO_TELEPORT_RELAY_IMPL", implCode);
 
-        console2.log("GelatoTeleportRelay deployed at", address(relay));
+        // Deploy proxy with initializer
+        bytes memory initCalldata = abi.encodeCall(GelatoTeleportRelay.initialize, (relayOwner));
+        address proxy = _deployProxyAndInit(broadcaster, baseSalt, "GELATO_TELEPORT_RELAY", impl, initCalldata);
+
+        console2.log("GelatoTeleportRelay impl at", impl);
+        console2.log("GelatoTeleportRelay proxy at", proxy);
         console2.log("  verifier", verifier_);
         console2.log("  liquidityManager", liquidityManager_);
         console2.log("  owner", relayOwner);
