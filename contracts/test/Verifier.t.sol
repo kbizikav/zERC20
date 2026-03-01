@@ -938,7 +938,7 @@ contract MockERC1271Wallet is IERC1271 {
         signer = signer_;
     }
 
-    function isValidSignature(bytes32 hash, bytes memory signature) external view returns (bytes4) {
+    function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
         (address recovered,,) = ECDSA.tryRecover(hash, signature);
         if (recovered == signer) {
             return IERC1271.isValidSignature.selector;

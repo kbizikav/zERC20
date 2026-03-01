@@ -350,8 +350,12 @@ contract Verifier is
     }
 
     modifier onlyAllowedProver() {
-        require(_getAllowedProversStorage().allowedProvers[msg.sender], UnauthorizedProver(msg.sender));
+        _checkAllowedProver();
         _;
+    }
+
+    function _checkAllowedProver() internal view {
+        require(_getAllowedProversStorage().allowedProvers[msg.sender], UnauthorizedProver(msg.sender));
     }
 
     /// @notice Verifies a Nova proof for a transfer-root transition and records the resulting root by index.
