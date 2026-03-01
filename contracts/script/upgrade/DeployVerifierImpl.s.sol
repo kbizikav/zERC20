@@ -11,7 +11,7 @@ import {LZAddressContext} from "lz-address-book/helpers/LZAddressContext.sol";
 /// Env:
 /// - PRIVATE_KEY (uint256): Deployer key.
 contract DeployVerifierImpl is DeterministicDeployer {
-    bytes32 internal constant SALT = keccak256("zerc20.verifier.impl.v2");
+    bytes32 internal constant SALT = keccak256("zerc20.verifier.impl.v3");
 
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
