@@ -577,7 +577,17 @@ contract Verifier is
         // slither-disable-next-line timestamp
         require(block.timestamp <= deadline, RelayerFeeAuthorizationExpired(deadline, block.timestamp));
         require(relayerFee <= maxFee, RelayerFeeExceedsMax(relayerFee, maxFee));
-        bytes32 structHash = keccak256(abi.encode(RELAYER_FEE_TYPEHASH, recipientHash, totalValue, maxFee, deadline));
+        bytes32 typeHash = RELAYER_FEE_TYPEHASH;
+        bytes32 structHash;
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, typeHash)
+            mstore(add(m, 0x20), recipientHash)
+            mstore(add(m, 0x40), totalValue)
+            mstore(add(m, 0x60), maxFee)
+            mstore(add(m, 0x80), deadline)
+            structHash := keccak256(m, 0xa0)
+        }
         bytes32 digest = _hashTypedDataV4(structHash);
         require(SignatureChecker.isValidSignatureNowCalldata(signer, digest, signature), InvalidRelayerFeeSignature());
     }

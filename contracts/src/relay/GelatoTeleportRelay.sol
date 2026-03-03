@@ -37,8 +37,12 @@ contract GelatoTeleportRelay is GelatoRelayContractsUtils, UUPSUpgradeable, Owna
     error LiquidityManagerMismatch(address expected, address actual);
 
     modifier onlyGelatoRelay() {
-        require(msg.sender == _gelatoRelay, OnlyGelatoRelay());
+        _onlyGelatoRelay();
         _;
+    }
+
+    function _onlyGelatoRelay() internal view {
+        require(msg.sender == _gelatoRelay, OnlyGelatoRelay());
     }
 
     /// @notice Locks implementation contracts on deployment.

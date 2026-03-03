@@ -911,7 +911,7 @@ contract MockZERC20ForRelayerFee {
     }
 
     function teleport(address to, uint256 value) external {
-        teleportCalls.push(TeleportCall(to, value));
+        teleportCalls.push(TeleportCall({ to: to, value: value }));
     }
 
     function teleportCallCount() external view returns (uint256) {
