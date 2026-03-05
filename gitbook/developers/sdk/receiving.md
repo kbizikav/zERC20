@@ -3,7 +3,7 @@
 Receiving zERC20 tokens is a two-phase process:
 
 1. **Authorize + Scan**: Authenticate with the ICP stealth storage canister, decrypt your VetKey, and scan for announcements addressed to you.
-2. **Redeem**: Collect on-chain context for eligible transfers, generate a zero-knowledge proof, and call `teleport` on the Verifier contract to mint tokens.
+2. **Redeem**: Collect on-chain context for eligible transfers, generate a zero-knowledge proof, and submit the redeem transaction to mint tokens.
 
 ## Step 1: Create Authorization Payload
 
@@ -128,17 +128,30 @@ function scanReceivings(
 For each scanned announcement, collect the on-chain context needed to generate a redemption proof. This queries the indexer and contracts to determine which transfers are eligible for redemption.
 
 ```typescript
-import { collectRedeemContext } from "zerc20-client-sdk";
+import { collectRedeemContext, createVerifierReader } from "zerc20-client-sdk";
+
+// Create a verifier contract reader from an EvmReadProvider
+const verifierContract = createVerifierReader(readProvider, entry.verifierAddress);
 
 const redeemContext = await collectRedeemContext({
   burn,               // BurnArtifacts derived from the scanned announcement
-  tokens,             // token configuration
-  hub,                // Hub contract address or config
-  verifierContract,   // Verifier contract instance
+  tokens,             // token configuration (TokenEntry[])
+  hub,                // HubEntry from normalizeTokens
+  verifierContract,   // ReadableVerifierContract from createVerifierReader
   indexerUrl,         // indexer endpoint URL
   indexerFetchLimit,  // optional, max events per indexer request
   eventBlockSpan,     // optional, block range per scan
 });
+```
+
+**Creating the Verifier Contract:**
+
+Use `createVerifierReader()` to build a `ReadableVerifierContract` from any `EvmReadProvider`. This is the recommended approach -- it works with viem, ethers.js, or any provider that implements the `EvmReadProvider` interface:
+
+```typescript
+import { createVerifierReader } from "zerc20-client-sdk";
+
+const verifierContract = createVerifierReader(readProvider, entry.verifierAddress);
 ```
 
 **Signature:**
@@ -151,15 +164,15 @@ function collectRedeemContext(
 
 **RedeemContextParams:**
 
-| Field               | Type             | Required | Description                            |
-| ------------------- | ---------------- | -------- | -------------------------------------- |
-| `burn`              | `BurnArtifacts`  | Yes      | Burn artifacts for the announcement    |
-| `tokens`            | `TokenConfig`    | Yes      | Token configuration                    |
-| `hub`               | `HubConfig`      | Yes      | Hub contract address or config         |
-| `verifierContract`  | `Contract`       | Yes      | Verifier contract instance             |
-| `indexerUrl`        | `string`         | Yes      | Indexer HTTP endpoint                  |
-| `indexerFetchLimit` | `number`         | No       | Max events per indexer request         |
-| `eventBlockSpan`    | `bigint \| number` | No     | Block range per event scan             |
+| Field               | Type                        | Required | Description                            |
+| ------------------- | --------------------------- | -------- | -------------------------------------- |
+| `burn`              | `BurnArtifacts`             | Yes      | Burn artifacts for the announcement    |
+| `tokens`            | `TokenEntry[]`              | Yes      | Token configuration                    |
+| `hub`               | `HubEntry`                  | Yes      | Hub contract address or config         |
+| `verifierContract`  | `ReadableVerifierContract`  | Yes      | Verifier contract reader               |
+| `indexerUrl`        | `string`                    | Yes      | Indexer HTTP endpoint                  |
+| `indexerFetchLimit` | `number`                    | No       | Max events per indexer request         |
+| `eventBlockSpan`    | `bigint \| number`          | No       | Block range per event scan             |
 
 **RedeemContext:**
 
@@ -179,31 +192,95 @@ function collectRedeemContext(
 - **Eligible events**: Transfers whose Merkle roots have been proven on-chain and aggregated by the Hub. These can be redeemed immediately.
 - **Ineligible events**: Transfers that are indexed but whose roots are not yet proven or aggregated. These will become eligible once the indexer and cross-chain job catch up.
 
-## Step 6: Generate Proof and Teleport
+## Step 6: Prepare and Submit Redeem Transaction
 
-Use the eligible events and global proofs from `RedeemContext` to generate a zero-knowledge proof and submit it on-chain. See [Proof Generation](proof-generation.md) for the full API reference.
-
-Two redemption paths are available:
-
-### Single Teleport
-
-Redeem a single eligible event with a Groth16 proof:
+The SDK provides a two-step prepare/submit pattern for redeeming. `prepareRedeemTransaction()` generates the zero-knowledge proof and assembles the transaction data, and `submitRedeemTransaction()` signs and submits it on-chain.
 
 ```typescript
-const proof = await createSingleTeleportProof(/* ... */);
-// Submit to Verifier.singleTeleport()
+import {
+  prepareRedeemTransaction,
+  submitRedeemTransaction,
+} from "zerc20-client-sdk";
+
+// Prepare: generates proof and builds the transaction object
+const redeemTx = await prepareRedeemTransaction({
+  redeemContext,
+  burn,                       // BurnArtifacts
+  teleportProofClient: sdk.teleportProofs,
+  decider: sdk.decider,       // optional, required for batch proofs
+});
+
+// Submit: signs and sends the transaction on-chain
+const { transactionHash } = await submitRedeemTransaction({
+  writeProvider,              // EvmWriteProvider
+  tx: redeemTx,               // RedeemTransaction from prepare step
+  readProvider,               // optional: for receipt polling
+  feeOverrides,               // optional: gas-price overrides
+});
 ```
 
-### Batch Teleport
+The SDK automatically selects the proof mode based on the number of eligible events:
 
-Redeem multiple eligible events at once using a Nova batch proof:
+- **1 eligible event** -- uses Groth16 single proof via `Verifier.singleTeleport()`
+- **Multiple eligible events** -- uses Nova batch proof via `Verifier.teleport()` (requires a Decider)
+
+### prepareRedeemTransaction
 
 ```typescript
-const proof = await createBatchTeleportProof(/* ... */);
-// Submit to Verifier.teleport()
+function prepareRedeemTransaction(
+  params: PrepareRedeemTransactionParams,
+): Promise<RedeemTransaction>;
 ```
 
-Both functions accept the `eligibleProofs` and `globalProofs` from `RedeemContext` as inputs.
+**PrepareRedeemTransactionParams:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `redeemContext` | `RedeemContext` | Yes | Context from `collectRedeemContext()` |
+| `burn` | `BurnArtifacts` | Yes | Burn artifacts for the announcement |
+| `teleportProofClient` | `TeleportProofClient` | Yes | Proof generator (from `sdk.teleportProofs`) |
+| `decider` | `HttpDeciderClient` | No | Required for batch proofs; omit for single-only |
+
+**RedeemTransaction:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `mode` | `"single" \| "batch"` | Which proof mode was used |
+| `address` | `Hex` | Verifier contract address |
+| `abi` | `object` | Verifier ABI |
+| `functionName` | `"singleTeleport" \| "teleport"` | Contract function to call |
+| `args` | `readonly [...]` | Encoded arguments for the contract call |
+
+### submitRedeemTransaction
+
+```typescript
+function submitRedeemTransaction(
+  params: SubmitRedeemTransactionParams,
+): Promise<{ transactionHash: Hex }>;
+```
+
+**SubmitRedeemTransactionParams:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `writeProvider` | `EvmWriteProvider` | Yes | Wallet provider to sign and send |
+| `tx` | `RedeemTransaction` | Yes | Transaction from `prepareRedeemTransaction()` |
+| `feeOverrides` | `FeeOverrides` | No | Optional gas-price overrides |
+| `readProvider` | `EvmReadProvider` | No | Provider for receipt polling |
+
+### Batch Redeem with Pre-built Proof
+
+If you already have a Decider proof (e.g., from an external service), use `buildBatchRedeemTransaction()` to assemble the transaction directly:
+
+```typescript
+import { buildBatchRedeemTransaction } from "zerc20-client-sdk";
+
+const redeemTx = buildBatchRedeemTransaction({
+  redeemContext,
+  burn,
+  deciderProof: proofBytes,  // Uint8Array from Decider
+});
+```
 
 ## Status Checking
 
@@ -213,7 +290,6 @@ For a lighter-weight check that skips proof collection and generation, use `getA
 import { getAnnouncementStatus } from "zerc20-client-sdk";
 
 const status = await getAnnouncementStatus({
-  // AnnouncementStatusParams
   burn,
   tokens,
   hub,

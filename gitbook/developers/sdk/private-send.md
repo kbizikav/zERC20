@@ -84,25 +84,46 @@ function preparePrivateSend(
 
 ## Step 3: Transfer zERC20 to the Burn Address
 
-Use any EVM library (viem, ethers, etc.) to execute a standard ERC-20 `transfer` to `preparation.burnAddress`.
+Use the SDK's `submitPrivateSendTransfer()` to execute the ERC-20 transfer to the burn address. This helper encapsulates the `transfer` call using the library-agnostic `EvmWriteProvider` interface.
 
 ```typescript
-import { encodeFunctionData, erc20Abi } from "viem";
+import { submitPrivateSendTransfer } from "zerc20-client-sdk";
 
-const txHash = await walletClient.sendTransaction({
-  to: tokenAddress,   // zERC20 contract address on the sender's chain
-  data: encodeFunctionData({
-    abi: erc20Abi,
-    functionName: "transfer",
-    args: [preparation.burnAddress, amount],
-  }),
+const { transactionHash } = await submitPrivateSendTransfer({
+  writeProvider,                           // EvmWriteProvider (e.g., viem WalletClient)
+  tokenAddress: entry.tokenAddress,        // zERC20 contract address
+  burnAddress: preparation.burnAddress,    // from Step 2
+  amount: 100_000_000n,                    // 100 zUSDC (6 decimals)
+  readProvider,                            // optional: EvmReadProvider for receipt polling
 });
-
-// Wait for confirmation
-await publicClient.waitForTransactionReceipt({ hash: txHash });
 ```
 
-> **Important:** The transfer amount is not encoded in the announcement -- the indexer discovers it from the on-chain event. You can transfer any amount in a single transaction.
+### Parameters
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `writeProvider` | `EvmWriteProvider` | Yes | Wallet provider to sign and send the transaction |
+| `tokenAddress` | `string` | Yes | zERC20 contract address on the sender's chain |
+| `burnAddress` | `string` | Yes | Burn address from `preparePrivateSend()` |
+| `amount` | `bigint` | Yes | Amount to transfer in the token's smallest unit |
+| `feeOverrides` | `FeeOverrides` | No | Optional gas-price overrides from `buildFeeOverrides` |
+| `readProvider` | `EvmReadProvider` | No | Provider for receipt polling; falls back to `writeProvider` |
+
+### Return Value
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `transactionHash` | `Hex` | Confirmed transaction hash |
+
+> **Note:** You can also execute the transfer manually using any EVM library -- `submitPrivateSendTransfer` is a convenience wrapper. The important thing is that a standard ERC-20 `transfer(burnAddress, amount)` call reaches the zERC20 contract.
+
+### Signature
+
+```typescript
+function submitPrivateSendTransfer(
+  params: SubmitPrivateSendTransferParams,
+): Promise<{ transactionHash: Hex }>;
+```
 
 ## Step 4: Submit the Announcement
 
@@ -147,12 +168,12 @@ import {
   createSdk,
   normalizeTokens,
   findTokenByChain,
-  createProviderForToken,
   getSeedMessage,
   preparePrivateSend,
   submitPrivateSendAnnouncement,
+  submitPrivateSendTransfer,
 } from "zerc20-client-sdk";
-import { createWalletClient, custom, encodeFunctionData, erc20Abi, keccak256, toBytes } from "viem";
+import { createWalletClient, createPublicClient, custom, http, keccak256, toBytes } from "viem";
 import { arbitrum } from "viem/chains";
 import { HttpAgent } from "@dfinity/agent";
 
@@ -165,7 +186,7 @@ const stealthClient = sdk.createStealthClient({
   keyManagerCanisterId: "your-key-manager-canister-id",
 });
 
-const walletClient = createWalletClient({
+const writeProvider = createWalletClient({
   chain: arbitrum,
   transport: custom(window.ethereum!),
 });
@@ -174,12 +195,16 @@ const walletClient = createWalletClient({
 const tokensFile = await import("./tokens.json");
 const { tokens } = normalizeTokens(tokensFile);
 const entry = findTokenByChain(tokens, 42161n);
-const publicClient = createProviderForToken(entry);
+
+const readProvider = createPublicClient({
+  chain: arbitrum,
+  transport: http(entry.rpcUrls[0]),
+});
 
 // --- Step 1: Derive seed ---
 const seedMsg = await getSeedMessage();
-const [account] = await walletClient.getAddresses();
-const signature = await walletClient.signMessage({
+const [account] = await writeProvider.getAddresses();
+const signature = await writeProvider.signMessage({
   account,
   message: seedMsg,
 });
@@ -194,16 +219,13 @@ const preparation = await preparePrivateSend({
 });
 
 // --- Step 3: Transfer ---
-const txHash = await walletClient.sendTransaction({
-  account,
-  to: entry.tokenAddress,
-  data: encodeFunctionData({
-    abi: erc20Abi,
-    functionName: "transfer",
-    args: [preparation.burnAddress, 100_000_000n], // 100 zUSDC (6 decimals)
-  }),
+const { transactionHash } = await submitPrivateSendTransfer({
+  writeProvider,
+  readProvider,
+  tokenAddress: entry.tokenAddress,
+  burnAddress: preparation.burnAddress,
+  amount: 100_000_000n, // 100 zUSDC (6 decimals)
 });
-await publicClient.waitForTransactionReceipt({ hash: txHash });
 
 // --- Step 4: Submit announcement ---
 const result = await submitPrivateSendAnnouncement({

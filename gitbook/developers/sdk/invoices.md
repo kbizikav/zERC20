@@ -144,6 +144,22 @@ function listInvoices(
 
 Returns an array of invoice IDs as hex strings. Use these IDs to look up or share specific invoices.
 
+## Checking Invoice Type
+
+The SDK provides helpers to determine whether an invoice ID represents a single or batch invoice:
+
+```typescript
+import { isSingleInvoiceHex, isSingleInvoiceBytes } from "zerc20-client-sdk";
+
+// From hex string
+const isSingle = isSingleInvoiceHex(invoiceId);
+
+// From Uint8Array
+const isSingle = isSingleInvoiceBytes(invoiceBytes);
+```
+
+This is useful when deciding which proof mode to use for redemption -- single invoices use Groth16, batch invoices use Nova.
+
 ## Complete Example
 
 End-to-end flow: prepare an invoice, sign it, submit it, and list all invoices.

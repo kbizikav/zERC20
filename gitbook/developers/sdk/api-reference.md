@@ -10,6 +10,16 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 | `Zerc20Sdk` | class | - | Main SDK, bundles WASM, proof, decider, stealth |
 | `Zerc20SdkOptions` | interface | - | Options: `wasm?`, `teleportProofs?`, `decider?`, `stealth?` |
 
+## EVM Providers
+
+Library-agnostic interfaces for EVM interaction. viem's `PublicClient` and `WalletClient` satisfy these structurally -- no adapter required.
+
+| Name | Type | Description |
+|------|------|-------------|
+| `EvmReadProvider` | interface | Read-only provider: `readContract`, optional `getBalance`, `estimateFeesPerGas`, `getGasPrice`, `waitForTransactionReceipt`, `getTransaction`, `getTransactionReceipt` |
+| `EvmWriteProvider` | interface | Write provider: `writeContract`, optional `account`, `chain` |
+| `Hex` | type | Hex-encoded string with `0x` prefix (`\`0x${string}\``) |
+
 ## ICP / Stealth
 
 | Name | Signature | Returns | Description |
@@ -27,6 +37,7 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 |------|-----------|---------|-------------|
 | `preparePrivateSend` | `(params: PreparePrivateSendParams)` | `Promise<PreparedPrivateSend>` | Derive burn address and encrypt announcement |
 | `submitPrivateSendAnnouncement` | `(params: SubmitPrivateSendParams)` | `Promise<PrivateSendResult>` | Submit announcement to storage canister |
+| `submitPrivateSendTransfer` | `(params: SubmitPrivateSendTransferParams)` | `Promise<{ transactionHash: Hex }>` | Execute ERC-20 transfer to burn address |
 
 ## Invoice
 
@@ -35,6 +46,8 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 | `prepareInvoiceIssue` | `(params: InvoiceIssueParams)` | `Promise<InvoiceIssueArtifacts>` | Generate invoice with burn addresses |
 | `submitInvoice` | `(client, invoiceIdHex, signature, tag?)` | `Promise<void>` | Submit signed invoice |
 | `listInvoices` | `(client, ownerAddress, chainId?, tag?)` | `Promise<string[]>` | List invoice IDs |
+| `isSingleInvoiceHex` | `(invoiceIdHex: string)` | `boolean` | Check if an invoice ID is single (not batch) |
+| `isSingleInvoiceBytes` | `(invoiceBytes: Uint8Array)` | `boolean` | Check if invoice bytes represent a single invoice |
 
 ## Liquidity
 
@@ -46,13 +59,61 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 | `buildCrossUnwrapQuote` | `(params)` | `Promise<CrossUnwrapQuote>` | Quote cross-chain unwrap |
 | `sendCrossUnwrap` | `(params)` | `Promise<LiquidityActionResult>` | Execute cross-chain unwrap |
 | `fetchLiquidityManagerBalances` | `(params)` | `Promise<LiquidityBalances>` | Get token balances and decimals |
+| `removeDust` | `(amount, conversionRate)` | `bigint` | Remove dust from amount based on decimal conversion |
 
 ## Receive
 
 | Name | Signature | Returns | Description |
 |------|-----------|---------|-------------|
 | `collectRedeemContext` | `(params: RedeemContextParams)` | `Promise<RedeemContext>` | Collect eligible events + proofs for redeem |
+| `createVerifierReader` | `(provider: EvmReadProvider, address: string)` | `ReadableVerifierContract` | Create verifier contract reader from a provider |
+| `prepareRedeemTransaction` | `(params: PrepareRedeemTransactionParams)` | `Promise<RedeemTransaction>` | Generate proof and assemble redeem transaction |
+| `buildBatchRedeemTransaction` | `(params)` | `RedeemTransaction` | Build batch redeem from pre-existing Decider proof |
+| `submitRedeemTransaction` | `(params: SubmitRedeemTransactionParams)` | `Promise<{ transactionHash: Hex }>` | Sign and submit redeem transaction on-chain |
 | `getAnnouncementStatus` | `(params: AnnouncementStatusParams)` | `Promise<AnnouncementStatus>` | Lightweight status check |
+
+## Chain Metadata
+
+| Name | Signature | Returns | Description |
+|------|-----------|---------|-------------|
+| `getChainMetadata` | `(chainId: number \| bigint)` | `ChainMetadata \| undefined` | Get metadata for a chain ID |
+| `getChainDisplayName` | `(chainId: number \| bigint)` | `string` | Human-readable chain name (e.g., "Ethereum", "Arbitrum") |
+| `getChainShortName` | `(chainId: number \| bigint)` | `string \| undefined` | Short chain label (e.g., "ETH", "ARB") |
+| `getExplorerTxUrl` | `(chainId: number \| bigint, txHash: string)` | `string \| undefined` | Block explorer URL for a transaction |
+| `resolveChainId` | `(name: string)` | `number \| undefined` | Resolve chain ID from name or alias |
+| `resolveNetworkDisplayName` | `(label: string)` | `string` | Resolve human-readable name from chain label |
+
+## LayerZero Scan
+
+Cross-chain message tracking via the LayerZero Scan API. See [LayerZero Scan](layerzero-scan.md) for full documentation.
+
+| Name | Signature | Returns | Description |
+|------|-----------|---------|-------------|
+| `fetchWalletStatus` | `(params: FetchWalletStatusParams)` | `Promise<WalletStatusResult>` | Fetch and decode all LZ messages for a wallet |
+| `fetchWalletMessages` | `(config, address, params?)` | `Promise<ScanMessagesResponse>` | Raw LZ Scan API: wallet messages |
+| `fetchTxMessages` | `(config, txHash)` | `Promise<ScanMessagesResponse>` | Raw LZ Scan API: messages for a transaction |
+| `getWalletMessagesUrl` | `(config, address)` | `string` | Build LZ Scan explorer URL |
+| `tryDecodeBridgeRequest` | `(composeMsg: Hex)` | `BridgeRequestSummary \| null` | Decode a compose message as a bridge request |
+| `decodeSendSummary` | `(data: Hex)` | `SendPayloadSummary` | Decode an OFT send payload |
+| `fetchOftSentAmount` | `(provider, txHash)` | `Promise<bigint \| undefined>` | Read OFTSent amount from transaction logs |
+| `decorateSendSummary` | `(summary, token?, fetchMetadata?)` | decorated summary | Enrich send summary with token metadata |
+| `endpointChain` | `(endpoint, direction)` | `string` | Chain name from LZ endpoint |
+| `destinationTx` | `(message)` | `string \| undefined` | Extract destination tx hash |
+| `summarizeBlock` | `(message, direction)` | `string` | Summarize block info |
+| `formatPathway` | `(message)` | `string` | Format src → dst pathway |
+| `isMessageForTokens` | `(message, tokens)` | `boolean` | Check if message involves given tokens |
+| `findTokenForMessage` | `(message, tokens)` | `TokenEntry \| undefined` | Find matching token for a message |
+
+## Onchain
+
+| Name | Signature | Returns | Description |
+|------|-----------|---------|-------------|
+| `readTokenBalance` | `(provider, tokenAddress, account)` | `Promise<bigint>` | Read ERC-20 balance via provider |
+| `readTokenDecimals` | `(provider, tokenAddress)` | `Promise<number>` | Read ERC-20 decimals via provider |
+| `readDecimalConversionRate` | `(provider, tokenAddress)` | `Promise<bigint>` | Read zERC20 decimal conversion rate |
+| `decodeSendPayload` | `(data: Hex)` | `DecodedSendPayload` | Decode OFT send() calldata |
+| `extractOftSentAmount` | `(logs)` | `bigint \| undefined` | Extract OFTSent amount from tx logs |
+| `decodeBridgeRequest` | `(composeMsg: Hex)` | `DecodedBridgeRequest \| null` | Decode a bridge compose message |
 
 ## Proofs
 
@@ -68,6 +129,7 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 |------|-----------|---------|-------------|
 | `WasmRuntime` | class | - | WASM lifecycle manager |
 | `getSeedMessage` | `()` | `Promise<string>` | Get message to sign for seed derivation |
+| `deriveSeed` | `(signMessage)` | `Promise<string>` | Derive seed using a sign callback |
 | `derivePaymentAdvice` | `(seedHex, paymentAdviceIdHex, chainId, address)` | `Promise<SecretAndTweak>` | Derive payment advice |
 | `buildFullBurnAddress` | `(chainId, address, secret, tweak)` | `Promise<BurnArtifacts>` | Build burn address |
 | `decodeFullBurnAddress` | `(fullBurnAddressHex)` | `Promise<BurnArtifacts>` | Decode burn address |
@@ -76,32 +138,44 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 
 | Name | Signature | Returns | Description |
 |------|-----------|---------|-------------|
-| `loadTokens` | `(compressed, options?)` | `Promise<NormalizedTokens>` | Load tokens from compressed (Base64 gzip) string |
 | `normalizeTokens` | `(file: TokensFile)` | `NormalizedTokens` | Normalize raw token config |
+| `normalizeTokensWithOverrides` | `(file: TokensFile, overrides?: RpcOverrides)` | `NormalizedTokens` | Normalize with RPC URL overrides |
 | `findTokenByChain` | `(tokens, chainId)` | `TokenEntry` | Find token by chain ID |
-| `createProviderForToken` | `(entry)` | `PublicClient` | Create RPC provider |
-| `clearTokensCache` | `()` | `void` | Clear token cache |
+| `TokensCacheManager` | class | - | Cache manager for compressed token loading |
 
-## Contracts
+## Contract Artifacts
+
+The SDK exports ABI artifacts for on-chain contracts. These can be used with any EVM library for direct contract interaction.
+
+| Name | Description |
+|------|-------------|
+| `Zerc20Artifact` | zERC20 token contract ABI |
+| `VerifierArtifact` | Verifier contract ABI |
+| `HubArtifact` | Hub contract ABI |
+| `LiquidityManagerArtifact` | LiquidityManager contract ABI |
+| `AdaptorArtifact` | Adaptor contract ABI |
+
+## Utilities
 
 | Name | Signature | Returns | Description |
 |------|-----------|---------|-------------|
-| `getZerc20Contract` | `(address, client)` | contract instance | Get zERC20 contract |
-| `getVerifierContract` | `(address, client)` | contract instance | Get Verifier contract |
-| `getHubContract` | `(address, client)` | contract instance | Get Hub contract |
-| `getLiquidityManagerContract` | `(address, client)` | contract instance | Get LiquidityManager contract |
-| `getAdaptorContract` | `(address, client)` | contract instance | Get Adaptor contract |
+| `buildFeeOverrides` | `(provider: EvmReadProvider)` | `Promise<FeeOverrides>` | Build gas fee overrides from provider |
+| `isHex` | `(value: unknown)` | `boolean` | Check if value is a valid 0x-prefixed hex string |
+| `keccak256` | `(input)` | `Hex` | Compute keccak256 hash |
 
 ## Types
 
 Key exported types and interfaces:
 
+- `EvmReadProvider` -- Library-agnostic read-only EVM provider interface.
+- `EvmWriteProvider` -- Library-agnostic write EVM provider interface.
+- `Hex` -- Hex-encoded string type (`\`0x${string}\``).
 - `SecretAndTweak` -- Secret and tweak pair derived from payment advice.
 - `GeneralRecipient` -- Recipient descriptor used across send and invoice flows.
 - `BurnArtifacts` -- Artifacts produced when building or decoding a burn address.
-- `PrivateSendPreparation` -- Intermediate preparation data for a private send.
 - `PreparedPrivateSend` -- Fully prepared private send, ready for on-chain transfer and announcement submission.
 - `PrivateSendResult` -- Result after submitting a private send announcement.
+- `SubmitPrivateSendTransferParams` -- Parameters for the ERC-20 transfer step.
 - `InvoiceIssueArtifacts` -- Artifacts from invoice preparation, including burn addresses and encrypted data.
 - `InvoiceBatchBurnAddress` -- A single burn address within a batch invoice.
 - `ScannedAnnouncement` -- A decrypted announcement discovered during scanning.
@@ -112,16 +186,23 @@ Key exported types and interfaces:
 - `SingleTeleportParams` -- Parameters for generating a single teleport proof.
 - `NovaProverInput` -- Input to the Nova batch prover.
 - `NovaProverOutput` -- Output from the Nova batch prover.
-- `BatchTeleportArtifacts` -- Artifacts for a batch (Nova + Groth16) teleport proof.
-- `BatchTeleportParams` -- Parameters for generating a batch teleport proof.
 - `RedeemContext` -- Full context needed to execute a redeem (events, proofs, chain data).
-- `RedeemChainContext` -- Per-chain subset of redeem context.
+- `RedeemTransaction` -- Prepared transaction data for on-chain redeem submission.
+- `ReadableVerifierContract` -- Verifier contract interface for `readContract`-based reads.
+- `OnChainGeneralRecipient` -- On-chain representation of a general recipient.
 - `AnnouncementStatus` -- Lightweight status of an announcement (pending, redeemable, redeemed).
 - `EventsWithEligibility` -- Events annotated with their eligibility for redemption.
 - `TokenEntry` -- A single token's deployment configuration.
 - `HubEntry` -- Hub contract deployment configuration.
 - `TokensFile` -- Raw deserialized token configuration file.
 - `NormalizedTokens` -- Normalized token configuration with parsed `bigint` fields.
+- `RpcOverrides` -- Map of chain label to RPC URL for `normalizeTokensWithOverrides`.
+- `ChainMetadata` -- Chain metadata (name, short name, explorer URL, etc.).
+- `LayerZeroScanConfig` -- Configuration for LZ Scan API (baseUrl, apiKey).
+- `FetchWalletStatusParams` -- Parameters for `fetchWalletStatus`.
+- `LayerZeroMessageSummary` -- Decoded summary of a LayerZero message.
+- `WalletStatusResult` -- Result of `fetchWalletStatus` including messages and pagination.
+- `FeeOverrides` -- Gas fee overrides (gasPrice, maxFeePerGas, maxPriorityFeePerGas).
 
 ## Constants
 
@@ -131,8 +212,3 @@ Key exported types and interfaces:
 | `TRANSFER_TREE_HEIGHT` | `40` | Per-chain transfer tree levels |
 | `GLOBAL_TRANSFER_TREE_HEIGHT` | `46` | Global tree (40 + 6) |
 | `NUM_BATCH_INVOICES` | `10` | Burn addresses per batch invoice |
-| `DEFAULT_INDEXER_FETCH_LIMIT` | `20` | Max events per indexer request |
-| `DEFAULT_EVENT_BLOCK_SPAN` | `5000n` | Block span for aggregation queries |
-| `DEFAULT_DECIDER_TIMEOUT_MS` | `300000` | Decider job timeout (5 min) |
-| `DEFAULT_DECIDER_POLL_INTERVAL_MS` | `1000` | Decider poll interval |
-| `DEFAULT_ZSTORAGE_TAG` | `"v1"` | Default IC storage tag |

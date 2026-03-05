@@ -22,6 +22,8 @@
   * [Receiving](developers/sdk/receiving.md)
   * [Invoices](developers/sdk/invoices.md)
   * [Wrap and Unwrap](developers/sdk/wrap-unwrap.md)
+  * [Token Registry](developers/sdk/token-registry.md)
+  * [LayerZero Scan](developers/sdk/layerzero-scan.md)
   * [Proof Generation](developers/sdk/proof-generation.md)
   * [API Reference](developers/sdk/api-reference.md)
 * [Integration Guide](developers/integration.md)
