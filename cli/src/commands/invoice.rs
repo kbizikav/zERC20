@@ -24,7 +24,7 @@ use crate::{
         shared::{
             build_erc20, build_hub, build_stealth_client, build_verifier, find_token_by_chain,
         },
-        teleport::{RedeemResult, print_events, redeem_transfers},
+        teleport::{RedeemResult, print_events, redeem_transfers, redeem_transfers_via_relay},
     },
 };
 use hex;
@@ -325,20 +325,37 @@ pub async fn receive(
         .map(|(address, secret_and_tweak)| (*address, secret_and_tweak.secret))
         .collect::<HashMap<_, _>>();
 
-    match redeem_transfers(
-        common_args,
-        &verifier,
-        &indexer,
-        &aggregation_tree_state,
-        &separated_events,
-        &burn_address_to_secret,
-        gr,
-        token_entries,
-        private_key,
-        artifacts_dir,
-    )
-    .await?
-    {
+    let result = if args.relay.relay {
+        redeem_transfers_via_relay(
+            common_args,
+            &args.relay,
+            &verifier,
+            &indexer,
+            &aggregation_tree_state,
+            &separated_events,
+            &burn_address_to_secret,
+            gr,
+            token_entries,
+            private_key,
+            artifacts_dir,
+        )
+        .await?
+    } else {
+        redeem_transfers(
+            common_args,
+            &verifier,
+            &indexer,
+            &aggregation_tree_state,
+            &separated_events,
+            &burn_address_to_secret,
+            gr,
+            token_entries,
+            private_key,
+            artifacts_dir,
+        )
+        .await?
+    };
+    match result {
         RedeemResult::AlreadyClaimed => {
             println!("No new eligible transfers found for the provided invoice ID.");
         }

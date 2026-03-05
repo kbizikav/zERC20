@@ -332,6 +332,9 @@ pub struct ReceiveTransferArgs {
         default_value = "output.json"
     )]
     pub scan_results_path: Option<PathBuf>,
+
+    #[command(flatten)]
+    pub relay: RelayArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -377,6 +380,25 @@ pub struct InvoiceReceiveArgs {
     /// Invoice identifier to redeem.
     #[arg(long, value_name = "INVOICE_ID", value_parser = parse_b256)]
     pub invoice_id: B256,
+
+    #[command(flatten)]
+    pub relay: RelayArgs,
+}
+
+/// Shared relay-mode arguments for Gelato gasless transactions.
+#[derive(Args, Debug, Clone)]
+pub struct RelayArgs {
+    /// Use Gelato Relay for gasless teleport submission.
+    #[arg(long, default_value_t = false)]
+    pub relay: bool,
+
+    /// Optional Gelato API key for relay requests.
+    #[arg(long, env = "GELATO_API_KEY", value_name = "API_KEY")]
+    pub gelato_api_key: Option<String>,
+
+    /// Maximum relayer fee in zERC20 units (optional safety cap).
+    #[arg(long, value_parser = parse_u256, value_name = "AMOUNT")]
+    pub max_relay_fee: Option<U256>,
 }
 
 #[tokio::main(flavor = "current_thread")]

@@ -44,6 +44,12 @@ pub struct TokenEntry {
         alias = "root_submit_interval_ms"
     )]
     pub root_submit_interval_ms: Option<u64>,
+    #[serde(
+        default,
+        alias = "gelatoTeleportRelayAddress",
+        alias = "gelato_teleport_relay_address"
+    )]
+    pub gelato_teleport_relay_address: Option<Address>,
 }
 
 #[derive(Debug, Deserialize, Clone)]
