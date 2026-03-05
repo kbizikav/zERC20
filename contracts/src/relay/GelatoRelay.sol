@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -12,13 +13,11 @@ import {Verifier} from "../Verifier.sol";
 import {ILiquidityManager} from "../interfaces/ILiquidityManager.sol";
 import {GeneralRecipientLib} from "../utils/GeneralRecipientLib.sol";
 
-/// @title GelatoTeleportRelay
-/// @notice Gelato Relay integration for gasless teleport via `callWithSyncFee`.
-/// @dev Flow: Verifier.teleport → zERC20 relayerFee minted to this contract →
-///      LiquidityManager.unwrap → underlying → Gelato fee payment.
-///      Implements GelatoRelayContext-equivalent logic inline to avoid OZ version
+/// @title GelatoRelay
+/// @notice Gelato Relay integration for gasless teleport, unwrap, and transfer via `callWithSyncFee`.
+/// @dev Implements GelatoRelayContext-equivalent logic inline to avoid OZ version
 ///      incompatibility with relay-context-contracts' TokenUtils.
-contract GelatoTeleportRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgradeable {
+contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgradeable {
     using SafeERC20 for IERC20;
 
     uint256 private constant _FEE_COLLECTOR_START = 72;
@@ -66,7 +65,7 @@ contract GelatoTeleportRelay is GelatoRelayContractsUtils, UUPSUpgradeable, Owna
 
     /// @dev Validates that the new implementation uses the same immutable dependencies.
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
-        GelatoTeleportRelay candidate = GelatoTeleportRelay(payable(newImplementation));
+        GelatoRelay candidate = GelatoRelay(payable(newImplementation));
         address expectedVerifier = address(VERIFIER);
         address actualVerifier = address(candidate.VERIFIER());
         require(actualVerifier == expectedVerifier, VerifierMismatch(expectedVerifier, actualVerifier));
@@ -111,6 +110,67 @@ contract GelatoTeleportRelay is GelatoRelayContractsUtils, UUPSUpgradeable, Owna
     ) external onlyGelatoRelay {
         VERIFIER.singleTeleport(isGlobal, rootHint, gr, proof, feeAuth);
         _unwrapAndPayGelato(feeAuth.relayerFee, maxGelatoFee);
+    }
+
+    /// @notice Relays an unwrap via Gelato using ERC-2612 permit for gasless approval.
+    /// @param owner Token owner who signed the permit.
+    /// @param amount Amount of zERC20 to unwrap.
+    /// @param receiver Recipient of the underlying tokens after fee deduction.
+    /// @param deadline Permit signature deadline.
+    /// @param v ECDSA v component.
+    /// @param r ECDSA r component.
+    /// @param s ECDSA s component.
+    /// @param maxGelatoFee Maximum acceptable Gelato fee in underlying token units.
+    function relayUnwrap(
+        address owner,
+        uint256 amount,
+        address receiver,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint256 maxGelatoFee
+    ) external onlyGelatoRelay {
+        IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
+        ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
+        // slither-disable-next-line unused-return
+        LIQUIDITY_MANAGER.unwrap(amount, address(this));
+        _transferRelayFeeCapped(maxGelatoFee);
+        uint256 remaining = UNDERLYING_TOKEN.balanceOf(address(this));
+        if (remaining > 0) {
+            UNDERLYING_TOKEN.safeTransfer(receiver, remaining);
+        }
+    }
+
+    /// @notice Relays a zERC20 transfer via Gelato using ERC-2612 permit.
+    /// @param owner Token owner who signed the permit.
+    /// @param to Recipient of the zERC20 transfer.
+    /// @param amount Total amount of zERC20 permitted (transfer + relayerFee).
+    /// @param relayerFee Portion of amount unwrapped to pay the Gelato fee.
+    /// @param deadline Permit signature deadline.
+    /// @param v ECDSA v component.
+    /// @param r ECDSA r component.
+    /// @param s ECDSA s component.
+    /// @param maxGelatoFee Maximum acceptable Gelato fee in underlying token units.
+    function relayTransfer(
+        address owner,
+        address to,
+        uint256 amount,
+        uint256 relayerFee,
+        uint256 deadline,
+        uint8 v,
+        bytes32 r,
+        bytes32 s,
+        uint256 maxGelatoFee
+    ) external onlyGelatoRelay {
+        IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
+        ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
+        ZERC20_TOKEN.safeTransfer(to, amount - relayerFee);
+        if (relayerFee > 0) {
+            // slither-disable-next-line unused-return
+            LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));
+        }
+        _transferRelayFeeCapped(maxGelatoFee);
     }
 
     /// @notice Withdraws surplus ERC20 tokens to `to`.

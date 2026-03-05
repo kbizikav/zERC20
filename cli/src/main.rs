@@ -156,6 +156,9 @@ pub struct TransferArgs {
     /// Token amount (accepts decimal or 0x-prefixed hex units).
     #[arg(long, value_parser = parse_u256)]
     pub amount: U256,
+
+    #[command(flatten)]
+    pub relay: RelayArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -276,6 +279,9 @@ pub struct UnwrapArgs {
     /// Amount of zERC20 to unwrap (accepts decimal or 0x-prefixed hex units).
     #[arg(long, value_parser = parse_u256)]
     pub amount: U256,
+
+    #[command(flatten)]
+    pub relay: RelayArgs,
 }
 
 #[derive(Args, Debug, Clone)]

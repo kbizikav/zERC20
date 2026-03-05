@@ -1,4 +1,4 @@
-export const gelatoTeleportRelayAbi = [
+export const gelatoRelayAbi = [
   {
     type: 'function',
     name: 'relayTeleport',
@@ -60,6 +60,39 @@ export const gelatoTeleportRelayAbi = [
           { name: 'signature', type: 'bytes', internalType: 'bytes' },
         ],
       },
+      { name: 'maxGelatoFee', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'relayUnwrap',
+    inputs: [
+      { name: 'owner', type: 'address', internalType: 'address' },
+      { name: 'amount', type: 'uint256', internalType: 'uint256' },
+      { name: 'receiver', type: 'address', internalType: 'address' },
+      { name: 'deadline', type: 'uint256', internalType: 'uint256' },
+      { name: 'v', type: 'uint8', internalType: 'uint8' },
+      { name: 'r', type: 'bytes32', internalType: 'bytes32' },
+      { name: 's', type: 'bytes32', internalType: 'bytes32' },
+      { name: 'maxGelatoFee', type: 'uint256', internalType: 'uint256' },
+    ],
+    outputs: [],
+    stateMutability: 'nonpayable',
+  },
+  {
+    type: 'function',
+    name: 'relayTransfer',
+    inputs: [
+      { name: 'owner', type: 'address', internalType: 'address' },
+      { name: 'to', type: 'address', internalType: 'address' },
+      { name: 'amount', type: 'uint256', internalType: 'uint256' },
+      { name: 'relayerFee', type: 'uint256', internalType: 'uint256' },
+      { name: 'deadline', type: 'uint256', internalType: 'uint256' },
+      { name: 'v', type: 'uint8', internalType: 'uint8' },
+      { name: 'r', type: 'bytes32', internalType: 'bytes32' },
+      { name: 's', type: 'bytes32', internalType: 'bytes32' },
       { name: 'maxGelatoFee', type: 'uint256', internalType: 'uint256' },
     ],
     outputs: [],

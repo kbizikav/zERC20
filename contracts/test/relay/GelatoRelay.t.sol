@@ -13,7 +13,7 @@ import {IWithdrawDecider} from "../../src/interfaces/IWithdrawDecider.sol";
 import {IWithdrawVerifier} from "../../src/interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "../../src/utils/GeneralRecipientLib.sol";
 import {IncentiveLib} from "../../src/libraries/IncentiveLib.sol";
-import {GelatoTeleportRelay} from "../../src/relay/GelatoTeleportRelay.sol";
+import {GelatoRelay} from "../../src/relay/GelatoRelay.sol";
 import {GELATO_RELAY_V2} from "relay-context-contracts/constants/GelatoRelay.sol";
 
 // =============================================================================
@@ -53,8 +53,8 @@ contract MintableERC20 is ERC20 {
 // Test contract
 // =============================================================================
 
-contract GelatoTeleportRelayTest is TestHelperOz5 {
-    GelatoTeleportRelay internal relay;
+contract GelatoRelayTest is TestHelperOz5 {
+    GelatoRelay internal relay;
     Verifier internal verifier;
     LiquidityManager internal manager;
     zERC20 internal token;
@@ -129,10 +129,10 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         vm.prank(address(endpoint));
         verifier.lzReceive(origin, bytes32(uint256(1)), payload, address(0), bytes(""));
 
-        // Deploy GelatoTeleportRelay (impl + proxy)
-        GelatoTeleportRelay relayImpl = new GelatoTeleportRelay(address(verifier), address(manager));
-        bytes memory relayInit = abi.encodeCall(GelatoTeleportRelay.initialize, (owner));
-        relay = GelatoTeleportRelay(payable(address(new ERC1967Proxy(address(relayImpl), relayInit))));
+        // Deploy GelatoRelay (impl + proxy)
+        GelatoRelay relayImpl = new GelatoRelay(address(verifier), address(manager));
+        bytes memory relayInit = abi.encodeCall(GelatoRelay.initialize, (owner));
+        relay = GelatoRelay(payable(address(new ERC1967Proxy(address(relayImpl), relayInit))));
 
         // Foundry default chainId 31337 maps to GELATO_RELAY_V2
         gelatoRelay = GELATO_RELAY_V2;
@@ -219,6 +219,16 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         });
     }
 
+    function _signPermit(uint256 amount, uint256 deadline) internal view returns (uint8, bytes32, bytes32) {
+        bytes32 permitTypehash =
+            keccak256("Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)");
+        uint256 nonce = token.nonces(signerAddr);
+        bytes32 structHash = keccak256(abi.encode(permitTypehash, signerAddr, address(relay), amount, nonce, deadline));
+        bytes32 domainSeparator = token.DOMAIN_SEPARATOR();
+        bytes32 digest = MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+        return vm.sign(SIGNER_PK, digest);
+    }
+
     /// @dev Simulates a Gelato relay call by appending relay context to calldata.
     ///      callWithSyncFee appends: abi.encodePacked(_data, _feeCollector, _feeToken, _fee)
     function _callAsGelatoRelay(address target, bytes memory data, address feeToken_, uint256 fee) internal {
@@ -265,8 +275,7 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         // Wrap underlying to seed LiquidityManager zERC20 balance awareness
         // LiquidityManager burns zERC20 from msg.sender on unwrap - relay will have zERC20 from teleport
 
-        bytes memory data =
-            abi.encodeCall(GelatoTeleportRelay.relayTeleport, (true, ROOT_HINT, gr, proof, feeAuth, gelatoFee));
+        bytes memory data = abi.encodeCall(GelatoRelay.relayTeleport, (true, ROOT_HINT, gr, proof, feeAuth, gelatoFee));
 
         uint256 feeCollectorBefore = underlying.balanceOf(feeCollector);
         _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
@@ -300,7 +309,7 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         Verifier.RelayerFeeAuthorization memory feeAuth = _buildFeeAuth(relayerFee, maxFee, deadline, signature);
 
         bytes memory data =
-            abi.encodeCall(GelatoTeleportRelay.relaySingleTeleport, (true, ROOT_HINT, gr, proof, feeAuth, gelatoFee));
+            abi.encodeCall(GelatoRelay.relaySingleTeleport, (true, ROOT_HINT, gr, proof, feeAuth, gelatoFee));
 
         _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
 
@@ -324,7 +333,7 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
         Verifier.RelayerFeeAuthorization memory feeAuth = _buildFeeAuth(relayerFee, maxFee, deadline, signature);
 
-        vm.expectRevert(GelatoTeleportRelay.OnlyGelatoRelay.selector);
+        vm.expectRevert(GelatoRelay.OnlyGelatoRelay.selector);
         relay.relayTeleport(true, ROOT_HINT, gr, proof, feeAuth, 10 ether);
     }
 
@@ -347,7 +356,7 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         Verifier.RelayerFeeAuthorization memory feeAuth = _buildFeeAuth(relayerFee, maxFee, deadline, signature);
 
         bytes memory data =
-            abi.encodeCall(GelatoTeleportRelay.relayTeleport, (true, ROOT_HINT, gr, proof, feeAuth, maxGelatoFee));
+            abi.encodeCall(GelatoRelay.relayTeleport, (true, ROOT_HINT, gr, proof, feeAuth, maxGelatoFee));
 
         (bool success,) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), actualGelatoFee);
         assertFalse(success, "should revert when gelato fee exceeds max");
@@ -373,8 +382,7 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         // Pre-fund relay with underlying so it can pay Gelato even with relayerFee=0
         underlying.mint(address(relay), gelatoFee);
 
-        bytes memory data =
-            abi.encodeCall(GelatoTeleportRelay.relayTeleport, (true, ROOT_HINT, gr, proof, feeAuth, gelatoFee));
+        bytes memory data = abi.encodeCall(GelatoRelay.relayTeleport, (true, ROOT_HINT, gr, proof, feeAuth, gelatoFee));
 
         _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
 
@@ -432,13 +440,13 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
     // -----------------------------------------------------------------------
 
     function testConstructorRevertsOnZeroVerifier() public {
-        vm.expectRevert(GelatoTeleportRelay.ZeroAddress.selector);
-        new GelatoTeleportRelay(address(0), address(manager));
+        vm.expectRevert(GelatoRelay.ZeroAddress.selector);
+        new GelatoRelay(address(0), address(manager));
     }
 
     function testConstructorRevertsOnZeroLiquidityManager() public {
-        vm.expectRevert(GelatoTeleportRelay.ZeroAddress.selector);
-        new GelatoTeleportRelay(address(verifier), address(0));
+        vm.expectRevert(GelatoRelay.ZeroAddress.selector);
+        new GelatoRelay(address(verifier), address(0));
     }
 
     // -----------------------------------------------------------------------
@@ -472,13 +480,11 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         );
         Verifier otherVerifier = Verifier(address(new ERC1967Proxy(address(otherVerifierImpl), otherVerifierInit)));
 
-        GelatoTeleportRelay badImpl = new GelatoTeleportRelay(address(otherVerifier), address(manager));
+        GelatoRelay badImpl = new GelatoRelay(address(otherVerifier), address(manager));
 
         vm.prank(owner);
         vm.expectRevert(
-            abi.encodeWithSelector(
-                GelatoTeleportRelay.VerifierMismatch.selector, address(verifier), address(otherVerifier)
-            )
+            abi.encodeWithSelector(GelatoRelay.VerifierMismatch.selector, address(verifier), address(otherVerifier))
         );
         relay.upgradeToAndCall(address(badImpl), "");
     }
@@ -491,19 +497,19 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         LiquidityManager otherManager =
             LiquidityManager(payable(address(new ERC1967Proxy(address(otherManagerImpl), otherManagerInit))));
 
-        GelatoTeleportRelay badImpl = new GelatoTeleportRelay(address(verifier), address(otherManager));
+        GelatoRelay badImpl = new GelatoRelay(address(verifier), address(otherManager));
 
         vm.prank(owner);
         vm.expectRevert(
             abi.encodeWithSelector(
-                GelatoTeleportRelay.LiquidityManagerMismatch.selector, address(manager), address(otherManager)
+                GelatoRelay.LiquidityManagerMismatch.selector, address(manager), address(otherManager)
             )
         );
         relay.upgradeToAndCall(address(badImpl), "");
     }
 
     function testAuthorizeUpgradeSucceedsWithMatchingImmutables() public {
-        GelatoTeleportRelay newImpl = new GelatoTeleportRelay(address(verifier), address(manager));
+        GelatoRelay newImpl = new GelatoRelay(address(verifier), address(manager));
 
         vm.prank(owner);
         relay.upgradeToAndCall(address(newImpl), "");
@@ -528,5 +534,104 @@ contract GelatoTeleportRelayTest is TestHelperOz5 {
         assertEq(address(relay.LIQUIDITY_MANAGER()), address(manager), "LIQUIDITY_MANAGER mismatch");
         assertEq(address(relay.UNDERLYING_TOKEN()), address(underlying), "UNDERLYING_TOKEN mismatch");
         assertEq(address(relay.ZERC20_TOKEN()), address(token), "ZERC20_TOKEN mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // relayUnwrap: permit → unwrap → underlying to receiver
+    // -----------------------------------------------------------------------
+
+    function testRelayUnwrap() public {
+        uint256 amount = 100 ether;
+        uint256 gelatoFee = 5 ether;
+        address receiver = address(0xBEEF);
+
+        // Mint zERC20 to signer via manager (wrap underlying)
+        underlying.mint(address(this), amount);
+        underlying.approve(address(manager), amount);
+        manager.wrap(amount, signerAddr);
+
+        bytes memory data = _buildRelayUnwrapData(amount, receiver, gelatoFee);
+
+        _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
+
+        // Signer should have no zERC20 left
+        assertEq(token.balanceOf(signerAddr), 0, "signer zERC20 should be 0");
+        // Receiver should have underlying (amount - gelatoFee) since k=0 means no unwrap fee
+        assertEq(underlying.balanceOf(receiver), amount - gelatoFee, "receiver underlying mismatch");
+        // Fee collector should have received gelatoFee
+        assertEq(underlying.balanceOf(feeCollector), gelatoFee, "feeCollector underlying mismatch");
+    }
+
+    function _buildRelayUnwrapData(uint256 amount, address receiver, uint256 gelatoFee)
+        internal
+        view
+        returns (bytes memory)
+    {
+        uint256 deadline = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount, deadline);
+        return abi.encodeCall(GelatoRelay.relayUnwrap, (signerAddr, amount, receiver, deadline, v, r, s, gelatoFee));
+    }
+
+    function testRelayUnwrapRevertsWhenNotGelatoRelay() public {
+        vm.expectRevert(GelatoRelay.OnlyGelatoRelay.selector);
+        relay.relayUnwrap(
+            signerAddr, 100 ether, address(0xBEEF), block.timestamp + 1 hours, 27, bytes32(0), bytes32(0), 5 ether
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // relayTransfer: permit → transfer zERC20 → unwrap relayerFee
+    // -----------------------------------------------------------------------
+
+    function testRelayTransfer() public {
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 10 ether;
+        uint256 gelatoFee = 5 ether;
+        address recipient = address(0xCAFE);
+
+        // Mint zERC20 to signer
+        underlying.mint(address(this), amount);
+        underlying.approve(address(manager), amount);
+        manager.wrap(amount, signerAddr);
+
+        bytes memory data = _buildRelayTransferData(amount, relayerFee, recipient, gelatoFee);
+
+        _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
+
+        // Signer should have no zERC20 left
+        assertEq(token.balanceOf(signerAddr), 0, "signer zERC20 should be 0");
+        // Recipient should have (amount - relayerFee) zERC20
+        assertEq(token.balanceOf(recipient), amount - relayerFee, "recipient zERC20 mismatch");
+        // Fee collector should have received gelatoFee in underlying
+        assertEq(underlying.balanceOf(feeCollector), gelatoFee, "feeCollector underlying mismatch");
+        // Relay keeps surplus underlying (relayerFee unwrapped - gelatoFee)
+        assertEq(underlying.balanceOf(address(relay)), relayerFee - gelatoFee, "relay surplus mismatch");
+    }
+
+    function _buildRelayTransferData(uint256 amount, uint256 relayerFee, address recipient, uint256 gelatoFee)
+        internal
+        view
+        returns (bytes memory)
+    {
+        uint256 deadline = block.timestamp + 1 hours;
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount, deadline);
+        return abi.encodeCall(
+            GelatoRelay.relayTransfer, (signerAddr, recipient, amount, relayerFee, deadline, v, r, s, gelatoFee)
+        );
+    }
+
+    function testRelayTransferRevertsWhenNotGelatoRelay() public {
+        vm.expectRevert(GelatoRelay.OnlyGelatoRelay.selector);
+        relay.relayTransfer(
+            signerAddr,
+            address(0xCAFE),
+            100 ether,
+            10 ether,
+            block.timestamp + 1 hours,
+            27,
+            bytes32(0),
+            bytes32(0),
+            5 ether
+        );
     }
 }

@@ -195,10 +195,10 @@ pub async fn redeem_transfers_via_relay(
     // Find token entry for the target chain
     let token_entry = find_token_by_chain(token_entries, gr.chain_id)?;
     let relay_address = token_entry
-        .gelato_teleport_relay_address
+        .gelato_relay_address
         .ok_or_else(|| {
             anyhow!(
-                "token '{}' is missing gelato_teleport_relay_address — relay mode not available for this chain",
+                "token '{}' is missing gelato_relay_address — relay mode not available for this chain",
                 token_entry.label,
             )
         })?;

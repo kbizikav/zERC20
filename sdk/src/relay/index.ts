@@ -1,8 +1,10 @@
-export { gelatoTeleportRelayAbi } from './abi.js';
+export { gelatoRelayAbi } from './abi.js';
 export {
   estimateRelayerFee,
   encodeRelayTeleport,
   encodeRelaySingleTeleport,
+  encodeRelayUnwrap,
+  encodeRelayTransfer,
   submitTeleportRelay,
   waitForRelayTask,
 } from './gelatoRelay.js';

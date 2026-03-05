@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use alloy::{
     primitives::{Address, B256, Bytes, U256, keccak256},
     signers::{Signer, local::PrivateKeySigner},
@@ -10,7 +12,7 @@ use serde::Deserialize;
 use crate::contracts::{liquidity_manager::LiquidityManagerContract, utils::NormalProvider};
 
 // ---------------------------------------------------------------------------
-// ABI: GelatoTeleportRelay (inline sol! definition)
+// ABI: GelatoRelay (inline sol! definition)
 // ---------------------------------------------------------------------------
 
 sol! {
@@ -28,7 +30,7 @@ sol! {
     }
 
     #[sol(rpc)]
-    interface IGelatoTeleportRelay {
+    interface IGelatoRelay {
         function relayTeleport(
             bool isGlobal,
             uint64 rootHint,
@@ -44,6 +46,29 @@ sol! {
             GeneralRecipient calldata gr,
             bytes calldata proof,
             RelayerFeeAuthorization calldata feeAuth,
+            uint256 maxGelatoFee
+        ) external;
+
+        function relayUnwrap(
+            address owner,
+            uint256 amount,
+            address receiver,
+            uint256 deadline,
+            uint8 v,
+            bytes32 r,
+            bytes32 s,
+            uint256 maxGelatoFee
+        ) external;
+
+        function relayTransfer(
+            address owner,
+            address to,
+            uint256 amount,
+            uint256 relayerFee,
+            uint256 deadline,
+            uint8 v,
+            bytes32 r,
+            bytes32 s,
             uint256 maxGelatoFee
         ) external;
     }
@@ -187,7 +212,7 @@ pub struct RelayTeleportParams {
     pub max_gelato_fee: U256,
 }
 
-/// Encodes `GelatoTeleportRelay.relayTeleport(...)` calldata.
+/// Encodes `GelatoRelay.relayTeleport(...)` calldata.
 pub fn encode_relay_teleport(params: &RelayTeleportParams) -> Bytes {
     let gr = GeneralRecipient {
         chainId: params.chain_id,
@@ -200,7 +225,7 @@ pub fn encode_relay_teleport(params: &RelayTeleportParams) -> Bytes {
         deadline: params.deadline,
         signature: Bytes::from(params.signature.clone()),
     };
-    let call = IGelatoTeleportRelay::relayTeleportCall {
+    let call = IGelatoRelay::relayTeleportCall {
         isGlobal: params.is_global,
         rootHint: params.root_hint,
         gr,
@@ -211,7 +236,7 @@ pub fn encode_relay_teleport(params: &RelayTeleportParams) -> Bytes {
     Bytes::from(call.abi_encode())
 }
 
-/// Encodes `GelatoTeleportRelay.relaySingleTeleport(...)` calldata.
+/// Encodes `GelatoRelay.relaySingleTeleport(...)` calldata.
 pub fn encode_relay_single_teleport(params: &RelayTeleportParams) -> Bytes {
     let gr = GeneralRecipient {
         chainId: params.chain_id,
@@ -224,7 +249,7 @@ pub fn encode_relay_single_teleport(params: &RelayTeleportParams) -> Bytes {
         deadline: params.deadline,
         signature: Bytes::from(params.signature.clone()),
     };
-    let call = IGelatoTeleportRelay::relaySingleTeleportCall {
+    let call = IGelatoRelay::relaySingleTeleportCall {
         isGlobal: params.is_global,
         rootHint: params.root_hint,
         gr,
@@ -233,6 +258,178 @@ pub fn encode_relay_single_teleport(params: &RelayTeleportParams) -> Bytes {
         maxGelatoFee: params.max_gelato_fee,
     };
     Bytes::from(call.abi_encode())
+}
+
+/// Parameters for a relay unwrap call.
+pub struct RelayUnwrapParams {
+    pub owner: Address,
+    pub amount: U256,
+    pub receiver: Address,
+    pub deadline: U256,
+    pub v: u8,
+    pub r: B256,
+    pub s: B256,
+    pub max_gelato_fee: U256,
+}
+
+/// Encodes `GelatoRelay.relayUnwrap(...)` calldata.
+pub fn encode_relay_unwrap(params: &RelayUnwrapParams) -> Bytes {
+    let call = IGelatoRelay::relayUnwrapCall {
+        owner: params.owner,
+        amount: params.amount,
+        receiver: params.receiver,
+        deadline: params.deadline,
+        v: params.v,
+        r: params.r,
+        s: params.s,
+        maxGelatoFee: params.max_gelato_fee,
+    };
+    Bytes::from(call.abi_encode())
+}
+
+/// Parameters for a relay transfer call.
+pub struct RelayTransferParams {
+    pub owner: Address,
+    pub to: Address,
+    pub amount: U256,
+    pub relayer_fee: U256,
+    pub deadline: U256,
+    pub v: u8,
+    pub r: B256,
+    pub s: B256,
+    pub max_gelato_fee: U256,
+}
+
+/// Encodes `GelatoRelay.relayTransfer(...)` calldata.
+pub fn encode_relay_transfer(params: &RelayTransferParams) -> Bytes {
+    let call = IGelatoRelay::relayTransferCall {
+        owner: params.owner,
+        to: params.to,
+        amount: params.amount,
+        relayerFee: params.relayer_fee,
+        deadline: params.deadline,
+        v: params.v,
+        r: params.r,
+        s: params.s,
+        maxGelatoFee: params.max_gelato_fee,
+    };
+    Bytes::from(call.abi_encode())
+}
+
+/// Signs an ERC-2612 permit using EIP-712 typed data.
+///
+/// Calls `eip712Domain()` on the zERC20 token to obtain the domain separator,
+/// then signs the Permit struct hash. Returns `(v, r, s)`.
+pub async fn sign_permit(
+    private_key: B256,
+    provider: NormalProvider,
+    token_address: Address,
+    spender: Address,
+    value: U256,
+    nonce: U256,
+    deadline: U256,
+) -> Result<(u8, B256, B256)> {
+    // Fetch EIP-712 domain from the zERC20 token
+    sol! {
+        #[sol(rpc)]
+        interface IERC20PermitDomain {
+            function eip712Domain()
+                external
+                view
+                returns (
+                    bytes1 fields,
+                    string memory name,
+                    string memory version,
+                    uint256 chainId,
+                    address verifyingContract,
+                    bytes32 salt,
+                    uint256[] memory extensions
+                );
+
+            function nonces(address owner) external view returns (uint256);
+        }
+    }
+
+    let contract = IERC20PermitDomain::new(token_address, provider);
+    let domain = contract
+        .eip712Domain()
+        .call()
+        .await
+        .context("failed to call eip712Domain() on zERC20 token")?;
+
+    let domain_type_hash = keccak256(
+        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+    );
+    let name_hash = keccak256(domain.name.as_bytes());
+    let version_hash = keccak256(domain.version.as_bytes());
+
+    let mut domain_buf = Vec::with_capacity(5 * 32);
+    domain_buf.extend_from_slice(domain_type_hash.as_slice());
+    domain_buf.extend_from_slice(name_hash.as_slice());
+    domain_buf.extend_from_slice(version_hash.as_slice());
+    domain_buf.extend_from_slice(&domain.chainId.to_be_bytes::<32>());
+    domain_buf.extend_from_slice(
+        B256::left_padding_from(domain.verifyingContract.as_slice()).as_slice(),
+    );
+    let domain_separator = keccak256(&domain_buf);
+
+    // Permit struct hash
+    let permit_typehash = keccak256(
+        "Permit(address owner,address spender,uint256 value,uint256 nonce,uint256 deadline)",
+    );
+    let signer = PrivateKeySigner::from_bytes(&private_key)
+        .context("failed to create signer from private key")?;
+    let owner = signer.address();
+
+    let mut struct_data = Vec::with_capacity(6 * 32);
+    struct_data.extend_from_slice(permit_typehash.as_slice());
+    struct_data.extend_from_slice(B256::left_padding_from(owner.as_slice()).as_slice());
+    struct_data.extend_from_slice(B256::left_padding_from(spender.as_slice()).as_slice());
+    struct_data.extend_from_slice(&value.to_be_bytes::<32>());
+    struct_data.extend_from_slice(&nonce.to_be_bytes::<32>());
+    struct_data.extend_from_slice(&deadline.to_be_bytes::<32>());
+    let struct_hash = keccak256(&struct_data);
+
+    // EIP-712 digest
+    let mut digest_input = Vec::with_capacity(2 + 32 + 32);
+    digest_input.extend_from_slice(&[0x19, 0x01]);
+    digest_input.extend_from_slice(domain_separator.as_slice());
+    digest_input.extend_from_slice(struct_hash.as_slice());
+    let digest = keccak256(&digest_input);
+
+    let sig = signer
+        .sign_hash(&digest)
+        .await
+        .context("failed to sign ERC-2612 permit")?;
+
+    let sig_bytes = sig.as_bytes();
+    // sig_bytes is [r(32) | s(32) | v(1)]
+    let r = B256::from_slice(&sig_bytes[..32]);
+    let s = B256::from_slice(&sig_bytes[32..64]);
+    let v = sig_bytes[64];
+
+    Ok((v, r, s))
+}
+
+/// Fetches the current ERC-2612 nonce for `owner` on the given token.
+pub async fn fetch_permit_nonce(
+    provider: NormalProvider,
+    token_address: Address,
+    owner: Address,
+) -> Result<U256> {
+    sol! {
+        #[sol(rpc)]
+        interface IERC20Nonces {
+            function nonces(address owner) external view returns (uint256);
+        }
+    }
+    let contract = IERC20Nonces::new(token_address, provider);
+    let nonce = contract
+        .nonces(owner)
+        .call()
+        .await
+        .context("failed to fetch permit nonce")?;
+    Ok(nonce)
 }
 
 // ---------------------------------------------------------------------------

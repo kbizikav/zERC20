@@ -1,7 +1,7 @@
 import { GelatoRelay, type CallWithSyncFeeRequest } from '@gelatonetwork/relay-sdk';
 import { encodeFunctionData, type Address, type Hex, type PublicClient } from 'viem';
 
-import { gelatoTeleportRelayAbi } from './abi.js';
+import { gelatoRelayAbi } from './abi.js';
 import type {
   EstimateRelayerFeeParams,
   EstimateRelayerFeeResult,
@@ -89,7 +89,7 @@ export async function estimateRelayerFee(params: EstimateRelayerFeeParams): Prom
 }
 
 /**
- * Encodes a relayTeleport calldata for the GelatoTeleportRelay contract.
+ * Encodes a relayTeleport calldata for the GelatoRelay contract.
  */
 export function encodeRelayTeleport(params: {
   isGlobal: boolean;
@@ -100,7 +100,7 @@ export function encodeRelayTeleport(params: {
   maxGelatoFee: bigint;
 }): Hex {
   return encodeFunctionData({
-    abi: gelatoTeleportRelayAbi,
+    abi: gelatoRelayAbi,
     functionName: 'relayTeleport',
     args: [
       params.isGlobal,
@@ -114,7 +114,7 @@ export function encodeRelayTeleport(params: {
 }
 
 /**
- * Encodes a relaySingleTeleport calldata for the GelatoTeleportRelay contract.
+ * Encodes a relaySingleTeleport calldata for the GelatoRelay contract.
  */
 export function encodeRelaySingleTeleport(params: {
   isGlobal: boolean;
@@ -125,7 +125,7 @@ export function encodeRelaySingleTeleport(params: {
   maxGelatoFee: bigint;
 }): Hex {
   return encodeFunctionData({
-    abi: gelatoTeleportRelayAbi,
+    abi: gelatoRelayAbi,
     functionName: 'relaySingleTeleport',
     args: [
       params.isGlobal,
@@ -139,15 +139,75 @@ export function encodeRelaySingleTeleport(params: {
 }
 
 /**
- * Submits a teleport relay transaction via Gelato's callWithSyncFee.
+ * Encodes a relayUnwrap calldata for the GelatoRelay contract.
+ */
+export function encodeRelayUnwrap(params: {
+  owner: Address;
+  amount: bigint;
+  receiver: Address;
+  deadline: bigint;
+  v: number;
+  r: Hex;
+  s: Hex;
+  maxGelatoFee: bigint;
+}): Hex {
+  return encodeFunctionData({
+    abi: gelatoRelayAbi,
+    functionName: 'relayUnwrap',
+    args: [
+      params.owner,
+      params.amount,
+      params.receiver,
+      params.deadline,
+      params.v,
+      params.r,
+      params.s,
+      params.maxGelatoFee,
+    ],
+  });
+}
+
+/**
+ * Encodes a relayTransfer calldata for the GelatoRelay contract.
+ */
+export function encodeRelayTransfer(params: {
+  owner: Address;
+  to: Address;
+  amount: bigint;
+  relayerFee: bigint;
+  deadline: bigint;
+  v: number;
+  r: Hex;
+  s: Hex;
+  maxGelatoFee: bigint;
+}): Hex {
+  return encodeFunctionData({
+    abi: gelatoRelayAbi,
+    functionName: 'relayTransfer',
+    args: [
+      params.owner,
+      params.to,
+      params.amount,
+      params.relayerFee,
+      params.deadline,
+      params.v,
+      params.r,
+      params.s,
+      params.maxGelatoFee,
+    ],
+  });
+}
+
+/**
+ * Submits a relay transaction via Gelato's callWithSyncFee.
  */
 export async function submitTeleportRelay(params: SubmitTeleportRelayParams): Promise<SubmitTeleportRelayResult> {
-  const { chainId, gelatoTeleportRelayAddress, feeToken, calldata, apiKey, gasLimit } = params;
+  const { chainId, gelatoRelayAddress, feeToken, calldata, apiKey, gasLimit } = params;
 
   const relay = new GelatoRelay();
   const request: CallWithSyncFeeRequest = {
     chainId: BigInt(chainId),
-    target: gelatoTeleportRelayAddress,
+    target: gelatoRelayAddress,
     data: calldata,
     feeToken,
     isRelayContext: true,

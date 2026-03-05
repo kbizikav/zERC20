@@ -16,7 +16,7 @@ export interface EstimateRelayerFeeResult {
 
 export interface SubmitTeleportRelayParams {
   chainId: number;
-  gelatoTeleportRelayAddress: Address;
+  gelatoRelayAddress: Address;
   feeToken: Address;
   calldata: Hex;
   apiKey?: string;
