@@ -93,15 +93,18 @@ const writeProvider = createWalletClient({ chain: arbitrum, transport: custom(wi
 
 The SDK provides several ways to load token configuration:
 
-### Option A: From compressed data with `loadTokens`
+### Option A: From compressed data with `TokensCacheManager`
 
-`loadTokens(compressed)` accepts a **Base64-encoded gzip** string containing token configuration JSON. This is the format used by the production frontend.
+`TokensCacheManager.load(compressed)` accepts a **Base64-encoded gzip** string containing token configuration JSON. This is the format used by the production frontend.
 
 ```typescript
-import { loadTokens, findTokenByChain } from "zerc20-client-sdk";
+import { TokensCacheManager, findTokenByChain } from "zerc20-client-sdk";
 
 // `compressed` is a Base64-encoded gzip string of your tokens.json
-const { hub, tokens } = await loadTokens(compressedTokensString);
+const cache = new TokensCacheManager();
+const { hub, tokens } = await cache.load(compressedTokensString, {
+  cacheKey: "zusdc-main",
+});
 ```
 
 ### Option B: From raw JSON with `normalizeTokens`
@@ -126,8 +129,11 @@ import { normalizeTokensWithOverrides, findTokenByChain } from "zerc20-client-sd
 
 const tokensFile = await import("./tokens.json");
 const { hub, tokens } = normalizeTokensWithOverrides(tokensFile, {
-  "Arbitrum One": "https://my-rpc.example.com/arb",
-  "Ethereum":    "https://my-rpc.example.com/eth",
+  tokens: {
+    "Arbitrum One": ["https://my-rpc.example.com/arb"],
+    "Ethereum": ["https://my-rpc.example.com/eth"],
+  },
+  hub: ["https://my-rpc.example.com/base"],
 });
 ```
 
@@ -144,7 +150,6 @@ See [Token Registry](token-registry.md) for the full token API.
 ### Type signatures
 
 ```typescript
-function loadTokens(compressed: string, options?: LoadTokensOptions): Promise<NormalizedTokens>;
 function normalizeTokens(file: TokensFile): NormalizedTokens;
 function normalizeTokensWithOverrides(file: TokensFile, overrides?: RpcOverrides): NormalizedTokens;
 

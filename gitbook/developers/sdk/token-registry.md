@@ -6,13 +6,15 @@ The SDK includes a token registry module for loading, normalizing, and querying 
 
 ### From compressed data
 
-The production frontend ships tokens as a Base64-encoded gzip string. Use `TokensCacheManager` (or the underlying `loadTokens` helper) to decompress and normalize:
+The production frontend ships tokens as a Base64-encoded gzip string. Use `TokensCacheManager.load()` to decompress and normalize:
 
 ```typescript
 import { TokensCacheManager } from "zerc20-client-sdk";
 
 const cache = new TokensCacheManager();
-const { hub, tokens } = await cache.loadTokensForSymbol("zusdc", compressedString);
+const { hub, tokens } = await cache.load(compressedString, {
+  cacheKey: "zusdc-main",
+});
 ```
 
 ### From raw JSON
@@ -35,13 +37,16 @@ import { normalizeTokensWithOverrides } from "zerc20-client-sdk";
 
 const tokensFile = await import("./tokens.json");
 const { hub, tokens } = normalizeTokensWithOverrides(tokensFile, {
-  "Arbitrum One": "https://my-rpc.example.com/arb",
-  "Ethereum":    "https://my-rpc.example.com/eth",
-  "Base":        "https://my-rpc.example.com/base",
+  tokens: {
+    "Arbitrum One": ["https://my-rpc.example.com/arb"],
+    "Ethereum": ["https://my-rpc.example.com/eth"],
+    "Base": ["https://my-rpc.example.com/base"],
+  },
+  hub: ["https://my-rpc.example.com/base"],
 });
 ```
 
-The override keys are matched against the `label` field in the token configuration. Only matching entries have their RPC URLs replaced.
+The `overrides.tokens` keys are matched against the `label` field in the token configuration. Only matching entries have their RPC URLs replaced.
 
 ## Finding Tokens
 
@@ -78,14 +83,15 @@ Each `TokenEntry` represents a token deployment on a specific chain:
 |-------|------|-------------|
 | `tokenAddress` | `string` | zERC20 contract address |
 | `verifierAddress` | `string` | Verifier contract address |
-| `liquidityManagerAddress` | `string` | LiquidityManager contract address |
-| `adaptorAddress` | `string` | Adaptor contract address (for cross-chain unwrap) |
+| `minterAddress` | `string \| undefined` | Optional minter contract address |
+| `liquidityManagerAddress` | `string \| undefined` | Optional LiquidityManager contract address |
+| `adaptorAddress` | `string \| undefined` | Optional adaptor contract address (for cross-chain unwrap) |
+| `eid` | `number \| undefined` | Optional LayerZero endpoint ID |
 | `chainId` | `bigint` | EVM chain ID |
+| `deployedBlockNumber` | `bigint` | Deployment block number |
 | `label` | `string` | Human-readable chain name (e.g., "Arbitrum One") |
 | `rpcUrls` | `string[]` | RPC endpoint URLs for this chain |
-| `indexerUrl` | `string` | Indexer HTTP endpoint |
-| `deciderUrl` | `string` | Decider service endpoint |
-| `decimals` | `number` | Token decimals |
+| `legacyTx` | `boolean` | Whether to use legacy tx format on this chain |
 
 ### HubEntry
 
@@ -93,14 +99,16 @@ Each `TokenEntry` represents a token deployment on a specific chain:
 |-------|------|-------------|
 | `hubAddress` | `string` | Hub contract address |
 | `chainId` | `bigint` | Chain ID where the Hub is deployed |
+| `eid` | `number \| undefined` | Optional LayerZero endpoint ID |
 | `rpcUrls` | `string[]` | RPC endpoint URLs |
 
 ### RpcOverrides
 
 ```typescript
-type RpcOverrides = Record<string, string>;
-// Key: chain label (e.g., "Arbitrum One")
-// Value: replacement RPC URL
+interface RpcOverrides {
+  tokens?: Record<string, string[]>;
+  hub?: string[];
+}
 ```
 
 ## Function Signatures

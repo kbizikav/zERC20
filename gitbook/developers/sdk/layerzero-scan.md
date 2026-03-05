@@ -2,6 +2,8 @@
 
 The SDK includes a LayerZero Scan module for tracking cross-chain messages. This is useful for building transaction history UIs, monitoring bridge progress, and decoding OFT (Omnichain Fungible Token) payloads.
 
+This module is also what the official frontend (`develop-sdk`) uses; LayerZero tracking logic was moved out of frontend-only services into this shared SDK surface.
+
 ## Overview
 
 When zERC20 tokens are transferred cross-chain (e.g., cross-chain unwrap via Stargate), the transaction goes through LayerZero's messaging protocol. The LayerZero Scan module provides:
@@ -48,6 +50,10 @@ const result = await fetchWalletStatus({
   nextToken: undefined,             // optional, pagination cursor
   filterByToken: true,              // optional, filter messages by token addresses
 });
+
+// result.items: LayerZeroMessageSummary[]
+// result.nextToken: string | undefined
+// result.walletUrl: string
 ```
 
 ### FetchWalletStatusParams
@@ -66,8 +72,9 @@ const result = await fetchWalletStatus({
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `messages` | `LayerZeroMessageSummary[]` | Decoded message summaries |
+| `items` | `LayerZeroMessageSummary[]` | Decoded message summaries |
 | `nextToken` | `string \| undefined` | Pagination cursor for the next page |
+| `walletUrl` | `string` | LayerZero Scan URL for this wallet |
 
 ### LayerZeroMessageSummary
 
