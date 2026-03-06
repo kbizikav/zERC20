@@ -674,6 +674,8 @@ contract GelatoRelayTest is TestHelperOz5 {
 
     function testRelayTransferRevertsWhenNotGelatoRelay() public {
         vm.expectRevert(GelatoRelay.OnlyGelatoRelay.selector);
-        relay.relayTransfer(signerAddr, address(0xCAFE), 100 ether, 10 ether, 5 ether, block.timestamp + 1 hours, "", "");
+        relay.relayTransfer(
+            signerAddr, address(0xCAFE), 100 ether, 10 ether, 5 ether, block.timestamp + 1 hours, "", ""
+        );
     }
 }
