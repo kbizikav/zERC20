@@ -132,6 +132,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         uint256 maxGelatoFee
     ) external onlyGelatoRelay {
         IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
+        // slither-disable-next-line arbitrary-send-erc20-permit
         ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
         // slither-disable-next-line unused-return
         LIQUIDITY_MANAGER.unwrap(amount, address(this));
@@ -164,6 +165,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         uint256 maxGelatoFee
     ) external onlyGelatoRelay {
         IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
+        // slither-disable-next-line arbitrary-send-erc20-permit
         ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
         ZERC20_TOKEN.safeTransfer(to, amount - relayerFee);
         if (relayerFee > 0) {
