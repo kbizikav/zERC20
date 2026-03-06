@@ -145,11 +145,10 @@ export function encodeRelayUnwrap(params: {
   owner: Address;
   amount: bigint;
   receiver: Address;
-  deadline: bigint;
-  v: number;
-  r: Hex;
-  s: Hex;
   maxGelatoFee: bigint;
+  deadline: bigint;
+  permitSig: Hex;
+  relaySig: Hex;
 }): Hex {
   return encodeFunctionData({
     abi: gelatoRelayAbi,
@@ -158,11 +157,10 @@ export function encodeRelayUnwrap(params: {
       params.owner,
       params.amount,
       params.receiver,
-      params.deadline,
-      params.v,
-      params.r,
-      params.s,
       params.maxGelatoFee,
+      params.deadline,
+      params.permitSig,
+      params.relaySig,
     ],
   });
 }
@@ -175,11 +173,10 @@ export function encodeRelayTransfer(params: {
   to: Address;
   amount: bigint;
   relayerFee: bigint;
-  deadline: bigint;
-  v: number;
-  r: Hex;
-  s: Hex;
   maxGelatoFee: bigint;
+  deadline: bigint;
+  permitSig: Hex;
+  relaySig: Hex;
 }): Hex {
   return encodeFunctionData({
     abi: gelatoRelayAbi,
@@ -189,11 +186,10 @@ export function encodeRelayTransfer(params: {
       params.to,
       params.amount,
       params.relayerFee,
-      params.deadline,
-      params.v,
-      params.r,
-      params.s,
       params.maxGelatoFee,
+      params.deadline,
+      params.permitSig,
+      params.relaySig,
     ],
   });
 }

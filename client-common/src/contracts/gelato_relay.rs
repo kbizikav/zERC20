@@ -53,11 +53,10 @@ sol! {
             address owner,
             uint256 amount,
             address receiver,
+            uint256 maxGelatoFee,
             uint256 deadline,
-            uint8 v,
-            bytes32 r,
-            bytes32 s,
-            uint256 maxGelatoFee
+            bytes calldata permitSig,
+            bytes calldata relaySig
         ) external;
 
         function relayTransfer(
@@ -65,12 +64,13 @@ sol! {
             address to,
             uint256 amount,
             uint256 relayerFee,
+            uint256 maxGelatoFee,
             uint256 deadline,
-            uint8 v,
-            bytes32 r,
-            bytes32 s,
-            uint256 maxGelatoFee
+            bytes calldata permitSig,
+            bytes calldata relaySig
         ) external;
+
+        function nonces(address owner) external view returns (uint256);
     }
 }
 
@@ -265,11 +265,10 @@ pub struct RelayUnwrapParams {
     pub owner: Address,
     pub amount: U256,
     pub receiver: Address,
-    pub deadline: U256,
-    pub v: u8,
-    pub r: B256,
-    pub s: B256,
     pub max_gelato_fee: U256,
+    pub deadline: U256,
+    pub permit_sig: Vec<u8>,
+    pub relay_sig: Vec<u8>,
 }
 
 /// Encodes `GelatoRelay.relayUnwrap(...)` calldata.
@@ -278,11 +277,10 @@ pub fn encode_relay_unwrap(params: &RelayUnwrapParams) -> Bytes {
         owner: params.owner,
         amount: params.amount,
         receiver: params.receiver,
-        deadline: params.deadline,
-        v: params.v,
-        r: params.r,
-        s: params.s,
         maxGelatoFee: params.max_gelato_fee,
+        deadline: params.deadline,
+        permitSig: Bytes::from(params.permit_sig.clone()),
+        relaySig: Bytes::from(params.relay_sig.clone()),
     };
     Bytes::from(call.abi_encode())
 }
@@ -293,11 +291,10 @@ pub struct RelayTransferParams {
     pub to: Address,
     pub amount: U256,
     pub relayer_fee: U256,
-    pub deadline: U256,
-    pub v: u8,
-    pub r: B256,
-    pub s: B256,
     pub max_gelato_fee: U256,
+    pub deadline: U256,
+    pub permit_sig: Vec<u8>,
+    pub relay_sig: Vec<u8>,
 }
 
 /// Encodes `GelatoRelay.relayTransfer(...)` calldata.
@@ -307,13 +304,159 @@ pub fn encode_relay_transfer(params: &RelayTransferParams) -> Bytes {
         to: params.to,
         amount: params.amount,
         relayerFee: params.relayer_fee,
-        deadline: params.deadline,
-        v: params.v,
-        r: params.r,
-        s: params.s,
         maxGelatoFee: params.max_gelato_fee,
+        deadline: params.deadline,
+        permitSig: Bytes::from(params.permit_sig.clone()),
+        relaySig: Bytes::from(params.relay_sig.clone()),
     };
     Bytes::from(call.abi_encode())
+}
+
+/// Fetches the GelatoRelay contract's EIP-712 domain separator (for relay operation signatures).
+pub async fn fetch_relay_domain_separator(
+    provider: NormalProvider,
+    relay_address: Address,
+) -> Result<B256> {
+    sol! {
+        #[sol(rpc)]
+        interface IEIP712 {
+            function eip712Domain()
+                external
+                view
+                returns (
+                    bytes1 fields,
+                    string memory name,
+                    string memory version,
+                    uint256 chainId,
+                    address verifyingContract,
+                    bytes32 salt,
+                    uint256[] memory extensions
+                );
+        }
+    }
+
+    let contract = IEIP712::new(relay_address, provider);
+    let result = contract.eip712Domain().call().await.context(
+        "failed to call eip712Domain() on GelatoRelay — ensure initializeV2 has been called",
+    )?;
+
+    let type_hash = keccak256(
+        "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
+    );
+    let name_hash = keccak256(result.name.as_bytes());
+    let version_hash = keccak256(result.version.as_bytes());
+
+    let mut buf = Vec::with_capacity(5 * 32);
+    buf.extend_from_slice(type_hash.as_slice());
+    buf.extend_from_slice(name_hash.as_slice());
+    buf.extend_from_slice(version_hash.as_slice());
+    buf.extend_from_slice(&result.chainId.to_be_bytes::<32>());
+    buf.extend_from_slice(B256::left_padding_from(result.verifyingContract.as_slice()).as_slice());
+
+    Ok(keccak256(&buf))
+}
+
+/// Fetches the current relay nonce for `owner` on the GelatoRelay contract.
+pub async fn fetch_relay_nonce(
+    provider: NormalProvider,
+    relay_address: Address,
+    owner: Address,
+) -> Result<U256> {
+    let contract = IGelatoRelay::new(relay_address, provider);
+    let nonce = contract
+        .nonces(owner)
+        .call()
+        .await
+        .context("failed to fetch relay nonce")?;
+    Ok(nonce)
+}
+
+fn relay_unwrap_typehash() -> B256 {
+    keccak256(
+        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 maxGelatoFee,uint256 nonce)",
+    )
+}
+
+fn relay_transfer_typehash() -> B256 {
+    keccak256(
+        "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)",
+    )
+}
+
+/// Signs a `RelayUnwrap` EIP-712 typed data message.
+///
+/// Returns the 65-byte `(r, s, v)` signature.
+pub async fn sign_relay_unwrap(
+    private_key: B256,
+    domain_separator: B256,
+    owner: Address,
+    amount: U256,
+    receiver: Address,
+    max_gelato_fee: U256,
+    nonce: U256,
+) -> Result<Vec<u8>> {
+    let mut struct_data = Vec::with_capacity(6 * 32);
+    struct_data.extend_from_slice(relay_unwrap_typehash().as_slice());
+    struct_data.extend_from_slice(B256::left_padding_from(owner.as_slice()).as_slice());
+    struct_data.extend_from_slice(&amount.to_be_bytes::<32>());
+    struct_data.extend_from_slice(B256::left_padding_from(receiver.as_slice()).as_slice());
+    struct_data.extend_from_slice(&max_gelato_fee.to_be_bytes::<32>());
+    struct_data.extend_from_slice(&nonce.to_be_bytes::<32>());
+    let struct_hash = keccak256(&struct_data);
+
+    let mut digest_input = Vec::with_capacity(2 + 32 + 32);
+    digest_input.extend_from_slice(&[0x19, 0x01]);
+    digest_input.extend_from_slice(domain_separator.as_slice());
+    digest_input.extend_from_slice(struct_hash.as_slice());
+    let digest = keccak256(&digest_input);
+
+    let signer = PrivateKeySigner::from_bytes(&private_key)
+        .context("failed to create signer from private key")?;
+    let sig = signer
+        .sign_hash(&digest)
+        .await
+        .context("failed to sign relay unwrap authorization")?;
+
+    Ok(sig.as_bytes().to_vec())
+}
+
+/// Signs a `RelayTransfer` EIP-712 typed data message.
+///
+/// Returns the 65-byte `(r, s, v)` signature.
+pub async fn sign_relay_transfer(
+    private_key: B256,
+    domain_separator: B256,
+    owner: Address,
+    to: Address,
+    amount: U256,
+    relayer_fee: U256,
+    max_gelato_fee: U256,
+    nonce: U256,
+) -> Result<Vec<u8>> {
+    let mut struct_data = Vec::with_capacity(7 * 32);
+    struct_data.extend_from_slice(relay_transfer_typehash().as_slice());
+    struct_data.extend_from_slice(B256::left_padding_from(owner.as_slice()).as_slice());
+    struct_data.extend_from_slice(B256::left_padding_from(to.as_slice()).as_slice());
+    struct_data.extend_from_slice(&amount.to_be_bytes::<32>());
+    struct_data.extend_from_slice(&relayer_fee.to_be_bytes::<32>());
+    struct_data.extend_from_slice(&max_gelato_fee.to_be_bytes::<32>());
+    struct_data.extend_from_slice(&nonce.to_be_bytes::<32>());
+    let struct_hash = keccak256(&struct_data);
+
+    let mut digest_input = Vec::with_capacity(2 + 32 + 32);
+    digest_input.extend_from_slice(&[0x19, 0x01]);
+    digest_input.extend_from_slice(domain_separator.as_slice());
+    digest_input.extend_from_slice(struct_hash.as_slice());
+    let digest = keccak256(&digest_input);
+
+    let signer = PrivateKeySigner::from_bytes(&private_key)
+        .context("failed to create signer from private key")?;
+    let sig = signer
+        .sign_hash(&digest)
+        .await
+        .context("failed to sign relay transfer authorization")?;
+
+    Ok(sig.as_bytes().to_vec())
 }
 
 /// Signs an ERC-2612 permit using EIP-712 typed data.

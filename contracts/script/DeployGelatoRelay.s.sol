@@ -38,7 +38,7 @@ contract DeployGelatoRelay is DeterministicDeployer {
         address impl = _deploy3(broadcaster, baseSalt, "GELATO_RELAY_IMPL", implCode);
 
         // Deploy proxy with initializer
-        bytes memory initCalldata = abi.encodeCall(GelatoRelay.initialize, (relayOwner));
+        bytes memory initCalldata = abi.encodeCall(GelatoRelay.initialize, (relayOwner, "GelatoRelay", "1"));
         address proxy = _deployProxyAndInit(broadcaster, baseSalt, "GELATO_RELAY", impl, initCalldata);
 
         console2.log("GelatoRelay impl at", impl);

@@ -97,9 +97,10 @@ async fn transfer_via_relay(
 
     // Sign ERC-2612 permit for total_amount (transfer + relayerFee)
     let provider = entry.provider()?;
-    let nonce = gelato_relay::fetch_permit_nonce(provider.clone(), entry.token_address, caller)
-        .await
-        .context("failed to fetch permit nonce")?;
+    let permit_nonce =
+        gelato_relay::fetch_permit_nonce(provider.clone(), entry.token_address, caller)
+            .await
+            .context("failed to fetch permit nonce")?;
 
     let deadline = U256::from(
         SystemTime::now()
@@ -111,15 +112,39 @@ async fn transfer_via_relay(
 
     let (v, r, s) = gelato_relay::sign_permit(
         private_key,
-        provider,
+        provider.clone(),
         entry.token_address,
         relay_address,
         total_amount,
-        nonce,
+        permit_nonce,
         deadline,
     )
     .await
     .context("failed to sign ERC-2612 permit")?;
+    let mut permit_sig = Vec::with_capacity(65);
+    permit_sig.extend_from_slice(r.as_slice());
+    permit_sig.extend_from_slice(s.as_slice());
+    permit_sig.push(v);
+
+    // Sign relay EIP-712 authorization
+    let relay_domain = gelato_relay::fetch_relay_domain_separator(provider.clone(), relay_address)
+        .await
+        .context("failed to fetch GelatoRelay EIP-712 domain")?;
+    let relay_nonce = gelato_relay::fetch_relay_nonce(provider, relay_address, caller)
+        .await
+        .context("failed to fetch relay nonce")?;
+    let relay_sig = gelato_relay::sign_relay_transfer(
+        private_key,
+        relay_domain,
+        caller,
+        args.to,
+        total_amount,
+        relayer_fee,
+        fee_estimate.gelato_fee,
+        relay_nonce,
+    )
+    .await
+    .context("failed to sign relay transfer authorization")?;
 
     // Encode calldata
     let params = RelayTransferParams {
@@ -127,11 +152,10 @@ async fn transfer_via_relay(
         to: args.to,
         amount: total_amount,
         relayer_fee,
-        deadline,
-        v,
-        r,
-        s,
         max_gelato_fee: fee_estimate.gelato_fee,
+        deadline,
+        permit_sig,
+        relay_sig,
     };
     let calldata = gelato_relay::encode_relay_transfer(&params);
 

@@ -5,8 +5,10 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Address} from "@openzeppelin/contracts/utils/Address.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
 import {GelatoRelayContractsUtils} from "relay-context-contracts/utils/GelatoRelayContractsUtils.sol";
 import {NATIVE_TOKEN} from "relay-context-contracts/constants/Tokens.sol";
 import {Verifier} from "../Verifier.sol";
@@ -17,21 +19,32 @@ import {GeneralRecipientLib} from "../utils/GeneralRecipientLib.sol";
 /// @notice Gelato Relay integration for gasless teleport, unwrap, and transfer via `callWithSyncFee`.
 /// @dev Implements GelatoRelayContext-equivalent logic inline to avoid OZ version
 ///      incompatibility with relay-context-contracts' TokenUtils.
-contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgradeable {
+contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgradeable, EIP712Upgradeable {
     using SafeERC20 for IERC20;
 
     uint256 private constant _FEE_COLLECTOR_START = 72;
     uint256 private constant _FEE_TOKEN_START = 52;
     uint256 private constant _FEE_START = 32;
 
+    bytes32 public constant RELAY_UNWRAP_TYPEHASH =
+        keccak256("RelayUnwrap(address owner,uint256 amount,address receiver,uint256 maxGelatoFee,uint256 nonce)");
+
+    bytes32 public constant RELAY_TRANSFER_TYPEHASH = keccak256(
+        "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
+    );
+
     Verifier public immutable VERIFIER;
     ILiquidityManager public immutable LIQUIDITY_MANAGER;
     IERC20 public immutable UNDERLYING_TOKEN;
     IERC20 public immutable ZERC20_TOKEN;
 
+    /// @notice Auto-incrementing nonce per owner for relay EIP-712 signatures.
+    mapping(address owner => uint256) public nonces;
+
     error ZeroAddress();
     error OnlyGelatoRelay();
     error MaxFeeExceeded(uint256 fee, uint256 maxFee);
+    error InvalidRelaySignature();
     error VerifierMismatch(address expected, address actual);
     error LiquidityManagerMismatch(address expected, address actual);
 
@@ -56,11 +69,14 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         _disableInitializers();
     }
 
-    /// @notice Initializes the relay with its owner.
+    /// @notice Initializes the relay with its owner and EIP-712 domain.
     /// @param initialOwner Account receiving ownership and upgrade authority.
-    function initialize(address initialOwner) external initializer {
+    /// @param name_ EIP-712 domain name.
+    /// @param version_ EIP-712 domain version.
+    function initialize(address initialOwner, string calldata name_, string calldata version_) external initializer {
         require(initialOwner != address(0), ZeroAddress());
         __Ownable_init(initialOwner);
+        __EIP712_init(name_, version_);
     }
 
     /// @dev Validates that the new implementation uses the same immutable dependencies.
@@ -113,24 +129,24 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
     }
 
     /// @notice Relays an unwrap via Gelato using ERC-2612 permit for gasless approval.
-    /// @param owner Token owner who signed the permit.
+    /// @param owner Token owner who signed the permit and relay authorization.
     /// @param amount Amount of zERC20 to unwrap.
     /// @param receiver Recipient of the underlying tokens after fee deduction.
-    /// @param deadline Permit signature deadline.
-    /// @param v ECDSA v component.
-    /// @param r ECDSA r component.
-    /// @param s ECDSA s component.
     /// @param maxGelatoFee Maximum acceptable Gelato fee in underlying token units.
+    /// @param deadline Permit signature deadline.
+    /// @param permitSig ERC-2612 permit signature (65 bytes: r ‖ s ‖ v).
+    /// @param relaySig EIP-712 signature authorizing the relay operation parameters.
     function relayUnwrap(
         address owner,
         uint256 amount,
         address receiver,
+        uint256 maxGelatoFee,
         uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s,
-        uint256 maxGelatoFee
+        bytes calldata permitSig,
+        bytes calldata relaySig
     ) external onlyGelatoRelay {
+        _verifyRelayUnwrap(owner, amount, receiver, maxGelatoFee, relaySig);
+        (bytes32 r, bytes32 s, uint8 v) = _splitSignature(permitSig);
         IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
         // slither-disable-next-line arbitrary-send-erc20-permit
         ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
@@ -144,26 +160,26 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
     }
 
     /// @notice Relays a zERC20 transfer via Gelato using ERC-2612 permit.
-    /// @param owner Token owner who signed the permit.
+    /// @param owner Token owner who signed the permit and relay authorization.
     /// @param to Recipient of the zERC20 transfer.
     /// @param amount Total amount of zERC20 permitted (transfer + relayerFee).
     /// @param relayerFee Portion of amount unwrapped to pay the Gelato fee.
-    /// @param deadline Permit signature deadline.
-    /// @param v ECDSA v component.
-    /// @param r ECDSA r component.
-    /// @param s ECDSA s component.
     /// @param maxGelatoFee Maximum acceptable Gelato fee in underlying token units.
+    /// @param deadline Permit signature deadline.
+    /// @param permitSig ERC-2612 permit signature (65 bytes: r ‖ s ‖ v).
+    /// @param relaySig EIP-712 signature authorizing the relay operation parameters.
     function relayTransfer(
         address owner,
         address to,
         uint256 amount,
         uint256 relayerFee,
+        uint256 maxGelatoFee,
         uint256 deadline,
-        uint8 v,
-        bytes32 r,
-        bytes32 s,
-        uint256 maxGelatoFee
+        bytes calldata permitSig,
+        bytes calldata relaySig
     ) external onlyGelatoRelay {
+        _verifyRelayTransfer(owner, to, amount, relayerFee, maxGelatoFee, relaySig);
+        (bytes32 r, bytes32 s, uint8 v) = _splitSignature(permitSig);
         IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
         // slither-disable-next-line arbitrary-send-erc20-permit
         ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
@@ -188,6 +204,69 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
     /// @param amount Amount to withdraw.
     function withdrawSurplusNative(address payable to, uint256 amount) external onlyOwner {
         Address.sendValue(to, amount);
+    }
+
+    /// @dev Splits a 65-byte signature into (r, s, v) components.
+    function _splitSignature(bytes calldata sig) internal pure returns (bytes32 r, bytes32 s, uint8 v) {
+        r = bytes32(sig[0:32]);
+        s = bytes32(sig[32:64]);
+        v = uint8(bytes1(sig[64:65]));
+    }
+
+    /// @dev Verifies the EIP-712 relay signature for `relayUnwrap` and consumes the nonce.
+    function _verifyRelayUnwrap(
+        address owner,
+        uint256 amount,
+        address receiver,
+        uint256 maxGelatoFee,
+        bytes calldata relaySig
+    ) internal {
+        uint256 nonce = nonces[owner];
+        ++nonces[owner];
+        bytes32 typeHash = RELAY_UNWRAP_TYPEHASH;
+        bytes32 structHash;
+        // solhint-disable-next-line no-inline-assembly
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, typeHash)
+            mstore(add(m, 0x20), owner)
+            mstore(add(m, 0x40), amount)
+            mstore(add(m, 0x60), receiver)
+            mstore(add(m, 0x80), maxGelatoFee)
+            mstore(add(m, 0xa0), nonce)
+            structHash := keccak256(m, 0xc0)
+        }
+        bytes32 digest = _hashTypedDataV4(structHash);
+        require(SignatureChecker.isValidSignatureNowCalldata(owner, digest, relaySig), InvalidRelaySignature());
+    }
+
+    /// @dev Verifies the EIP-712 relay signature for `relayTransfer` and consumes the nonce.
+    function _verifyRelayTransfer(
+        address owner,
+        address to,
+        uint256 amount,
+        uint256 relayerFee,
+        uint256 maxGelatoFee,
+        bytes calldata relaySig
+    ) internal {
+        uint256 nonce = nonces[owner];
+        ++nonces[owner];
+        bytes32 typeHash = RELAY_TRANSFER_TYPEHASH;
+        bytes32 structHash;
+        // solhint-disable-next-line no-inline-assembly
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, typeHash)
+            mstore(add(m, 0x20), owner)
+            mstore(add(m, 0x40), to)
+            mstore(add(m, 0x60), amount)
+            mstore(add(m, 0x80), relayerFee)
+            mstore(add(m, 0xa0), maxGelatoFee)
+            mstore(add(m, 0xc0), nonce)
+            structHash := keccak256(m, 0xe0)
+        }
+        bytes32 digest = _hashTypedDataV4(structHash);
+        require(SignatureChecker.isValidSignatureNowCalldata(owner, digest, relaySig), InvalidRelaySignature());
     }
 
     /// @dev Unwraps zERC20 to underlying via LiquidityManager, then pays Gelato.
