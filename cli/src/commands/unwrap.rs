@@ -291,14 +291,10 @@ async fn unwrap_via_relay(
 
     // Estimate relayer fee
     println!("Estimating Gelato relay fee...");
-    let fee_estimate = gelato_relay::estimate_relayer_fee(
-        entry.chain_id,
-        fee_token,
-        None,
-        &liquidity_manager,
-    )
-    .await
-    .context("failed to estimate relayer fee")?;
+    let fee_estimate =
+        gelato_relay::estimate_relayer_fee(entry.chain_id, fee_token, None, &liquidity_manager)
+            .await
+            .context("failed to estimate relayer fee")?;
 
     if let Some(cap) = relay_args.max_relay_fee
         && cap < fee_estimate.gelato_fee

@@ -511,9 +511,8 @@ pub async fn sign_permit(
     domain_buf.extend_from_slice(name_hash.as_slice());
     domain_buf.extend_from_slice(version_hash.as_slice());
     domain_buf.extend_from_slice(&domain.chainId.to_be_bytes::<32>());
-    domain_buf.extend_from_slice(
-        B256::left_padding_from(domain.verifyingContract.as_slice()).as_slice(),
-    );
+    domain_buf
+        .extend_from_slice(B256::left_padding_from(domain.verifyingContract.as_slice()).as_slice());
     let domain_separator = keccak256(&domain_buf);
 
     // Permit struct hash
