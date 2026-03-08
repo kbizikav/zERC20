@@ -7,7 +7,8 @@ import {DeterministicDeployer} from "../utils/DeterministicDeploy.sol";
 import {LZAddressContext} from "lz-address-book/helpers/LZAddressContext.sol";
 
 /// @notice Deploys a fresh Verifier implementation via CREATE3 for UUPS upgrade.
-/// The upgrade itself (upgradeToAndCall) is expected to be executed via Safe wallet.
+/// The proxy upgrade must still be executed with `upgradeToAndCall(...)` so `initializeV2(...)`
+/// runs in the same transaction for relay EIP-712 support.
 /// Env:
 /// - PRIVATE_KEY (uint256): Deployer key.
 contract DeployVerifierImpl is DeterministicDeployer {

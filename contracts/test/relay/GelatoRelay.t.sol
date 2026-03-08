@@ -76,8 +76,9 @@ contract GelatoRelayTest is TestHelperOz5 {
     bytes32 internal constant RELAYER_FEE_TYPEHASH =
         keccak256("RelayerFeeAuthorization(uint256 recipientHash,uint256 totalValue,uint256 maxFee,uint64 deadline)");
 
-    bytes32 internal constant RELAY_UNWRAP_TYPEHASH =
-        keccak256("RelayUnwrap(address owner,uint256 amount,address receiver,uint256 maxGelatoFee,uint256 nonce)");
+    bytes32 internal constant RELAY_UNWRAP_TYPEHASH = keccak256(
+        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
+    );
 
     bytes32 internal constant RELAY_TRANSFER_TYPEHASH = keccak256(
         "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
@@ -250,14 +251,14 @@ contract GelatoRelayTest is TestHelperOz5 {
         );
     }
 
-    function _signRelayUnwrap(uint256 amount, address receiver, uint256 maxGelatoFee)
+    function _signRelayUnwrap(uint256 amount, address receiver, uint256 relayerFee, uint256 maxGelatoFee)
         internal
         view
         returns (bytes memory)
     {
         uint256 nonce = relay.nonces(signerAddr);
         bytes32 structHash =
-            keccak256(abi.encode(RELAY_UNWRAP_TYPEHASH, signerAddr, amount, receiver, maxGelatoFee, nonce));
+            keccak256(abi.encode(RELAY_UNWRAP_TYPEHASH, signerAddr, amount, receiver, relayerFee, maxGelatoFee, nonce));
         bytes32 digest = MessageHashUtils.toTypedDataHash(_relayDomainSeparator(), structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SIGNER_PK, digest);
         return abi.encodePacked(r, s, v);
@@ -589,43 +590,49 @@ contract GelatoRelayTest is TestHelperOz5 {
 
     function testRelayUnwrap() public {
         uint256 amount = 100 ether;
+        uint256 relayerFee = 10 ether;
         uint256 gelatoFee = 5 ether;
         address receiver = address(0xBEEF);
 
         // Mint zERC20 to signer via manager (wrap underlying)
-        underlying.mint(address(this), amount);
-        underlying.approve(address(manager), amount);
-        manager.wrap(amount, signerAddr);
+        underlying.mint(address(this), amount + relayerFee);
+        underlying.approve(address(manager), amount + relayerFee);
+        manager.wrap(amount + relayerFee, signerAddr);
 
-        bytes memory data = _buildRelayUnwrapData(amount, receiver, gelatoFee);
+        bytes memory data = _buildRelayUnwrapData(amount, relayerFee, receiver, gelatoFee);
 
         _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
 
         // Signer should have no zERC20 left
         assertEq(token.balanceOf(signerAddr), 0, "signer zERC20 should be 0");
-        // Receiver should have underlying (amount - gelatoFee) since k=0 means no unwrap fee
-        assertEq(underlying.balanceOf(receiver), amount - gelatoFee, "receiver underlying mismatch");
+        // Receiver should have underlying from the user-requested unwrap only
+        assertEq(underlying.balanceOf(receiver), amount, "receiver underlying mismatch");
         // Fee collector should have received gelatoFee
         assertEq(underlying.balanceOf(feeCollector), gelatoFee, "feeCollector underlying mismatch");
+        // Relay keeps surplus underlying (relayerFee unwrapped - gelatoFee)
+        assertEq(underlying.balanceOf(address(relay)), relayerFee - gelatoFee, "relay surplus mismatch");
     }
 
-    function _buildRelayUnwrapData(uint256 amount, address receiver, uint256 gelatoFee)
+    function _buildRelayUnwrapData(uint256 amount, uint256 relayerFee, address receiver, uint256 gelatoFee)
         internal
         view
         returns (bytes memory)
     {
         uint256 deadline = block.timestamp + 1 hours;
-        (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount, deadline);
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount + relayerFee, deadline);
         bytes memory permitSig = abi.encodePacked(r, s, v);
-        bytes memory relaySig = _signRelayUnwrap(amount, receiver, gelatoFee);
+        bytes memory relaySig = _signRelayUnwrap(amount, receiver, relayerFee, gelatoFee);
         return abi.encodeCall(
-            GelatoRelay.relayUnwrap, (signerAddr, amount, receiver, gelatoFee, deadline, permitSig, relaySig)
+            GelatoRelay.relayUnwrap,
+            (signerAddr, amount, receiver, relayerFee, gelatoFee, deadline, permitSig, relaySig)
         );
     }
 
     function testRelayUnwrapRevertsWhenNotGelatoRelay() public {
         vm.expectRevert(GelatoRelay.OnlyGelatoRelay.selector);
-        relay.relayUnwrap(signerAddr, 100 ether, address(0xBEEF), 5 ether, block.timestamp + 1 hours, "", "");
+        relay.relayUnwrap(
+            signerAddr, 100 ether, address(0xBEEF), 10 ether, 5 ether, block.timestamp + 1 hours, "", ""
+        );
     }
 
     // -----------------------------------------------------------------------

@@ -38,6 +38,10 @@ pub async fn run(args: &UnwrapArgs, tokens: &[TokenEntry], private_key: B256) ->
         bail!("amount must be greater than zero");
     }
 
+    if args.relay.relay {
+        return unwrap_via_relay(src_entry, caller, args.amount, private_key, &args.relay).await;
+    }
+
     let balance = zerc20
         .balance_of(caller)
         .await
@@ -48,10 +52,6 @@ pub async fn run(args: &UnwrapArgs, tokens: &[TokenEntry], private_key: B256) ->
             balance,
             args.amount
         );
-    }
-
-    if args.relay.relay {
-        return unwrap_via_relay(src_entry, caller, args.amount, private_key, &args.relay).await;
     }
 
     if args.dst_chain_id == args.chain_id {
@@ -296,20 +296,39 @@ async fn unwrap_via_relay(
             .await
             .context("failed to estimate relayer fee")?;
 
+    let relayer_fee = fee_estimate.relayer_fee;
     if let Some(cap) = relay_args.max_relay_fee
-        && cap < fee_estimate.gelato_fee
+        && cap < relayer_fee
     {
         bail!(
-            "estimated Gelato fee {} exceeds --max-relay-fee cap {}",
-            fee_estimate.gelato_fee,
+            "estimated relayer fee {} exceeds --max-relay-fee cap {}",
+            relayer_fee,
             cap
         );
     }
 
+    let total_amount = amount + relayer_fee;
     println!("  Gelato gas fee : {}", fee_estimate.gelato_fee);
     println!("  Unwrap fee     : {}", fee_estimate.unwrap_fee);
+    println!("  Relayer fee    : {}", relayer_fee);
+    println!("  Total permit   : {}", total_amount);
 
-    // Sign ERC-2612 permit
+    let zerc20 = build_erc20(entry)?;
+    let balance = zerc20
+        .balance_of(caller)
+        .await
+        .context("failed to fetch zERC20 balance")?;
+    if balance < total_amount {
+        bail!(
+            "insufficient zERC20 balance for relay unwrap: have {}, need {} (amount {} + relayer fee {})",
+            balance,
+            total_amount,
+            amount,
+            relayer_fee
+        );
+    }
+
+    // Sign ERC-2612 permit for user amount + relayer fee
     let provider = entry.provider()?;
     let permit_nonce =
         gelato_relay::fetch_permit_nonce(provider.clone(), entry.token_address, caller)
@@ -329,7 +348,7 @@ async fn unwrap_via_relay(
         provider.clone(),
         entry.token_address,
         relay_address,
-        amount,
+        total_amount,
         permit_nonce,
         deadline,
     )
@@ -353,6 +372,7 @@ async fn unwrap_via_relay(
         caller,
         amount,
         caller,
+        relayer_fee,
         fee_estimate.gelato_fee,
         relay_nonce,
     )
@@ -364,6 +384,7 @@ async fn unwrap_via_relay(
         owner: caller,
         amount,
         receiver: caller,
+        relayer_fee,
         max_gelato_fee: fee_estimate.gelato_fee,
         deadline,
         permit_sig,

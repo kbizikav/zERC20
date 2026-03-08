@@ -53,6 +53,7 @@ sol! {
             address owner,
             uint256 amount,
             address receiver,
+            uint256 relayerFee,
             uint256 maxGelatoFee,
             uint256 deadline,
             bytes calldata permitSig,
@@ -265,6 +266,7 @@ pub struct RelayUnwrapParams {
     pub owner: Address,
     pub amount: U256,
     pub receiver: Address,
+    pub relayer_fee: U256,
     pub max_gelato_fee: U256,
     pub deadline: U256,
     pub permit_sig: Vec<u8>,
@@ -277,6 +279,7 @@ pub fn encode_relay_unwrap(params: &RelayUnwrapParams) -> Bytes {
         owner: params.owner,
         amount: params.amount,
         receiver: params.receiver,
+        relayerFee: params.relayer_fee,
         maxGelatoFee: params.max_gelato_fee,
         deadline: params.deadline,
         permitSig: Bytes::from(params.permit_sig.clone()),
@@ -373,7 +376,7 @@ pub async fn fetch_relay_nonce(
 
 fn relay_unwrap_typehash() -> B256 {
     keccak256(
-        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 maxGelatoFee,uint256 nonce)",
+        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)",
     )
 }
 
@@ -392,14 +395,16 @@ pub async fn sign_relay_unwrap(
     owner: Address,
     amount: U256,
     receiver: Address,
+    relayer_fee: U256,
     max_gelato_fee: U256,
     nonce: U256,
 ) -> Result<Vec<u8>> {
-    let mut struct_data = Vec::with_capacity(6 * 32);
+    let mut struct_data = Vec::with_capacity(7 * 32);
     struct_data.extend_from_slice(relay_unwrap_typehash().as_slice());
     struct_data.extend_from_slice(B256::left_padding_from(owner.as_slice()).as_slice());
     struct_data.extend_from_slice(&amount.to_be_bytes::<32>());
     struct_data.extend_from_slice(B256::left_padding_from(receiver.as_slice()).as_slice());
+    struct_data.extend_from_slice(&relayer_fee.to_be_bytes::<32>());
     struct_data.extend_from_slice(&max_gelato_fee.to_be_bytes::<32>());
     struct_data.extend_from_slice(&nonce.to_be_bytes::<32>());
     let struct_hash = keccak256(&struct_data);

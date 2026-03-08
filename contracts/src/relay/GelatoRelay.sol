@@ -26,8 +26,9 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
     uint256 private constant _FEE_TOKEN_START = 52;
     uint256 private constant _FEE_START = 32;
 
-    bytes32 public constant RELAY_UNWRAP_TYPEHASH =
-        keccak256("RelayUnwrap(address owner,uint256 amount,address receiver,uint256 maxGelatoFee,uint256 nonce)");
+    bytes32 public constant RELAY_UNWRAP_TYPEHASH = keccak256(
+        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
+    );
 
     bytes32 public constant RELAY_TRANSFER_TYPEHASH = keccak256(
         "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
@@ -132,6 +133,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
     /// @param owner Token owner who signed the permit and relay authorization.
     /// @param amount Amount of zERC20 to unwrap.
     /// @param receiver Recipient of the underlying tokens after fee deduction.
+    /// @param relayerFee Additional zERC20 amount unwrapped to pay the Gelato fee.
     /// @param maxGelatoFee Maximum acceptable Gelato fee in underlying token units.
     /// @param deadline Permit signature deadline.
     /// @param permitSig ERC-2612 permit signature (65 bytes: r ‖ s ‖ v).
@@ -140,23 +142,25 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         address owner,
         uint256 amount,
         address receiver,
+        uint256 relayerFee,
         uint256 maxGelatoFee,
         uint256 deadline,
         bytes calldata permitSig,
         bytes calldata relaySig
     ) external onlyGelatoRelay {
-        _verifyRelayUnwrap(owner, amount, receiver, maxGelatoFee, relaySig);
+        _verifyRelayUnwrap(owner, amount, receiver, relayerFee, maxGelatoFee, relaySig);
         (bytes32 r, bytes32 s, uint8 v) = _splitSignature(permitSig);
-        IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
+        uint256 totalAmount = amount + relayerFee;
+        IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), totalAmount, deadline, v, r, s);
         // slither-disable-next-line arbitrary-send-erc20-permit
-        ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
+        ZERC20_TOKEN.safeTransferFrom(owner, address(this), totalAmount);
         // slither-disable-next-line unused-return
-        LIQUIDITY_MANAGER.unwrap(amount, address(this));
-        _transferRelayFeeCapped(maxGelatoFee);
-        uint256 remaining = UNDERLYING_TOKEN.balanceOf(address(this));
-        if (remaining > 0) {
-            UNDERLYING_TOKEN.safeTransfer(receiver, remaining);
+        LIQUIDITY_MANAGER.unwrap(amount, receiver);
+        if (relayerFee > 0) {
+            // slither-disable-next-line unused-return
+            LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));
         }
+        _transferRelayFeeCapped(maxGelatoFee);
     }
 
     /// @notice Relays a zERC20 transfer via Gelato using ERC-2612 permit.
@@ -218,6 +222,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         address owner,
         uint256 amount,
         address receiver,
+        uint256 relayerFee,
         uint256 maxGelatoFee,
         bytes calldata relaySig
     ) internal {
@@ -232,9 +237,10 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
             mstore(add(m, 0x20), owner)
             mstore(add(m, 0x40), amount)
             mstore(add(m, 0x60), receiver)
-            mstore(add(m, 0x80), maxGelatoFee)
-            mstore(add(m, 0xa0), nonce)
-            structHash := keccak256(m, 0xc0)
+            mstore(add(m, 0x80), relayerFee)
+            mstore(add(m, 0xa0), maxGelatoFee)
+            mstore(add(m, 0xc0), nonce)
+            structHash := keccak256(m, 0xe0)
         }
         bytes32 digest = _hashTypedDataV4(structHash);
         require(SignatureChecker.isValidSignatureNowCalldata(owner, digest, relaySig), InvalidRelaySignature());

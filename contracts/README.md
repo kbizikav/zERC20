@@ -326,6 +326,30 @@ forge verify-contract --chain-id 421614 --watch <LIQUIDITY_MANAGER_IMPL> src/liq
 forge verify-contract --chain-id 11155420 --watch <LIQUIDITY_MANAGER_IMPL> src/liquidity/LiquidityManager.sol:LiquidityManager --constructor-args "$ARGS"
 ```
 
+Verifier upgrade for relay fee support
+--------------------------------------
+If you upgrade an existing `Verifier` to the relay-fee version, you must initialize the new EIP-712 domain in the same transaction. A plain `upgradeTo(...)` leaves `initializeV2(...)` uncalled, and relay teleports will fail when the CLI tries to fetch/sign the Verifier domain.
+
+Use the dedicated upgrade script:
+
+```bash
+export VERIFIER_PROXY=0xVerifierProxy
+export PRIVATE_KEY=0x...
+# Optional overrides; defaults shown below
+export EIP712_NAME=Verifier
+export EIP712_VERSION=1
+
+forge script script/upgrade/VerifierUpgrade.s.sol:UpgradeVerifier \
+  --rpc-url <VERIFIER_RPC> \
+  --broadcast -vvvv
+```
+
+This script deploys a fresh implementation and executes:
+
+```solidity
+upgradeToAndCall(newImpl, abi.encodeCall(Verifier.initializeV2, ("Verifier", "1")));
+```
+
 Audit-pre checklist (functions not exercised in the walkthrough)
 ---------------------------------------------------------------
 This repo has ZKP-heavy paths that are hard to exercise without proof generation. The walkthrough above mainly covers

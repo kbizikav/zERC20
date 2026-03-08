@@ -47,8 +47,8 @@ pub struct TokenEntry {
     #[serde(
         default,
         alias = "gelatoRelayAddress",
-        alias = "gelatoTeleportRelayAddress",
-        alias = "gelato_teleport_relay_address"
+        alias = "gelatoRelayAddress",
+        alias = "gelato_relay_address"
     )]
     pub gelato_relay_address: Option<Address>,
 }
