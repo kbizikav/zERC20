@@ -567,7 +567,8 @@ interface RawTokenEntry {
 }
 
 interface RawAggregationTreeState {
-  latestAggSeq: NumericValue;
+  scope: string;
+  rootHint: NumericValue;
   aggregationRoot: string;
   snapshot: string[];
   transferTreeIndices: NumericValue[];
@@ -653,7 +654,8 @@ function serializeTokenEntry(entry: TokenEntryConfig): RawTokenEntry {
 
 function serializeAggregationTreeState(state: AggregationTreeState): RawAggregationTreeState {
   return {
-    latestAggSeq: state.latestAggSeq,
+    scope: state.scope,
+    rootHint: state.rootHint,
     aggregationRoot: normalizeHex(state.aggregationRoot),
     snapshot: state.snapshot.map((value) => normalizeHex(value)),
     transferTreeIndices: state.transferTreeIndices.map((value) => value),
@@ -663,7 +665,8 @@ function serializeAggregationTreeState(state: AggregationTreeState): RawAggregat
 
 function deserializeAggregationTreeState(raw: RawAggregationTreeState): AggregationTreeState {
   return {
-    latestAggSeq: toBigInt(raw.latestAggSeq),
+    scope: raw.scope,
+    rootHint: toBigInt(raw.rootHint),
     aggregationRoot: normalizeHex(raw.aggregationRoot),
     snapshot: raw.snapshot.map((value) => normalizeHex(value)),
     transferTreeIndices: raw.transferTreeIndices.map((value) => toBigInt(value)),

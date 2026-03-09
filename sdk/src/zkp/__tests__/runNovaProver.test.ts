@@ -78,7 +78,8 @@ describe("runNovaProver (dummy steps)", () => {
   it("produces a withdraw nova proof using deterministic dummy steps", async () => {
     const result = await proofs.runNovaProver({
       aggregationState: {
-        latestAggSeq: 1n,
+        scope: 'global',
+        rootHint: 1n,
         aggregationRoot: ZERO_FR,
         snapshot: [],
         transferTreeIndices: [],

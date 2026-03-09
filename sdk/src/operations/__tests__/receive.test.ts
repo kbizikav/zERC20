@@ -67,7 +67,8 @@ describe('generateSingleTeleportProof', () => {
 
     const result = await generateSingleTeleportProof({
       aggregationState: {
-        latestAggSeq: 1n,
+        scope: 'global',
+        rootHint: 1n,
         aggregationRoot: padHex(99),
         snapshot: [],
         transferTreeIndices: [],
