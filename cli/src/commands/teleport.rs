@@ -440,6 +440,14 @@ pub async fn redeem_transfers_via_relay(
     println!("  Unwrap fee     : {}", fee_estimate.unwrap_fee);
     println!("  Total (w/ buf) : {}", relayer_fee);
 
+    if relayer_fee >= total_value {
+        anyhow::bail!(
+            "estimated relayer fee {} is not less than claimable value {}; relay mode would revert with RelayerFeeExceedsDiff",
+            relayer_fee,
+            total_value
+        );
+    }
+
     // EIP-712 signature
     let deadline = SystemTime::now()
         .duration_since(SystemTime::UNIX_EPOCH)
