@@ -67,6 +67,17 @@ A zero-knowledge proof system used for single withdrawals in zERC20. Known for i
 ### Hash Chain
 A sequence of hashes where each hash includes the previous hash. zERC20 uses a SHA-256 hash chain to ensure deterministic ordering of all transfers.
 
+## SDK Terms
+
+### EvmReadProvider
+A library-agnostic interface for read-only EVM interaction (contract reads, balance queries, fee estimation). viem's `PublicClient` satisfies this interface structurally without any adapter.
+
+### EvmWriteProvider
+A library-agnostic interface for signing and submitting EVM transactions. viem's `WalletClient` satisfies this interface structurally. Allows the SDK to work with viem, ethers.js, or any other EVM library.
+
+### RedeemTransaction
+A prepared transaction object returned by `prepareRedeemTransaction()`. Contains the contract address, ABI, function name, and encoded arguments ready for on-chain submission via `submitRedeemTransaction()`.
+
 ## Infrastructure Terms
 
 ### LayerZero
@@ -86,6 +97,12 @@ A blockchain platform hosting zERC20's stealth messaging infrastructure. ICP can
 
 ### VetKD
 Verifiable encrypted threshold key derivation. Used by ICP canisters to enable encrypted messaging between senders and recipients.
+
+### Decider
+An HTTP worker service that finalizes Nova batch proofs into Groth16 proofs for on-chain verification. Required for batch (multi-event) teleport operations.
+
+### LayerZero Scan
+An API service provided by LayerZero for tracking cross-chain message status. The SDK wraps this API in the `layerzeroScan` module for monitoring bridge progress and transaction history.
 
 ## User-Facing Terms
 

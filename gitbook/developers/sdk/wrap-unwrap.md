@@ -2,6 +2,14 @@
 
 The `LiquidityManager` contract converts between underlying tokens (USDC, ETH, BNB) and their zERC20 counterparts (zUSDC, zETH, zBNB). Wrapping deposits the underlying token and mints zERC20 -- the protocol adds a **reward** incentive to encourage deposits. Unwrapping burns zERC20 and returns the underlying token minus a **fee**. Both reward and fee are driven by a target-liquidity curve that keeps pool balances healthy.
 
+## EVM Providers
+
+All wrap/unwrap functions use the library-agnostic `EvmWriteProvider` and `EvmReadProvider` interfaces. viem's `WalletClient` and `PublicClient` satisfy these interfaces directly -- no adapter needed.
+
+```typescript
+import type { EvmReadProvider, EvmWriteProvider } from "zerc20-client-sdk";
+```
+
 ## Wrap
 
 Wrap an underlying token into its zERC20 equivalent.
@@ -16,8 +24,8 @@ function wrapWithLiquidityManager(
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `walletClient` | `WalletClient` | Wallet client used to sign and send transactions |
-| `publicClient?` | `PublicClient` | Optional public client for read calls (derived from `walletClient` if omitted) |
+| `writeProvider` | `EvmWriteProvider` | Write provider used to sign and send transactions |
+| `readProvider?` | `EvmReadProvider` | Optional read provider for contract reads and receipt polling |
 | `liquidityManagerAddress` | `string` | Address of the LiquidityManager contract |
 | `amount` | `bigint \| number \| string` | Amount of underlying token to wrap (in base units) |
 | `underlyingTokenAddress?` | `string` | Override underlying token address (auto-read from contract if omitted) |
@@ -38,12 +46,16 @@ For **native ETH wrapping**, the SDK sends `msg.value` automatically -- no ERC-2
 Before wrapping, you can query the on-chain `quoteWrapReward` to preview the reward:
 
 ```typescript
-import { getLiquidityManagerContract } from "zerc20-client-sdk";
-
-const manager = getLiquidityManagerContract(entry.liquidityManagerAddress, publicClient);
-const reward = await manager.read.quoteWrapReward([100_000_000n]);
+const reward = await readProvider.readContract({
+  address: entry.liquidityManagerAddress,
+  abi: LiquidityManagerArtifact.abi,
+  functionName: "quoteWrapReward",
+  args: [100_000_000n],
+});
 console.log("Reward:", reward);
 ```
+
+> **Note:** `LiquidityManagerArtifact` is exported from the SDK as a contract ABI artifact.
 
 ### Example -- Wrap 100 USDC to zUSDC
 
@@ -61,7 +73,8 @@ const entry = findTokenByChain(tokens, 42161n); // Arbitrum
 
 // 2. Execute the wrap
 const result = await wrapWithLiquidityManager({
-  walletClient,
+  writeProvider,                                    // EvmWriteProvider
+  readProvider,                                     // optional EvmReadProvider
   liquidityManagerAddress: entry.liquidityManagerAddress,
   amount: 100_000_000n, // 100 USDC (6 decimals)
 });
@@ -85,12 +98,12 @@ function unwrapWithLiquidityManager(
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `walletClient` | `WalletClient` | Wallet client used to sign and send transactions |
-| `publicClient?` | `PublicClient` | Optional public client for read calls |
-| `liquidityManagerAddress` | `Address` | Address of the LiquidityManager contract |
-| `zerc20TokenAddress` | `Address` | Address of the zERC20 token to burn |
+| `writeProvider` | `EvmWriteProvider` | Write provider used to sign and send transactions |
+| `readProvider?` | `EvmReadProvider` | Optional read provider for contract reads |
+| `liquidityManagerAddress` | `string` | Address of the LiquidityManager contract |
+| `zerc20TokenAddress` | `string` | Address of the zERC20 token to burn |
 | `amount` | `bigint \| number \| string` | Amount of zERC20 to unwrap (in base units) |
-| `recipient?` | `Address` | Recipient of the underlying token (defaults to the sender) |
+| `recipient?` | `string` | Recipient of the underlying token (defaults to the sender) |
 | `feeOverrides?` | `FeeOverrides` | Optional gas-price / gas-limit overrides |
 | `minAmountOut?` | `bigint` | Minimum underlying to receive; a **pre-flight slippage check** is performed before submitting |
 
@@ -100,7 +113,7 @@ When `minAmountOut` is set the SDK simulates the unwrap off-chain first. If the 
 
 ```typescript
 function quoteLocalUnwrap(
-  params: LocalUnwrapQuoteParams,
+  params: { provider: EvmReadProvider; liquidityManagerAddress: string; amount: bigint | number | string },
 ): Promise<LocalUnwrapQuote>;
 ```
 
@@ -143,7 +156,7 @@ function sendCrossUnwrap(
 ): Promise<LiquidityActionResult>;
 ```
 
-Pass the `CrossUnwrapQuote` together with a `walletClient` and the contract addresses. The SDK attaches `sendNativeFee` as `msg.value` automatically.
+Pass the `CrossUnwrapQuote` together with a `writeProvider` and the contract addresses. The SDK attaches `sendNativeFee` as `msg.value` automatically.
 
 ## Fee Estimation
 
@@ -151,7 +164,7 @@ Use the quote helpers to estimate costs **before** submitting a transaction:
 
 | Operation | Helper | Key fields |
 |-----------|--------|------------|
-| Local wrap | `getLiquidityManagerContract().read.quoteWrapReward()` | reward amount |
+| Local wrap | `readProvider.readContract()` with `quoteWrapReward` | reward amount |
 | Local unwrap | `quoteLocalUnwrap()` | `fee`, `expectedOut` |
 | Cross-chain unwrap | `buildCrossUnwrapQuote()` | `tokenUnwrapFee`, `nativeBridgeFee`, `tokenBridgeFee`, `expectedOut` |
 
@@ -169,7 +182,7 @@ function fetchLiquidityManagerBalances(
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `underlyingAddress` | `Address` | Address of the underlying ERC-20 (or zero address for native ETH) |
+| `underlyingAddress` | `string` | Address of the underlying ERC-20 (or zero address for native ETH) |
 | `underlyingBalance` | `bigint` | Current underlying token balance held by the pool |
 | `underlyingDecimals` | `number` | Decimals of the underlying token |
 | `zerc20Balance` | `bigint` | Current zERC20 balance held by the pool |
