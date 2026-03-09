@@ -9,7 +9,7 @@ use client_common::{
     contracts::{hub::HubContract, verifier::VerifierContract, z_erc20::ZErc20Contract},
     indexer::HttpIndexerClient,
     teleport::{
-        aggregation_tree::{self, AggregationTreeState},
+        aggregation_tree::{self, AggregationTreeState, TransferRootScope},
         events::{self, EventsWithEligibility},
         merkle_proofs::{self, GlobalTeleportMerkleProof, LocalTeleportMerkleProof},
     },
@@ -30,7 +30,8 @@ use zkp::{
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JsAggregationTreeState {
-    pub latest_agg_seq: u64,
+    pub scope: String,
+    pub root_hint: u64,
     pub aggregation_root: String,
     pub snapshot: Vec<String>,
     pub transfer_tree_indices: Vec<u64>,
@@ -81,6 +82,9 @@ struct FetchAggregationTreeParams {
     event_block_span: Option<u64>,
     hub: HubEntry,
     token: TokenEntry,
+    chain_id: u64,
+    #[serde(default)]
+    use_local_root: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -118,8 +122,13 @@ struct GenerateGlobalTeleportProofsParams {
 
 impl From<AggregationTreeState> for JsAggregationTreeState {
     fn from(state: AggregationTreeState) -> Self {
+        let scope = match state.scope {
+            TransferRootScope::Global => "global",
+            TransferRootScope::Local => "local",
+        };
         JsAggregationTreeState {
-            latest_agg_seq: state.latest_agg_seq,
+            scope: scope.to_string(),
+            root_hint: state.root_hint,
             aggregation_root: format_u256_hex(state.aggregation_root),
             snapshot: state.snapshot.into_iter().map(format_u256_hex).collect(),
             transfer_tree_indices: state.tree_root_indices,
@@ -148,8 +157,14 @@ impl TryFrom<JsAggregationTreeState> for AggregationTreeState {
         if tree.get_root() != u256_to_fr(aggregation_root) {
             anyhow::bail!("aggregation snapshot root mismatch");
         }
+        let scope = match value.scope.as_str() {
+            "global" => TransferRootScope::Global,
+            "local" => TransferRootScope::Local,
+            other => anyhow::bail!("unknown scope: {}", other),
+        };
         Ok(AggregationTreeState {
-            latest_agg_seq: value.latest_agg_seq,
+            scope,
+            root_hint: value.root_hint,
             aggregation_root,
             aggregation_tree: tree,
             tree_root_indices: value.transfer_tree_indices,
@@ -230,7 +245,7 @@ async fn fetch_aggregation_tree_state_impl(
     let hub = build_hub(&hub_entry)?;
     let verifier = build_verifier(&token_entry)?;
     let span = params.event_block_span.unwrap_or(5_000);
-    let state = aggregation_tree::fetch_aggregation_tree_state(span, &verifier, &hub).await?;
+    let state = aggregation_tree::fetch_aggregation_tree_state(span, &verifier, &hub, params.chain_id, params.use_local_root).await?;
     Ok(JsAggregationTreeState::from(state))
 }
 
