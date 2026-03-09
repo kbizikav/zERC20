@@ -245,7 +245,14 @@ async fn fetch_aggregation_tree_state_impl(
     let hub = build_hub(&hub_entry)?;
     let verifier = build_verifier(&token_entry)?;
     let span = params.event_block_span.unwrap_or(5_000);
-    let state = aggregation_tree::fetch_aggregation_tree_state(span, &verifier, &hub, params.chain_id, params.use_local_root).await?;
+    let state = aggregation_tree::fetch_aggregation_tree_state(
+        span,
+        &verifier,
+        &hub,
+        params.chain_id,
+        params.use_local_root,
+    )
+    .await?;
     Ok(JsAggregationTreeState::from(state))
 }
 
