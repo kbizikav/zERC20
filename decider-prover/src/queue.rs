@@ -115,6 +115,7 @@ impl QueueClient {
             .connect(database_url)
             .await?;
         let pgmq = PGMQueueExt::new_with_pool(pool.clone()).await;
+        pgmq.init().await?;
         pgmq.create(queue_name).await?;
         create_job_table(&pool, &job_table).await?;
 
