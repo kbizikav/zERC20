@@ -36,9 +36,23 @@ is set in your environment before redemption).
      --chain-id <CHAIN_ID> \
      --invoice-id <INVOICE_ID_FROM_LS>
    ```
+   Use `--local` to inspect only the local proved transfer root on that chain instead of the hub global root:
+   ```bash
+   cargo run -r -- invoice status \
+     --chain-id <CHAIN_ID> \
+     --invoice-id <INVOICE_ID_FROM_LS> \
+     --local
+   ```
 5. Generate proofs and redeem:
    ```bash
    cargo run -r -- invoice receive \
      --chain-id <CHAIN_ID> \
      --invoice-id <INVOICE_ID_FROM_LS>
+   ```
+   Local-root redemption uses the same flag:
+   ```bash
+   cargo run -r -- invoice receive \
+     --chain-id <CHAIN_ID> \
+     --invoice-id <INVOICE_ID_FROM_LS> \
+     --local
    ```

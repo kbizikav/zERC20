@@ -111,7 +111,12 @@ async fn build_invoice_receive_context(
         .tweak;
     let gr = GeneralRecipient::new_evm(recipient_chain_id, recipient_address, tweak);
     let burn_addresses: Vec<_> = burn_address_to_secret_and_tweak.keys().cloned().collect();
-    let token_clients: Vec<_> = token_entries
+    let fetch_token_entries: Vec<TokenEntry> = if args.local {
+        vec![token_entry.clone()]
+    } else {
+        token_entries.to_vec()
+    };
+    let token_clients: Vec<_> = fetch_token_entries
         .iter()
         .map(build_erc20)
         .collect::<Result<Vec<_>>>()?;
@@ -120,17 +125,22 @@ async fn build_invoice_receive_context(
     let events_map = fetch_transfer_events(
         &indexer,
         Some(common_args.indexer_fetch_limit),
-        token_entries,
+        &fetch_token_entries,
         &token_clients,
         &burn_addresses,
     )
     .await
     .context("failed to fetch transfer events for invoice redemption")?;
 
-    let aggregation_tree_state =
-        fetch_aggregation_tree_state(common_args.event_block_span, &verifier, &hub)
-            .await
-            .context("failed to fetch aggregation tree state")?;
+    let aggregation_tree_state = fetch_aggregation_tree_state(
+        common_args.event_block_span,
+        &verifier,
+        &hub,
+        args.chain_id,
+        args.local,
+    )
+    .await
+    .context("failed to fetch aggregation tree state")?;
 
     let separated_events = separate_events_by_eligibility(&aggregation_tree_state, &events_map)?;
 

@@ -12,7 +12,7 @@ use client_common::{
     },
     indexer::{HttpIndexerClient, IndexedEvent},
     teleport::{
-        aggregation_tree::AggregationTreeState,
+        aggregation_tree::{AggregationTreeState, TransferRootScope},
         events::EventsWithEligibility,
         merkle_proofs::{
             fetch_local_teleport_merkle_proofs, generate_global_teleport_merkle_proofs,
@@ -21,7 +21,7 @@ use client_common::{
     tokens::TokenEntry,
 };
 use zkp::{
-    nova::constants::GLOBAL_TRANSFER_TREE_HEIGHT,
+    nova::constants::{GLOBAL_TRANSFER_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
     utils::{convertion::b256_to_fr, general_recipient::GeneralRecipient},
 };
 
@@ -81,81 +81,159 @@ pub async fn redeem_transfers(
                 .context("failed to fetch local teleport Merkle proofs")?;
         local_teleport_mps.insert(*chain_id, local_proofs);
     }
-    let global_merkle_proofs =
-        generate_global_teleport_merkle_proofs(aggregation_tree_state, &local_teleport_mps)
-            .context("failed to generate global teleport Merkle proofs")?;
+    match aggregation_tree_state.scope {
+        TransferRootScope::Global => {
+            let global_merkle_proofs =
+                generate_global_teleport_merkle_proofs(aggregation_tree_state, &local_teleport_mps)
+                    .context("failed to generate global teleport Merkle proofs")?;
 
-    if global_merkle_proofs.is_empty() {
-        return Ok(RedeemResult::NoProofs);
-    }
+            if global_merkle_proofs.is_empty() {
+                return Ok(RedeemResult::NoProofs);
+            }
 
-    if global_merkle_proofs.len() == 1 {
-        let global_proof = &global_merkle_proofs[0];
-        let secret = burn_address_to_secret
-            .get(&global_proof.event.to)
-            .context("missing secret for burn address")?;
-        let single_proof = single_teleport_proof::<GLOBAL_TRANSFER_TREE_HEIGHT>(
-            artifacts_dir,
-            gr.to_fr(),
-            aggregation_tree_state.aggregation_root,
-            global_proof.event.clone(),
-            global_proof.global_merkle_proof.clone(),
-            global_proof.global_leaf_index,
-            b256_to_fr(*secret),
-        )
-        .context("failed to generate single teleport proof")?;
-        let pending = verifier
-            .single_teleport(
-                private_key,
-                true,
-                aggregation_tree_state.latest_agg_seq,
-                gr,
-                &single_proof,
-            )
-            .await
-            .context("failed to submit single global teleport transaction")?;
-        let tx_hash = format_tx_hash(pending.tx_hash().as_slice());
-        println!("Submitted teleport  : {}", tx_hash);
-    } else {
-        let mut events = Vec::new();
-        let mut merkle_proofs = Vec::new();
-        let mut leaf_indices = Vec::new();
-        let mut secrets = Vec::new();
-        for global_proof in &global_merkle_proofs {
-            events.push(global_proof.event.clone());
-            merkle_proofs.push(global_proof.global_merkle_proof.clone());
-            leaf_indices.push(global_proof.global_leaf_index);
-            let secret = burn_address_to_secret
-                .get(&global_proof.event.to)
-                .context("missing secret for burn address")?;
-            secrets.push(b256_to_fr(*secret));
+            if global_merkle_proofs.len() == 1 {
+                let global_proof = &global_merkle_proofs[0];
+                let secret = burn_address_to_secret
+                    .get(&global_proof.event.to)
+                    .context("missing secret for burn address")?;
+                let single_proof = single_teleport_proof::<GLOBAL_TRANSFER_TREE_HEIGHT>(
+                    artifacts_dir,
+                    gr.to_fr(),
+                    aggregation_tree_state.aggregation_root,
+                    global_proof.event.clone(),
+                    global_proof.global_merkle_proof.clone(),
+                    global_proof.global_leaf_index,
+                    b256_to_fr(*secret),
+                )
+                .context("failed to generate single teleport proof")?;
+                let pending = verifier
+                    .single_teleport(
+                        private_key,
+                        true,
+                        aggregation_tree_state.root_hint,
+                        gr,
+                        &single_proof,
+                    )
+                    .await
+                    .context("failed to submit single global teleport transaction")?;
+                let tx_hash = format_tx_hash(pending.tx_hash().as_slice());
+                println!("Submitted teleport  : {}", tx_hash);
+            } else {
+                let mut events = Vec::new();
+                let mut merkle_proofs = Vec::new();
+                let mut leaf_indices = Vec::new();
+                let mut secrets = Vec::new();
+                for global_proof in &global_merkle_proofs {
+                    events.push(global_proof.event.clone());
+                    merkle_proofs.push(global_proof.global_merkle_proof.clone());
+                    leaf_indices.push(global_proof.global_leaf_index);
+                    let secret = burn_address_to_secret
+                        .get(&global_proof.event.to)
+                        .context("missing secret for burn address")?;
+                    secrets.push(b256_to_fr(*secret));
+                }
+                let decider = build_decider_client(common_args, "teleport redemption")?;
+                let batch_proof = batch_teleport_proof::<GLOBAL_TRANSFER_TREE_HEIGHT>(
+                    artifacts_dir,
+                    &decider,
+                    gr.to_fr(),
+                    aggregation_tree_state.aggregation_root,
+                    &events,
+                    &merkle_proofs,
+                    &leaf_indices,
+                    &secrets,
+                )
+                .await
+                .context("failed to generate batch teleport proof")?;
+
+                let pending = verifier
+                    .teleport(
+                        private_key,
+                        true,
+                        aggregation_tree_state.root_hint,
+                        gr,
+                        &batch_proof,
+                    )
+                    .await
+                    .context("failed to submit batch global teleport transaction")?;
+                let tx_hash = format_tx_hash(pending.tx_hash().as_slice());
+                println!("Submitted teleport  : {}", tx_hash);
+            }
         }
-        let decider = build_decider_client(common_args, "teleport redemption")?;
-        let batch_proof = batch_teleport_proof::<GLOBAL_TRANSFER_TREE_HEIGHT>(
-            artifacts_dir,
-            &decider,
-            gr.to_fr(),
-            aggregation_tree_state.aggregation_root,
-            &events,
-            &merkle_proofs,
-            &leaf_indices,
-            &secrets,
-        )
-        .await
-        .context("failed to generate batch teleport proof")?;
+        TransferRootScope::Local => {
+            let Some((_, local_proofs)) = local_teleport_mps.iter().next() else {
+                return Ok(RedeemResult::NoProofs);
+            };
 
-        let pending = verifier
-            .teleport(
-                private_key,
-                true,
-                aggregation_tree_state.latest_agg_seq,
-                gr,
-                &batch_proof,
-            )
-            .await
-            .context("failed to submit batch global teleport transaction")?;
-        let tx_hash = format_tx_hash(pending.tx_hash().as_slice());
-        println!("Submitted teleport  : {}", tx_hash);
+            if local_proofs.len() == 1 {
+                let local_proof = &local_proofs[0];
+                let secret = burn_address_to_secret
+                    .get(&local_proof.event.to)
+                    .context("missing secret for burn address")?;
+                let single_proof = single_teleport_proof::<TRANSFER_TREE_HEIGHT>(
+                    artifacts_dir,
+                    gr.to_fr(),
+                    aggregation_tree_state.aggregation_root,
+                    local_proof.event.clone(),
+                    local_proof.local_merkle_proof.clone(),
+                    local_proof.event.event_index,
+                    b256_to_fr(*secret),
+                )
+                .context("failed to generate single teleport proof")?;
+                let pending = verifier
+                    .single_teleport(
+                        private_key,
+                        false,
+                        aggregation_tree_state.root_hint,
+                        gr,
+                        &single_proof,
+                    )
+                    .await
+                    .context("failed to submit single local teleport transaction")?;
+                let tx_hash = format_tx_hash(pending.tx_hash().as_slice());
+                println!("Submitted teleport  : {}", tx_hash);
+            } else {
+                let mut events = Vec::new();
+                let mut merkle_proofs = Vec::new();
+                let mut leaf_indices = Vec::new();
+                let mut secrets = Vec::new();
+                for local_proof in local_proofs {
+                    events.push(local_proof.event.clone());
+                    merkle_proofs.push(local_proof.local_merkle_proof.clone());
+                    leaf_indices.push(local_proof.event.event_index);
+                    let secret = burn_address_to_secret
+                        .get(&local_proof.event.to)
+                        .context("missing secret for burn address")?;
+                    secrets.push(b256_to_fr(*secret));
+                }
+                let decider = build_decider_client(common_args, "teleport redemption")?;
+                let batch_proof = batch_teleport_proof::<TRANSFER_TREE_HEIGHT>(
+                    artifacts_dir,
+                    &decider,
+                    gr.to_fr(),
+                    aggregation_tree_state.aggregation_root,
+                    &events,
+                    &merkle_proofs,
+                    &leaf_indices,
+                    &secrets,
+                )
+                .await
+                .context("failed to generate batch teleport proof")?;
+
+                let pending = verifier
+                    .teleport(
+                        private_key,
+                        false,
+                        aggregation_tree_state.root_hint,
+                        gr,
+                        &batch_proof,
+                    )
+                    .await
+                    .context("failed to submit batch local teleport transaction")?;
+                let tx_hash = format_tx_hash(pending.tx_hash().as_slice());
+                println!("Submitted teleport  : {}", tx_hash);
+            }
+        }
     }
 
     Ok(RedeemResult::Submitted)
@@ -217,59 +295,114 @@ pub async fn redeem_transfers_via_relay(
             .context("failed to fetch local teleport Merkle proofs")?;
         local_teleport_mps.insert(*chain_id, local_proofs);
     }
-    let global_merkle_proofs =
-        generate_global_teleport_merkle_proofs(aggregation_tree_state, &local_teleport_mps)
-            .context("failed to generate global teleport Merkle proofs")?;
-
-    if global_merkle_proofs.is_empty() {
-        return Ok(RedeemResult::NoProofs);
-    }
-
     // Generate ZK proof (single or batch)
-    let (proof_bytes, is_single) = if global_merkle_proofs.len() == 1 {
-        let global_proof = &global_merkle_proofs[0];
-        let secret = burn_address_to_secret
-            .get(&global_proof.event.to)
-            .context("missing secret for burn address")?;
-        let single_proof = single_teleport_proof::<GLOBAL_TRANSFER_TREE_HEIGHT>(
-            artifacts_dir,
-            gr.to_fr(),
-            aggregation_tree_state.aggregation_root,
-            global_proof.event.clone(),
-            global_proof.global_merkle_proof.clone(),
-            global_proof.global_leaf_index,
-            b256_to_fr(*secret),
-        )
-        .context("failed to generate single teleport proof")?;
-        (single_proof, true)
-    } else {
-        let mut events = Vec::new();
-        let mut merkle_proofs = Vec::new();
-        let mut leaf_indices = Vec::new();
-        let mut secrets = Vec::new();
-        for global_proof in &global_merkle_proofs {
-            events.push(global_proof.event.clone());
-            merkle_proofs.push(global_proof.global_merkle_proof.clone());
-            leaf_indices.push(global_proof.global_leaf_index);
-            let secret = burn_address_to_secret
-                .get(&global_proof.event.to)
-                .context("missing secret for burn address")?;
-            secrets.push(b256_to_fr(*secret));
+    let (proof_bytes, is_single, is_global) = match aggregation_tree_state.scope {
+        TransferRootScope::Global => {
+            let global_merkle_proofs =
+                generate_global_teleport_merkle_proofs(aggregation_tree_state, &local_teleport_mps)
+                    .context("failed to generate global teleport Merkle proofs")?;
+
+            if global_merkle_proofs.is_empty() {
+                return Ok(RedeemResult::NoProofs);
+            }
+
+            if global_merkle_proofs.len() == 1 {
+                let global_proof = &global_merkle_proofs[0];
+                let secret = burn_address_to_secret
+                    .get(&global_proof.event.to)
+                    .context("missing secret for burn address")?;
+                let single_proof = single_teleport_proof::<GLOBAL_TRANSFER_TREE_HEIGHT>(
+                    artifacts_dir,
+                    gr.to_fr(),
+                    aggregation_tree_state.aggregation_root,
+                    global_proof.event.clone(),
+                    global_proof.global_merkle_proof.clone(),
+                    global_proof.global_leaf_index,
+                    b256_to_fr(*secret),
+                )
+                .context("failed to generate single teleport proof")?;
+                (single_proof, true, true)
+            } else {
+                let mut events = Vec::new();
+                let mut merkle_proofs = Vec::new();
+                let mut leaf_indices = Vec::new();
+                let mut secrets = Vec::new();
+                for global_proof in &global_merkle_proofs {
+                    events.push(global_proof.event.clone());
+                    merkle_proofs.push(global_proof.global_merkle_proof.clone());
+                    leaf_indices.push(global_proof.global_leaf_index);
+                    let secret = burn_address_to_secret
+                        .get(&global_proof.event.to)
+                        .context("missing secret for burn address")?;
+                    secrets.push(b256_to_fr(*secret));
+                }
+                let decider = build_decider_client(common_args, "teleport redemption")?;
+                let batch_proof = batch_teleport_proof::<GLOBAL_TRANSFER_TREE_HEIGHT>(
+                    artifacts_dir,
+                    &decider,
+                    gr.to_fr(),
+                    aggregation_tree_state.aggregation_root,
+                    &events,
+                    &merkle_proofs,
+                    &leaf_indices,
+                    &secrets,
+                )
+                .await
+                .context("failed to generate batch teleport proof")?;
+                (batch_proof, false, true)
+            }
         }
-        let decider = build_decider_client(common_args, "teleport redemption")?;
-        let batch_proof = batch_teleport_proof::<GLOBAL_TRANSFER_TREE_HEIGHT>(
-            artifacts_dir,
-            &decider,
-            gr.to_fr(),
-            aggregation_tree_state.aggregation_root,
-            &events,
-            &merkle_proofs,
-            &leaf_indices,
-            &secrets,
-        )
-        .await
-        .context("failed to generate batch teleport proof")?;
-        (batch_proof, false)
+        TransferRootScope::Local => {
+            let Some((_, local_proofs)) = local_teleport_mps.iter().next() else {
+                return Ok(RedeemResult::NoProofs);
+            };
+
+            if local_proofs.len() == 1 {
+                let local_proof = &local_proofs[0];
+                let secret = burn_address_to_secret
+                    .get(&local_proof.event.to)
+                    .context("missing secret for burn address")?;
+                let single_proof = single_teleport_proof::<TRANSFER_TREE_HEIGHT>(
+                    artifacts_dir,
+                    gr.to_fr(),
+                    aggregation_tree_state.aggregation_root,
+                    local_proof.event.clone(),
+                    local_proof.local_merkle_proof.clone(),
+                    local_proof.event.event_index,
+                    b256_to_fr(*secret),
+                )
+                .context("failed to generate single teleport proof")?;
+                (single_proof, true, false)
+            } else {
+                let mut events = Vec::new();
+                let mut merkle_proofs = Vec::new();
+                let mut leaf_indices = Vec::new();
+                let mut secrets = Vec::new();
+                for local_proof in local_proofs {
+                    events.push(local_proof.event.clone());
+                    merkle_proofs.push(local_proof.local_merkle_proof.clone());
+                    leaf_indices.push(local_proof.event.event_index);
+                    let secret = burn_address_to_secret
+                        .get(&local_proof.event.to)
+                        .context("missing secret for burn address")?;
+                    secrets.push(b256_to_fr(*secret));
+                }
+                let decider = build_decider_client(common_args, "teleport redemption")?;
+                let batch_proof = batch_teleport_proof::<TRANSFER_TREE_HEIGHT>(
+                    artifacts_dir,
+                    &decider,
+                    gr.to_fr(),
+                    aggregation_tree_state.aggregation_root,
+                    &events,
+                    &merkle_proofs,
+                    &leaf_indices,
+                    &secrets,
+                )
+                .await
+                .context("failed to generate batch teleport proof")?;
+                (batch_proof, false, false)
+            }
+        }
     };
 
     // Estimate relayer fee
@@ -332,8 +465,8 @@ pub async fn redeem_transfers_via_relay(
 
     // Encode calldata
     let params = RelayTeleportParams {
-        is_global: true,
-        root_hint: aggregation_tree_state.latest_agg_seq,
+        is_global,
+        root_hint: aggregation_tree_state.root_hint,
         chain_id: gr.chain_id,
         recipient: gr.address,
         tweak: gr.tweak,

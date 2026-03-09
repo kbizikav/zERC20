@@ -51,10 +51,15 @@ pub async fn run(
     let token_clients = tokens.iter().map(build_erc20).collect::<Result<Vec<_>>>()?;
     let indexer = build_indexer_client(common_args, "receive transfer command")?;
 
-    let aggregation_tree_state =
-        fetch_aggregation_tree_state(common_args.event_block_span, &verifier, &hub_contract)
-            .await
-            .context("failed to fetch aggregation tree state")?;
+    let aggregation_tree_state = fetch_aggregation_tree_state(
+        common_args.event_block_span,
+        &verifier,
+        &hub_contract,
+        chain_id,
+        false,
+    )
+    .await
+    .context("failed to fetch aggregation tree state")?;
 
     let events_map = fetch_transfer_events(
         &indexer,

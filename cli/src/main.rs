@@ -387,6 +387,10 @@ pub struct InvoiceReceiveArgs {
     #[arg(long, value_name = "INVOICE_ID", value_parser = parse_b256)]
     pub invoice_id: B256,
 
+    /// Use the chain-local proved transfer root instead of the hub global transfer root.
+    #[arg(long, default_value_t = false)]
+    pub local: bool,
+
     #[command(flatten)]
     pub relay: RelayArgs,
 }
