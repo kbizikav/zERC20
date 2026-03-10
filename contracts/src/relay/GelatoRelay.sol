@@ -235,6 +235,7 @@ contract GelatoRelay is
         uint256 deadline,
         bytes calldata relaySig
     ) internal {
+        // slither-disable-next-line timestamp
         require(block.timestamp <= deadline, RelayAuthorizationExpired(deadline, block.timestamp));
         uint256 nonce = nonces[owner];
         ++nonces[owner];
@@ -267,6 +268,7 @@ contract GelatoRelay is
         uint256 deadline,
         bytes calldata relaySig
     ) internal {
+        // slither-disable-next-line timestamp
         require(block.timestamp <= deadline, RelayAuthorizationExpired(deadline, block.timestamp));
         uint256 nonce = nonces[owner];
         ++nonces[owner];

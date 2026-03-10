@@ -425,14 +425,14 @@ pub async fn redeem_transfers_via_relay(
     .context("failed to estimate relayer fee")?;
 
     let relayer_fee = fee_estimate.relayer_fee;
-    if let Some(cap) = relay_args.max_relay_fee {
-        if cap < relayer_fee {
-            anyhow::bail!(
-                "estimated relayer fee {} exceeds --max-relay-fee cap {}",
-                relayer_fee,
-                cap
-            );
-        }
+    if let Some(cap) = relay_args.max_relay_fee
+        && cap < relayer_fee
+    {
+        anyhow::bail!(
+            "estimated relayer fee {} exceeds --max-relay-fee cap {}",
+            relayer_fee,
+            cap
+        );
     }
     let max_fee = relayer_fee;
 
