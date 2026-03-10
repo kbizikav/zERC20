@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { GLOBAL_TRANSFER_TREE_HEIGHT } from '../../constants.js';
-import type { GlobalTeleportProofWithEvent } from '../../types.js';
+import type { GlobalTeleportProofWithEvent, LocalTeleportProof } from '../../types.js';
 
 const proveMock = vi.fn();
 const runNovaProverMock = vi.fn();
@@ -113,6 +113,17 @@ describe('generateSingleTeleportProof', () => {
       steps: 1,
     });
     const produceDeciderProof = vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6]));
+    const localProof: LocalTeleportProof = {
+      treeIndex: 3n,
+      event: {
+        eventIndex: 0n,
+        from: hexString(11),
+        to: hexString(12),
+        value: 5n,
+        ethBlockNumber: 42n,
+      },
+      siblings: [],
+    };
 
     const result = await generateBatchTeleportProof({
       aggregationState: {
@@ -125,12 +136,19 @@ describe('generateSingleTeleportProof', () => {
       },
       recipientFr: padHex(7),
       secretHex: padHex(8),
-      proofs: [],
-      events: [],
+      proofs: [localProof],
+      events: [localProof.event],
       decider: { produceDeciderProof } as never,
       offloadToWorker: false,
     });
 
+    expect(runNovaProverMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        proofs: [localProof],
+        events: [localProof.event],
+      }),
+      { offloadToWorker: false },
+    );
     expect(produceDeciderProof).toHaveBeenCalledWith('withdraw_local', new Uint8Array([1, 2, 3]));
     expect(result.deciderProof).toEqual(new Uint8Array([4, 5, 6]));
   });

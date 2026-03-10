@@ -1,6 +1,6 @@
 import poseidon from 'poseidon-lite';
 
-import type { GlobalTeleportProof, IndexedEvent } from '../types.js';
+import type { BatchTeleportProof, IndexedEvent } from '../types.js';
 import { normalizeHex, toBigInt } from './hex.js';
 
 const BN254_FIELD_MODULUS = BigInt('0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47');
@@ -71,14 +71,15 @@ export function computeMerkleRootFromSiblings(params: {
   return state;
 }
 
-export function verifyGlobalTeleportProofs(args: {
+export function verifyTeleportProofs(args: {
+  scope: string;
   aggregationRoot: string;
   events: readonly IndexedEvent[];
-  proofs: readonly GlobalTeleportProof[];
+  proofs: readonly BatchTeleportProof[];
 }): void {
-  const { aggregationRoot, events, proofs } = args;
+  const { scope, aggregationRoot, events, proofs } = args;
   if (events.length !== proofs.length) {
-    throw new Error('events length must match proofs length for global teleport verification');
+    throw new Error('events length must match proofs length for teleport verification');
   }
   if (events.length === 0) {
     return;
@@ -90,16 +91,34 @@ export function verifyGlobalTeleportProofs(args: {
     const proof = proofs[idx];
     const event = events[idx];
     const leaf = computeLeafHash(event.to, event.value);
+    const leafIndex = getBatchProofIndex(scope, proof, idx);
     const derivedRoot = computeMerkleRootFromSiblings({
       leaf,
       siblings: proof.siblings,
-      leafIndex: proof.leafIndex,
+      leafIndex,
     });
     if (derivedRoot !== expectedRoot) {
-      const leafLabel = `leafIndex ${proof.leafIndex.toString()} (eventIndex ${event.eventIndex.toString()})`;
+      const leafLabel = `${scope === 'local' ? 'treeIndex' : 'leafIndex'} ${leafIndex.toString()} (eventIndex ${event.eventIndex.toString()})`;
       throw new Error(`merkle proof mismatch for ${leafLabel}`);
     }
   }
+}
+
+function getBatchProofIndex(
+  scope: string,
+  proof: BatchTeleportProof,
+  idx: number,
+): bigint {
+  if (scope === 'local') {
+    if (!('treeIndex' in proof)) {
+      throw new Error(`proofs[${idx}] must be a local teleport proof`);
+    }
+    return proof.treeIndex;
+  }
+  if ('leafIndex' in proof) {
+    return proof.leafIndex;
+  }
+  throw new Error(`proofs[${idx}] must be a global teleport proof`);
 }
 
 export { BN254_FIELD_MODULUS };

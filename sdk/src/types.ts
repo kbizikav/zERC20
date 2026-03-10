@@ -80,6 +80,14 @@ export interface GlobalTeleportProof {
   leafIndex: bigint;
 }
 
+export interface LocalTeleportProof {
+  treeIndex: bigint;
+  event: IndexedEvent;
+  siblings: string[];
+}
+
+export type BatchTeleportProof = GlobalTeleportProof | LocalTeleportProof;
+
 export interface GlobalTeleportProofWithEvent extends GlobalTeleportProof {
   event: IndexedEvent;
 }
@@ -110,7 +118,7 @@ export interface NovaProverInput {
   aggregationState: AggregationTreeState;
   recipientFr: string;
   secretHex: string;
-  proofs: readonly GlobalTeleportProof[];
+  proofs: readonly BatchTeleportProof[];
   events: readonly IndexedEvent[];
 }
 
@@ -152,12 +160,6 @@ export interface EventsWithEligibility {
 export interface SeparatedChainEvents {
   chainId: bigint;
   events: EventsWithEligibility;
-}
-
-export interface LocalTeleportProof {
-  treeIndex: bigint;
-  event: IndexedEvent;
-  siblings: string[];
 }
 
 export interface ChainLocalTeleportProofs {

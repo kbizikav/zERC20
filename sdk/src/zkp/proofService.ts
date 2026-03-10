@@ -1,5 +1,5 @@
 import type {
-  GlobalTeleportProof,
+  BatchTeleportProof,
   IndexedEvent,
   NovaProverInput,
   NovaProverOutput,
@@ -7,7 +7,7 @@ import type {
   SingleTeleportParams,
 } from "../types.js";
 import { hexToBytes, normalizeHex } from "../utils/hex.js";
-import { verifyGlobalTeleportProofs } from "../utils/merkle.js";
+import { verifyTeleportProofs } from "../utils/merkle.js";
 import {
   loadBatchTeleportArtifacts,
   loadSingleTeleportArtifacts,
@@ -157,9 +157,14 @@ export class ProofService {
     }
 
     const { events: sortedEvents, proofs: sortedProofs } =
-      sortProofsByLeafIndex(params.events, params.proofs);
+      sortProofsByIndex(
+        params.aggregationState.scope,
+        params.events,
+        params.proofs
+      );
 
-    verifyGlobalTeleportProofs({
+    verifyTeleportProofs({
+      scope: params.aggregationState.scope,
       aggregationRoot: params.aggregationState.aggregationRoot,
       events: sortedEvents,
       proofs: sortedProofs,
@@ -186,7 +191,9 @@ export class ProofService {
         `events[${idx}].value`
       ),
       secret: formatFieldElement(params.secretHex, `events[${idx}].secret`),
-      leafIndex: toLeafIndexString(sortedProofs[idx].leafIndex),
+      leafIndex: toLeafIndexString(
+        getBatchProofIndex(params.aggregationState.scope, sortedProofs[idx], idx)
+      ),
       siblings: sortedProofs[idx].siblings.map((sibling, siblingIdx) =>
         formatFieldElement(sibling, `proofs[${idx}].siblings[${siblingIdx}]`)
       ),
@@ -215,19 +222,22 @@ export class ProofService {
   }
 }
 
-function sortProofsByLeafIndex(
+function sortProofsByIndex(
+  scope: string,
   events: readonly IndexedEvent[],
-  proofs: readonly GlobalTeleportProof[]
-): { events: IndexedEvent[]; proofs: GlobalTeleportProof[] } {
+  proofs: readonly BatchTeleportProof[]
+): { events: IndexedEvent[]; proofs: BatchTeleportProof[] } {
   const proofEventPairs = events.map((event, idx) => ({
     event,
     proof: proofs[idx],
   }));
   proofEventPairs.sort((a, b) => {
-    if (a.proof.leafIndex < b.proof.leafIndex) {
+    const aIndex = getBatchProofIndex(scope, a.proof);
+    const bIndex = getBatchProofIndex(scope, b.proof);
+    if (aIndex < bIndex) {
       return -1;
     }
-    if (a.proof.leafIndex > b.proof.leafIndex) {
+    if (aIndex > bIndex) {
       return 1;
     }
     return 0;
@@ -236,4 +246,29 @@ function sortProofsByLeafIndex(
     events: proofEventPairs.map((pair) => pair.event),
     proofs: proofEventPairs.map((pair) => pair.proof),
   };
+}
+
+function getBatchProofIndex(
+  scope: string,
+  proof: BatchTeleportProof,
+  idx?: number
+): bigint {
+  if (scope === "local") {
+    if ("treeIndex" in proof) {
+      return proof.treeIndex;
+    }
+    throw new Error(
+      idx === undefined
+        ? "expected local teleport proof"
+        : `proofs[${idx}] must be a local teleport proof`
+    );
+  }
+  if ("leafIndex" in proof) {
+    return proof.leafIndex;
+  }
+  throw new Error(
+    idx === undefined
+      ? "expected global teleport proof"
+      : `proofs[${idx}] must be a global teleport proof`
+  );
 }
