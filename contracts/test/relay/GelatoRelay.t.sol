@@ -722,10 +722,13 @@ contract GelatoRelayTest is TestHelperOz5 {
 
         bytes memory data = abi.encodeCall(GelatoRelay.relayTeleport, (true, ROOT_HINT, gr, proof, feeAuth, gelatoFee));
 
-        // The unwrap of 5 ether with ~5 ether liquidity and high k will produce < 5 ether,
-        // triggering InsufficientUnwrapOutput.
-        (bool success,) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
+        // With ~5 ether liquidity remaining and k=10_000, unwrapping 5 ether hits the
+        // insufficient-liquidity branch in IncentiveLib.quoteUnwrapFee (liquidity <= amount),
+        // driving the fee to nearly the full amount. The unwrap output is close to 0,
+        // which is far below gelatoFee (5 ether), triggering InsufficientUnwrapOutput.
+        (bool success, bytes memory ret) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
         assertFalse(success, "should revert when unwrap output < gelato fee");
+        assertEq(bytes4(ret), GelatoRelay.InsufficientUnwrapOutput.selector, "expected InsufficientUnwrapOutput error");
     }
 
     // -----------------------------------------------------------------------
