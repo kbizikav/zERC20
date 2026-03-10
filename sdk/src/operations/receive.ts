@@ -294,7 +294,8 @@ export async function generateBatchTeleportProof(params: BatchTeleportParams): P
   if (params.onDeciderRequestStart) {
     await params.onDeciderRequestStart();
   }
-  const deciderProof = await params.decider.produceDeciderProof('withdraw_global', novaResult.ivcProof);
+  const circuit = params.aggregationState.scope === 'local' ? 'withdraw_local' : 'withdraw_global';
+  const deciderProof = await params.decider.produceDeciderProof(circuit, novaResult.ivcProof);
 
   return {
     deciderProof,
