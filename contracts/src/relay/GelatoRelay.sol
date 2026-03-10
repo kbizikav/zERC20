@@ -164,11 +164,7 @@ contract GelatoRelay is
         ZERC20_TOKEN.safeTransferFrom(owner, address(this), totalAmount);
         // slither-disable-next-line unused-return
         LIQUIDITY_MANAGER.unwrap(amount, receiver);
-        if (relayerFee > 0) {
-            // slither-disable-next-line unused-return
-            LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));
-        }
-        _transferRelayFeeCapped(maxGelatoFee);
+        _unwrapAndPayGelato(relayerFee, maxGelatoFee);
     }
 
     /// @notice Relays a zERC20 transfer via Gelato using ERC-2612 permit.
@@ -196,11 +192,7 @@ contract GelatoRelay is
         // slither-disable-next-line arbitrary-send-erc20-permit
         ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
         ZERC20_TOKEN.safeTransfer(to, amount - relayerFee);
-        if (relayerFee > 0) {
-            // slither-disable-next-line unused-return
-            LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));
-        }
-        _transferRelayFeeCapped(maxGelatoFee);
+        _unwrapAndPayGelato(relayerFee, maxGelatoFee);
     }
 
     /// @notice Withdraws surplus ERC20 tokens to `to`.

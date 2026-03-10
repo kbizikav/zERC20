@@ -67,7 +67,7 @@ export interface ScannedAnnouncement {
 }
 
 export interface AggregationTreeState {
-  scope: string;
+  scope: 'global' | 'local';
   rootHint: bigint;
   aggregationRoot: string;
   snapshot: string[];

@@ -671,13 +671,20 @@ function serializeAggregationTreeState(state: AggregationTreeState): RawAggregat
 
 function deserializeAggregationTreeState(raw: RawAggregationTreeState): AggregationTreeState {
   return {
-    scope: raw.scope,
+    scope: parseAggregationScope(raw.scope),
     rootHint: toBigInt(raw.rootHint),
     aggregationRoot: normalizeHex(raw.aggregationRoot),
     snapshot: raw.snapshot.map((value) => normalizeHex(value)),
     transferTreeIndices: raw.transferTreeIndices.map((value) => toBigInt(value)),
     chainIds: raw.chainIds.map((value) => toBigInt(value)),
   };
+}
+
+function parseAggregationScope(scope: string): AggregationTreeState['scope'] {
+  if (scope === 'global' || scope === 'local') {
+    return scope;
+  }
+  throw new Error(`unsupported aggregation scope: ${scope}`);
 }
 
 function serializeIndexedEvent(event: IndexedEvent): RawIndexedEvent {

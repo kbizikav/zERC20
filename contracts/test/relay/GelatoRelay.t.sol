@@ -689,23 +689,7 @@ contract GelatoRelayTest is TestHelperOz5 {
     // -----------------------------------------------------------------------
 
     function testRevertWhenUnwrapOutputInsufficient() public {
-        // Step 1: Drain most of the manager's underlying liquidity.
-        // Teleport mints zERC20 without adding underlying to the manager.
-        address drainer = address(0xD4A1);
-        GeneralRecipientLib.GeneralRecipient memory drainerGr = _buildGr(drainer);
-        uint256 drainerHash = GeneralRecipientLib.hash(drainerGr);
-        uint256 drainAmount = 99_995 ether;
-        bytes memory drainProof = _buildNovaProof(TRANSFER_ROOT, drainerHash, drainAmount);
-        vm.prank(drainer);
-        verifier.teleport(true, ROOT_HINT, drainerGr, drainProof);
-        // Unwrap to drain underlying from manager (leaves ~5 ether)
-        vm.prank(drainer);
-        token.approve(address(manager), drainAmount);
-        vm.prank(drainer);
-        manager.unwrap(drainAmount, drainer);
-
-        // Step 2: Enable fees so the remaining small unwrap loses value
-        manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 1_000 ether, k: 10_000}));
+        _drainManagerLiquidityAndEnableFees();
 
         // Step 3: Set up relay teleport where relayerFee unwrap output < gelatoFee
         GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
@@ -730,6 +714,63 @@ contract GelatoRelayTest is TestHelperOz5 {
         assertFalse(success, "should revert when unwrap output < gelato fee");
         assertGe(ret.length, 4, "revert data too short");
         assertEq(bytes4(ret), GelatoRelay.InsufficientUnwrapOutput.selector, "expected InsufficientUnwrapOutput error");
+    }
+
+    function testRelayUnwrapRevertsWhenFeeUnwrapOutputInsufficient() public {
+        _drainManagerLiquidityAndEnableFees();
+
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 5 ether;
+        uint256 gelatoFee = 5 ether;
+        address receiver = address(0xBEEF);
+
+        underlying.mint(address(this), amount + relayerFee);
+        underlying.approve(address(manager), amount + relayerFee);
+        manager.wrap(amount + relayerFee, signerAddr);
+
+        bytes memory data = _buildRelayUnwrapData(amount, relayerFee, receiver, gelatoFee);
+
+        (bool success, bytes memory ret) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
+        assertFalse(success, "should revert when fee unwrap output < gelato fee");
+        assertGe(ret.length, 4, "revert data too short");
+        assertEq(bytes4(ret), GelatoRelay.InsufficientUnwrapOutput.selector, "expected InsufficientUnwrapOutput error");
+    }
+
+    function testRelayTransferRevertsWhenFeeUnwrapOutputInsufficient() public {
+        _drainManagerLiquidityAndEnableFees();
+
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 5 ether;
+        uint256 gelatoFee = 5 ether;
+        address recipient = address(0xCAFE);
+
+        underlying.mint(address(this), amount);
+        underlying.approve(address(manager), amount);
+        manager.wrap(amount, signerAddr);
+
+        bytes memory data = _buildRelayTransferData(amount, relayerFee, recipient, gelatoFee);
+
+        (bool success, bytes memory ret) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
+        assertFalse(success, "should revert when fee unwrap output < gelato fee");
+        assertGe(ret.length, 4, "revert data too short");
+        assertEq(bytes4(ret), GelatoRelay.InsufficientUnwrapOutput.selector, "expected InsufficientUnwrapOutput error");
+    }
+
+    function _drainManagerLiquidityAndEnableFees() internal {
+        // Teleport mints zERC20 without adding underlying to the manager.
+        address drainer = address(0xD4A1);
+        GeneralRecipientLib.GeneralRecipient memory drainerGr = _buildGr(drainer);
+        uint256 drainerHash = GeneralRecipientLib.hash(drainerGr);
+        uint256 drainAmount = 99_995 ether;
+        bytes memory drainProof = _buildNovaProof(TRANSFER_ROOT, drainerHash, drainAmount);
+        vm.prank(drainer);
+        verifier.teleport(true, ROOT_HINT, drainerGr, drainProof);
+        vm.prank(drainer);
+        token.approve(address(manager), drainAmount);
+        vm.prank(drainer);
+        manager.unwrap(drainAmount, drainer);
+
+        manager.setFeeParams(IncentiveLib.FeeParams({targetLiquidity: 1_000 ether, k: 10_000}));
     }
 
     // -----------------------------------------------------------------------
