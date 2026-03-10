@@ -74,21 +74,25 @@ export interface RedeemContextParams {
   indexerUrl: string;
   indexerFetchLimit?: number;
   eventBlockSpan?: bigint | number;
+  useLocalRoot?: boolean;
 }
 
 export async function collectRedeemContext(params: RedeemContextParams): Promise<RedeemContext> {
   const primaryChainId = params.burn.generalRecipient.chainId;
   const primaryToken = findTokenByChain(params.tokens, primaryChainId);
+  const fetchTokens = params.useLocalRoot ? [primaryToken] : params.tokens;
 
   const aggregationState = await fetchAggregationTreeState({
     hub: params.hub,
     token: primaryToken,
     eventBlockSpan: params.eventBlockSpan,
+    chainId: primaryChainId,
+    useLocalRoot: params.useLocalRoot,
   });
 
   const chainEvents = await fetchTransferEvents({
     indexerUrl: params.indexerUrl,
-    tokens: params.tokens,
+    tokens: fetchTokens,
     burnAddresses: [params.burn.burnAddress],
     indexerFetchLimit: params.indexerFetchLimit ?? DEFAULT_INDEXER_FETCH_LIMIT,
   });
@@ -108,7 +112,7 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
   const combinedGlobalProofs: GlobalTeleportProofWithEvent[] = [];
   const combinedEligibleProofs: LocalTeleportProof[] = [];
 
-  for (const tokenEntry of params.tokens) {
+  for (const tokenEntry of fetchTokens) {
     const chainEventsForToken =
       eventsByChain.get(tokenEntry.chainId) ?? { eligible: [], ineligible: [] };
 
@@ -136,15 +140,17 @@ export async function collectRedeemContext(params: RedeemContextParams): Promise
         treeIndex: treeRootIndex,
         events: chainEventsForToken.eligible,
       });
-      globalProofs = await generateGlobalTeleportProofs({
-        aggregationState,
-        chains: [
-          {
-            chainId: tokenEntry.chainId,
-            proofs: eligibleProofs,
-          },
-        ],
-      });
+      if (aggregationState.scope === 'global') {
+        globalProofs = await generateGlobalTeleportProofs({
+          aggregationState,
+          chains: [
+            {
+              chainId: tokenEntry.chainId,
+              proofs: eligibleProofs,
+            },
+          ],
+        });
+      }
     }
 
     perChain.push({

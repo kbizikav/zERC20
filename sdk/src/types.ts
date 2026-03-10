@@ -169,6 +169,8 @@ export interface FetchAggregationTreeStateParams {
   eventBlockSpan?: number | bigint;
   hub: HubEntryConfig;
   token: TokenEntryConfig;
+  chainId: bigint;
+  useLocalRoot?: boolean;
 }
 
 export interface FetchTransferEventsParams {

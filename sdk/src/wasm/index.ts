@@ -192,12 +192,18 @@ export class WasmRuntime {
       eventBlockSpan?: number;
       hub: RawHubEntry;
       token: RawTokenEntry;
+      chainId: bigint;
+      useLocalRoot?: boolean;
     } = {
       hub: serializeHubEntry(params.hub),
       token: serializeTokenEntry(params.token),
+      chainId: params.chainId,
     };
     if (params.eventBlockSpan !== undefined) {
       payload.eventBlockSpan = toSafeNumber(params.eventBlockSpan, 'eventBlockSpan');
+    }
+    if (params.useLocalRoot !== undefined) {
+      payload.useLocalRoot = params.useLocalRoot;
     }
     const rawState: RawAggregationTreeState = await wasmFetchAggregationTreeState(payload);
     return deserializeAggregationTreeState(rawState);

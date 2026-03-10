@@ -27,6 +27,7 @@ describe('WasmRuntime input validation', () => {
   test('fetchAggregationTreeState rejects negative eventBlockSpan numbers', async () => {
     const params: FetchAggregationTreeStateParams = {
       eventBlockSpan: -1,
+      chainId: 1n,
       hub: {
         hubAddress: '0x01',
         chainId: 1n,
