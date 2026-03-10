@@ -142,25 +142,27 @@ impl TryFrom<JsAggregationTreeState> for AggregationTreeState {
 
     fn try_from(value: JsAggregationTreeState) -> Result<Self> {
         let aggregation_root = parse_u256_hex(&value.aggregation_root)?;
+        let scope = match value.scope.as_str() {
+            "global" => TransferRootScope::Global,
+            "local" => TransferRootScope::Local,
+            other => anyhow::bail!("unknown scope: {}", other),
+        };
         let snapshot = value
             .snapshot
             .iter()
             .map(|hex| parse_u256_hex(hex))
             .collect::<Result<Vec<_>, _>>()?;
         let mut tree = MerkleTree::new(AGGREGATION_TREE_HEIGHT);
-        for (idx, entry) in snapshot.iter().enumerate() {
-            if entry.is_zero() {
-                continue;
+        if matches!(scope, TransferRootScope::Global) {
+            for (idx, entry) in snapshot.iter().enumerate() {
+                if entry.is_zero() {
+                    continue;
+                }
+                tree.update_leaf(idx as u64, u256_to_fr(*entry));
             }
-            tree.update_leaf(idx as u64, u256_to_fr(*entry));
-        }
-        if tree.get_root() != u256_to_fr(aggregation_root) {
-            anyhow::bail!("aggregation snapshot root mismatch");
-        }
-        let scope = match value.scope.as_str() {
-            "global" => TransferRootScope::Global,
-            "local" => TransferRootScope::Local,
-            other => anyhow::bail!("unknown scope: {}", other),
+            if tree.get_root() != u256_to_fr(aggregation_root) {
+                anyhow::bail!("aggregation snapshot root mismatch");
+            }
         };
         Ok(AggregationTreeState {
             scope,

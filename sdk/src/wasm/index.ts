@@ -745,6 +745,7 @@ function serializeLocalTeleportProof(proof: LocalTeleportProof): RawLocalTelepor
 
 function deserializeLocalTeleportProof(raw: RawLocalTeleportProof): LocalTeleportProof {
   return {
+    kind: 'local',
     treeIndex: toBigInt(raw.treeIndex),
     event: deserializeIndexedEvent(raw.event),
     siblings: raw.siblings.map((value) => normalizeHex(value)),
@@ -762,6 +763,7 @@ function serializeChainLocalTeleportProofs(
 
 function deserializeGlobalTeleportProof(raw: RawGlobalTeleportProof): GlobalTeleportProofWithEvent {
   return {
+    kind: 'global',
     event: deserializeIndexedEvent(raw.event),
     siblings: raw.siblings.map((value) => normalizeHex(value)),
     leafIndex: toBigInt(raw.leafIndex),

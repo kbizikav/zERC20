@@ -339,6 +339,10 @@ pub struct ReceiveTransferArgs {
     )]
     pub scan_results_path: Option<PathBuf>,
 
+    /// Use the destination chain's latest local proved root instead of the hub global root.
+    #[arg(long, default_value_t = false)]
+    pub local: bool,
+
     #[command(flatten)]
     pub relay: RelayArgs,
 }

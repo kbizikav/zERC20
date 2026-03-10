@@ -66,6 +66,7 @@ describe('generateSingleTeleportProof', () => {
 
     const siblings = Array.from({ length: GLOBAL_TRANSFER_TREE_HEIGHT }, () => hexString(0));
     const globalProof: GlobalTeleportProofWithEvent = {
+      kind: 'global',
       event: {
         eventIndex: 0n,
         from: hexString(11),
@@ -115,6 +116,7 @@ describe('generateSingleTeleportProof', () => {
     proveMock.mockResolvedValue(proofResponse);
 
     const localProof: LocalTeleportProof = {
+      kind: 'local',
       treeIndex: 7n,
       event: {
         eventIndex: 1n,
@@ -154,6 +156,7 @@ describe('generateSingleTeleportProof', () => {
     });
     const produceDeciderProof = vi.fn().mockResolvedValue(new Uint8Array([4, 5, 6]));
     const localProof: LocalTeleportProof = {
+      kind: 'local',
       treeIndex: 3n,
       event: {
         eventIndex: 0n,

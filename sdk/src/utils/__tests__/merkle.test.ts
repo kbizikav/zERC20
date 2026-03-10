@@ -30,6 +30,7 @@ describe('verifyTeleportProofs', () => {
       asHex(computeLeafHash('0x3333333333333333333333333333333333333333', 7n)),
     ];
     const proof: GlobalTeleportProof = {
+      kind: 'global',
       siblings,
       leafIndex: 3n,
     };
@@ -56,6 +57,7 @@ describe('verifyTeleportProofs', () => {
       asHex(computeLeafHash('0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 2n)),
     ];
     const proof: GlobalTeleportProof = {
+      kind: 'global',
       siblings,
       leafIndex: 1n,
     };
@@ -86,6 +88,7 @@ describe('verifyTeleportProofs', () => {
       asHex(computeLeafHash('0x5555555555555555555555555555555555555555', 10n)),
     ];
     const proof: LocalTeleportProof = {
+      kind: 'local',
       treeIndex: 2n,
       event,
       siblings,

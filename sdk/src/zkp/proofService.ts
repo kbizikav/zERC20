@@ -1,4 +1,5 @@
 import type {
+  AggregationTreeState,
   BatchTeleportProof,
   IndexedEvent,
   NovaProverInput,
@@ -8,6 +9,7 @@ import type {
 } from "../types.js";
 import { hexToBytes, normalizeHex } from "../utils/hex.js";
 import { verifyTeleportProofs } from "../utils/merkle.js";
+import { getTeleportProofIndex } from "../utils/teleportProofs.js";
 import {
   loadBatchTeleportArtifacts,
   loadSingleTeleportArtifacts,
@@ -116,7 +118,7 @@ export class ProofService {
       delta: zeroField,
       secret: formatFieldElement(params.secretHex, "secret"),
       leafIndex: toLeafIndexString(
-        getBatchProofIndex(params.aggregationState.scope, params.proof)
+        getTeleportProofIndex(params.aggregationState.scope, params.proof)
       ),
       siblings: params.proof.siblings.map((sibling, idx) =>
         formatFieldElement(sibling, `proof.siblings[${idx}]`)
@@ -194,7 +196,7 @@ export class ProofService {
       ),
       secret: formatFieldElement(params.secretHex, `events[${idx}].secret`),
       leafIndex: toLeafIndexString(
-        getBatchProofIndex(params.aggregationState.scope, sortedProofs[idx], idx)
+        getTeleportProofIndex(params.aggregationState.scope, sortedProofs[idx], idx)
       ),
       siblings: sortedProofs[idx].siblings.map((sibling, siblingIdx) =>
         formatFieldElement(sibling, `proofs[${idx}].siblings[${siblingIdx}]`)
@@ -225,7 +227,7 @@ export class ProofService {
 }
 
 function sortProofsByIndex(
-  scope: string,
+  scope: AggregationTreeState["scope"],
   events: readonly IndexedEvent[],
   proofs: readonly BatchTeleportProof[]
 ): { events: IndexedEvent[]; proofs: BatchTeleportProof[] } {
@@ -234,8 +236,8 @@ function sortProofsByIndex(
     proof: proofs[idx],
   }));
   proofEventPairs.sort((a, b) => {
-    const aIndex = getBatchProofIndex(scope, a.proof);
-    const bIndex = getBatchProofIndex(scope, b.proof);
+    const aIndex = getTeleportProofIndex(scope, a.proof);
+    const bIndex = getTeleportProofIndex(scope, b.proof);
     if (aIndex < bIndex) {
       return -1;
     }
@@ -248,29 +250,4 @@ function sortProofsByIndex(
     events: proofEventPairs.map((pair) => pair.event),
     proofs: proofEventPairs.map((pair) => pair.proof),
   };
-}
-
-function getBatchProofIndex(
-  scope: string,
-  proof: BatchTeleportProof,
-  idx?: number
-): bigint {
-  if (scope === "local") {
-    if ("treeIndex" in proof) {
-      return proof.treeIndex;
-    }
-    throw new Error(
-      idx === undefined
-        ? "expected local teleport proof"
-        : `proofs[${idx}] must be a local teleport proof`
-    );
-  }
-  if ("leafIndex" in proof) {
-    return proof.leafIndex;
-  }
-  throw new Error(
-    idx === undefined
-      ? "expected global teleport proof"
-      : `proofs[${idx}] must be a global teleport proof`
-  );
 }

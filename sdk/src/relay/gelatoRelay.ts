@@ -13,7 +13,6 @@ import type {
 import { RelayTaskState } from './types.js';
 
 const GELATO_RELAY_GAS_OVERHEAD = 150_000n;
-const DEFAULT_GAS_LIMIT = 1_000_000n;
 const RELAY_FEE_BUFFER_BPS = 500n; // 5% buffer
 const BPS_DENOMINATOR = 10_000n;
 
@@ -236,9 +235,10 @@ export async function waitForRelayTask(
   for (let i = 0; i < polls; i++) {
     const status = await relay.getTaskStatus(taskId);
     if (status) {
+      const taskState = parseRelayTaskState(status.taskState);
       const result: RelayTaskResult = {
         taskId: status.taskId,
-        taskState: status.taskState as unknown as RelayTaskState,
+        taskState,
         transactionHash: status.transactionHash,
         blockNumber: status.blockNumber,
         executionDate: status.executionDate,
@@ -264,4 +264,18 @@ export async function waitForRelayTask(
     taskState: RelayTaskState.CheckPending,
     lastCheckMessage: `Polling timed out after ${polls} attempts`,
   };
+}
+
+function parseRelayTaskState(taskState: string): RelayTaskState {
+  switch (taskState) {
+    case RelayTaskState.CheckPending:
+    case RelayTaskState.ExecPending:
+    case RelayTaskState.WaitingForConfirmation:
+    case RelayTaskState.ExecSuccess:
+    case RelayTaskState.ExecReverted:
+    case RelayTaskState.Cancelled:
+      return taskState;
+    default:
+      throw new Error(`unknown Gelato task state: ${taskState}`);
+  }
 }

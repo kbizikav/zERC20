@@ -56,7 +56,7 @@ pub async fn run(
         &verifier,
         &hub_contract,
         chain_id,
-        false,
+        args.local,
     )
     .await
     .context("failed to fetch aggregation tree state")?;

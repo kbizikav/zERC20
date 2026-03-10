@@ -100,6 +100,12 @@ fn relayer_fee_typehash() -> B256 {
 
 /// Gelato Relay API base URL.
 const GELATO_RELAY_URL: &str = "https://relay.gelato.digital";
+const EIP712_FIELD_NAME: u8 = 1 << 0;
+const EIP712_FIELD_VERSION: u8 = 1 << 1;
+const EIP712_FIELD_CHAIN_ID: u8 = 1 << 2;
+const EIP712_FIELD_VERIFYING_CONTRACT: u8 = 1 << 3;
+const SUPPORTED_EIP712_FIELDS: u8 =
+    EIP712_FIELD_NAME | EIP712_FIELD_VERSION | EIP712_FIELD_CHAIN_ID | EIP712_FIELD_VERIFYING_CONTRACT;
 
 /// Default number of polls when waiting for a relay task.
 const DEFAULT_POLLS: u32 = 40;
@@ -141,6 +147,7 @@ pub async fn fetch_domain_separator(
     let result = contract.eip712Domain().call().await.context(
         "failed to call eip712Domain() on Verifier — ensure Verifier has been upgraded with initializeV2",
     )?;
+    ensure_supported_eip712_fields(result.fields.as_slice()[0], "Verifier")?;
 
     let type_hash = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
@@ -346,6 +353,7 @@ pub async fn fetch_relay_domain_separator(
     let result = contract.eip712Domain().call().await.context(
         "failed to call eip712Domain() on GelatoRelay — ensure initializeV2 has been called",
     )?;
+    ensure_supported_eip712_fields(result.fields.as_slice()[0], "GelatoRelay")?;
 
     let type_hash = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
@@ -508,6 +516,7 @@ pub async fn sign_permit(
         .call()
         .await
         .context("failed to call eip712Domain() on zERC20 token")?;
+    ensure_supported_eip712_fields(domain.fields.as_slice()[0], "zERC20")?;
 
     let domain_type_hash = keccak256(
         "EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)",
@@ -581,6 +590,18 @@ pub async fn fetch_permit_nonce(
         .await
         .context("failed to fetch permit nonce")?;
     Ok(nonce)
+}
+
+fn ensure_supported_eip712_fields(fields: u8, contract_name: &str) -> Result<()> {
+    if fields != SUPPORTED_EIP712_FIELDS {
+        bail!(
+            "{} eip712Domain() returned unsupported fields bitmask 0x{:02x}; expected 0x{:02x}",
+            contract_name,
+            fields,
+            SUPPORTED_EIP712_FIELDS
+        );
+    }
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------

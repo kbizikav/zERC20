@@ -76,11 +76,13 @@ export interface AggregationTreeState {
 }
 
 export interface GlobalTeleportProof {
+  kind: 'global';
   siblings: string[];
   leafIndex: bigint;
 }
 
 export interface LocalTeleportProof {
+  kind: 'local';
   treeIndex: bigint;
   event: IndexedEvent;
   siblings: string[];

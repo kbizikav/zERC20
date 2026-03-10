@@ -1,7 +1,7 @@
 use alloy::primitives::U256;
 use anyhow::Context;
 use zkp::{
-    nova::constants::{AGGREGATION_TREE_HEIGHT, TRANSFER_TREE_HEIGHT},
+    nova::constants::AGGREGATION_TREE_HEIGHT,
     utils::{convertion::u256_to_fr, tree::merkle_tree::MerkleTree},
 };
 
@@ -119,17 +119,14 @@ async fn fetch_local_aggregation_tree_state(
         );
     }
 
-    let mut local_tree = MerkleTree::new(TRANSFER_TREE_HEIGHT);
-    local_tree.update_leaf(0, u256_to_fr(local_root));
-
     Ok(AggregationTreeState {
         scope: TransferRootScope::Local,
         root_hint: latest_proved_index,
         aggregation_root: local_root,
-        aggregation_tree: local_tree,
+        aggregation_tree: MerkleTree::new(AGGREGATION_TREE_HEIGHT),
         tree_root_indices: vec![latest_proved_index],
         chain_ids: vec![chain_id],
-        snapshot: vec![local_root],
+        snapshot: Vec::new(),
     })
 }
 

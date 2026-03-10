@@ -1,6 +1,7 @@
 import poseidon from 'poseidon-lite';
 
-import type { BatchTeleportProof, IndexedEvent } from '../types.js';
+import type { AggregationTreeState, BatchTeleportProof, IndexedEvent } from '../types.js';
+import { getTeleportProofIndex } from './teleportProofs.js';
 import { normalizeHex, toBigInt } from './hex.js';
 
 const BN254_FIELD_MODULUS = BigInt('0x30644e72e131a029b85045b68181585d97816a916871ca8d3c208c16d87cfd47');
@@ -72,7 +73,7 @@ export function computeMerkleRootFromSiblings(params: {
 }
 
 export function verifyTeleportProofs(args: {
-  scope: string;
+  scope: AggregationTreeState['scope'];
   aggregationRoot: string;
   events: readonly IndexedEvent[];
   proofs: readonly BatchTeleportProof[];
@@ -91,7 +92,7 @@ export function verifyTeleportProofs(args: {
     const proof = proofs[idx];
     const event = events[idx];
     const leaf = computeLeafHash(event.to, event.value);
-    const leafIndex = getBatchProofIndex(scope, proof, idx);
+    const leafIndex = getTeleportProofIndex(scope, proof, idx);
     const derivedRoot = computeMerkleRootFromSiblings({
       leaf,
       siblings: proof.siblings,
@@ -102,23 +103,6 @@ export function verifyTeleportProofs(args: {
       throw new Error(`merkle proof mismatch for ${leafLabel}`);
     }
   }
-}
-
-function getBatchProofIndex(
-  scope: string,
-  proof: BatchTeleportProof,
-  idx: number,
-): bigint {
-  if (scope === 'local') {
-    if (!('treeIndex' in proof)) {
-      throw new Error(`proofs[${idx}] must be a local teleport proof`);
-    }
-    return proof.treeIndex;
-  }
-  if ('leafIndex' in proof) {
-    return proof.leafIndex;
-  }
-  throw new Error(`proofs[${idx}] must be a global teleport proof`);
 }
 
 export { BN254_FIELD_MODULUS };
