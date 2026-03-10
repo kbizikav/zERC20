@@ -31,7 +31,7 @@ const sdk = createSdk();
 | Field | Type | Description |
 |-------|------|-------------|
 | `wasm` | `WasmRuntime` | Custom WASM runtime (auto-detected if omitted) |
-| `teleportProofs` | `TeleportProofClient` | Custom teleport-proof client |
+| `proofs` | `ProofService` | Custom proof service |
 | `decider` | `HttpDeciderClient` | Decider prover endpoint |
 | `stealth` | `StealthClientFactory` | Custom stealth client factory |
 
@@ -40,7 +40,7 @@ The returned `Zerc20Sdk` exposes the same fields for direct access:
 ```typescript
 interface Zerc20Sdk {
   wasm: WasmRuntime;
-  teleportProofs: TeleportProofClient;
+  proofs: ProofService;
   decider?: HttpDeciderClient;
   stealth: StealthClientFactory;
 }
