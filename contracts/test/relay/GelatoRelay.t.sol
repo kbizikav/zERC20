@@ -728,6 +728,7 @@ contract GelatoRelayTest is TestHelperOz5 {
         // which is far below gelatoFee (5 ether), triggering InsufficientUnwrapOutput.
         (bool success, bytes memory ret) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
         assertFalse(success, "should revert when unwrap output < gelato fee");
+        assertGe(ret.length, 4, "revert data too short");
         assertEq(bytes4(ret), GelatoRelay.InsufficientUnwrapOutput.selector, "expected InsufficientUnwrapOutput error");
     }
 
