@@ -44,12 +44,7 @@ pub struct TokenEntry {
         alias = "root_submit_interval_ms"
     )]
     pub root_submit_interval_ms: Option<u64>,
-    #[serde(
-        default,
-        alias = "gelatoRelayAddress",
-        alias = "gelatoRelayAddress",
-        alias = "gelato_relay_address"
-    )]
+    #[serde(default, alias = "gelatoRelayAddress", alias = "gelato_relay_address")]
     pub gelato_relay_address: Option<Address>,
 }
 

@@ -12,7 +12,10 @@ use client_common::{
 
 use crate::{
     TransferArgs,
-    commands::shared::{build_erc20, build_liquidity_manager, find_token_by_chain, format_tx_hash},
+    commands::shared::{
+        build_erc20, build_liquidity_manager, confirm_relay_submission, find_token_by_chain,
+        format_tx_hash,
+    },
 };
 
 pub async fn run(args: &TransferArgs, tokens: &[TokenEntry], private_key: B256) -> Result<()> {
@@ -138,6 +141,7 @@ async fn transfer_via_relay(
         total_amount,
         relayer_fee,
         fee_estimate.max_gelato_fee,
+        deadline,
         relay_nonce,
     )
     .await
@@ -157,6 +161,7 @@ async fn transfer_via_relay(
     let calldata = gelato_relay::encode_relay_transfer(&params);
 
     // Submit to Gelato
+    confirm_relay_submission(args.relay.yes, "token transfer")?;
     println!("Submitting relay transfer to Gelato...");
     let task_id = gelato_relay::submit_relay_task(
         entry.chain_id,

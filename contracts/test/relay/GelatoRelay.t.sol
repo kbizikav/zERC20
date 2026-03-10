@@ -77,11 +77,11 @@ contract GelatoRelayTest is TestHelperOz5 {
         keccak256("RelayerFeeAuthorization(uint256 recipientHash,uint256 totalValue,uint256 maxFee,uint64 deadline)");
 
     bytes32 internal constant RELAY_UNWRAP_TYPEHASH = keccak256(
-        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
+        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 deadline,uint256 nonce)"
     );
 
     bytes32 internal constant RELAY_TRANSFER_TYPEHASH = keccak256(
-        "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
+        "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 deadline,uint256 nonce)"
     );
 
     // solhint-disable-next-line function-max-lines
@@ -251,27 +251,29 @@ contract GelatoRelayTest is TestHelperOz5 {
         );
     }
 
-    function _signRelayUnwrap(uint256 amount, address receiver, uint256 relayerFee, uint256 maxGelatoFee)
+    function _signRelayUnwrap(uint256 amount, address receiver, uint256 relayerFee, uint256 maxGelatoFee, uint256 deadline)
         internal
         view
         returns (bytes memory)
     {
         uint256 nonce = relay.nonces(signerAddr);
-        bytes32 structHash =
-            keccak256(abi.encode(RELAY_UNWRAP_TYPEHASH, signerAddr, amount, receiver, relayerFee, maxGelatoFee, nonce));
+        bytes32 structHash = keccak256(
+            abi.encode(RELAY_UNWRAP_TYPEHASH, signerAddr, amount, receiver, relayerFee, maxGelatoFee, deadline, nonce)
+        );
         bytes32 digest = MessageHashUtils.toTypedDataHash(_relayDomainSeparator(), structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SIGNER_PK, digest);
         return abi.encodePacked(r, s, v);
     }
 
-    function _signRelayTransfer(address to, uint256 amount, uint256 relayerFee, uint256 maxGelatoFee)
+    function _signRelayTransfer(address to, uint256 amount, uint256 relayerFee, uint256 maxGelatoFee, uint256 deadline)
         internal
         view
         returns (bytes memory)
     {
         uint256 nonce = relay.nonces(signerAddr);
-        bytes32 structHash =
-            keccak256(abi.encode(RELAY_TRANSFER_TYPEHASH, signerAddr, to, amount, relayerFee, maxGelatoFee, nonce));
+        bytes32 structHash = keccak256(
+            abi.encode(RELAY_TRANSFER_TYPEHASH, signerAddr, to, amount, relayerFee, maxGelatoFee, deadline, nonce)
+        );
         bytes32 digest = MessageHashUtils.toTypedDataHash(_relayDomainSeparator(), structHash);
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(SIGNER_PK, digest);
         return abi.encodePacked(r, s, v);
@@ -621,7 +623,7 @@ contract GelatoRelayTest is TestHelperOz5 {
         uint256 deadline = block.timestamp + 1 hours;
         (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount + relayerFee, deadline);
         bytes memory permitSig = abi.encodePacked(r, s, v);
-        bytes memory relaySig = _signRelayUnwrap(amount, receiver, relayerFee, gelatoFee);
+        bytes memory relaySig = _signRelayUnwrap(amount, receiver, relayerFee, gelatoFee, deadline);
         return abi.encodeCall(
             GelatoRelay.relayUnwrap,
             (signerAddr, amount, receiver, relayerFee, gelatoFee, deadline, permitSig, relaySig)
@@ -670,7 +672,7 @@ contract GelatoRelayTest is TestHelperOz5 {
         uint256 deadline = block.timestamp + 1 hours;
         (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount, deadline);
         bytes memory permitSig = abi.encodePacked(r, s, v);
-        bytes memory relaySig = _signRelayTransfer(recipient, amount, relayerFee, gelatoFee);
+        bytes memory relaySig = _signRelayTransfer(recipient, amount, relayerFee, gelatoFee, deadline);
         return abi.encodeCall(
             GelatoRelay.relayTransfer,
             (signerAddr, recipient, amount, relayerFee, gelatoFee, deadline, permitSig, relaySig)
@@ -868,7 +870,14 @@ contract GelatoRelayTest is TestHelperOz5 {
         {
             bytes32 structHash = keccak256(
                 abi.encode(
-                    RELAY_UNWRAP_TYPEHASH, signerAddr, amount, receiver, relayerFee, gelatoFee, relay.nonces(signerAddr)
+                    RELAY_UNWRAP_TYPEHASH,
+                    signerAddr,
+                    amount,
+                    receiver,
+                    relayerFee,
+                    gelatoFee,
+                    deadline,
+                    relay.nonces(signerAddr)
                 )
             );
             bytes32 digest = MessageHashUtils.toTypedDataHash(_relayDomainSeparator(), structHash);
@@ -927,6 +936,7 @@ contract GelatoRelayTest is TestHelperOz5 {
                     amount,
                     relayerFee,
                     gelatoFee,
+                    deadline,
                     relay.nonces(signerAddr)
                 )
             );
@@ -939,5 +949,52 @@ contract GelatoRelayTest is TestHelperOz5 {
             GelatoRelay.relayTransfer,
             (signerAddr, recipient, amount, relayerFee, gelatoFee, deadline, permitSig, relaySig)
         );
+    }
+
+    function testRelayUnwrapExpiredAuthorizationReverts() public {
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 10 ether;
+        uint256 gelatoFee = 5 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+
+        underlying.mint(address(this), amount + relayerFee);
+        underlying.approve(address(manager), amount + relayerFee);
+        manager.wrap(amount + relayerFee, signerAddr);
+
+        bytes memory data = _buildRelayUnwrapData(amount, relayerFee, address(0xBEEF), gelatoFee);
+
+        vm.warp(deadline + 1);
+        (bool success, bytes memory ret) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
+        assertFalse(success, "expired relay unwrap should revert");
+        assertGe(ret.length, 4, "revert data too short");
+        assertEq(bytes4(ret), GelatoRelay.RelayAuthorizationExpired.selector, "expected RelayAuthorizationExpired");
+    }
+
+    function testRelayTransferPermitFrontrunStillSucceeds() public {
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 10 ether;
+        uint256 gelatoFee = 5 ether;
+        uint256 deadline = block.timestamp + 1 hours;
+        address recipient = address(0xCAFE);
+
+        underlying.mint(address(this), amount);
+        underlying.approve(address(manager), amount);
+        manager.wrap(amount, signerAddr);
+
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount, deadline);
+        vm.prank(signerAddr);
+        token.permit(signerAddr, address(relay), amount, deadline, v, r, s);
+
+        bytes memory relaySig = _signRelayTransfer(recipient, amount, relayerFee, gelatoFee, deadline);
+        bytes memory permitSig = abi.encodePacked(r, s, v);
+        bytes memory data = abi.encodeCall(
+            GelatoRelay.relayTransfer,
+            (signerAddr, recipient, amount, relayerFee, gelatoFee, deadline, permitSig, relaySig)
+        );
+
+        _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
+
+        assertEq(token.balanceOf(recipient), amount - relayerFee, "recipient zERC20 mismatch");
+        assertEq(underlying.balanceOf(feeCollector), gelatoFee, "feeCollector underlying mismatch");
     }
 }

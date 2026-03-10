@@ -16,6 +16,22 @@ use crate::contracts::{liquidity_manager::LiquidityManagerContract, utils::Norma
 // ---------------------------------------------------------------------------
 
 sol! {
+    #[sol(rpc)]
+    interface IEIP712Domain {
+        function eip712Domain()
+            external
+            view
+            returns (
+                bytes1 fields,
+                string memory name,
+                string memory version,
+                uint256 chainId,
+                address verifyingContract,
+                bytes32 salt,
+                uint256[] memory extensions
+            );
+    }
+
     struct GeneralRecipient {
         uint64 chainId;
         bytes32 recipient;
@@ -104,13 +120,20 @@ const EIP712_FIELD_NAME: u8 = 1 << 0;
 const EIP712_FIELD_VERSION: u8 = 1 << 1;
 const EIP712_FIELD_CHAIN_ID: u8 = 1 << 2;
 const EIP712_FIELD_VERIFYING_CONTRACT: u8 = 1 << 3;
-const SUPPORTED_EIP712_FIELDS: u8 =
-    EIP712_FIELD_NAME | EIP712_FIELD_VERSION | EIP712_FIELD_CHAIN_ID | EIP712_FIELD_VERIFYING_CONTRACT;
+const SUPPORTED_EIP712_FIELDS: u8 = EIP712_FIELD_NAME
+    | EIP712_FIELD_VERSION
+    | EIP712_FIELD_CHAIN_ID
+    | EIP712_FIELD_VERIFYING_CONTRACT;
 
 /// Default number of polls when waiting for a relay task.
 const DEFAULT_POLLS: u32 = 40;
 /// Default interval between polls in milliseconds.
 const DEFAULT_INTERVAL_MS: u64 = 3_000;
+
+fn gelato_http_client() -> &'static reqwest::Client {
+    static CLIENT: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    CLIENT.get_or_init(reqwest::Client::new)
+}
 
 // ---------------------------------------------------------------------------
 // EIP-712 signature
@@ -123,27 +146,7 @@ pub async fn fetch_domain_separator(
     provider: NormalProvider,
     verifier_address: Address,
 ) -> Result<B256> {
-    // EIP-5267: eip712Domain() returns (fields, name, version, chainId, verifyingContract, salt, extensions)
-    // We compute the domain separator from these values.
-    sol! {
-        #[sol(rpc)]
-        interface IEIP712 {
-            function eip712Domain()
-                external
-                view
-                returns (
-                    bytes1 fields,
-                    string memory name,
-                    string memory version,
-                    uint256 chainId,
-                    address verifyingContract,
-                    bytes32 salt,
-                    uint256[] memory extensions
-                );
-        }
-    }
-
-    let contract = IEIP712::new(verifier_address, provider);
+    let contract = IEIP712Domain::new(verifier_address, provider);
     let result = contract.eip712Domain().call().await.context(
         "failed to call eip712Domain() on Verifier — ensure Verifier has been upgraded with initializeV2",
     )?;
@@ -331,25 +334,7 @@ pub async fn fetch_relay_domain_separator(
     provider: NormalProvider,
     relay_address: Address,
 ) -> Result<B256> {
-    sol! {
-        #[sol(rpc)]
-        interface IEIP712 {
-            function eip712Domain()
-                external
-                view
-                returns (
-                    bytes1 fields,
-                    string memory name,
-                    string memory version,
-                    uint256 chainId,
-                    address verifyingContract,
-                    bytes32 salt,
-                    uint256[] memory extensions
-                );
-        }
-    }
-
-    let contract = IEIP712::new(relay_address, provider);
+    let contract = IEIP712Domain::new(relay_address, provider);
     let result = contract.eip712Domain().call().await.context(
         "failed to call eip712Domain() on GelatoRelay — ensure initializeV2 has been called",
     )?;
@@ -388,13 +373,13 @@ pub async fn fetch_relay_nonce(
 
 fn relay_unwrap_typehash() -> B256 {
     keccak256(
-        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)",
+        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 deadline,uint256 nonce)",
     )
 }
 
 fn relay_transfer_typehash() -> B256 {
     keccak256(
-        "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)",
+        "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 deadline,uint256 nonce)",
     )
 }
 
@@ -409,15 +394,17 @@ pub async fn sign_relay_unwrap(
     receiver: Address,
     relayer_fee: U256,
     max_gelato_fee: U256,
+    deadline: U256,
     nonce: U256,
 ) -> Result<Vec<u8>> {
-    let mut struct_data = Vec::with_capacity(7 * 32);
+    let mut struct_data = Vec::with_capacity(8 * 32);
     struct_data.extend_from_slice(relay_unwrap_typehash().as_slice());
     struct_data.extend_from_slice(B256::left_padding_from(owner.as_slice()).as_slice());
     struct_data.extend_from_slice(&amount.to_be_bytes::<32>());
     struct_data.extend_from_slice(B256::left_padding_from(receiver.as_slice()).as_slice());
     struct_data.extend_from_slice(&relayer_fee.to_be_bytes::<32>());
     struct_data.extend_from_slice(&max_gelato_fee.to_be_bytes::<32>());
+    struct_data.extend_from_slice(&deadline.to_be_bytes::<32>());
     struct_data.extend_from_slice(&nonce.to_be_bytes::<32>());
     let struct_hash = keccak256(&struct_data);
 
@@ -448,15 +435,17 @@ pub async fn sign_relay_transfer(
     amount: U256,
     relayer_fee: U256,
     max_gelato_fee: U256,
+    deadline: U256,
     nonce: U256,
 ) -> Result<Vec<u8>> {
-    let mut struct_data = Vec::with_capacity(7 * 32);
+    let mut struct_data = Vec::with_capacity(8 * 32);
     struct_data.extend_from_slice(relay_transfer_typehash().as_slice());
     struct_data.extend_from_slice(B256::left_padding_from(owner.as_slice()).as_slice());
     struct_data.extend_from_slice(B256::left_padding_from(to.as_slice()).as_slice());
     struct_data.extend_from_slice(&amount.to_be_bytes::<32>());
     struct_data.extend_from_slice(&relayer_fee.to_be_bytes::<32>());
     struct_data.extend_from_slice(&max_gelato_fee.to_be_bytes::<32>());
+    struct_data.extend_from_slice(&deadline.to_be_bytes::<32>());
     struct_data.extend_from_slice(&nonce.to_be_bytes::<32>());
     let struct_hash = keccak256(&struct_data);
 
@@ -671,8 +660,7 @@ async fn estimate_gelato_fee(chain_id: u64, fee_token: Address, gas_limit: u64) 
         GELATO_RELAY_URL, chain_id, fee_token, gas_limit,
     );
 
-    let client = reqwest::Client::new();
-    let resp = client
+    let resp = gelato_http_client()
         .get(&url)
         .send()
         .await
@@ -736,8 +724,7 @@ pub async fn submit_relay_task(
     };
 
     let url = format!("{}/relays/v2/call-with-sync-fee", GELATO_RELAY_URL);
-    let client = reqwest::Client::new();
-    let mut req_builder = client.post(&url).json(&request);
+    let mut req_builder = gelato_http_client().post(&url).json(&request);
     if let Some(key) = api_key {
         req_builder = req_builder.header("x-gelato-api-key", key);
     }
@@ -814,11 +801,10 @@ pub async fn poll_relay_task(
     let polls = polls.unwrap_or(DEFAULT_POLLS);
     let interval_ms = interval_ms.unwrap_or(DEFAULT_INTERVAL_MS);
 
-    let client = reqwest::Client::new();
     let url = format!("{}/tasks/status/{}", GELATO_RELAY_URL, task_id);
 
     for i in 0..polls {
-        let resp = client
+        let resp = gelato_http_client()
             .get(&url)
             .send()
             .await

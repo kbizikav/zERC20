@@ -22,7 +22,10 @@ use crate::{
     RelayArgs, UnwrapArgs,
     commands::{
         quote_unwrap::build_extra_options,
-        shared::{build_erc20, build_liquidity_manager, find_token_by_chain, format_tx_hash},
+        shared::{
+            build_erc20, build_liquidity_manager, confirm_relay_submission, find_token_by_chain,
+            format_tx_hash,
+        },
     },
 };
 
@@ -375,6 +378,7 @@ async fn unwrap_via_relay(
         caller,
         relayer_fee,
         fee_estimate.max_gelato_fee,
+        deadline,
         relay_nonce,
     )
     .await
@@ -394,6 +398,7 @@ async fn unwrap_via_relay(
     let calldata = gelato_relay::encode_relay_unwrap(&params);
 
     // Submit to Gelato
+    confirm_relay_submission(relay_args.yes, "token unwrap")?;
     println!("Submitting relay unwrap to Gelato...");
     let task_id = gelato_relay::submit_relay_task(
         entry.chain_id,

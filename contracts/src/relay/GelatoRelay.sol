@@ -34,11 +34,11 @@ contract GelatoRelay is
     uint256 private constant _FEE_START = 32;
 
     bytes32 public constant RELAY_UNWRAP_TYPEHASH = keccak256(
-        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
+        "RelayUnwrap(address owner,uint256 amount,address receiver,uint256 relayerFee,uint256 maxGelatoFee,uint256 deadline,uint256 nonce)"
     );
 
     bytes32 public constant RELAY_TRANSFER_TYPEHASH = keccak256(
-        "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 nonce)"
+        "RelayTransfer(address owner,address to,uint256 amount,uint256 relayerFee,uint256 maxGelatoFee,uint256 deadline,uint256 nonce)"
     );
 
     Verifier public immutable VERIFIER;
@@ -53,9 +53,11 @@ contract GelatoRelay is
     error OnlyGelatoRelay();
     error MaxFeeExceeded(uint256 fee, uint256 maxFee);
     error InvalidRelaySignature();
+    error RelayAuthorizationExpired(uint256 deadline, uint256 currentTimestamp);
     error VerifierMismatch(address expected, address actual);
     error LiquidityManagerMismatch(address expected, address actual);
     error InsufficientUnwrapOutput(uint256 available, uint256 required);
+    error PermitCallFailed();
 
     modifier onlyGelatoRelay() {
         _onlyGelatoRelay();
@@ -156,10 +158,13 @@ contract GelatoRelay is
         bytes calldata permitSig,
         bytes calldata relaySig
     ) external onlyGelatoRelay nonReentrant {
-        _verifyRelayUnwrap(owner, amount, receiver, relayerFee, maxGelatoFee, relaySig);
+        _verifyRelayUnwrap(owner, amount, receiver, relayerFee, maxGelatoFee, deadline, relaySig);
         (bytes32 r, bytes32 s, uint8 v) = _splitSignature(permitSig);
         uint256 totalAmount = amount + relayerFee;
-        IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), totalAmount, deadline, v, r, s);
+        try IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), totalAmount, deadline, v, r, s) {}
+        catch {
+            _requirePermitAllowance(owner, totalAmount);
+        }
         // slither-disable-next-line arbitrary-send-erc20-permit
         ZERC20_TOKEN.safeTransferFrom(owner, address(this), totalAmount);
         // slither-disable-next-line unused-return
@@ -186,9 +191,11 @@ contract GelatoRelay is
         bytes calldata permitSig,
         bytes calldata relaySig
     ) external onlyGelatoRelay nonReentrant {
-        _verifyRelayTransfer(owner, to, amount, relayerFee, maxGelatoFee, relaySig);
+        _verifyRelayTransfer(owner, to, amount, relayerFee, maxGelatoFee, deadline, relaySig);
         (bytes32 r, bytes32 s, uint8 v) = _splitSignature(permitSig);
-        IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
+        try IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s) {} catch {
+            _requirePermitAllowance(owner, amount);
+        }
         // slither-disable-next-line arbitrary-send-erc20-permit
         ZERC20_TOKEN.safeTransferFrom(owner, address(this), amount);
         ZERC20_TOKEN.safeTransfer(to, amount - relayerFee);
@@ -224,8 +231,10 @@ contract GelatoRelay is
         address receiver,
         uint256 relayerFee,
         uint256 maxGelatoFee,
+        uint256 deadline,
         bytes calldata relaySig
     ) internal {
+        require(block.timestamp <= deadline, RelayAuthorizationExpired(deadline, block.timestamp));
         uint256 nonce = nonces[owner];
         ++nonces[owner];
         bytes32 typeHash = RELAY_UNWRAP_TYPEHASH;
@@ -239,8 +248,9 @@ contract GelatoRelay is
             mstore(add(m, 0x60), receiver)
             mstore(add(m, 0x80), relayerFee)
             mstore(add(m, 0xa0), maxGelatoFee)
-            mstore(add(m, 0xc0), nonce)
-            structHash := keccak256(m, 0xe0)
+            mstore(add(m, 0xc0), deadline)
+            mstore(add(m, 0xe0), nonce)
+            structHash := keccak256(m, 0x100)
         }
         bytes32 digest = _hashTypedDataV4(structHash);
         require(SignatureChecker.isValidSignatureNowCalldata(owner, digest, relaySig), InvalidRelaySignature());
@@ -253,8 +263,10 @@ contract GelatoRelay is
         uint256 amount,
         uint256 relayerFee,
         uint256 maxGelatoFee,
+        uint256 deadline,
         bytes calldata relaySig
     ) internal {
+        require(block.timestamp <= deadline, RelayAuthorizationExpired(deadline, block.timestamp));
         uint256 nonce = nonces[owner];
         ++nonces[owner];
         bytes32 typeHash = RELAY_TRANSFER_TYPEHASH;
@@ -268,8 +280,9 @@ contract GelatoRelay is
             mstore(add(m, 0x60), amount)
             mstore(add(m, 0x80), relayerFee)
             mstore(add(m, 0xa0), maxGelatoFee)
-            mstore(add(m, 0xc0), nonce)
-            structHash := keccak256(m, 0xe0)
+            mstore(add(m, 0xc0), deadline)
+            mstore(add(m, 0xe0), nonce)
+            structHash := keccak256(m, 0x100)
         }
         bytes32 digest = _hashTypedDataV4(structHash);
         require(SignatureChecker.isValidSignatureNowCalldata(owner, digest, relaySig), InvalidRelaySignature());
@@ -278,6 +291,10 @@ contract GelatoRelay is
     /// @dev Unwraps zERC20 to underlying via LiquidityManager, then pays Gelato.
     ///      Reverts with `InsufficientUnwrapOutput` if the unwrap output (after LiquidityManager fees)
     ///      is insufficient to cover the Gelato fee.
+    function _requirePermitAllowance(address owner, uint256 amount) internal view {
+        require(ZERC20_TOKEN.allowance(owner, address(this)) >= amount, PermitCallFailed());
+    }
+
     function _unwrapAndPayGelato(uint256 relayerFee, uint256 maxGelatoFee) internal {
         if (relayerFee > 0) {
             uint256 received = LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));

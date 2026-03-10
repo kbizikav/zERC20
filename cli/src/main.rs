@@ -413,6 +413,10 @@ pub struct RelayArgs {
     /// Maximum relayer fee in zERC20 units (optional safety cap).
     #[arg(long, value_parser = parse_u256, value_name = "AMOUNT")]
     pub max_relay_fee: Option<U256>,
+
+    /// Skip the confirmation prompt before submitting a Gelato relay task.
+    #[arg(long, default_value_t = false)]
+    pub yes: bool,
 }
 
 #[tokio::main(flavor = "current_thread")]

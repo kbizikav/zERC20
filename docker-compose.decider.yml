@@ -3,7 +3,7 @@
 #       It crashes during proof generation, so run it directly on the host.
 services:
   postgres-decider:
-    image: ghcr.io/pgmq/pg16-pgmq:latest
+    image: ghcr.io/pgmq/pg16-pgmq:v1.7.0
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_DECIDER_USER:-postgres}

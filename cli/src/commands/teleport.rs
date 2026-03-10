@@ -27,7 +27,9 @@ use zkp::{
 
 use crate::{
     CommonArgs, RelayArgs, build_decider_client,
-    commands::shared::{build_liquidity_manager, find_token_by_chain, format_tx_hash},
+    commands::shared::{
+        build_liquidity_manager, confirm_relay_submission, find_token_by_chain, format_tx_hash,
+    },
     proof::{batch::batch_teleport_proof, single::single_teleport_proof},
 };
 
@@ -423,7 +425,7 @@ pub async fn redeem_transfers_via_relay(
     .context("failed to estimate relayer fee")?;
 
     let relayer_fee = fee_estimate.relayer_fee;
-    let max_fee = if let Some(cap) = relay_args.max_relay_fee {
+    if let Some(cap) = relay_args.max_relay_fee {
         if cap < relayer_fee {
             anyhow::bail!(
                 "estimated relayer fee {} exceeds --max-relay-fee cap {}",
@@ -431,10 +433,8 @@ pub async fn redeem_transfers_via_relay(
                 cap
             );
         }
-        cap
-    } else {
-        relayer_fee
-    };
+    }
+    let max_fee = relayer_fee;
 
     println!("  Gelato gas fee : {}", fee_estimate.gelato_fee);
     println!("  Max gelato fee : {}", fee_estimate.max_gelato_fee);
@@ -494,6 +494,7 @@ pub async fn redeem_transfers_via_relay(
     };
 
     // Submit to Gelato
+    confirm_relay_submission(relay_args.yes, "teleport redemption")?;
     println!("Submitting relay task to Gelato...");
     let task_id = gelato_relay::submit_relay_task(
         token_entry.chain_id,
