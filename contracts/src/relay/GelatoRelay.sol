@@ -9,6 +9,7 @@ import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/Signa
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {GelatoRelayContractsUtils} from "relay-context-contracts/utils/GelatoRelayContractsUtils.sol";
 import {NATIVE_TOKEN} from "relay-context-contracts/constants/Tokens.sol";
 import {Verifier} from "../Verifier.sol";
@@ -19,7 +20,13 @@ import {GeneralRecipientLib} from "../utils/GeneralRecipientLib.sol";
 /// @notice Gelato Relay integration for gasless teleport, unwrap, and transfer via `callWithSyncFee`.
 /// @dev Implements GelatoRelayContext-equivalent logic inline to avoid OZ version
 ///      incompatibility with relay-context-contracts' TokenUtils.
-contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgradeable, EIP712Upgradeable {
+contract GelatoRelay is
+    GelatoRelayContractsUtils,
+    UUPSUpgradeable,
+    OwnableUpgradeable,
+    EIP712Upgradeable,
+    ReentrancyGuardTransient
+{
     using SafeERC20 for IERC20;
 
     uint256 private constant _FEE_COLLECTOR_START = 72;
@@ -48,6 +55,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
     error InvalidRelaySignature();
     error VerifierMismatch(address expected, address actual);
     error LiquidityManagerMismatch(address expected, address actual);
+    error InsufficientUnwrapOutput(uint256 available, uint256 required);
 
     modifier onlyGelatoRelay() {
         _onlyGelatoRelay();
@@ -105,7 +113,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         bytes calldata proof,
         Verifier.RelayerFeeAuthorization calldata feeAuth,
         uint256 maxGelatoFee
-    ) external onlyGelatoRelay {
+    ) external onlyGelatoRelay nonReentrant {
         VERIFIER.teleport(isGlobal, rootHint, gr, proof, feeAuth);
         _unwrapAndPayGelato(feeAuth.relayerFee, maxGelatoFee);
     }
@@ -124,7 +132,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         bytes calldata proof,
         Verifier.RelayerFeeAuthorization calldata feeAuth,
         uint256 maxGelatoFee
-    ) external onlyGelatoRelay {
+    ) external onlyGelatoRelay nonReentrant {
         VERIFIER.singleTeleport(isGlobal, rootHint, gr, proof, feeAuth);
         _unwrapAndPayGelato(feeAuth.relayerFee, maxGelatoFee);
     }
@@ -147,7 +155,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         uint256 deadline,
         bytes calldata permitSig,
         bytes calldata relaySig
-    ) external onlyGelatoRelay {
+    ) external onlyGelatoRelay nonReentrant {
         _verifyRelayUnwrap(owner, amount, receiver, relayerFee, maxGelatoFee, relaySig);
         (bytes32 r, bytes32 s, uint8 v) = _splitSignature(permitSig);
         uint256 totalAmount = amount + relayerFee;
@@ -181,7 +189,7 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
         uint256 deadline,
         bytes calldata permitSig,
         bytes calldata relaySig
-    ) external onlyGelatoRelay {
+    ) external onlyGelatoRelay nonReentrant {
         _verifyRelayTransfer(owner, to, amount, relayerFee, maxGelatoFee, relaySig);
         (bytes32 r, bytes32 s, uint8 v) = _splitSignature(permitSig);
         IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s);
@@ -276,12 +284,27 @@ contract GelatoRelay is GelatoRelayContractsUtils, UUPSUpgradeable, OwnableUpgra
     }
 
     /// @dev Unwraps zERC20 to underlying via LiquidityManager, then pays Gelato.
+    ///      Reverts with `InsufficientUnwrapOutput` if the unwrap output (after LiquidityManager fees)
+    ///      is insufficient to cover the Gelato fee.
     function _unwrapAndPayGelato(uint256 relayerFee, uint256 maxGelatoFee) internal {
         if (relayerFee > 0) {
+            uint256 balBefore = _underlyingBalance();
             // slither-disable-next-line unused-return
             LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));
+            uint256 received = _underlyingBalance() - balBefore;
+            uint256 fee = _getFee();
+            require(received >= fee, InsufficientUnwrapOutput(received, fee));
         }
         _transferRelayFeeCapped(maxGelatoFee);
+    }
+
+    /// @dev Returns the contract's underlying token balance, supporting both ERC20 and native.
+    function _underlyingBalance() internal view returns (uint256) {
+        address underlying = address(UNDERLYING_TOKEN);
+        if (underlying == NATIVE_TOKEN) {
+            return address(this).balance;
+        }
+        return IERC20(underlying).balanceOf(address(this));
     }
 
     /// @dev Extracts Gelato fee context from appended calldata and transfers the fee.

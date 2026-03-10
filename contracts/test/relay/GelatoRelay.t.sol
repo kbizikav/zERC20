@@ -683,4 +683,172 @@ contract GelatoRelayTest is TestHelperOz5 {
             signerAddr, address(0xCAFE), 100 ether, 10 ether, 5 ether, block.timestamp + 1 hours, "", ""
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Replay protection: relayUnwrap nonce prevents replay
+    // -----------------------------------------------------------------------
+
+    function testRelayUnwrapReplayReverts() public {
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 10 ether;
+        uint256 gelatoFee = 5 ether;
+        address receiver = address(0xBEEF);
+
+        // Mint enough for two attempts
+        underlying.mint(address(this), 2 * (amount + relayerFee));
+        underlying.approve(address(manager), 2 * (amount + relayerFee));
+        manager.wrap(amount + relayerFee, signerAddr);
+
+        bytes memory data = _buildRelayUnwrapData(amount, relayerFee, receiver, gelatoFee);
+
+        // First call succeeds
+        _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
+
+        // Mint more zERC20 for the second attempt
+        manager.wrap(amount + relayerFee, signerAddr);
+
+        // Replay with the same calldata should fail (nonce consumed)
+        (bool success,) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
+        assertFalse(success, "replay relayUnwrap should revert");
+    }
+
+    // -----------------------------------------------------------------------
+    // Replay protection: relayTransfer nonce prevents replay
+    // -----------------------------------------------------------------------
+
+    function testRelayTransferReplayReverts() public {
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 10 ether;
+        uint256 gelatoFee = 5 ether;
+        address recipient = address(0xCAFE);
+
+        // Mint enough for two attempts
+        underlying.mint(address(this), 2 * amount);
+        underlying.approve(address(manager), 2 * amount);
+        manager.wrap(amount, signerAddr);
+
+        bytes memory data = _buildRelayTransferData(amount, relayerFee, recipient, gelatoFee);
+
+        // First call succeeds
+        _callAsGelatoRelay(address(relay), data, address(underlying), gelatoFee);
+
+        // Mint more zERC20 for the second attempt
+        manager.wrap(amount, signerAddr);
+
+        // Replay with the same calldata should fail (nonce consumed)
+        (bool success,) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
+        assertFalse(success, "replay relayTransfer should revert");
+    }
+
+    // -----------------------------------------------------------------------
+    // Wrong signer: relayUnwrap with wrong private key reverts
+    // -----------------------------------------------------------------------
+
+    function testRelayUnwrapWrongSignerReverts() public {
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 10 ether;
+        uint256 gelatoFee = 5 ether;
+        address receiver = address(0xBEEF);
+
+        underlying.mint(address(this), amount + relayerFee);
+        underlying.approve(address(manager), amount + relayerFee);
+        manager.wrap(amount + relayerFee, signerAddr);
+
+        // Build calldata with wrong-key relay signature
+        bytes memory data =
+            _buildRelayUnwrapDataWrongSigner(amount, relayerFee, receiver, gelatoFee, block.timestamp + 1 hours);
+
+        (bool success,) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
+        assertFalse(success, "wrong signer relayUnwrap should revert");
+    }
+
+    function _buildRelayUnwrapDataWrongSigner(
+        uint256 amount,
+        uint256 relayerFee,
+        address receiver,
+        uint256 gelatoFee,
+        uint256 deadline
+    ) internal view returns (bytes memory) {
+        bytes memory permitSig;
+        {
+            (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount + relayerFee, deadline);
+            permitSig = abi.encodePacked(r, s, v);
+        }
+
+        bytes memory relaySig;
+        {
+            bytes32 structHash = keccak256(
+                abi.encode(
+                    RELAY_UNWRAP_TYPEHASH, signerAddr, amount, receiver, relayerFee, gelatoFee, relay.nonces(signerAddr)
+                )
+            );
+            bytes32 digest = MessageHashUtils.toTypedDataHash(_relayDomainSeparator(), structHash);
+            (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(0xDEAD, digest);
+            relaySig = abi.encodePacked(r2, s2, v2);
+        }
+
+        return abi.encodeCall(
+            GelatoRelay.relayUnwrap,
+            (signerAddr, amount, receiver, relayerFee, gelatoFee, deadline, permitSig, relaySig)
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Wrong signer: relayTransfer with wrong private key reverts
+    // -----------------------------------------------------------------------
+
+    function testRelayTransferWrongSignerReverts() public {
+        uint256 amount = 100 ether;
+        uint256 relayerFee = 10 ether;
+        uint256 gelatoFee = 5 ether;
+        address recipient = address(0xCAFE);
+
+        underlying.mint(address(this), amount);
+        underlying.approve(address(manager), amount);
+        manager.wrap(amount, signerAddr);
+
+        // Build calldata with wrong-key relay signature
+        bytes memory data =
+            _buildRelayTransferDataWrongSigner(amount, relayerFee, recipient, gelatoFee, block.timestamp + 1 hours);
+
+        (bool success,) = _callAsGelatoRelayRaw(address(relay), data, address(underlying), gelatoFee);
+        assertFalse(success, "wrong signer relayTransfer should revert");
+    }
+
+    function _buildRelayTransferDataWrongSigner(
+        uint256 amount,
+        uint256 relayerFee,
+        address recipient,
+        uint256 gelatoFee,
+        uint256 deadline
+    ) internal view returns (bytes memory) {
+        bytes memory permitSig;
+        {
+            (uint8 v, bytes32 r, bytes32 s) = _signPermit(amount, deadline);
+            permitSig = abi.encodePacked(r, s, v);
+        }
+
+        bytes memory relaySig;
+        {
+            bytes32 structHash = keccak256(
+                abi.encode(
+                    RELAY_TRANSFER_TYPEHASH,
+                    signerAddr,
+                    recipient,
+                    amount,
+                    relayerFee,
+                    gelatoFee,
+                    relay.nonces(signerAddr)
+                )
+            );
+            bytes32 digest = MessageHashUtils.toTypedDataHash(_relayDomainSeparator(), structHash);
+            (uint8 v2, bytes32 r2, bytes32 s2) = vm.sign(0xDEAD, digest);
+            relaySig = abi.encodePacked(r2, s2, v2);
+        }
+
+        return abi.encodeCall(
+            GelatoRelay.relayTransfer,
+            (signerAddr, recipient, amount, relayerFee, gelatoFee, deadline, permitSig, relaySig)
+        );
+    }
 }

@@ -1664,6 +1664,27 @@ contract VerifierRelayerFeeTest is TestHelperOz5 {
         assertEq(relayerValue, relayerFee, "relayer value mismatch");
     }
 
+    // -----------------------------------------------------------------------
+    // Deadline boundary: deadline == block.timestamp should succeed
+    // -----------------------------------------------------------------------
+
+    function testDeadlineExactlyAtBlockTimestampSucceeds() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 relayerFee = 50;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp); // exactly now
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        // Should succeed because Verifier checks block.timestamp <= deadline
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        assertEq(verifier.totalTeleported(recipientHash), totalValue, "totalTeleported mismatch");
+    }
+
     function _toBytes32(address addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(addr)));
     }
