@@ -138,7 +138,6 @@ const redeemContext = await collectRedeemContext({
   indexerUrl,         // indexer endpoint URL
   indexerFetchLimit,  // optional, max events per indexer request
   eventBlockSpan,     // optional, block range per scan
-  useLocalRoot,       // optional, prefer the destination chain's local root
 });
 ```
 
@@ -161,7 +160,6 @@ function collectRedeemContext(
 | `indexerUrl`        | `string`         | Yes      | Indexer HTTP endpoint                  |
 | `indexerFetchLimit` | `number`         | No       | Max events per indexer request         |
 | `eventBlockSpan`    | `bigint \| number` | No     | Block range per event scan             |
-| `useLocalRoot`      | `boolean`        | No       | If `true`, fetch only the destination chain context and build proofs against the local root |
 
 **RedeemContext:**
 
@@ -180,8 +178,6 @@ function collectRedeemContext(
 
 - **Eligible events**: Transfers whose Merkle roots have been proven on-chain and aggregated by the Hub. These can be redeemed immediately.
 - **Ineligible events**: Transfers that are indexed but whose roots are not yet proven or aggregated. These will become eligible once the indexer and cross-chain job catch up.
-- **Global scope**: `aggregationState.scope === "global"`. In this mode `globalProofs` is populated and can be used for both single and batch redemption.
-- **Local scope**: `aggregationState.scope === "local"`. In this mode `eligibleProofs` contains local proofs keyed by `treeIndex`, while `globalProofs` is intentionally empty.
 
 ## Step 6: Generate Proof and Teleport
 
@@ -194,7 +190,7 @@ Two redemption paths are available:
 Redeem a single eligible event with a Groth16 proof:
 
 ```typescript
-const proof = await generateSingleTeleportProof(/* ... */);
+const proof = await createSingleTeleportProof(/* ... */);
 // Submit to Verifier.singleTeleport()
 ```
 
@@ -203,14 +199,11 @@ const proof = await generateSingleTeleportProof(/* ... */);
 Redeem multiple eligible events at once using a Nova batch proof:
 
 ```typescript
-const proof = await generateBatchTeleportProof(/* ... */);
+const proof = await createBatchTeleportProof(/* ... */);
 // Submit to Verifier.teleport()
 ```
 
-Choose proofs based on `redeemContext.aggregationState.scope`:
-
-- `scope === "global"`: use `redeemContext.globalProofs`
-- `scope === "local"`: use `redeemContext.eligibleProofs`
+Both functions accept the `eligibleProofs` and `globalProofs` from `RedeemContext` as inputs.
 
 ## Status Checking
 

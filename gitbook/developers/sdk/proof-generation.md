@@ -17,17 +17,12 @@ Use this when redeeming a single eligible transfer.
 const sdk = createSdk();
 
 // `redeemContext` comes from collectRedeemContext() -- see Receiving page
-const proof =
-  redeemContext.aggregationState.scope === "local"
-    ? redeemContext.eligibleProofs[0]
-    : redeemContext.globalProofs[0];
-
-const artifacts = await sdk.proofs.createSingleTeleportProof({
+const artifacts = await sdk.teleportProofs.createSingleTeleportProof({
   aggregationState: redeemContext.aggregationState,
   recipientFr,
   secretHex,
   event: redeemContext.events.eligible[0],
-  proof,
+  proof: redeemContext.globalProofs[0],
 });
 ```
 
@@ -54,27 +49,15 @@ import { createSdk, HttpDeciderClient } from "zerc20-client-sdk";
 
 const sdk = createSdk();
 const decider = new HttpDeciderClient("https://decider.intmax.io");
-const proofs =
-  redeemContext.aggregationState.scope === "local"
-    ? redeemContext.eligibleProofs
-    : redeemContext.globalProofs;
 
-const artifacts = await sdk.proofs.runNovaProver({
+const artifacts = await sdk.teleportProofs.createBatchTeleportProof({
   aggregationState: redeemContext.aggregationState,
   recipientFr,
   secretHex,
   events: redeemContext.events.eligible,
-  proofs,
+  proofs: redeemContext.globalProofs,
+  decider,
 });
-
-const deciderCircuit =
-  redeemContext.aggregationState.scope === "local"
-    ? "withdraw_local"
-    : "withdraw_global";
-const deciderProof = await decider.produceDeciderProof(
-  deciderCircuit,
-  artifacts.ivcProof,
-);
 ```
 
 Submit on-chain:
@@ -83,13 +66,11 @@ Submit on-chain:
 const verifier = getVerifierContract({ publicClient, walletClient, address: verifierAddress });
 
 const txHash = await verifier.write.teleport([
-  deciderProof,
+  artifacts.deciderProof,
   artifacts.finalState,
   artifacts.steps,
 ]);
 ```
-
-If you prefer a higher-level helper, `generateBatchTeleportProof(...)` in `operations/receive.ts` wraps the same `sdk.proofs.runNovaProver(...)` call and chooses the decider circuit from `aggregationState.scope` for you.
 
 ## Next Steps
 
