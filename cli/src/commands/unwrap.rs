@@ -309,6 +309,7 @@ async fn unwrap_via_relay(
 
     let total_amount = amount + relayer_fee;
     println!("  Gelato gas fee : {}", fee_estimate.gelato_fee);
+    println!("  Max gelato fee : {}", fee_estimate.max_gelato_fee);
     println!("  Unwrap fee     : {}", fee_estimate.unwrap_fee);
     println!("  Relayer fee    : {}", relayer_fee);
     println!("  Total permit   : {}", total_amount);
@@ -373,7 +374,7 @@ async fn unwrap_via_relay(
         amount,
         caller,
         relayer_fee,
-        fee_estimate.gelato_fee,
+        fee_estimate.max_gelato_fee,
         relay_nonce,
     )
     .await
@@ -385,7 +386,7 @@ async fn unwrap_via_relay(
         amount,
         receiver: caller,
         relayer_fee,
-        max_gelato_fee: fee_estimate.gelato_fee,
+        max_gelato_fee: fee_estimate.max_gelato_fee,
         deadline,
         permit_sig,
         relay_sig,

@@ -437,6 +437,7 @@ pub async fn redeem_transfers_via_relay(
     };
 
     println!("  Gelato gas fee : {}", fee_estimate.gelato_fee);
+    println!("  Max gelato fee : {}", fee_estimate.max_gelato_fee);
     println!("  Unwrap fee     : {}", fee_estimate.unwrap_fee);
     println!("  Total (w/ buf) : {}", relayer_fee);
 
@@ -483,7 +484,7 @@ pub async fn redeem_transfers_via_relay(
         max_fee,
         deadline,
         signature,
-        max_gelato_fee: fee_estimate.gelato_fee,
+        max_gelato_fee: fee_estimate.max_gelato_fee,
     };
 
     let calldata = if is_single {

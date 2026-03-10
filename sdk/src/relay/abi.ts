@@ -72,6 +72,7 @@ export const gelatoRelayAbi = [
       { name: 'owner', type: 'address', internalType: 'address' },
       { name: 'amount', type: 'uint256', internalType: 'uint256' },
       { name: 'receiver', type: 'address', internalType: 'address' },
+      { name: 'relayerFee', type: 'uint256', internalType: 'uint256' },
       { name: 'maxGelatoFee', type: 'uint256', internalType: 'uint256' },
       { name: 'deadline', type: 'uint256', internalType: 'uint256' },
       { name: 'permitSig', type: 'bytes', internalType: 'bytes' },

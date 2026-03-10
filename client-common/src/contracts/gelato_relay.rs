@@ -87,6 +87,10 @@ const DEFAULT_GAS_LIMIT: u64 = 1_000_000;
 const RELAY_FEE_BUFFER_BPS: u64 = 500;
 const BPS_DENOMINATOR: u64 = 10_000;
 
+fn apply_relay_fee_buffer(amount: U256) -> U256 {
+    amount + amount * U256::from(RELAY_FEE_BUFFER_BPS) / U256::from(BPS_DENOMINATOR)
+}
+
 /// EIP-712 type hash used by Verifier._verifyRelayerFeeAuthorization.
 fn relayer_fee_typehash() -> B256 {
     keccak256(
@@ -609,11 +613,10 @@ pub async fn estimate_relayer_fee(
             .context("failed to quote unwrap fee")?;
         let net_out = candidate.saturating_sub(unwrap_fee);
         if net_out >= gelato_fee {
-            let with_buffer = candidate
-                + candidate * U256::from(RELAY_FEE_BUFFER_BPS) / U256::from(BPS_DENOMINATOR);
             return Ok(RelayerFeeEstimate {
-                relayer_fee: with_buffer,
+                relayer_fee: apply_relay_fee_buffer(candidate),
                 gelato_fee,
+                max_gelato_fee: apply_relay_fee_buffer(gelato_fee),
                 unwrap_fee,
             });
         }
@@ -625,11 +628,10 @@ pub async fn estimate_relayer_fee(
         .quote_unwrap_fee(candidate)
         .await
         .context("failed to quote final unwrap fee")?;
-    let with_buffer =
-        candidate + candidate * U256::from(RELAY_FEE_BUFFER_BPS) / U256::from(BPS_DENOMINATOR);
     Ok(RelayerFeeEstimate {
-        relayer_fee: with_buffer,
+        relayer_fee: apply_relay_fee_buffer(candidate),
         gelato_fee,
+        max_gelato_fee: apply_relay_fee_buffer(gelato_fee),
         unwrap_fee: final_unwrap_fee,
     })
 }
@@ -637,6 +639,7 @@ pub async fn estimate_relayer_fee(
 pub struct RelayerFeeEstimate {
     pub relayer_fee: U256,
     pub gelato_fee: U256,
+    pub max_gelato_fee: U256,
     pub unwrap_fee: U256,
 }
 

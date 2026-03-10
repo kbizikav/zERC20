@@ -30,6 +30,10 @@ const liquidityManagerAbi = [
   },
 ] as const;
 
+function applyRelayFeeBuffer(amount: bigint): bigint {
+  return amount + (amount * RELAY_FEE_BUFFER_BPS) / BPS_DENOMINATOR;
+}
+
 /**
  * Estimates the total relayerFee (in zERC20) that covers:
  * - Gelato gas cost (in underlying, estimated via relay SDK oracle)
@@ -61,10 +65,10 @@ export async function estimateRelayerFee(params: EstimateRelayerFeeParams): Prom
     const netOut = candidate - unwrapFee;
     if (netOut >= gelatoFee) {
       // Add buffer
-      const withBuffer = candidate + (candidate * RELAY_FEE_BUFFER_BPS) / BPS_DENOMINATOR;
       return {
-        relayerFee: withBuffer,
+        relayerFee: applyRelayFeeBuffer(candidate),
         gelatoFee,
+        maxGelatoFee: applyRelayFeeBuffer(gelatoFee),
         unwrapFee,
       };
     }
@@ -80,10 +84,10 @@ export async function estimateRelayerFee(params: EstimateRelayerFeeParams): Prom
     args: [candidate],
   })) as bigint;
 
-  const withBuffer = candidate + (candidate * RELAY_FEE_BUFFER_BPS) / BPS_DENOMINATOR;
   return {
-    relayerFee: withBuffer,
+    relayerFee: applyRelayFeeBuffer(candidate),
     gelatoFee,
+    maxGelatoFee: applyRelayFeeBuffer(gelatoFee),
     unwrapFee: finalUnwrapFee,
   };
 }
@@ -145,6 +149,7 @@ export function encodeRelayUnwrap(params: {
   owner: Address;
   amount: bigint;
   receiver: Address;
+  relayerFee: bigint;
   maxGelatoFee: bigint;
   deadline: bigint;
   permitSig: Hex;
@@ -157,6 +162,7 @@ export function encodeRelayUnwrap(params: {
       params.owner,
       params.amount,
       params.receiver,
+      params.relayerFee,
       params.maxGelatoFee,
       params.deadline,
       params.permitSig,

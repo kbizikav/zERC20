@@ -87,6 +87,7 @@ async fn transfer_via_relay(
 
     let total_amount = args.amount + relayer_fee;
     println!("  Gelato gas fee : {}", fee_estimate.gelato_fee);
+    println!("  Max gelato fee : {}", fee_estimate.max_gelato_fee);
     println!("  Unwrap fee     : {}", fee_estimate.unwrap_fee);
     println!("  Relayer fee    : {}", relayer_fee);
     println!("  Total permit   : {}", total_amount);
@@ -136,7 +137,7 @@ async fn transfer_via_relay(
         args.to,
         total_amount,
         relayer_fee,
-        fee_estimate.gelato_fee,
+        fee_estimate.max_gelato_fee,
         relay_nonce,
     )
     .await
@@ -148,7 +149,7 @@ async fn transfer_via_relay(
         to: args.to,
         amount: total_amount,
         relayer_fee,
-        max_gelato_fee: fee_estimate.gelato_fee,
+        max_gelato_fee: fee_estimate.max_gelato_fee,
         deadline,
         permit_sig,
         relay_sig,

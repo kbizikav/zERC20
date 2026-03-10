@@ -11,6 +11,7 @@ export interface EstimateRelayerFeeParams {
 export interface EstimateRelayerFeeResult {
   relayerFee: bigint;
   gelatoFee: bigint;
+  maxGelatoFee: bigint;
   unwrapFee: bigint;
 }
 
