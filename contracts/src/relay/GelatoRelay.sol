@@ -288,23 +288,11 @@ contract GelatoRelay is
     ///      is insufficient to cover the Gelato fee.
     function _unwrapAndPayGelato(uint256 relayerFee, uint256 maxGelatoFee) internal {
         if (relayerFee > 0) {
-            uint256 balBefore = _underlyingBalance();
-            // slither-disable-next-line unused-return
-            LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));
-            uint256 received = _underlyingBalance() - balBefore;
+            uint256 received = LIQUIDITY_MANAGER.unwrap(relayerFee, address(this));
             uint256 fee = _getFee();
             require(received >= fee, InsufficientUnwrapOutput(received, fee));
         }
         _transferRelayFeeCapped(maxGelatoFee);
-    }
-
-    /// @dev Returns the contract's underlying token balance, supporting both ERC20 and native.
-    function _underlyingBalance() internal view returns (uint256) {
-        address underlying = address(UNDERLYING_TOKEN);
-        if (underlying == NATIVE_TOKEN) {
-            return address(this).balance;
-        }
-        return IERC20(underlying).balanceOf(address(this));
     }
 
     /// @dev Extracts Gelato fee context from appended calldata and transfers the fee.
