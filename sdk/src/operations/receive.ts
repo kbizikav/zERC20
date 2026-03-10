@@ -231,7 +231,7 @@ export async function generateSingleTeleportProof(params: SingleTeleportParams):
     value: formatFieldElement(toFieldHex(params.event.value), 'value'),
     delta: zeroField,
     secret: formatFieldElement(params.secretHex, 'secret'),
-    leafIndex: toLeafIndexString(params.proof.leafIndex),
+    leafIndex: toLeafIndexString(getSingleProofIndex(params.aggregationState.scope, params.proof)),
     siblings: params.proof.siblings.map((sibling, idx) =>
       formatFieldElement(sibling, `proof.siblings[${idx}]`),
     ),
@@ -303,4 +303,20 @@ export async function generateBatchTeleportProof(params: BatchTeleportParams): P
     finalState: novaResult.finalState,
     steps: novaResult.steps,
   };
+}
+
+function getSingleProofIndex(
+  scope: string,
+  proof: SingleTeleportParams['proof'],
+): bigint {
+  if (scope === 'local') {
+    if ('treeIndex' in proof) {
+      return proof.treeIndex;
+    }
+    throw new Error('proof must be a local teleport proof');
+  }
+  if ('leafIndex' in proof) {
+    return proof.leafIndex;
+  }
+  throw new Error('proof must be a global teleport proof');
 }

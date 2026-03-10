@@ -115,7 +115,9 @@ export class ProofService {
       value: formatFieldElement(toFieldHex(params.event.value), "value"),
       delta: zeroField,
       secret: formatFieldElement(params.secretHex, "secret"),
-      leafIndex: toLeafIndexString(params.proof.leafIndex),
+      leafIndex: toLeafIndexString(
+        getBatchProofIndex(params.aggregationState.scope, params.proof)
+      ),
       siblings: params.proof.siblings.map((sibling, idx) =>
         formatFieldElement(sibling, `proof.siblings[${idx}]`)
       ),

@@ -111,7 +111,7 @@ export interface SingleTeleportParams {
   recipientFr: string;
   secretHex: string;
   event: IndexedEvent;
-  proof: GlobalTeleportProof;
+  proof: BatchTeleportProof;
 }
 
 export interface NovaProverInput {

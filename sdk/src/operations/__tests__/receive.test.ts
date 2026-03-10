@@ -106,6 +106,46 @@ describe('generateSingleTeleportProof', () => {
     expect(witnessArg).not.toHaveProperty('withdraw_value');
   });
 
+  it('uses treeIndex for local single-proof witnesses', async () => {
+    const proofResponse = {
+      proofCalldata: hexString(123),
+      publicInputs: [hexString(1), hexString(2)],
+      treeDepth: GLOBAL_TRANSFER_TREE_HEIGHT,
+    };
+    proveMock.mockResolvedValue(proofResponse);
+
+    const localProof: LocalTeleportProof = {
+      treeIndex: 7n,
+      event: {
+        eventIndex: 1n,
+        from: hexString(21),
+        to: hexString(22),
+        value: 6n,
+        ethBlockNumber: 43n,
+      },
+      siblings: Array.from({ length: GLOBAL_TRANSFER_TREE_HEIGHT }, () => hexString(0)),
+    };
+
+    await generateSingleTeleportProof({
+      aggregationState: {
+        scope: 'local',
+        rootHint: 1n,
+        aggregationRoot: padHex(99),
+        snapshot: [],
+        transferTreeIndices: [],
+        chainIds: [],
+      },
+      recipientFr: padHex(7),
+      secretHex: padHex(8),
+      event: localProof.event,
+      proof: localProof,
+    });
+
+    const witnessArg = proveMock.mock.calls.at(-1)?.[0];
+    expect(witnessArg).toBeDefined();
+    expect(witnessArg).toHaveProperty('leafIndex', '7');
+  });
+
   it('uses the local decider circuit for local aggregation roots', async () => {
     runNovaProverMock.mockResolvedValue({
       ivcProof: new Uint8Array([1, 2, 3]),
