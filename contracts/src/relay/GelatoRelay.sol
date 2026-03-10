@@ -193,7 +193,8 @@ contract GelatoRelay is
     ) external onlyGelatoRelay nonReentrant {
         _verifyRelayTransfer(owner, to, amount, relayerFee, maxGelatoFee, deadline, relaySig);
         (bytes32 r, bytes32 s, uint8 v) = _splitSignature(permitSig);
-        try IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s) {} catch {
+        try IERC20Permit(address(ZERC20_TOKEN)).permit(owner, address(this), amount, deadline, v, r, s) {}
+        catch {
             _requirePermitAllowance(owner, amount);
         }
         // slither-disable-next-line arbitrary-send-erc20-permit

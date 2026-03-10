@@ -251,11 +251,13 @@ contract GelatoRelayTest is TestHelperOz5 {
         );
     }
 
-    function _signRelayUnwrap(uint256 amount, address receiver, uint256 relayerFee, uint256 maxGelatoFee, uint256 deadline)
-        internal
-        view
-        returns (bytes memory)
-    {
+    function _signRelayUnwrap(
+        uint256 amount,
+        address receiver,
+        uint256 relayerFee,
+        uint256 maxGelatoFee,
+        uint256 deadline
+    ) internal view returns (bytes memory) {
         uint256 nonce = relay.nonces(signerAddr);
         bytes32 structHash = keccak256(
             abi.encode(RELAY_UNWRAP_TYPEHASH, signerAddr, amount, receiver, relayerFee, maxGelatoFee, deadline, nonce)
