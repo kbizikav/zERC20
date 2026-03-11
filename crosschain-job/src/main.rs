@@ -1066,6 +1066,7 @@ mod tests {
             legacy_tx: false,
             relay_interval_secs: None,
             root_submit_interval_ms: None,
+            gelato_relay_address: None,
         }
     }
 

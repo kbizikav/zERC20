@@ -10,6 +10,7 @@ export * from "./operations/privateSend.js";
 export * from "./operations/receive.js";
 export * from "./operations/scanner.js";
 export * from "./operations/teleport.js";
+export * from "./relay/index.js";
 export * from "./registry/tokens.js";
 export * from "./sdk.js";
 export * from "./types.js";

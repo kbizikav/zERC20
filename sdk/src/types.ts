@@ -67,7 +67,8 @@ export interface ScannedAnnouncement {
 }
 
 export interface AggregationTreeState {
-  latestAggSeq: bigint;
+  scope: 'global' | 'local';
+  rootHint: bigint;
   aggregationRoot: string;
   snapshot: string[];
   transferTreeIndices: bigint[];
@@ -75,9 +76,19 @@ export interface AggregationTreeState {
 }
 
 export interface GlobalTeleportProof {
+  kind: 'global';
   siblings: string[];
   leafIndex: bigint;
 }
+
+export interface LocalTeleportProof {
+  kind: 'local';
+  treeIndex: bigint;
+  event: IndexedEvent;
+  siblings: string[];
+}
+
+export type BatchTeleportProof = GlobalTeleportProof | LocalTeleportProof;
 
 export interface GlobalTeleportProofWithEvent extends GlobalTeleportProof {
   event: IndexedEvent;
@@ -102,14 +113,14 @@ export interface SingleTeleportParams {
   recipientFr: string;
   secretHex: string;
   event: IndexedEvent;
-  proof: GlobalTeleportProof;
+  proof: BatchTeleportProof;
 }
 
 export interface NovaProverInput {
   aggregationState: AggregationTreeState;
   recipientFr: string;
   secretHex: string;
-  proofs: readonly GlobalTeleportProof[];
+  proofs: readonly BatchTeleportProof[];
   events: readonly IndexedEvent[];
 }
 
@@ -153,12 +164,6 @@ export interface SeparatedChainEvents {
   events: EventsWithEligibility;
 }
 
-export interface LocalTeleportProof {
-  treeIndex: bigint;
-  event: IndexedEvent;
-  siblings: string[];
-}
-
 export interface ChainLocalTeleportProofs {
   chainId: bigint;
   proofs: LocalTeleportProof[];
@@ -168,6 +173,8 @@ export interface FetchAggregationTreeStateParams {
   eventBlockSpan?: number | bigint;
   hub: HubEntryConfig;
   token: TokenEntryConfig;
+  chainId: bigint;
+  useLocalRoot?: boolean;
 }
 
 export interface FetchTransferEventsParams {

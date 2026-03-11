@@ -526,8 +526,8 @@ export function ScanReceivingsPanel({ config, tokens }: ScanReceivingsPanelProps
           ) => Promise<`0x${string}`>;
           const proofCalldata = singleProof.proofCalldata as `0x${string}`;
           const txHash = await singleTeleport([
-            true,
-            refreshedContext.aggregationState.latestAggSeq,
+            refreshedContext.aggregationState.scope === 'global',
+            refreshedContext.aggregationState.rootHint,
             gr,
             proofCalldata,
           ]);
@@ -567,8 +567,8 @@ export function ScanReceivingsPanel({ config, tokens }: ScanReceivingsPanelProps
           ) => Promise<`0x${string}`>;
           const deciderProofHex = hexlify(batchProof.deciderProof) as `0x${string}`;
           const txHash = await teleport([
-            true,
-            refreshedContext.aggregationState.latestAggSeq,
+            refreshedContext.aggregationState.scope === 'global',
+            refreshedContext.aggregationState.rootHint,
             gr,
             deciderProofHex,
           ]);

@@ -8,7 +8,7 @@ Complete reference of all public exports from `zerc20-client-sdk`.
 |------|-----------|---------|-------------|
 | `createSdk` | `(options?: Zerc20SdkOptions)` | `Zerc20Sdk` | Create SDK instance |
 | `Zerc20Sdk` | class | - | Main SDK, bundles WASM, proof, decider, stealth |
-| `Zerc20SdkOptions` | interface | - | Options: `wasm?`, `teleportProofs?`, `decider?`, `stealth?` |
+| `Zerc20SdkOptions` | interface | - | Options: `wasm?`, `proofs?`, `decider?`, `stealth?` |
 
 ## EVM Providers
 
@@ -119,8 +119,8 @@ Cross-chain message tracking via the LayerZero Scan API. See [LayerZero Scan](la
 
 | Name | Signature | Returns | Description |
 |------|-----------|---------|-------------|
-| `TeleportProofClient` | class | - | High-level proof client |
-| `createTeleportProofClient` | `(options?)` | `TeleportProofClient` | Create proof client |
+| `ProofService` | class | - | ZK proof service for single and batch redemption |
+| `ProofServiceOptions` | interface | - | Options for worker offload and proof execution |
 | `HttpDeciderClient` | class | - | Decider service HTTP client |
 
 ## WASM

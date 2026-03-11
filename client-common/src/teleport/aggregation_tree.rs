@@ -10,9 +10,16 @@ use crate::contracts::{
     verifier::VerifierContract,
 };
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TransferRootScope {
+    Global,
+    Local,
+}
+
 #[derive(Clone, Debug)]
 pub struct AggregationTreeState {
-    pub latest_agg_seq: u64,
+    pub scope: TransferRootScope,
+    pub root_hint: u64,
     pub aggregation_root: U256,
     pub aggregation_tree: MerkleTree,
     pub tree_root_indices: Vec<u64>,
@@ -31,7 +38,13 @@ pub async fn fetch_aggregation_tree_state(
     event_block_span: u64,
     verifier: &VerifierContract,
     hub: &HubContract,
+    chain_id: u64,
+    use_local_root: bool,
 ) -> anyhow::Result<AggregationTreeState> {
+    if use_local_root {
+        return fetch_local_aggregation_tree_state(verifier, chain_id).await;
+    }
+
     let latest_agg_seq = verifier
         .latest_agg_seq()
         .await
@@ -73,12 +86,47 @@ pub async fn fetch_aggregation_tree_state(
     let chain_ids = token_infos.into_iter().map(|info| info.chain_id).collect();
 
     Ok(AggregationTreeState {
-        latest_agg_seq,
+        scope: TransferRootScope::Global,
+        root_hint: latest_agg_seq,
         aggregation_root: aggregation_event.root,
         aggregation_tree,
         tree_root_indices: aggregation_event.transfer_tree_indices,
         chain_ids,
         snapshot: aggregation_event.snapshot,
+    })
+}
+
+async fn fetch_local_aggregation_tree_state(
+    verifier: &VerifierContract,
+    chain_id: u64,
+) -> anyhow::Result<AggregationTreeState> {
+    let latest_proved_index = verifier
+        .latest_proved_index()
+        .await
+        .context("Failed to fetch latest proved index from verifier")?;
+    if latest_proved_index == 0 {
+        anyhow::bail!("No proved local transfer root available yet (latest_proved_index is 0)");
+    }
+
+    let local_root = verifier
+        .proved_transfer_root(latest_proved_index)
+        .await
+        .context("Failed to fetch local proved transfer root from verifier")?;
+    if local_root == U256::ZERO {
+        anyhow::bail!(
+            "Local proved transfer root at index {} is zero",
+            latest_proved_index
+        );
+    }
+
+    Ok(AggregationTreeState {
+        scope: TransferRootScope::Local,
+        root_hint: latest_proved_index,
+        aggregation_root: local_root,
+        aggregation_tree: MerkleTree::new(AGGREGATION_TREE_HEIGHT),
+        tree_root_indices: vec![latest_proved_index],
+        chain_ids: vec![chain_id],
+        snapshot: Vec::new(),
     })
 }
 

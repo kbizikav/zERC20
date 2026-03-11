@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import type { GlobalTeleportProof, IndexedEvent } from '../../types.js';
+import type { GlobalTeleportProof, IndexedEvent, LocalTeleportProof } from '../../types.js';
 import {
   computeLeafHash,
   computeMerkleRootFromSiblings,
-  verifyGlobalTeleportProofs,
+  verifyTeleportProofs,
 } from '../merkle.js';
 
 function asHex(value: bigint): string {
@@ -21,7 +21,7 @@ function makeEvent(overrides: Partial<IndexedEvent> = {}): IndexedEvent {
   };
 }
 
-describe('verifyGlobalTeleportProofs', () => {
+describe('verifyTeleportProofs', () => {
   it('accepts proofs whose Poseidon path matches the aggregation root', () => {
     const event = makeEvent();
     const leaf = computeLeafHash(event.to, event.value);
@@ -30,6 +30,7 @@ describe('verifyGlobalTeleportProofs', () => {
       asHex(computeLeafHash('0x3333333333333333333333333333333333333333', 7n)),
     ];
     const proof: GlobalTeleportProof = {
+      kind: 'global',
       siblings,
       leafIndex: 3n,
     };
@@ -39,7 +40,8 @@ describe('verifyGlobalTeleportProofs', () => {
       leafIndex: proof.leafIndex,
     });
     expect(() =>
-      verifyGlobalTeleportProofs({
+      verifyTeleportProofs({
+        scope: 'global',
         aggregationRoot: asHex(root),
         events: [event],
         proofs: [proof],
@@ -55,6 +57,7 @@ describe('verifyGlobalTeleportProofs', () => {
       asHex(computeLeafHash('0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 2n)),
     ];
     const proof: GlobalTeleportProof = {
+      kind: 'global',
       siblings,
       leafIndex: 1n,
     };
@@ -68,11 +71,41 @@ describe('verifyGlobalTeleportProofs', () => {
       siblings: ['0x0', proof.siblings[1]],
     };
     expect(() =>
-      verifyGlobalTeleportProofs({
+      verifyTeleportProofs({
+        scope: 'global',
         aggregationRoot: asHex(root),
         events: [event],
         proofs: [tamperedProof],
       }),
     ).toThrowError(/merkle proof mismatch/);
+  });
+
+  it('accepts local proofs whose Poseidon path matches the local aggregation root', () => {
+    const event = makeEvent({ eventIndex: 9n, value: 77n });
+    const leaf = computeLeafHash(event.to, event.value);
+    const siblings = [
+      asHex(computeLeafHash('0x4444444444444444444444444444444444444444', 9n)),
+      asHex(computeLeafHash('0x5555555555555555555555555555555555555555', 10n)),
+    ];
+    const proof: LocalTeleportProof = {
+      kind: 'local',
+      treeIndex: 2n,
+      event,
+      siblings,
+    };
+    const root = computeMerkleRootFromSiblings({
+      leaf,
+      siblings: proof.siblings,
+      leafIndex: proof.treeIndex,
+    });
+
+    expect(() =>
+      verifyTeleportProofs({
+        scope: 'local',
+        aggregationRoot: asHex(root),
+        events: [event],
+        proofs: [proof],
+      }),
+    ).not.toThrow();
   });
 });

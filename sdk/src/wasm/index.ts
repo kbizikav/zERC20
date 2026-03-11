@@ -192,12 +192,18 @@ export class WasmRuntime {
       eventBlockSpan?: number;
       hub: RawHubEntry;
       token: RawTokenEntry;
+      chainId: bigint;
+      useLocalRoot?: boolean;
     } = {
       hub: serializeHubEntry(params.hub),
       token: serializeTokenEntry(params.token),
+      chainId: params.chainId,
     };
     if (params.eventBlockSpan !== undefined) {
       payload.eventBlockSpan = toSafeNumber(params.eventBlockSpan, 'eventBlockSpan');
+    }
+    if (params.useLocalRoot !== undefined) {
+      payload.useLocalRoot = params.useLocalRoot;
     }
     const rawState: RawAggregationTreeState = await wasmFetchAggregationTreeState(payload);
     return deserializeAggregationTreeState(rawState);
@@ -567,7 +573,8 @@ interface RawTokenEntry {
 }
 
 interface RawAggregationTreeState {
-  latestAggSeq: NumericValue;
+  scope: string;
+  rootHint: NumericValue;
   aggregationRoot: string;
   snapshot: string[];
   transferTreeIndices: NumericValue[];
@@ -653,7 +660,8 @@ function serializeTokenEntry(entry: TokenEntryConfig): RawTokenEntry {
 
 function serializeAggregationTreeState(state: AggregationTreeState): RawAggregationTreeState {
   return {
-    latestAggSeq: state.latestAggSeq,
+    scope: state.scope,
+    rootHint: state.rootHint,
     aggregationRoot: normalizeHex(state.aggregationRoot),
     snapshot: state.snapshot.map((value) => normalizeHex(value)),
     transferTreeIndices: state.transferTreeIndices.map((value) => value),
@@ -663,12 +671,20 @@ function serializeAggregationTreeState(state: AggregationTreeState): RawAggregat
 
 function deserializeAggregationTreeState(raw: RawAggregationTreeState): AggregationTreeState {
   return {
-    latestAggSeq: toBigInt(raw.latestAggSeq),
+    scope: parseAggregationScope(raw.scope),
+    rootHint: toBigInt(raw.rootHint),
     aggregationRoot: normalizeHex(raw.aggregationRoot),
     snapshot: raw.snapshot.map((value) => normalizeHex(value)),
     transferTreeIndices: raw.transferTreeIndices.map((value) => toBigInt(value)),
     chainIds: raw.chainIds.map((value) => toBigInt(value)),
   };
+}
+
+function parseAggregationScope(scope: string): AggregationTreeState['scope'] {
+  if (scope === 'global' || scope === 'local') {
+    return scope;
+  }
+  throw new Error(`unsupported aggregation scope: ${scope}`);
 }
 
 function serializeIndexedEvent(event: IndexedEvent): RawIndexedEvent {
@@ -729,6 +745,7 @@ function serializeLocalTeleportProof(proof: LocalTeleportProof): RawLocalTelepor
 
 function deserializeLocalTeleportProof(raw: RawLocalTeleportProof): LocalTeleportProof {
   return {
+    kind: 'local',
     treeIndex: toBigInt(raw.treeIndex),
     event: deserializeIndexedEvent(raw.event),
     siblings: raw.siblings.map((value) => normalizeHex(value)),
@@ -746,6 +763,7 @@ function serializeChainLocalTeleportProofs(
 
 function deserializeGlobalTeleportProof(raw: RawGlobalTeleportProof): GlobalTeleportProofWithEvent {
   return {
+    kind: 'global',
     event: deserializeIndexedEvent(raw.event),
     siblings: raw.siblings.map((value) => normalizeHex(value)),
     leafIndex: toBigInt(raw.leafIndex),

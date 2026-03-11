@@ -1,5 +1,6 @@
 import type {
-  GlobalTeleportProof,
+  AggregationTreeState,
+  BatchTeleportProof,
   IndexedEvent,
   NovaProverInput,
   NovaProverOutput,
@@ -7,7 +8,8 @@ import type {
   SingleTeleportParams,
 } from "../types.js";
 import { hexToBytes, normalizeHex } from "../utils/hex.js";
-import { verifyGlobalTeleportProofs } from "../utils/merkle.js";
+import { verifyTeleportProofs } from "../utils/merkle.js";
+import { getTeleportProofIndex } from "../utils/teleportProofs.js";
 import {
   loadBatchTeleportArtifacts,
   loadSingleTeleportArtifacts,
@@ -115,7 +117,9 @@ export class ProofService {
       value: formatFieldElement(toFieldHex(params.event.value), "value"),
       delta: zeroField,
       secret: formatFieldElement(params.secretHex, "secret"),
-      leafIndex: toLeafIndexString(params.proof.leafIndex),
+      leafIndex: toLeafIndexString(
+        getTeleportProofIndex(params.aggregationState.scope, params.proof)
+      ),
       siblings: params.proof.siblings.map((sibling, idx) =>
         formatFieldElement(sibling, `proof.siblings[${idx}]`)
       ),
@@ -157,9 +161,14 @@ export class ProofService {
     }
 
     const { events: sortedEvents, proofs: sortedProofs } =
-      sortProofsByLeafIndex(params.events, params.proofs);
+      sortProofsByIndex(
+        params.aggregationState.scope,
+        params.events,
+        params.proofs
+      );
 
-    verifyGlobalTeleportProofs({
+    verifyTeleportProofs({
+      scope: params.aggregationState.scope,
       aggregationRoot: params.aggregationState.aggregationRoot,
       events: sortedEvents,
       proofs: sortedProofs,
@@ -186,7 +195,9 @@ export class ProofService {
         `events[${idx}].value`
       ),
       secret: formatFieldElement(params.secretHex, `events[${idx}].secret`),
-      leafIndex: toLeafIndexString(sortedProofs[idx].leafIndex),
+      leafIndex: toLeafIndexString(
+        getTeleportProofIndex(params.aggregationState.scope, sortedProofs[idx], idx)
+      ),
       siblings: sortedProofs[idx].siblings.map((sibling, siblingIdx) =>
         formatFieldElement(sibling, `proofs[${idx}].siblings[${siblingIdx}]`)
       ),
@@ -215,19 +226,22 @@ export class ProofService {
   }
 }
 
-function sortProofsByLeafIndex(
+function sortProofsByIndex(
+  scope: AggregationTreeState["scope"],
   events: readonly IndexedEvent[],
-  proofs: readonly GlobalTeleportProof[]
-): { events: IndexedEvent[]; proofs: GlobalTeleportProof[] } {
+  proofs: readonly BatchTeleportProof[]
+): { events: IndexedEvent[]; proofs: BatchTeleportProof[] } {
   const proofEventPairs = events.map((event, idx) => ({
     event,
     proof: proofs[idx],
   }));
   proofEventPairs.sort((a, b) => {
-    if (a.proof.leafIndex < b.proof.leafIndex) {
+    const aIndex = getTeleportProofIndex(scope, a.proof);
+    const bIndex = getTeleportProofIndex(scope, b.proof);
+    if (aIndex < bIndex) {
       return -1;
     }
-    if (a.proof.leafIndex > b.proof.leafIndex) {
+    if (aIndex > bIndex) {
       return 1;
     }
     return 0;

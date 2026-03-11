@@ -48,6 +48,23 @@ contract TransferLiquidityManagerOwnership is Script {
         console2.log("Current admin:", currentAdmin);
         console2.log("Target owner:", newOwner);
 
+        if (_alreadyTransferred(manager, adminRole, feeManagerRole, newOwner, currentAdmin)) return;
+
+        vm.startBroadcast(deployerKey);
+        _grantRoles(manager, adminRole, feeManagerRole, newOwner);
+        _revokeRoles(manager, adminRole, feeManagerRole, currentAdmin, newOwner);
+        vm.stopBroadcast();
+
+        console2.log("LiquidityManager ownership transferred successfully");
+    }
+
+    function _alreadyTransferred(
+        ILiquidityManagerRoles manager,
+        bytes32 adminRole,
+        bytes32 feeManagerRole,
+        address newOwner,
+        address currentAdmin
+    ) internal view returns (bool) {
         bool hasAdminRole = manager.hasRole(adminRole, newOwner);
         bool hasFeeManagerRole = manager.hasRole(feeManagerRole, newOwner);
 
@@ -56,51 +73,43 @@ contract TransferLiquidityManagerOwnership is Script {
 
         if (hasAdminRole && hasFeeManagerRole) {
             console2.log("Target already has all roles. Checking if revoke is needed...");
-            bool currentHasAdmin = manager.hasRole(adminRole, currentAdmin);
-            bool currentHasFeeManager = manager.hasRole(feeManagerRole, currentAdmin);
-            if (!currentHasAdmin && !currentHasFeeManager) {
+            if (!manager.hasRole(adminRole, currentAdmin) && !manager.hasRole(feeManagerRole, currentAdmin)) {
                 console2.log("Current admin roles already revoked. Skipping.");
-                return;
+                return true;
             }
         }
+        return false;
+    }
 
-        vm.startBroadcast(deployerKey);
-
-        // Re-check roles inside broadcast for accurate state after potential restart
-        hasAdminRole = manager.hasRole(adminRole, newOwner);
-        hasFeeManagerRole = manager.hasRole(feeManagerRole, newOwner);
-
-        // Grant roles to new owner first (safe to call even if already granted)
-        if (!hasAdminRole) {
+    function _grantRoles(ILiquidityManagerRoles manager, bytes32 adminRole, bytes32 feeManagerRole, address newOwner)
+        internal
+    {
+        if (!manager.hasRole(adminRole, newOwner)) {
             console2.log("Granting DEFAULT_ADMIN_ROLE to new owner...");
             manager.grantRole(adminRole, newOwner);
         }
-
-        if (!hasFeeManagerRole) {
+        if (!manager.hasRole(feeManagerRole, newOwner)) {
             console2.log("Granting FEE_MANAGER_ROLE to new owner...");
             manager.grantRole(feeManagerRole, newOwner);
         }
+    }
 
-        // Revoke roles from current admin (only if different from new owner)
-        // Re-check inside broadcast for accurate state after potential restart
-        if (currentAdmin != newOwner) {
-            bool currentHasFeeManager = manager.hasRole(feeManagerRole, currentAdmin);
-            bool currentHasAdmin = manager.hasRole(adminRole, currentAdmin);
-
-            if (currentHasFeeManager) {
-                console2.log("Revoking FEE_MANAGER_ROLE from current admin...");
-                manager.revokeRole(feeManagerRole, currentAdmin);
-            }
-
-            if (currentHasAdmin) {
-                console2.log("Revoking DEFAULT_ADMIN_ROLE from current admin...");
-                manager.revokeRole(adminRole, currentAdmin);
-            }
+    function _revokeRoles(
+        ILiquidityManagerRoles manager,
+        bytes32 adminRole,
+        bytes32 feeManagerRole,
+        address currentAdmin,
+        address newOwner
+    ) internal {
+        if (currentAdmin == newOwner) return;
+        if (manager.hasRole(feeManagerRole, currentAdmin)) {
+            console2.log("Revoking FEE_MANAGER_ROLE from current admin...");
+            manager.revokeRole(feeManagerRole, currentAdmin);
         }
-
-        vm.stopBroadcast();
-
-        console2.log("LiquidityManager ownership transferred successfully");
+        if (manager.hasRole(adminRole, currentAdmin)) {
+            console2.log("Revoking DEFAULT_ADMIN_ROLE from current admin...");
+            manager.revokeRole(adminRole, currentAdmin);
+        }
     }
 }
 

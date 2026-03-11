@@ -20,6 +20,10 @@ import {
 import {GeneralRecipientLib} from "../src/utils/GeneralRecipientLib.sol";
 import {IWithdrawDecider} from "../src/interfaces/IWithdrawDecider.sol";
 import {IRootDecider} from "../src/interfaces/IRootDecider.sol";
+import {IWithdrawVerifier} from "../src/interfaces/IVerifier.sol";
+import {IERC1271} from "@openzeppelin/contracts/interfaces/IERC1271.sol";
+import {MessageHashUtils} from "@openzeppelin/contracts/utils/cryptography/MessageHashUtils.sol";
+import {ECDSA} from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 
 contract VerifierTest is TestHelperOz5 {
     Verifier internal verifier;
@@ -878,6 +882,807 @@ contract VerifierReentrancyTest is TestHelperOz5 {
         // Verify the reentrant attack was attempted but failed
         assertTrue(attacker.attackAttempted(), "Attack should have been attempted");
         assertFalse(attacker.attackSucceeded(), "Reentrant attack should have failed");
+    }
+
+    function _toBytes32(address addr) internal pure returns (bytes32) {
+        return bytes32(uint256(uint160(addr)));
+    }
+}
+
+// ============================================================================
+// Relayer Fee Tests
+// ============================================================================
+
+/// @dev Mock zERC20 that tracks teleport calls
+contract MockZERC20ForRelayerFee {
+    uint256 public index;
+    uint256 public hashChain;
+
+    struct TeleportCall {
+        address to;
+        uint256 value;
+    }
+
+    TeleportCall[] public teleportCalls;
+
+    function setIndexAndHashChain(uint256 index_, uint256 hashChain_) external {
+        index = index_;
+        hashChain = hashChain_;
+    }
+
+    function teleport(address to, uint256 value) external {
+        teleportCalls.push(TeleportCall({to: to, value: value}));
+    }
+
+    function teleportCallCount() external view returns (uint256) {
+        return teleportCalls.length;
+    }
+}
+
+/// @dev Mock Groth16 verifier that always returns true
+contract MockSingleWithdrawVerifier is IWithdrawVerifier {
+    function verifyProof(uint256[2] calldata, uint256[2][2] calldata, uint256[2] calldata, uint256[3] calldata)
+        external
+        pure
+        returns (bool)
+    {
+        return true;
+    }
+}
+
+/// @dev Mock ERC-1271 contract wallet
+contract MockERC1271Wallet is IERC1271 {
+    address public signer;
+
+    constructor(address signer_) {
+        signer = signer_;
+    }
+
+    function isValidSignature(bytes32 hash, bytes calldata signature) external view returns (bytes4) {
+        (address recovered,,) = ECDSA.tryRecover(hash, signature);
+        if (recovered == signer) {
+            return IERC1271.isValidSignature.selector;
+        }
+        return bytes4(0xffffffff);
+    }
+}
+
+contract VerifierRelayerFeeTest is TestHelperOz5 {
+    Verifier internal verifier;
+    EndpointV2 internal endpoint;
+    MockZERC20ForRelayerFee internal mockToken;
+    MockWithdrawDecider internal mockDecider;
+    MockSingleWithdrawVerifier internal mockSingleVerifier;
+
+    uint32 internal constant LOCAL_EID = 1;
+    uint32 internal constant HUB_EID = 2;
+
+    uint256 internal constant SIGNER_PK = 0xA11CE;
+    address internal signerAddr;
+
+    bytes32 internal constant RELAYER_FEE_TYPEHASH =
+        keccak256("RelayerFeeAuthorization(uint256 recipientHash,uint256 totalValue,uint256 maxFee,uint64 deadline)");
+
+    uint256 internal constant TRANSFER_ROOT = 12345;
+    uint64 internal constant ROOT_HINT = 1;
+
+    function setUp() public override {
+        super.setUp();
+        setUpEndpoints(2, LibraryType.SimpleMessageLib);
+        endpoint = endpointSetup.endpointList[0];
+
+        signerAddr = vm.addr(SIGNER_PK);
+
+        mockToken = new MockZERC20ForRelayerFee();
+        mockDecider = new MockWithdrawDecider();
+        mockSingleVerifier = new MockSingleWithdrawVerifier();
+        mockToken.setIndexAndHashChain(42, 123);
+
+        Verifier implementation = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                address(mockToken),
+                HUB_EID,
+                address(this),
+                address(mockDecider),
+                address(mockDecider),
+                address(mockDecider),
+                address(mockSingleVerifier),
+                address(mockSingleVerifier)
+            )
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        verifier = Verifier(address(proxy));
+        verifier.setPeer(HUB_EID, _toBytes32(address(this)));
+
+        // Initialize EIP-712
+        verifier.initializeV2("Verifier", "1");
+
+        // Store a global root for testing
+        Origin memory origin = Origin({srcEid: HUB_EID, sender: _toBytes32(address(this)), nonce: 1});
+        bytes memory payload = abi.encode(TRANSFER_ROOT, ROOT_HINT);
+        vm.prank(address(endpoint));
+        verifier.lzReceive(origin, bytes32(uint256(1)), payload, address(0), bytes(""));
+    }
+
+    // -----------------------------------------------------------------------
+    // Helpers
+    // -----------------------------------------------------------------------
+
+    function _buildGr(address recipient) internal view returns (GeneralRecipientLib.GeneralRecipient memory) {
+        return GeneralRecipientLib.GeneralRecipient({
+            chainId: uint64(block.chainid), recipient: bytes32(uint256(uint160(recipient))), tweak: bytes32(0)
+        });
+    }
+
+    function _buildNovaProof(uint256 transferRoot, uint256 recipientHash, uint256 totalValue)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        uint256[34] memory proofArray;
+        proofArray[1] = transferRoot;
+        proofArray[2] = recipientHash;
+        proofArray[3] = 0; // initialLastLeafIndex
+        proofArray[4] = 0; // initialTotalValue
+        proofArray[5] = transferRoot; // finalTransferRoot
+        proofArray[6] = recipientHash; // finalRecipient
+        proofArray[7] = 0; // lastLeafIndex
+        proofArray[8] = totalValue;
+        return abi.encode(proofArray);
+    }
+
+    function _buildSingleProof(uint256 transferRoot, uint256 recipientHash, uint256 totalValue)
+        internal
+        pure
+        returns (bytes memory)
+    {
+        uint256[2] memory pA;
+        uint256[2][2] memory pB;
+        uint256[2] memory pC;
+        uint256[3] memory pubSignals = [transferRoot, recipientHash, totalValue];
+        return abi.encode(pA, pB, pC, pubSignals);
+    }
+
+    function _signRelayerFeeAuth(
+        uint256 privateKey,
+        uint256 recipientHash,
+        uint256 totalValue,
+        uint256 maxFee,
+        uint64 deadline
+    ) internal view returns (bytes memory) {
+        bytes32 structHash = keccak256(abi.encode(RELAYER_FEE_TYPEHASH, recipientHash, totalValue, maxFee, deadline));
+        // Use the proper EIP-712 hash
+        bytes32 digest = _hashTypedDataV4(structHash);
+        (uint8 v, bytes32 r, bytes32 s) = vm.sign(privateKey, digest);
+        return abi.encodePacked(r, s, v);
+    }
+
+    function _hashTypedDataV4(bytes32 structHash) internal view returns (bytes32) {
+        // Reconstruct the EIP-712 hash using domain separator
+        (, string memory name_, string memory version_, uint256 chainId_, address verifyingContract_,,) =
+            verifier.eip712Domain();
+        bytes32 domainSeparator = keccak256(
+            abi.encode(
+                keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)"),
+                keccak256(bytes(name_)),
+                keccak256(bytes(version_)),
+                chainId_,
+                verifyingContract_
+            )
+        );
+        return MessageHashUtils.toTypedDataHash(domainSeparator, structHash);
+    }
+
+    function _buildFeeAuth(uint256 relayerFee, uint256 maxFee, uint64 deadline, bytes memory signature)
+        internal
+        pure
+        returns (Verifier.RelayerFeeAuthorization memory)
+    {
+        return Verifier.RelayerFeeAuthorization({
+            relayerFee: relayerFee, maxFee: maxFee, deadline: deadline, signature: signature
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // initializeV2 tests
+    // -----------------------------------------------------------------------
+
+    function testInitializeV2SetsEIP712() public view {
+        (, string memory name_,,,,,) = verifier.eip712Domain();
+        assertEq(name_, "Verifier", "EIP-712 name mismatch");
+    }
+
+    function testInitializeV2CannotBeCalledTwice() public {
+        vm.expectRevert();
+        verifier.initializeV2("Verifier", "1");
+    }
+
+    function testInitializeV2OnlyOwner() public {
+        // Deploy a fresh verifier to test
+        Verifier impl = new Verifier(address(endpoint));
+        bytes memory initData = abi.encodeCall(
+            Verifier.initialize,
+            (
+                address(mockToken),
+                HUB_EID,
+                address(this),
+                address(mockDecider),
+                address(mockDecider),
+                address(mockDecider),
+                address(mockSingleVerifier),
+                address(mockSingleVerifier)
+            )
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
+        Verifier freshVerifier = Verifier(address(proxy));
+
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        freshVerifier.initializeV2("Verifier", "1");
+    }
+
+    // -----------------------------------------------------------------------
+    // Happy path: Nova teleport with relayer fee
+    // -----------------------------------------------------------------------
+
+    function testTeleportWithRelayerFeeNova() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 relayerFee = 50;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        address relayer = address(0xBE1A);
+        vm.prank(relayer);
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        // Check: recipient gets totalValue - relayerFee
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, totalValue - relayerFee, "recipient value mismatch");
+
+        // Check: relayer gets relayerFee
+        (address relayerTo, uint256 relayerValue) = mockToken.teleportCalls(1);
+        assertEq(relayerTo, relayer, "relayer address mismatch");
+        assertEq(relayerValue, relayerFee, "relayer value mismatch");
+
+        // Check totalTeleported updated
+        assertEq(verifier.totalTeleported(recipientHash), totalValue, "totalTeleported mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // Happy path: Groth16 singleTeleport with relayer fee
+    // -----------------------------------------------------------------------
+
+    function testSingleTeleportWithRelayerFee() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 500;
+        uint256 relayerFee = 25;
+        uint256 maxFee = 50;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildSingleProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        address relayer = address(0xBE1A);
+        vm.prank(relayer);
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, totalValue - relayerFee, "recipient value mismatch");
+
+        (address relayerTo, uint256 relayerValue) = mockToken.teleportCalls(1);
+        assertEq(relayerTo, relayer, "relayer address mismatch");
+        assertEq(relayerValue, relayerFee, "relayer value mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // Zero relayer fee (no extra teleport call)
+    // -----------------------------------------------------------------------
+
+    function testTeleportWithZeroRelayerFee() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 relayerFee = 0;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        address relayer = address(0xBE1A);
+        vm.prank(relayer);
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        // Only 1 teleport call (to recipient), no relayer call
+        assertEq(mockToken.teleportCallCount(), 1, "should be exactly 1 teleport call");
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, totalValue, "recipient value mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // Signature validation: invalid signature
+    // -----------------------------------------------------------------------
+
+    function testRevertsOnInvalidSignature() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        // Sign with wrong key
+        uint256 wrongPk = 0xDEAD;
+        bytes memory badSignature = _signRelayerFeeAuth(wrongPk, recipientHash, totalValue, maxFee, deadline);
+
+        vm.expectRevert(Verifier.InvalidRelayerFeeSignature.selector);
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, badSignature));
+    }
+
+    // -----------------------------------------------------------------------
+    // Signature validation: expired deadline
+    // -----------------------------------------------------------------------
+
+    function testRevertsOnExpiredDeadline() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp - 1); // already expired
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Verifier.RelayerFeeAuthorizationExpired.selector, deadline, block.timestamp)
+        );
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+    }
+
+    // -----------------------------------------------------------------------
+    // Fee limits: relayerFee > maxFee
+    // -----------------------------------------------------------------------
+
+    function testRevertsWhenRelayerFeeExceedsMaxFee() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        uint256 relayerFee = 101; // exceeds maxFee
+        vm.expectRevert(abi.encodeWithSelector(Verifier.RelayerFeeExceedsMax.selector, relayerFee, maxFee));
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+    }
+
+    // -----------------------------------------------------------------------
+    // Fee limits: relayerFee > diff
+    // -----------------------------------------------------------------------
+
+    function testRevertsWhenRelayerFeeExceedsDiff() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 maxFee = 1500; // maxFee > totalValue to isolate diff check
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        uint256 relayerFee = 1001; // exceeds diff (which is totalValue = 1000)
+        vm.expectRevert(abi.encodeWithSelector(Verifier.RelayerFeeExceedsDiff.selector, relayerFee, totalValue));
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+    }
+
+    // -----------------------------------------------------------------------
+    // Natural nonce: same totalValue replay is impossible
+    // -----------------------------------------------------------------------
+
+    function testReplayWithSameTotalValueReverts() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        // First teleport succeeds
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+
+        // Second teleport with same totalValue reverts (NothingToWithdraw)
+        vm.expectRevert(abi.encodeWithSelector(Verifier.NothingToWithdraw.selector, totalValue, totalValue));
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+    }
+
+    // -----------------------------------------------------------------------
+    // Backward compatibility: legacy teleport still works
+    // -----------------------------------------------------------------------
+
+    function testLegacyTeleportStillWorks() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+
+        verifier.teleport(true, ROOT_HINT, gr, proof);
+
+        assertEq(mockToken.teleportCallCount(), 1, "should be exactly 1 teleport call");
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, totalValue, "recipient value mismatch");
+        assertEq(verifier.totalTeleported(recipientHash), totalValue, "totalTeleported mismatch");
+    }
+
+    function testLegacySingleTeleportStillWorks() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 500;
+
+        bytes memory proof = _buildSingleProof(TRANSFER_ROOT, recipientHash, totalValue);
+
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof);
+
+        assertEq(mockToken.teleportCallCount(), 1, "should be exactly 1 teleport call");
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, totalValue, "recipient value mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // ERC-1271: contract wallet signature verification
+    // -----------------------------------------------------------------------
+
+    function testERC1271ContractWalletSignature() public {
+        // Deploy mock wallet that delegates to signerAddr
+        MockERC1271Wallet wallet = new MockERC1271Wallet(signerAddr);
+
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(address(wallet));
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        // Sign with the EOA key that the wallet recognizes
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        address relayer = address(0xBE1A);
+        vm.prank(relayer);
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, address(wallet), "recipient address mismatch");
+        assertEq(recipientValue, totalValue - 50, "recipient value mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // Event emission
+    // -----------------------------------------------------------------------
+
+    function testTeleportWithRelayerFeeEmitsEvent() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 relayerFee = 50;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        address relayer = address(0xBE1A);
+        vm.prank(relayer);
+
+        vm.recordLogs();
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        bytes32 eventSig = keccak256(
+            "TeleportWithRelayerFee(address,address,uint256,uint256,bool,uint64,uint256,(uint64,bytes32,bytes32))"
+        );
+        bool found;
+        for (uint256 i = 0; i < logs.length; ++i) {
+            if (logs[i].topics.length > 0 && logs[i].topics[0] == eventSig) {
+                assertEq(address(uint160(uint256(logs[i].topics[1]))), signerAddr, "indexed to mismatch");
+                assertEq(address(uint160(uint256(logs[i].topics[2]))), relayer, "indexed relayer mismatch");
+                found = true;
+            }
+        }
+        assertTrue(found, "TeleportWithRelayerFee not emitted");
+    }
+
+    // -----------------------------------------------------------------------
+    // Incremental totalValue works (second teleport with higher totalValue)
+    // -----------------------------------------------------------------------
+
+    function testIncrementalTeleportWithRelayerFee() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+
+        // First teleport: totalValue = 1000
+        {
+            uint64 deadline1 = uint64(block.timestamp + 1 hours);
+            bytes memory proof1 = _buildNovaProof(TRANSFER_ROOT, recipientHash, 1000);
+            bytes memory sig1 = _signRelayerFeeAuth(SIGNER_PK, recipientHash, 1000, 100, deadline1);
+            verifier.teleport(true, ROOT_HINT, gr, proof1, _buildFeeAuth(50, 100, deadline1, sig1));
+        }
+
+        // Second teleport: totalValue = 2000 (diff = 1000)
+        {
+            uint64 deadline2 = uint64(block.timestamp + 2 hours);
+            bytes memory proof2 = _buildNovaProof(TRANSFER_ROOT, recipientHash, 2000);
+            bytes memory sig2 = _signRelayerFeeAuth(SIGNER_PK, recipientHash, 2000, 200, deadline2);
+
+            address relayer = address(0xBE1A);
+            vm.prank(relayer);
+            verifier.teleport(true, ROOT_HINT, gr, proof2, _buildFeeAuth(75, 200, deadline2, sig2));
+        }
+
+        // Second teleport: recipient gets diff - relayerFee = 1000 - 75 = 925
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(2);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, 925, "recipient value mismatch");
+
+        assertEq(verifier.totalTeleported(recipientHash), 2000, "totalTeleported mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // Paused contract reverts for relayer teleport
+    // -----------------------------------------------------------------------
+
+    function testRelayerTeleportRevertsWhenPaused() public {
+        verifier.activateEmergency();
+
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+    }
+
+    // -----------------------------------------------------------------------
+    // singleTeleport error paths
+    // -----------------------------------------------------------------------
+
+    function testSingleTeleportRevertsOnInvalidSignature() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 500;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildSingleProof(TRANSFER_ROOT, recipientHash, totalValue);
+        uint256 wrongPk = 0xDEAD;
+        bytes memory badSignature = _signRelayerFeeAuth(wrongPk, recipientHash, totalValue, maxFee, deadline);
+
+        vm.expectRevert(Verifier.InvalidRelayerFeeSignature.selector);
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, badSignature));
+    }
+
+    function testSingleTeleportRevertsOnExpiredDeadline() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 500;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp - 1);
+
+        bytes memory proof = _buildSingleProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(Verifier.RelayerFeeAuthorizationExpired.selector, deadline, block.timestamp)
+        );
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+    }
+
+    function testSingleTeleportRevertsWhenFeeExceedsMax() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 500;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildSingleProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        uint256 relayerFee = 101;
+        vm.expectRevert(abi.encodeWithSelector(Verifier.RelayerFeeExceedsMax.selector, relayerFee, maxFee));
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+    }
+
+    function testSingleTeleportRevertsWhenFeeExceedsDiff() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 500;
+        uint256 maxFee = 600;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildSingleProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        uint256 relayerFee = 501;
+        vm.expectRevert(abi.encodeWithSelector(Verifier.RelayerFeeExceedsDiff.selector, relayerFee, totalValue));
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+    }
+
+    function testSingleTeleportReplayReverts() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 500;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildSingleProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+
+        vm.expectRevert(abi.encodeWithSelector(Verifier.NothingToWithdraw.selector, totalValue, totalValue));
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+    }
+
+    function testSingleTeleportRelayerFeeRevertsWhenPaused() public {
+        verifier.activateEmergency();
+
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 500;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildSingleProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        vm.expectRevert(PausableUpgradeable.EnforcedPause.selector);
+        verifier.singleTeleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(50, maxFee, deadline, signature));
+    }
+
+    // -----------------------------------------------------------------------
+    // Boundary: relayerFee == maxFee
+    // -----------------------------------------------------------------------
+
+    function testRelayerFeeEqualsMaxFeeSucceeds() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 maxFee = 100;
+        uint256 relayerFee = 100; // exactly maxFee
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        address relayer = address(0xBE1A);
+        vm.prank(relayer);
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, totalValue - relayerFee, "recipient value mismatch");
+
+        (address relayerTo, uint256 relayerValue) = mockToken.teleportCalls(1);
+        assertEq(relayerTo, relayer, "relayer address mismatch");
+        assertEq(relayerValue, relayerFee, "relayer value mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // Boundary: relayerFee == diff (recipient gets zero)
+    // -----------------------------------------------------------------------
+
+    function testRelayerFeeEqualsDiffRecipientGetsZero() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 relayerFee = 1000; // entire diff goes to relayer
+        uint256 maxFee = 1000;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        address relayer = address(0xBE1A);
+        vm.prank(relayer);
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        // recipient gets 0
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, 0, "recipient should get zero");
+
+        // relayer gets full amount
+        (address relayerTo, uint256 relayerValue) = mockToken.teleportCalls(1);
+        assertEq(relayerTo, relayer, "relayer address mismatch");
+        assertEq(relayerValue, totalValue, "relayer should get full amount");
+    }
+
+    // -----------------------------------------------------------------------
+    // Local root (isGlobal=false) with relayer fee
+    // -----------------------------------------------------------------------
+
+    function testTeleportWithRelayerFeeLocalRoot() public {
+        // Store a local proved root
+        verifier.reserveHashChain();
+        verifier.setAllowedProver(address(this));
+
+        uint256 oldRoot = verifier.provedTransferRoots(0);
+        uint64 newIndex = 42;
+        uint256 newHashChain = 123;
+        uint256 localRoot = 99999;
+        uint256[32] memory rootProof;
+        rootProof[1] = 0; // oldIndex
+        rootProof[3] = oldRoot;
+        rootProof[4] = newIndex;
+        rootProof[5] = newHashChain;
+        rootProof[6] = localRoot;
+        verifier.proveTransferRoot(abi.encode(rootProof));
+
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 800;
+        uint256 relayerFee = 30;
+        uint256 maxFee = 50;
+        uint64 deadline = uint64(block.timestamp + 1 hours);
+
+        bytes memory proof = _buildNovaProof(localRoot, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        address relayer = address(0xBE1A);
+        vm.prank(relayer);
+        // isGlobal = false, rootHint = newIndex
+        verifier.teleport(false, newIndex, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        (address recipientTo, uint256 recipientValue) = mockToken.teleportCalls(0);
+        assertEq(recipientTo, signerAddr, "recipient address mismatch");
+        assertEq(recipientValue, totalValue - relayerFee, "recipient value mismatch");
+
+        (address relayerTo, uint256 relayerValue) = mockToken.teleportCalls(1);
+        assertEq(relayerTo, relayer, "relayer address mismatch");
+        assertEq(relayerValue, relayerFee, "relayer value mismatch");
+    }
+
+    // -----------------------------------------------------------------------
+    // Deadline boundary: deadline == block.timestamp should succeed
+    // -----------------------------------------------------------------------
+
+    function testDeadlineExactlyAtBlockTimestampSucceeds() public {
+        GeneralRecipientLib.GeneralRecipient memory gr = _buildGr(signerAddr);
+        uint256 recipientHash = GeneralRecipientLib.hash(gr);
+        uint256 totalValue = 1000;
+        uint256 relayerFee = 50;
+        uint256 maxFee = 100;
+        uint64 deadline = uint64(block.timestamp); // exactly now
+
+        bytes memory proof = _buildNovaProof(TRANSFER_ROOT, recipientHash, totalValue);
+        bytes memory signature = _signRelayerFeeAuth(SIGNER_PK, recipientHash, totalValue, maxFee, deadline);
+
+        // Should succeed because Verifier checks block.timestamp <= deadline
+        verifier.teleport(true, ROOT_HINT, gr, proof, _buildFeeAuth(relayerFee, maxFee, deadline, signature));
+
+        assertEq(verifier.totalTeleported(recipientHash), totalValue, "totalTeleported mismatch");
     }
 
     function _toBytes32(address addr) internal pure returns (bytes32) {

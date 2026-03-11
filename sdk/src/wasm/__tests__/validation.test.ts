@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { WasmRuntime } from '../index.js';
 import { NUM_BATCH_INVOICES } from '../../constants.js';
 import type { FetchAggregationTreeStateParams } from '../../types.js';
+import * as wasmBindings from '../../assets/wasm/web/zkerc20_wasm.js';
 
 describe('WasmRuntime input validation', () => {
   let runtime: WasmRuntime;
@@ -27,6 +28,7 @@ describe('WasmRuntime input validation', () => {
   test('fetchAggregationTreeState rejects negative eventBlockSpan numbers', async () => {
     const params: FetchAggregationTreeStateParams = {
       eventBlockSpan: -1,
+      chainId: 1n,
       hub: {
         hubAddress: '0x01',
         chainId: 1n,
@@ -43,5 +45,35 @@ describe('WasmRuntime input validation', () => {
     };
 
     await expect(runtime.fetchAggregationTreeState(params)).rejects.toThrow(/eventBlockSpan/);
+  });
+
+  test('fetchAggregationTreeState rejects unknown aggregation scope', async () => {
+    vi.spyOn(wasmBindings, 'fetch_aggregation_tree_state').mockResolvedValue({
+      scope: 'unexpected',
+      rootHint: 0n,
+      aggregationRoot: '0x01',
+      snapshot: [],
+      transferTreeIndices: [],
+      chainIds: [],
+    });
+
+    const params: FetchAggregationTreeStateParams = {
+      chainId: 1n,
+      hub: {
+        hubAddress: '0x01',
+        chainId: 1n,
+        rpcUrls: ['https://example.com'],
+      },
+      token: {
+        label: 'token',
+        tokenAddress: '0x02',
+        verifierAddress: '0x03',
+        chainId: 1n,
+        deployedBlockNumber: 0n,
+        rpcUrls: ['https://example.com'],
+      },
+    };
+
+    await expect(runtime.fetchAggregationTreeState(params)).rejects.toThrow(/unsupported aggregation scope/);
   });
 });

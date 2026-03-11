@@ -17,7 +17,7 @@ use crate::{
     commands::{
         scan_receive_transfers::ScannedTransfer,
         shared::{build_erc20, build_hub, build_verifier, find_token_by_chain},
-        teleport::{RedeemResult, print_events, redeem_transfers},
+        teleport::{RedeemResult, print_events, redeem_transfers, redeem_transfers_via_relay},
     },
 };
 
@@ -51,10 +51,15 @@ pub async fn run(
     let token_clients = tokens.iter().map(build_erc20).collect::<Result<Vec<_>>>()?;
     let indexer = build_indexer_client(common_args, "receive transfer command")?;
 
-    let aggregation_tree_state =
-        fetch_aggregation_tree_state(common_args.event_block_span, &verifier, &hub_contract)
-            .await
-            .context("failed to fetch aggregation tree state")?;
+    let aggregation_tree_state = fetch_aggregation_tree_state(
+        common_args.event_block_span,
+        &verifier,
+        &hub_contract,
+        chain_id,
+        args.local,
+    )
+    .await
+    .context("failed to fetch aggregation tree state")?;
 
     let events_map = fetch_transfer_events(
         &indexer,
@@ -97,20 +102,37 @@ pub async fn run(
         "Burn address {} has no new eligible transfers to claim.",
         burn_address
     );
-    match redeem_transfers(
-        common_args,
-        &verifier,
-        &indexer,
-        &aggregation_tree_state,
-        &separated_events,
-        &burn_address_to_secret,
-        burn_payload.gr,
-        tokens,
-        private_key,
-        artifacts_dir,
-    )
-    .await?
-    {
+    let result = if args.relay.relay {
+        redeem_transfers_via_relay(
+            common_args,
+            &args.relay,
+            &verifier,
+            &indexer,
+            &aggregation_tree_state,
+            &separated_events,
+            &burn_address_to_secret,
+            burn_payload.gr,
+            tokens,
+            private_key,
+            artifacts_dir,
+        )
+        .await?
+    } else {
+        redeem_transfers(
+            common_args,
+            &verifier,
+            &indexer,
+            &aggregation_tree_state,
+            &separated_events,
+            &burn_address_to_secret,
+            burn_payload.gr,
+            tokens,
+            private_key,
+            artifacts_dir,
+        )
+        .await?
+    };
+    match result {
         RedeemResult::AlreadyClaimed => println!("{}", no_new_transfers_message),
         RedeemResult::NoProofs => println!("No claimable Merkle proofs were generated."),
         RedeemResult::Submitted => {}

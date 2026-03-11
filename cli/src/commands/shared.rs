@@ -1,4 +1,7 @@
-use std::str::FromStr;
+use std::{
+    io::{self, Write},
+    str::FromStr,
+};
 
 use alloy::primitives::{Address, B256, Bytes, U256};
 use anyhow::{Context, Result, anyhow, bail};
@@ -127,6 +130,29 @@ fn fill_to_32(mut bytes: Vec<u8>) -> [u8; 32] {
 
 pub fn format_tx_hash(hash: &[u8]) -> String {
     format!("0x{}", hex::encode(hash))
+}
+
+pub fn confirm_relay_submission(skip_confirmation: bool, summary: &str) -> Result<()> {
+    if skip_confirmation {
+        return Ok(());
+    }
+
+    print!("Submit Gelato relay task for {}? [y/N]: ", summary);
+    io::stdout()
+        .flush()
+        .context("failed to flush relay confirmation prompt")?;
+
+    let mut input = String::new();
+    io::stdin()
+        .read_line(&mut input)
+        .context("failed to read relay confirmation")?;
+
+    let answer = input.trim().to_ascii_lowercase();
+    if answer == "y" || answer == "yes" {
+        return Ok(());
+    }
+
+    bail!("relay submission cancelled by user");
 }
 
 pub fn build_erc20(entry: &TokenEntry) -> Result<ZErc20Contract> {

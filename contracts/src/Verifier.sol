@@ -15,6 +15,8 @@ import {IWithdrawVerifier} from "./interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "./utils/GeneralRecipientLib.sol";
 import {OAppUpgradeable} from "@layerzerolabs/oapp-evm-upgradeable/contracts/oapp/OAppUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {EIP712Upgradeable} from "@openzeppelin/contracts-upgradeable/utils/cryptography/EIP712Upgradeable.sol";
+import {SignatureChecker} from "@openzeppelin/contracts/utils/cryptography/SignatureChecker.sol";
 
 /**
  * @title Verifier
@@ -22,7 +24,13 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
  *         acting as the bridge between on-chain hash-chain checkpoints, cross-chain aggregation roots, and zERC20 mints.
  * @dev Tracks reserved hash chains, proved transfer roots, global aggregation roots, and cumulative teleported totals.
  */
-contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
+contract Verifier is
+    OAppUpgradeable,
+    PausableUpgradeable,
+    ReentrancyGuardTransient,
+    UUPSUpgradeable,
+    EIP712Upgradeable
+{
     using GeneralRecipientLib for GeneralRecipientLib.GeneralRecipient;
 
     event HashChainReserved(uint64 indexed index, uint256 hashChain);
@@ -40,6 +48,16 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         uint256 transferRoot,
         GeneralRecipientLib.GeneralRecipient gr
     );
+    event TeleportWithRelayerFee(
+        address indexed to,
+        address indexed relayer,
+        uint256 recipientValue,
+        uint256 relayerFee,
+        bool isGlobal,
+        uint64 rootHint,
+        uint256 transferRoot,
+        GeneralRecipientLib.GeneralRecipient gr
+    );
     // slither-disable-next-line unindexed-event
     event VerifiersSet(
         address rootDecider,
@@ -52,6 +70,11 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     error UnauthorizedProver(address caller);
     event ProverAllowed(address indexed prover);
     event ProverRemoved(address indexed prover);
+
+    error RelayerFeeExceedsMax(uint256 relayerFee, uint256 maxFee);
+    error RelayerFeeExceedsDiff(uint256 relayerFee, uint256 diff);
+    error RelayerFeeAuthorizationExpired(uint64 deadline, uint256 currentTimestamp);
+    error InvalidRelayerFeeSignature();
 
     error InvalidProof();
     error NoProvedRoot();
@@ -75,6 +98,21 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     error InsufficientMsgValue(uint256 required, uint256 provided);
     error EndpointMismatch(address expected, address actual);
     error ZeroRefundAddress();
+
+    bytes32 internal constant RELAYER_FEE_TYPEHASH =
+        keccak256("RelayerFeeAuthorization(uint256 recipientHash,uint256 totalValue,uint256 maxFee,uint64 deadline)");
+
+    /// @notice Parameters for relayer fee authorization, bundled to avoid stack-too-deep.
+    /// @param relayerFee Actual fee claimed by the relayer.
+    /// @param maxFee Maximum fee the recipient authorized via signature.
+    /// @param deadline Timestamp after which the authorization expires.
+    /// @param signature EIP-712 signature from the recipient.
+    struct RelayerFeeAuthorization {
+        uint256 relayerFee;
+        uint256 maxFee;
+        uint64 deadline;
+        bytes signature;
+    }
 
     // Root of an empty IncrementalMerkleTree at TRANSFER_TREE_HEIGHT (see zkp test).
     uint256 private constant INITIAL_TRANSFER_ROOT =
@@ -274,6 +312,13 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         $.latestRelayedIndex = 0;
     }
 
+    /// @notice Re-initializer that activates EIP-712 typed-data signing for relayer fee authorizations.
+    /// @param name_ EIP-712 domain name.
+    /// @param version_ EIP-712 domain version.
+    function initializeV2(string calldata name_, string calldata version_) external reinitializer(2) onlyOwner {
+        __EIP712_init(name_, version_);
+    }
+
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
         address expected = address(endpoint);
         address actual = address(Verifier(newImplementation).endpoint());
@@ -305,8 +350,12 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
     }
 
     modifier onlyAllowedProver() {
-        require(_getAllowedProversStorage().allowedProvers[msg.sender], UnauthorizedProver(msg.sender));
+        _checkAllowedProver();
         _;
+    }
+
+    function _checkAllowedProver() internal view {
+        require(_getAllowedProversStorage().allowedProvers[msg.sender], UnauthorizedProver(msg.sender));
     }
 
     /// @notice Verifies a Nova proof for a transfer-root transition and records the resulting root by index.
@@ -359,21 +408,7 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         GeneralRecipientLib.GeneralRecipient calldata gr,
         bytes calldata proof
     ) external whenNotPaused nonReentrant {
-        // decode and verify proof
-        uint256[34] memory proof_ = abi.decode(proof, (uint256[34]));
-        uint256 transferRoot = proof_[1];
-        uint256 recipient = proof_[2];
-        require(proof_[3] == 0, InvalidInitialLastLeafIndex(proof_[3]));
-        require(proof_[4] == 0, InvalidInitialTotalValue(proof_[4]));
-        require(proof_[5] == transferRoot, FinalTransferRootMismatch(proof_[5], transferRoot));
-        require(proof_[6] == recipient, FinalRecipientMismatch(proof_[6], recipient));
-        // lastLeafIndex is visible in calldata; provers should pad to the maximum index to avoid leakage.
-        proof_[7];
-        uint256 totalValue = proof_[8];
-        VerifierStorage storage $ = _getVerifierStorage();
-        address withdrawDecider = isGlobal ? $.withdrawGlobalDecider : $.withdrawLocalDecider;
-        require(IWithdrawDecider(withdrawDecider).verifyOpaqueNovaProof(proof_), InvalidProof());
-
+        (uint256 transferRoot, uint256 recipient, uint256 totalValue) = _verifyNovaProof(isGlobal, proof);
         _teleport(isGlobal, rootHint, transferRoot, recipient, gr, totalValue);
     }
 
@@ -389,28 +424,106 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
         GeneralRecipientLib.GeneralRecipient calldata gr,
         bytes calldata proof
     ) external whenNotPaused nonReentrant {
-        // decode and verify proof
+        (uint256 transferRoot, uint256 recipient, uint256 totalValue) = _verifySingleProof(isGlobal, proof);
+        _teleport(isGlobal, rootHint, transferRoot, recipient, gr, totalValue);
+    }
+
+    /// @notice Executes the multi-note Nova teleport flow with relayer fee distribution.
+    /// @param isGlobal Whether the proof references Hub-derived global roots.
+    /// @param rootHint Index into either `provedTransferRoots` or `globalTransferRoots`.
+    /// @param gr GeneralRecipient struct encoding chain id, recipient, tweak, and version byte.
+    /// @param proof ABI-encoded Nova proof blob consumed by `IWithdrawDecider`.
+    /// @param feeAuth Relayer fee authorization parameters including signature.
+    function teleport(
+        bool isGlobal,
+        uint64 rootHint,
+        GeneralRecipientLib.GeneralRecipient calldata gr,
+        bytes calldata proof,
+        RelayerFeeAuthorization calldata feeAuth
+    ) external whenNotPaused nonReentrant {
+        (uint256 transferRoot, uint256 recipient, uint256 totalValue) = _verifyNovaProof(isGlobal, proof);
+        _verifyRelayerFeeAuthorization(
+            recipient,
+            totalValue,
+            feeAuth.relayerFee,
+            feeAuth.maxFee,
+            feeAuth.deadline,
+            feeAuth.signature,
+            _bytes32ToAddress(gr.recipient)
+        );
+        _teleportWithFee(isGlobal, rootHint, transferRoot, recipient, gr, totalValue, feeAuth.relayerFee);
+    }
+
+    /// @notice Executes the Groth16 teleport flow with relayer fee distribution.
+    /// @param isGlobal Whether the proof references Hub-derived global roots.
+    /// @param rootHint Index into either `provedTransferRoots` or `globalTransferRoots`.
+    /// @param gr GeneralRecipient struct encoding chain id, recipient, tweak, and version byte.
+    /// @param proof ABI-encoded Groth16 proof blob consumed by `IWithdrawVerifier`.
+    /// @param feeAuth Relayer fee authorization parameters including signature.
+    function singleTeleport(
+        bool isGlobal,
+        uint64 rootHint,
+        GeneralRecipientLib.GeneralRecipient calldata gr,
+        bytes calldata proof,
+        RelayerFeeAuthorization calldata feeAuth
+    ) external whenNotPaused nonReentrant {
+        (uint256 transferRoot, uint256 recipient, uint256 totalValue) = _verifySingleProof(isGlobal, proof);
+        _verifyRelayerFeeAuthorization(
+            recipient,
+            totalValue,
+            feeAuth.relayerFee,
+            feeAuth.maxFee,
+            feeAuth.deadline,
+            feeAuth.signature,
+            _bytes32ToAddress(gr.recipient)
+        );
+        _teleportWithFee(isGlobal, rootHint, transferRoot, recipient, gr, totalValue, feeAuth.relayerFee);
+    }
+
+    /// @dev Decodes and verifies a Nova withdraw proof, returning extracted public signals.
+    function _verifyNovaProof(bool isGlobal, bytes calldata proof)
+        internal
+        view
+        returns (uint256 transferRoot, uint256 recipient, uint256 totalValue)
+    {
+        uint256[34] memory proof_ = abi.decode(proof, (uint256[34]));
+        transferRoot = proof_[1];
+        recipient = proof_[2];
+        require(proof_[3] == 0, InvalidInitialLastLeafIndex(proof_[3]));
+        require(proof_[4] == 0, InvalidInitialTotalValue(proof_[4]));
+        require(proof_[5] == transferRoot, FinalTransferRootMismatch(proof_[5], transferRoot));
+        require(proof_[6] == recipient, FinalRecipientMismatch(proof_[6], recipient));
+        // lastLeafIndex is visible in calldata; provers should pad to the maximum index to avoid leakage.
+        proof_[7];
+        totalValue = proof_[8];
+        VerifierStorage storage $ = _getVerifierStorage();
+        address withdrawDecider = isGlobal ? $.withdrawGlobalDecider : $.withdrawLocalDecider;
+        require(IWithdrawDecider(withdrawDecider).verifyOpaqueNovaProof(proof_), InvalidProof());
+    }
+
+    /// @dev Decodes and verifies a Groth16 single-withdraw proof, returning extracted public signals.
+    function _verifySingleProof(bool isGlobal, bytes calldata proof)
+        internal
+        view
+        returns (uint256 transferRoot, uint256 recipient, uint256 totalValue)
+    {
         (uint256[2] memory pA, uint256[2][2] memory pB, uint256[2] memory pC, uint256[3] memory pubSignals) =
             abi.decode(proof, (uint256[2], uint256[2][2], uint256[2], uint256[3]));
         VerifierStorage storage $ = _getVerifierStorage();
         address singleWithdrawVerifier = isGlobal ? $.singleWithdrawGlobalVerifier : $.singleWithdrawLocalVerifier;
         require(IWithdrawVerifier(singleWithdrawVerifier).verifyProof(pA, pB, pC, pubSignals), InvalidProof());
-
-        _teleport(isGlobal, rootHint, pubSignals[0], pubSignals[1], gr, pubSignals[2]);
+        return (pubSignals[0], pubSignals[1], pubSignals[2]);
     }
 
-    /// @dev Shared logic for Nova and Groth16 teleports:
-    ///      - Confirms the claimed root matches the hinted slot (local or global)
-    ///      - Recomputes the recipient hash and chain id binding
-    ///      - Mints only the delta above `totalTeleported[recipient]`.
-    function _teleport(
+    /// @dev Validates root, recipient, and chain id; updates `totalTeleported`; returns the mint delta.
+    function _validateAndUpdateTeleport(
         bool isGlobal,
         uint64 rootHint,
         uint256 transferRoot,
         uint256 recipient,
         GeneralRecipientLib.GeneralRecipient memory gr,
         uint256 value
-    ) internal {
+    ) internal returns (uint256 diff) {
         VerifierStorage storage $ = _getVerifierStorage();
         // verify root
         uint256 expectedRoot = isGlobal ? $.globalTransferRoots[rootHint] : $.provedTransferRoots[rootHint];
@@ -425,11 +538,91 @@ contract Verifier is OAppUpgradeable, PausableUpgradeable, ReentrancyGuardTransi
 
         uint256 currentTotal = $.totalTeleported[recipient];
         require(value > currentTotal, NothingToWithdraw(currentTotal, value));
-        uint256 diff = value - currentTotal;
+        diff = value - currentTotal;
         $.totalTeleported[recipient] = value;
+    }
+
+    /// @dev Shared logic for Nova and Groth16 teleports (no relayer fee).
+    function _teleport(
+        bool isGlobal,
+        uint64 rootHint,
+        uint256 transferRoot,
+        uint256 recipient,
+        GeneralRecipientLib.GeneralRecipient memory gr,
+        uint256 value
+    ) internal {
+        uint256 diff = _validateAndUpdateTeleport(isGlobal, rootHint, transferRoot, recipient, gr, value);
         address recipientAddr = _bytes32ToAddress(gr.recipient);
-        IzERC20($.token).teleport(recipientAddr, diff);
+        IzERC20(_getVerifierStorage().token).teleport(recipientAddr, diff);
         emit Teleport(recipientAddr, diff, isGlobal, rootHint, transferRoot, gr);
+    }
+
+    /// @dev Verifies an EIP-712 relayer fee authorization signature.
+    /// @param recipientHash Hash of the GeneralRecipient struct.
+    /// @param totalValue Cumulative teleport value (acts as natural nonce).
+    /// @param relayerFee Actual fee the relayer is claiming.
+    /// @param maxFee Maximum fee the signer authorized.
+    /// @param deadline Timestamp after which the authorization expires.
+    /// @param signature EIP-712 signature from the recipient (EOA or ERC-1271).
+    /// @param signer Address of the recipient who signed the authorization.
+    function _verifyRelayerFeeAuthorization(
+        uint256 recipientHash,
+        uint256 totalValue,
+        uint256 relayerFee,
+        uint256 maxFee,
+        uint64 deadline,
+        bytes calldata signature,
+        address signer
+    ) internal view {
+        // slither-disable-next-line timestamp
+        require(block.timestamp <= deadline, RelayerFeeAuthorizationExpired(deadline, block.timestamp));
+        require(relayerFee <= maxFee, RelayerFeeExceedsMax(relayerFee, maxFee));
+        bytes32 typeHash = RELAYER_FEE_TYPEHASH;
+        bytes32 structHash;
+        assembly ("memory-safe") {
+            let m := mload(0x40)
+            mstore(m, typeHash)
+            mstore(add(m, 0x20), recipientHash)
+            mstore(add(m, 0x40), totalValue)
+            mstore(add(m, 0x60), maxFee)
+            mstore(add(m, 0x80), deadline)
+            structHash := keccak256(m, 0xa0)
+        }
+        bytes32 digest = _hashTypedDataV4(structHash);
+        require(SignatureChecker.isValidSignatureNowCalldata(signer, digest, signature), InvalidRelayerFeeSignature());
+    }
+
+    /// @dev Shared logic for relayer-fee teleports: validates root/recipient, distributes fee, mints remainder.
+    ///      Caller must have already verified the relayer fee authorization signature.
+    function _teleportWithFee(
+        bool isGlobal,
+        uint64 rootHint,
+        uint256 transferRoot,
+        uint256 recipient,
+        GeneralRecipientLib.GeneralRecipient memory gr,
+        uint256 value,
+        uint256 relayerFee
+    ) internal {
+        uint256 diff = _validateAndUpdateTeleport(isGlobal, rootHint, transferRoot, recipient, gr, value);
+        require(relayerFee <= diff, RelayerFeeExceedsDiff(relayerFee, diff));
+        {
+            address recipientAddr = _bytes32ToAddress(gr.recipient);
+            address tokenAddr = _getVerifierStorage().token;
+            IzERC20(tokenAddr).teleport(recipientAddr, diff - relayerFee);
+            if (relayerFee > 0) {
+                IzERC20(tokenAddr).teleport(msg.sender, relayerFee);
+            }
+        }
+        emit TeleportWithRelayerFee(
+            _bytes32ToAddress(gr.recipient),
+            msg.sender,
+            diff - relayerFee,
+            relayerFee,
+            isGlobal,
+            rootHint,
+            transferRoot,
+            gr
+        );
     }
 
     function _bytes32ToAddress(bytes32 value) private pure returns (address) {

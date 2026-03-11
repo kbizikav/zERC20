@@ -58,4 +58,4 @@ This is required before running the full stack or when Solidity verifier sources
 
 - Contract/deployment-specific guidance: `contracts/AGENTS.md`
 - Off-chain service details: prefer the component’s own README (`cli/README.md`, etc.)
-
+- SDK user/developer docs live under `gitbook/developers/sdk/` (there is no standalone `sdk/README.md`)

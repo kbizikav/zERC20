@@ -24,7 +24,7 @@ use crate::{
         shared::{
             build_erc20, build_hub, build_stealth_client, build_verifier, find_token_by_chain,
         },
-        teleport::{RedeemResult, print_events, redeem_transfers},
+        teleport::{RedeemResult, print_events, redeem_transfers, redeem_transfers_via_relay},
     },
 };
 use hex;
@@ -111,7 +111,12 @@ async fn build_invoice_receive_context(
         .tweak;
     let gr = GeneralRecipient::new_evm(recipient_chain_id, recipient_address, tweak);
     let burn_addresses: Vec<_> = burn_address_to_secret_and_tweak.keys().cloned().collect();
-    let token_clients: Vec<_> = token_entries
+    let fetch_token_entries: Vec<TokenEntry> = if args.local {
+        vec![token_entry.clone()]
+    } else {
+        token_entries.to_vec()
+    };
+    let token_clients: Vec<_> = fetch_token_entries
         .iter()
         .map(build_erc20)
         .collect::<Result<Vec<_>>>()?;
@@ -120,17 +125,22 @@ async fn build_invoice_receive_context(
     let events_map = fetch_transfer_events(
         &indexer,
         Some(common_args.indexer_fetch_limit),
-        token_entries,
+        &fetch_token_entries,
         &token_clients,
         &burn_addresses,
     )
     .await
     .context("failed to fetch transfer events for invoice redemption")?;
 
-    let aggregation_tree_state =
-        fetch_aggregation_tree_state(common_args.event_block_span, &verifier, &hub)
-            .await
-            .context("failed to fetch aggregation tree state")?;
+    let aggregation_tree_state = fetch_aggregation_tree_state(
+        common_args.event_block_span,
+        &verifier,
+        &hub,
+        args.chain_id,
+        args.local,
+    )
+    .await
+    .context("failed to fetch aggregation tree state")?;
 
     let separated_events = separate_events_by_eligibility(&aggregation_tree_state, &events_map)?;
 
@@ -325,20 +335,37 @@ pub async fn receive(
         .map(|(address, secret_and_tweak)| (*address, secret_and_tweak.secret))
         .collect::<HashMap<_, _>>();
 
-    match redeem_transfers(
-        common_args,
-        &verifier,
-        &indexer,
-        &aggregation_tree_state,
-        &separated_events,
-        &burn_address_to_secret,
-        gr,
-        token_entries,
-        private_key,
-        artifacts_dir,
-    )
-    .await?
-    {
+    let result = if args.relay.relay {
+        redeem_transfers_via_relay(
+            common_args,
+            &args.relay,
+            &verifier,
+            &indexer,
+            &aggregation_tree_state,
+            &separated_events,
+            &burn_address_to_secret,
+            gr,
+            token_entries,
+            private_key,
+            artifacts_dir,
+        )
+        .await?
+    } else {
+        redeem_transfers(
+            common_args,
+            &verifier,
+            &indexer,
+            &aggregation_tree_state,
+            &separated_events,
+            &burn_address_to_secret,
+            gr,
+            token_entries,
+            private_key,
+            artifacts_dir,
+        )
+        .await?
+    };
+    match result {
         RedeemResult::AlreadyClaimed => {
             println!("No new eligible transfers found for the provided invoice ID.");
         }
