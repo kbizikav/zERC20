@@ -239,7 +239,7 @@ contract Verifier is
         _disableInitializers();
     }
 
-    /// @notice Initializes the verifier with the zERC20 token, Hub endpoint, LayerZero delegate, and initial deciders.
+    /// @notice Initializes the verifier with the zERC20 token, Hub endpoint, LayerZero delegate, initial deciders, and EIP-712 domain.
     /// @param token_ zERC20 token whose hash chain is reserved/minted against.
     /// @param hubEid_ LayerZero endpoint ID of the Hub contract.
     /// @param delegate Address that MUST be the contract owner; it is set as both Ownable owner and LayerZero delegate.
@@ -248,6 +248,7 @@ contract Verifier is
     /// @param withdrawLocalDecider_ Nova verifier for local teleport proofs.
     /// @param singleWithdrawGlobalVerifier_ Groth16 verifier for global single teleports.
     /// @param singleWithdrawLocalVerifier_ Groth16 verifier for local single teleports.
+    /// @param eip712Init ABI-encoded `(string name, string version)` for EIP-712 domain setup.
     function initialize(
         address token_,
         uint32 hubEid_,
@@ -256,18 +257,13 @@ contract Verifier is
         address withdrawGlobalDecider_,
         address withdrawLocalDecider_,
         address singleWithdrawGlobalVerifier_,
-        address singleWithdrawLocalVerifier_
+        address singleWithdrawLocalVerifier_,
+        bytes calldata eip712Init
     ) external initializer {
-        require(token_ != address(0), ZeroToken());
         require(delegate != address(0), ZeroAddress());
-        require(
-            rootDecider_ != address(0) && withdrawGlobalDecider_ != address(0) && withdrawLocalDecider_ != address(0)
-                && singleWithdrawGlobalVerifier_ != address(0) && singleWithdrawLocalVerifier_ != address(0),
-            ZeroAddress()
-        );
-
         __Ownable_init(delegate);
         __OApp_init(delegate);
+        _initEIP712(eip712Init);
         __Verifier_init(
             token_,
             hubEid_,
@@ -277,6 +273,12 @@ contract Verifier is
             singleWithdrawGlobalVerifier_,
             singleWithdrawLocalVerifier_
         );
+    }
+
+    /// @dev Decodes and forwards EIP-712 domain parameters to avoid stack-too-deep in `initialize`.
+    function _initEIP712(bytes calldata eip712Init) private onlyInitializing {
+        (string memory name_, string memory version_) = abi.decode(eip712Init, (string, string));
+        __EIP712_init(name_, version_);
     }
 
     /// @dev Internal initializer that wires storage pointers and seeds the transfer root history with the constant from the spec.
@@ -290,6 +292,12 @@ contract Verifier is
         address singleWithdrawGlobalVerifier_,
         address singleWithdrawLocalVerifier_
     ) internal onlyInitializing {
+        require(token_ != address(0), ZeroToken());
+        require(
+            rootDecider_ != address(0) && withdrawGlobalDecider_ != address(0) && withdrawLocalDecider_ != address(0)
+                && singleWithdrawGlobalVerifier_ != address(0) && singleWithdrawLocalVerifier_ != address(0),
+            ZeroAddress()
+        );
         __Pausable_init();
         VerifierStorage storage $ = _getVerifierStorage();
         $.token = token_;

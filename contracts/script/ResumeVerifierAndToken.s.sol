@@ -82,7 +82,8 @@ contract ResumeVerifierAndToken is DeterministicDeployer {
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 WITHDRAW_GLOBAL_GROTH16,
-                WITHDRAW_LOCAL_GROTH16
+                WITHDRAW_LOCAL_GROTH16,
+                abi.encode("Verifier", "1")
             )
         );
 

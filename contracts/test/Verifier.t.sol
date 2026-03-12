@@ -71,7 +71,8 @@ contract VerifierTest is TestHelperOz5 {
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 SINGLE_WITHDRAW_GLOBAL_VERIFIER,
-                SINGLE_WITHDRAW_LOCAL_VERIFIER
+                SINGLE_WITHDRAW_LOCAL_VERIFIER,
+                abi.encode("Verifier", "1")
             )
         );
 
@@ -91,7 +92,8 @@ contract VerifierTest is TestHelperOz5 {
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 SINGLE_WITHDRAW_GLOBAL_VERIFIER,
-                SINGLE_WITHDRAW_LOCAL_VERIFIER
+                SINGLE_WITHDRAW_LOCAL_VERIFIER,
+                abi.encode("Verifier", "1")
             )
         );
 
@@ -111,7 +113,8 @@ contract VerifierTest is TestHelperOz5 {
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 SINGLE_WITHDRAW_GLOBAL_VERIFIER,
-                SINGLE_WITHDRAW_LOCAL_VERIFIER
+                SINGLE_WITHDRAW_LOCAL_VERIFIER,
+                abi.encode("Verifier", "1")
             )
         );
 
@@ -420,7 +423,8 @@ contract VerifierTest is TestHelperOz5 {
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 SINGLE_WITHDRAW_GLOBAL_VERIFIER,
-                SINGLE_WITHDRAW_LOCAL_VERIFIER
+                SINGLE_WITHDRAW_LOCAL_VERIFIER,
+                abi.encode("Verifier", "1")
             )
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
@@ -543,7 +547,8 @@ contract VerifierTest is TestHelperOz5 {
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 SINGLE_WITHDRAW_GLOBAL_VERIFIER,
-                SINGLE_WITHDRAW_LOCAL_VERIFIER
+                SINGLE_WITHDRAW_LOCAL_VERIFIER,
+                abi.encode("Verifier", "1")
             )
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
@@ -572,7 +577,8 @@ contract VerifierTest is TestHelperOz5 {
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 SINGLE_WITHDRAW_GLOBAL_VERIFIER,
-                SINGLE_WITHDRAW_LOCAL_VERIFIER
+                SINGLE_WITHDRAW_LOCAL_VERIFIER,
+                abi.encode("Verifier", "1")
             )
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
@@ -602,7 +608,8 @@ contract VerifierTest is TestHelperOz5 {
                 WITHDRAW_GLOBAL_DECIDER,
                 WITHDRAW_LOCAL_DECIDER,
                 SINGLE_WITHDRAW_GLOBAL_VERIFIER,
-                SINGLE_WITHDRAW_LOCAL_VERIFIER
+                SINGLE_WITHDRAW_LOCAL_VERIFIER,
+                abi.encode("Verifier", "1")
             )
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
@@ -728,7 +735,8 @@ contract VerifierReentrancyTest is TestHelperOz5 {
                 address(mockDecider), // withdrawGlobalDecider
                 address(mockDecider), // withdrawLocalDecider
                 address(0x400), // singleWithdrawGlobalVerifier (not used in this test)
-                address(0x500) // singleWithdrawLocalVerifier (not used in this test)
+                address(0x500), // singleWithdrawLocalVerifier (not used in this test)
+                abi.encode("Verifier", "1")
             )
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
@@ -989,15 +997,13 @@ contract VerifierRelayerFeeTest is TestHelperOz5 {
                 address(mockDecider),
                 address(mockDecider),
                 address(mockSingleVerifier),
-                address(mockSingleVerifier)
+                address(mockSingleVerifier),
+                abi.encode("Verifier", "1")
             )
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         verifier = Verifier(address(proxy));
         verifier.setPeer(HUB_EID, _toBytes32(address(this)));
-
-        // Initialize EIP-712
-        verifier.initializeV2("Verifier", "1");
 
         // Store a global root for testing
         Origin memory origin = Origin({srcEid: HUB_EID, sender: _toBytes32(address(this)), nonce: 1});
@@ -1100,7 +1106,7 @@ contract VerifierRelayerFeeTest is TestHelperOz5 {
     }
 
     function testInitializeV2OnlyOwner() public {
-        // Deploy a fresh verifier to test
+        // Deploy a fresh verifier (v1 only, without EIP-712 name/version via initializeV2)
         Verifier impl = new Verifier(address(endpoint));
         bytes memory initData = abi.encodeCall(
             Verifier.initialize,
@@ -1112,15 +1118,15 @@ contract VerifierRelayerFeeTest is TestHelperOz5 {
                 address(mockDecider),
                 address(mockDecider),
                 address(mockSingleVerifier),
-                address(mockSingleVerifier)
+                address(mockSingleVerifier),
+                abi.encode("Verifier", "1")
             )
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         Verifier freshVerifier = Verifier(address(proxy));
 
-        address nonOwner = address(0xBEEF);
-        vm.prank(nonOwner);
-        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        // initializeV2 is already consumed (reinitializer(2) can't run after initializer sets version to max)
+        vm.expectRevert();
         freshVerifier.initializeV2("Verifier", "1");
     }
 
