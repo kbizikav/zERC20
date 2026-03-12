@@ -30,6 +30,7 @@ Follow these steps to bring up the indexer, crosschain job, and decider-prover, 
 2. Configure root environment
    Copy `.env.example` at the repo root to `.env`, then set the following environment variables:
    - `ALCHEMY_KEY` - Alchemy API key for RPC access
+   - `INFURA_KEY` - Infura API key for RPC fallback access
    - `ROOT_SUBMITTER_PRIVATE_KEY` - Key for submitting roots on-chain
    - `RELAY_PRIVATE_KEY` - Key for cross-chain relay operations
    - `FEE_MANAGER_PRIVATE_KEY` - Key for fee manager operations
