@@ -1101,33 +1101,18 @@ contract VerifierRelayerFeeTest is TestHelperOz5 {
     }
 
     function testInitializeV2CannotBeCalledTwice() public {
+        // initialize sets version to 1, so initializeV2 (reinitializer(2)) succeeds once
+        verifier.initializeV2("Verifier", "1");
+        // Second call should revert because version is already 2
         vm.expectRevert();
         verifier.initializeV2("Verifier", "1");
     }
 
     function testInitializeV2OnlyOwner() public {
-        // Deploy a fresh verifier (v1 only, without EIP-712 name/version via initializeV2)
-        Verifier impl = new Verifier(address(endpoint));
-        bytes memory initData = abi.encodeCall(
-            Verifier.initialize,
-            (
-                address(mockToken),
-                HUB_EID,
-                address(this),
-                address(mockDecider),
-                address(mockDecider),
-                address(mockDecider),
-                address(mockSingleVerifier),
-                address(mockSingleVerifier),
-                abi.encode("Verifier", "1")
-            )
-        );
-        ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
-        Verifier freshVerifier = Verifier(address(proxy));
-
-        // initializeV2 is already consumed (reinitializer(2) can't run after initializer sets version to max)
-        vm.expectRevert();
-        freshVerifier.initializeV2("Verifier", "1");
+        address nonOwner = address(0xBEEF);
+        vm.prank(nonOwner);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, nonOwner));
+        verifier.initializeV2("Verifier", "1");
     }
 
     // -----------------------------------------------------------------------
