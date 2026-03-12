@@ -31,6 +31,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-password}@postgres:5432/${POSTGRES_DB:-postgres}
       TOKENS_FILE_PATH: /app/config/tokens.json
       ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
+      INFURA_KEY: "${INFURA_KEY:?INFURA_KEY must be set in .env}"
       DECIDER_PROVER_URL: http://host.docker.internal:8081
       DECIDER_PROVER_TIMEOUT_SECS: 600
       ROOT_SUBMITTER_PRIVATE_KEY: "${ROOT_SUBMITTER_PRIVATE_KEY:?ROOT_SUBMITTER_PRIVATE_KEY must be set in .env}"
@@ -55,6 +56,7 @@ services:
     environment:
       TOKENS_FILE_PATH: /app/config/tokens.json
       ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
+      INFURA_KEY: "${INFURA_KEY:?INFURA_KEY must be set in .env}"
       RELAY_PRIVATE_KEY: "${RELAY_PRIVATE_KEY:?RELAY_PRIVATE_KEY must be set in .env}"
       RELAY_INTERVAL_SECS: "60"
       BROADCAST_INTERVAL_SECS: "60"
@@ -75,6 +77,7 @@ services:
     environment:
       TOKENS_FILE_PATH: /app/config/tokens.json
       ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
+      INFURA_KEY: "${INFURA_KEY:?INFURA_KEY must be set in .env}"
       FEE_MANAGER_PRIVATE_KEY: "${FEE_MANAGER_PRIVATE_KEY:?FEE_MANAGER_PRIVATE_KEY must be set in .env}"
       FEE_MANAGER_INTERVAL_SECS: "${FEE_MANAGER_INTERVAL_SECS:-3600}"
       FEE_MANAGER_K_BPS: "${FEE_MANAGER_K_BPS:-1000}"
@@ -95,6 +98,7 @@ services:
       DISCORD_WEBHOOK_URL: "${DISCORD_WEBHOOK_URL:-}"
       SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-}"
       ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
+      INFURA_KEY: "${INFURA_KEY:?INFURA_KEY must be set in .env}"
       RUST_LOG: info
     volumes:
       - "${WATCHER_CONFIG_PATH:-./config/watcher.yaml}:/app/config/watcher.yaml:ro"
