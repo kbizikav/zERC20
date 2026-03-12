@@ -7,7 +7,10 @@ use anyhow::{Context, Result};
 use api_types::indexer::TokenStatusResponse;
 use client_common::{
     contracts::{
-        hub::HubContract, utils::{get_provider, get_provider_with_fallback}, verifier::VerifierContract, z_erc20::ZErc20Contract,
+        hub::HubContract,
+        utils::{get_provider, get_provider_with_fallback},
+        verifier::VerifierContract,
+        z_erc20::ZErc20Contract,
     },
     tokens::{TokenEntry, TokensFile, load_tokens_from_path},
 };
