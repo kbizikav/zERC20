@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use api_types::indexer::TokenStatusResponse;
 use client_common::{
     contracts::{
-        hub::HubContract, utils::get_provider, verifier::VerifierContract, z_erc20::ZErc20Contract,
+        hub::HubContract, utils::{get_provider, get_provider_with_fallback}, verifier::VerifierContract, z_erc20::ZErc20Contract,
     },
     tokens::{TokenEntry, TokensFile, load_tokens_from_path},
 };
@@ -116,7 +116,15 @@ async fn collect_balance_stats(
 }
 
 async fn get_balance(address: Address, chain_cfg: &ChainConfig) -> Result<U256> {
-    let provider = get_provider(&chain_cfg.rpc_url).context("failed to create provider")?;
+    let rpc_urls = chain_cfg.effective_rpc_urls();
+    anyhow::ensure!(!rpc_urls.is_empty(), "chain has no rpc urls configured");
+    let provider = if rpc_urls.len() == 1 {
+        get_provider(rpc_urls[0])
+    } else {
+        let owned: Vec<String> = rpc_urls.iter().map(|s| s.to_string()).collect();
+        get_provider_with_fallback(&owned)
+    }
+    .context("failed to create provider")?;
     provider
         .get_balance(address)
         .await

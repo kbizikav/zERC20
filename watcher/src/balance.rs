@@ -4,7 +4,7 @@ use std::str::FromStr;
 use alloy::primitives::{Address, U256};
 use alloy::providers::Provider;
 use anyhow::{Context, Result};
-use client_common::contracts::utils::get_provider;
+use client_common::contracts::utils::{get_provider, get_provider_with_fallback};
 use log::{error, info};
 
 use crate::alert::{Alert, AlertField, Severity};
@@ -100,8 +100,17 @@ async fn check_single_balance(
     chain_name: &str,
     chain_cfg: &ChainConfig,
 ) -> Result<Option<Alert>> {
-    let provider = get_provider(&chain_cfg.rpc_url)
-        .with_context(|| format!("failed to create provider for chain '{}'", chain_name))?;
+    let rpc_urls = chain_cfg.effective_rpc_urls();
+    if rpc_urls.is_empty() {
+        anyhow::bail!("chain '{}' has no rpc urls configured", chain_name);
+    }
+    let provider = if rpc_urls.len() == 1 {
+        get_provider(rpc_urls[0])
+    } else {
+        let owned: Vec<String> = rpc_urls.iter().map(|s| s.to_string()).collect();
+        get_provider_with_fallback(&owned)
+    }
+    .with_context(|| format!("failed to create provider for chain '{}'", chain_name))?;
 
     let balance = provider
         .get_balance(address)
