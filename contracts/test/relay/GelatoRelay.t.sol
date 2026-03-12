@@ -123,12 +123,12 @@ contract GelatoRelayTest is TestHelperOz5 {
                 address(mockDecider),
                 address(mockDecider),
                 address(mockSingleVerifier),
-                address(mockSingleVerifier)
+                address(mockSingleVerifier),
+                abi.encode("Verifier", "1")
             )
         );
         verifier = Verifier(address(new ERC1967Proxy(address(verifierImpl), verifierInit)));
         verifier.setPeer(HUB_EID, _toBytes32(address(this)));
-        verifier.initializeV2("Verifier", "1");
         token.setVerifier(address(verifier));
 
         // Store a global root
@@ -527,7 +527,8 @@ contract GelatoRelayTest is TestHelperOz5 {
                 address(new MockWithdrawDecider()),
                 address(new MockWithdrawDecider()),
                 address(new MockSingleWithdrawVerifier()),
-                address(new MockSingleWithdrawVerifier())
+                address(new MockSingleWithdrawVerifier()),
+                abi.encode("Verifier", "1")
             )
         );
         Verifier otherVerifier = Verifier(address(new ERC1967Proxy(address(otherVerifierImpl), otherVerifierInit)));

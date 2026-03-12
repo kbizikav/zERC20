@@ -48,6 +48,7 @@ contract DeployLocal is DeterministicDeployer {
         address withdrawLocal;
         address withdrawGlobalGroth16;
         address withdrawLocalGroth16;
+        bytes eip712Init;
     }
 
     struct VerifierDeps {
@@ -256,7 +257,8 @@ contract DeployLocal is DeterministicDeployer {
             withdrawGlobal: deps.withdrawGlobal,
             withdrawLocal: deps.withdrawLocal,
             withdrawGlobalGroth16: deps.withdrawGlobalGroth16,
-            withdrawLocalGroth16: deps.withdrawLocalGroth16
+            withdrawLocalGroth16: deps.withdrawLocalGroth16,
+            eip712Init: abi.encode("Verifier", "1")
         });
         bytes memory initData = _encodeVerifierInit(args);
         verifier = Verifier(_deployProxyAndInit(deployer, baseSalt, "VERIFIER_PROXY", address(impl), initData));
@@ -276,7 +278,8 @@ contract DeployLocal is DeterministicDeployer {
                 args.withdrawGlobal,
                 args.withdrawLocal,
                 args.withdrawGlobalGroth16,
-                args.withdrawLocalGroth16
+                args.withdrawLocalGroth16,
+                args.eip712Init
             )
         );
     }
