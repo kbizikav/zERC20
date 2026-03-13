@@ -10,28 +10,44 @@ alert:
 
 chains:
   ethereum:
-    rpc_url: "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    rpc_urls:
+      - "https://eth-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      - "https://mainnet.infura.io/v3/${INFURA_KEY}"
     explorer: "https://etherscan.io/address/"
   base:
-    rpc_url: "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    rpc_urls:
+      - "https://base-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      - "https://base-mainnet.infura.io/v3/${INFURA_KEY}"
     explorer: "https://basescan.org/address/"
   arbitrum:
-    rpc_url: "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    rpc_urls:
+      - "https://arb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      - "https://arbitrum-mainnet.infura.io/v3/${INFURA_KEY}"
     explorer: "https://arbiscan.io/address/"
   bnb:
-    rpc_url: "https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    rpc_urls:
+      - "https://bnb-mainnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      - "https://bsc-mainnet.infura.io/v3/${INFURA_KEY}"
     explorer: "https://bscscan.com/address/"
   sepolia:
-    rpc_url: "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    rpc_urls:
+      - "https://eth-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      - "https://sepolia.infura.io/v3/${INFURA_KEY}"
     explorer: "https://sepolia.etherscan.io/address/"
   optimism_sepolia:
-    rpc_url: "https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    rpc_urls:
+      - "https://opt-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      - "https://optimism-sepolia.infura.io/v3/${INFURA_KEY}"
     explorer: "https://sepolia-optimism.etherscan.io/address/"
   arbitrum_sepolia:
-    rpc_url: "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    rpc_urls:
+      - "https://arb-sepolia.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      - "https://arbitrum-sepolia.infura.io/v3/${INFURA_KEY}"
     explorer: "https://sepolia.arbiscan.io/address/"
   bnb_testnet:
-    rpc_url: "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+    rpc_urls:
+      - "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}"
+      - "https://bsc-testnet.infura.io/v3/${INFURA_KEY}"
     explorer: "https://testnet.bscscan.com/address/"
 
 # Balance monitoring

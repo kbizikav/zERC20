@@ -63,9 +63,28 @@ pub struct AccountConfig {
 
 #[derive(Debug, Deserialize)]
 pub struct ChainConfig {
-    pub rpc_url: String,
+    /// Single RPC URL (legacy). Ignored when `rpc_urls` is non-empty.
+    #[serde(default)]
+    pub rpc_url: Option<String>,
+    /// Multiple RPC URLs with automatic fallback.
+    #[serde(default)]
+    pub rpc_urls: Vec<String>,
     #[serde(default)]
     pub explorer: Option<String>,
+}
+
+impl ChainConfig {
+    /// Return the list of RPC URLs to use, merging `rpc_url` into `rpc_urls`
+    /// for backwards compatibility.
+    pub fn effective_rpc_urls(&self) -> Vec<&str> {
+        if !self.rpc_urls.is_empty() {
+            self.rpc_urls.iter().map(|s| s.as_str()).collect()
+        } else if let Some(url) = &self.rpc_url {
+            vec![url.as_str()]
+        } else {
+            vec![]
+        }
+    }
 }
 
 #[derive(Debug, Clone, Deserialize)]
