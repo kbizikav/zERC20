@@ -6,6 +6,7 @@
       "verifier_address": "0xb05977Af4aA54117910ed72141F674531894774A",
       "liquidity_manager_address": "0x39Cc069dF606c7bc8c79b0ADd0696BCaf548eFD9",
       "adaptor_address": null,
+      "gelato_relayer_address": "0x8C1F8e44f2D3b2068790438f29F9CD612d342e0d",
       "chain_id": 56,
       "eid": 30102,
       "layerzero_endpoint": "0x1a44076050125825900e736c501f859c50fE728c",
