@@ -1,7 +1,7 @@
 pub mod adaptor;
 pub mod erc20;
 pub mod error;
-pub mod gelato_relay;
+pub mod relay;
 pub mod hub;
 pub mod liquidity_manager;
 pub mod utils;

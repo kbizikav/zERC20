@@ -156,9 +156,6 @@ pub struct TransferArgs {
     /// Token amount (accepts decimal or 0x-prefixed hex units).
     #[arg(long, value_parser = parse_u256)]
     pub amount: U256,
-
-    #[command(flatten)]
-    pub relay: RelayArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -279,9 +276,6 @@ pub struct UnwrapArgs {
     /// Amount of zERC20 to unwrap (accepts decimal or 0x-prefixed hex units).
     #[arg(long, value_parser = parse_u256)]
     pub amount: U256,
-
-    #[command(flatten)]
-    pub relay: RelayArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -399,22 +393,22 @@ pub struct InvoiceReceiveArgs {
     pub relay: RelayArgs,
 }
 
-/// Shared relay-mode arguments for Gelato gasless transactions.
+/// Shared relay-mode arguments for gasless teleport submission.
 #[derive(Args, Debug, Clone)]
 pub struct RelayArgs {
-    /// Use Gelato Relay for gasless teleport submission.
+    /// Use the relay node for gasless teleport submission.
     #[arg(long, default_value_t = false)]
     pub relay: bool,
 
-    /// Optional Gelato API key for relay requests.
-    #[arg(long, env = "GELATO_API_KEY", value_name = "API_KEY")]
-    pub gelato_api_key: Option<String>,
+    /// URL of the custom relay node.
+    #[arg(long, env = "RELAY_URL", value_name = "URL")]
+    pub relay_url: Option<String>,
 
     /// Maximum relayer fee in zERC20 units (optional safety cap).
     #[arg(long, value_parser = parse_u256, value_name = "AMOUNT")]
     pub max_relay_fee: Option<U256>,
 
-    /// Skip the confirmation prompt before submitting a Gelato relay task.
+    /// Skip the confirmation prompt before submitting a relay task.
     #[arg(long, default_value_t = false)]
     pub yes: bool,
 }

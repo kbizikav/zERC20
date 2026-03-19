@@ -4,10 +4,7 @@ use alloy::primitives::{Address, B256, U256};
 use anyhow::{Context, Result, anyhow};
 use client_common::{
     contracts::{
-        gelato_relay::{
-            self, RelayTaskState, RelayTeleportParams, encode_relay_single_teleport,
-            encode_relay_teleport,
-        },
+        relay,
         verifier::VerifierContract,
     },
     indexer::{HttpIndexerClient, IndexedEvent},
@@ -28,7 +25,7 @@ use zkp::{
 use crate::{
     CommonArgs, RelayArgs, build_decider_client,
     commands::shared::{
-        build_liquidity_manager, confirm_relay_submission, find_token_by_chain, format_tx_hash,
+        confirm_relay_submission, find_token_by_chain, format_tx_hash,
     },
     proof::{batch::batch_teleport_proof, single::single_teleport_proof},
 };
@@ -241,7 +238,7 @@ pub async fn redeem_transfers(
     Ok(RedeemResult::Submitted)
 }
 
-/// Redeem eligible teleport transfers via Gelato Relay (gasless).
+/// Redeem eligible teleport transfers via the custom relay node (gasless).
 #[allow(clippy::too_many_arguments)]
 pub async fn redeem_transfers_via_relay(
     common_args: &CommonArgs,
@@ -256,6 +253,10 @@ pub async fn redeem_transfers_via_relay(
     private_key: B256,
     artifacts_dir: &Path,
 ) -> Result<RedeemResult> {
+    let relay_url = relay_args.relay_url.as_deref().ok_or_else(|| {
+        anyhow!("--relay-url is required when using --relay mode")
+    })?;
+
     let total_eligible_value = separated_events
         .values()
         .map(|events| events.eligible_total_value())
@@ -271,15 +272,7 @@ pub async fn redeem_transfers_via_relay(
 
     let total_value = total_eligible_value;
     let recipient_hash = gr.to_u256();
-
-    // Find token entry for the target chain
     let token_entry = find_token_by_chain(token_entries, gr.chain_id)?;
-    let relay_address = token_entry.gelato_relay_address.ok_or_else(|| {
-        anyhow!(
-            "token '{}' is missing gelato_relay_address — relay mode not available for this chain",
-            token_entry.label,
-        )
-    })?;
 
     // Build Merkle proofs (same as non-relay path)
     let mut local_teleport_mps = HashMap::new();
@@ -298,7 +291,7 @@ pub async fn redeem_transfers_via_relay(
         local_teleport_mps.insert(*chain_id, local_proofs);
     }
     // Generate ZK proof (single or batch)
-    let (proof_bytes, is_single, is_global) = match aggregation_tree_state.scope {
+    let (proof_bytes, _is_single, is_global) = match aggregation_tree_state.scope {
         TransferRootScope::Global => {
             let global_merkle_proofs =
                 generate_global_teleport_merkle_proofs(aggregation_tree_state, &local_teleport_mps)
@@ -407,24 +400,12 @@ pub async fn redeem_transfers_via_relay(
         }
     };
 
-    // Estimate relayer fee
-    let liquidity_manager = build_liquidity_manager(token_entry)?;
-    let fee_token = liquidity_manager
-        .underlying_token()
+    // Estimate relayer fee from relay node
+    println!("Estimating relay fee...");
+    let relayer_fee = relay::estimate_relay_fee(relay_url, token_entry.chain_id)
         .await
-        .context("failed to fetch underlying token address")?;
+        .context("failed to estimate relayer fee")?;
 
-    println!("Estimating Gelato relay fee...");
-    let fee_estimate = gelato_relay::estimate_relayer_fee(
-        token_entry.chain_id,
-        fee_token,
-        None,
-        &liquidity_manager,
-    )
-    .await
-    .context("failed to estimate relayer fee")?;
-
-    let relayer_fee = fee_estimate.relayer_fee;
     if let Some(cap) = relay_args.max_relay_fee
         && cap < relayer_fee
     {
@@ -436,10 +417,7 @@ pub async fn redeem_transfers_via_relay(
     }
     let max_fee = relayer_fee;
 
-    println!("  Gelato gas fee : {}", fee_estimate.gelato_fee);
-    println!("  Max gelato fee : {}", fee_estimate.max_gelato_fee);
-    println!("  Unwrap fee     : {}", fee_estimate.unwrap_fee);
-    println!("  Total (w/ buf) : {}", relayer_fee);
+    println!("  Relayer fee    : {}", relayer_fee);
 
     if relayer_fee >= total_value {
         anyhow::bail!(
@@ -457,11 +435,11 @@ pub async fn redeem_transfers_via_relay(
         + 3600; // 1 hour from now
 
     let domain_separator =
-        gelato_relay::fetch_domain_separator(verifier.provider(), verifier.address())
+        relay::fetch_domain_separator(verifier.provider(), verifier.address())
             .await
             .context("failed to fetch EIP-712 domain separator from Verifier")?;
 
-    let signature = gelato_relay::sign_relayer_fee_authorization(
+    let signature = relay::sign_relayer_fee_authorization(
         private_key,
         domain_separator,
         recipient_hash,
@@ -472,8 +450,8 @@ pub async fn redeem_transfers_via_relay(
     .await
     .context("failed to sign relayer fee authorization")?;
 
-    // Encode calldata
-    let params = RelayTeleportParams {
+    // Build relay request
+    let request = relay::RelayTeleportRequest {
         is_global,
         root_hint: aggregation_tree_state.root_hint,
         chain_id: gr.chain_id,
@@ -484,66 +462,15 @@ pub async fn redeem_transfers_via_relay(
         max_fee,
         deadline,
         signature,
-        max_gelato_fee: fee_estimate.max_gelato_fee,
     };
 
-    let calldata = if is_single {
-        encode_relay_single_teleport(&params)
-    } else {
-        encode_relay_teleport(&params)
-    };
-
-    // Submit to Gelato
+    // Submit to relay node
     confirm_relay_submission(relay_args.yes, "teleport redemption")?;
-    println!("Submitting relay task to Gelato...");
-    let task_id = gelato_relay::submit_relay_task(
-        token_entry.chain_id,
-        relay_address,
-        &calldata,
-        fee_token,
-        relay_args.gelato_api_key.as_deref(),
-        None,
-    )
-    .await
-    .context("failed to submit relay task to Gelato")?;
-    println!("Gelato task ID     : {}", task_id);
-
-    // Poll for completion
-    println!("Polling for task completion...");
-    let result = gelato_relay::poll_relay_task(&task_id, None, None)
+    println!("Submitting relay teleport...");
+    let tx_hash = relay::submit_relay_teleport(relay_url, &request)
         .await
-        .context("failed to poll relay task status")?;
-
-    match result.task_state {
-        RelayTaskState::ExecSuccess => {
-            if let Some(tx_hash) = &result.transaction_hash {
-                println!("Relay succeeded    : {}", tx_hash);
-            } else {
-                println!("Relay succeeded (no tx hash available)");
-            }
-        }
-        RelayTaskState::ExecReverted => {
-            let msg = result
-                .last_check_message
-                .as_deref()
-                .unwrap_or("unknown reason");
-            anyhow::bail!("Gelato relay task reverted: {}", msg);
-        }
-        RelayTaskState::Cancelled => {
-            let msg = result
-                .last_check_message
-                .as_deref()
-                .unwrap_or("unknown reason");
-            anyhow::bail!("Gelato relay task cancelled: {}", msg);
-        }
-        _ => {
-            let msg = result.last_check_message.as_deref().unwrap_or("timed out");
-            println!(
-                "Relay task still pending after polling: {} — check Gelato status for task {}",
-                msg, task_id
-            );
-        }
-    }
+        .context("failed to submit relay teleport")?;
+    println!("Relay tx hash      : {}", tx_hash);
 
     Ok(RedeemResult::Submitted)
 }
