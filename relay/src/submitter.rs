@@ -1,7 +1,7 @@
 use alloy::{
     network::EthereumWallet,
     primitives::{B256, Bytes},
-    providers::ProviderBuilder,
+    providers::{Provider, ProviderBuilder},
     signers::local::PrivateKeySigner,
 };
 use anyhow::{Context, Result};
@@ -51,28 +51,45 @@ pub async fn submit_teleport(
     // proof size: Groth16 proofs are exactly 256 bytes (8 × 32-byte elements).
     let is_single = req.proof.len() == 256;
 
+    let legacy_gas_price = if token.legacy_tx() {
+        Some(
+            provider
+                .get_gas_price()
+                .await
+                .context("failed to fetch gas price for legacy tx")?,
+        )
+    } else {
+        None
+    };
+
     let pending = if is_single {
-        contract
-            .singleTeleport_1(
-                req.is_global,
-                req.root_hint,
-                gr,
-                Bytes::copy_from_slice(&req.proof),
-                fee_auth,
-            )
-            .send()
+        let call = contract.singleTeleport_1(
+            req.is_global,
+            req.root_hint,
+            gr,
+            Bytes::copy_from_slice(&req.proof),
+            fee_auth,
+        );
+        let call = match legacy_gas_price {
+            Some(gp) => call.gas_price(gp),
+            None => call,
+        };
+        call.send()
             .await
             .context("failed to send singleTeleport transaction")?
     } else {
-        contract
-            .teleport_1(
-                req.is_global,
-                req.root_hint,
-                gr,
-                Bytes::copy_from_slice(&req.proof),
-                fee_auth,
-            )
-            .send()
+        let call = contract.teleport_1(
+            req.is_global,
+            req.root_hint,
+            gr,
+            Bytes::copy_from_slice(&req.proof),
+            fee_auth,
+        );
+        let call = match legacy_gas_price {
+            Some(gp) => call.gas_price(gp),
+            None => call,
+        };
+        call.send()
             .await
             .context("failed to send teleport transaction")?
     };

@@ -11,14 +11,14 @@ export async function submitRelayTeleport(
 
   const body = {
     is_global: params.isGlobal,
-    root_hint: params.rootHint.toString(),
-    chain_id: params.chainId.toString(),
+    root_hint: Number(params.rootHint),
+    chain_id: Number(params.chainId),
     recipient: params.recipient,
     tweak: params.tweak,
     proof: params.proof,
     relayer_fee: params.relayerFee.toString(),
     max_fee: params.maxFee.toString(),
-    deadline: params.deadline.toString(),
+    deadline: Number(params.deadline),
     signature: params.signature,
   };
 
