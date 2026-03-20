@@ -66,7 +66,7 @@ fn chainlink_address(chain_id: u64, feed: PriceFeed) -> Option<Address> {
         (42161, PriceFeed::EthUsd) => Some(address!("639Fe6ab55C921f74e7fac1ee960C0B6293ba612")),
         (8453, PriceFeed::EthUsd) => Some(address!("71041dddad3595F9CEd3DcCFBe3D1F4b0a16Bb70")),
         // BNB/USD
-        (1, PriceFeed::BnbUsd) => Some(address!("14e613AC691a42F21B17B217403396B18F671a7f")),
+        (1, PriceFeed::BnbUsd) => Some(address!("14e613AC84a31f709eadbdF89C6CC390fDc9540A")),
         (42161, PriceFeed::BnbUsd) => Some(address!("6970460aabF80C5BE983C6b74e5D06dEDCA95D4A")),
         (8453, PriceFeed::BnbUsd) => Some(address!("4b7836916781CAAfbb7Bd1E5FDd20ED544B453b1")),
         // BNB/USD on BSC (for completeness, though BNB on BSC is 1:1)
@@ -140,6 +140,25 @@ impl PriceOracle {
         }
 
         Ok(oracle)
+    }
+
+    /// Create an oracle with pre-seeded prices (for testing).
+    #[cfg(test)]
+    fn with_prices(prices: Vec<(u64, PriceFeed, U256, u8)>) -> Self {
+        let mut cache = HashMap::new();
+        for (chain_id, feed, price, decimals) in prices {
+            cache.insert(
+                (chain_id, feed),
+                CachedPrice {
+                    price,
+                    feed_decimals: decimals,
+                    updated_at: Instant::now(),
+                },
+            );
+        }
+        Self {
+            cache: Arc::new(RwLock::new(cache)),
+        }
     }
 
     fn discover_targets(tokens: &[TokenEntry]) -> Result<Vec<FeedTarget>> {
@@ -330,4 +349,129 @@ async fn fetch_price(feed_address: Address, provider: &impl Provider) -> Result<
 
     let price = U256::from_be_bytes(answer.into_raw().to_be_bytes::<32>());
     Ok((price, decimals))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Helper: 1 ETH in wei.
+    fn one_eth() -> U256 {
+        U256::from(10u64).pow(U256::from(18))
+    }
+
+    /// Chainlink price with 8 decimals (e.g. $3000 = 3000_00000000).
+    fn usd(dollars: u64) -> U256 {
+        U256::from(dollars) * U256::from(10u64).pow(U256::from(8))
+    }
+
+    #[tokio::test]
+    async fn eth_on_eth_chain_is_1_to_1() {
+        let oracle = PriceOracle::with_prices(vec![]);
+        let result = oracle
+            .convert_native_to_token(1, TokenType::Eth, one_eth())
+            .await
+            .unwrap();
+        assert_eq!(result, one_eth(), "zETH on Ethereum should be 1:1");
+    }
+
+    #[tokio::test]
+    async fn bnb_on_bsc_is_1_to_1() {
+        let oracle = PriceOracle::with_prices(vec![]);
+        let result = oracle
+            .convert_native_to_token(56, TokenType::Bnb, one_eth())
+            .await
+            .unwrap();
+        assert_eq!(result, one_eth(), "zBNB on BSC should be 1:1");
+    }
+
+    #[tokio::test]
+    async fn usdc_on_eth_chain_converts_correctly() {
+        // ETH = $3000, gas cost = 0.001 ETH → expect ~$3 = 3_000000 USDC
+        let oracle = PriceOracle::with_prices(vec![(1, PriceFeed::EthUsd, usd(3000), 8)]);
+
+        let gas_cost = one_eth() / U256::from(1000); // 0.001 ETH
+        let result = oracle
+            .convert_native_to_token(1, TokenType::Usdc, gas_cost)
+            .await
+            .unwrap();
+
+        // 0.001 ETH * $3000 = $3.00 = 3_000000 (6 decimals)
+        assert_eq!(result, U256::from(3_000_000u64));
+    }
+
+    #[tokio::test]
+    async fn usdc_on_eth_chain_1_eth() {
+        // 1 ETH at $2500 → 2500_000000 USDC
+        let oracle = PriceOracle::with_prices(vec![(1, PriceFeed::EthUsd, usd(2500), 8)]);
+
+        let result = oracle
+            .convert_native_to_token(1, TokenType::Usdc, one_eth())
+            .await
+            .unwrap();
+
+        assert_eq!(result, U256::from(2_500_000_000u64)); // 2500 * 10^6
+    }
+
+    #[tokio::test]
+    async fn bnb_on_eth_chain_converts_correctly() {
+        // ETH = $3000, BNB = $600 → 1 ETH gas = 5 BNB
+        let oracle = PriceOracle::with_prices(vec![
+            (1, PriceFeed::EthUsd, usd(3000), 8),
+            (1, PriceFeed::BnbUsd, usd(600), 8),
+        ]);
+
+        let result = oracle
+            .convert_native_to_token(1, TokenType::Bnb, one_eth())
+            .await
+            .unwrap();
+
+        // 1 ETH * (3000/600) = 5 BNB (18 decimals)
+        assert_eq!(result, U256::from(5u64) * one_eth());
+    }
+
+    #[tokio::test]
+    async fn bnb_on_eth_chain_fractional() {
+        // ETH = $3000, BNB = $500 → 0.01 ETH gas = 0.06 BNB
+        let oracle = PriceOracle::with_prices(vec![
+            (42161, PriceFeed::EthUsd, usd(3000), 8),
+            (42161, PriceFeed::BnbUsd, usd(500), 8),
+        ]);
+
+        let gas_cost = one_eth() / U256::from(100); // 0.01 ETH
+        let result = oracle
+            .convert_native_to_token(42161, TokenType::Bnb, gas_cost)
+            .await
+            .unwrap();
+
+        // 0.01 * 3000/500 = 0.06 BNB
+        let expected = one_eth() * U256::from(6) / U256::from(100);
+        assert_eq!(result, expected);
+    }
+
+    #[tokio::test]
+    async fn fallback_price_used_when_cache_empty() {
+        // No prices seeded → should use fallback ($4000 for ETH/USD)
+        let oracle = PriceOracle::with_prices(vec![]);
+
+        let gas_cost = one_eth() / U256::from(1000); // 0.001 ETH
+        let result = oracle
+            .convert_native_to_token(1, TokenType::Usdc, gas_cost)
+            .await
+            .unwrap();
+
+        // 0.001 ETH * $4000 fallback = $4.00 = 4_000000 USDC
+        assert_eq!(result, U256::from(4_000_000u64));
+    }
+
+    #[tokio::test]
+    async fn required_feeds_correctness() {
+        assert!(required_feeds(1, TokenType::Eth).is_empty());
+        assert!(required_feeds(56, TokenType::Bnb).is_empty());
+        assert_eq!(required_feeds(1, TokenType::Usdc), vec![PriceFeed::EthUsd]);
+        assert_eq!(
+            required_feeds(1, TokenType::Bnb),
+            vec![PriceFeed::EthUsd, PriceFeed::BnbUsd]
+        );
+    }
 }
