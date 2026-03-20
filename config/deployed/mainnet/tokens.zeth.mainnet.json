@@ -16,7 +16,8 @@
       ],
       "root_submit_interval_ms": 300000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "ETH"
     },
     {
       "label": "arb-mainnet",
@@ -34,7 +35,8 @@
       ],
       "root_submit_interval_ms": 300000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "ETH"
     },
     {
       "label": "base-mainnet",
@@ -52,7 +54,8 @@
       ],
       "root_submit_interval_ms": 300000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "ETH"
     }
   ],
   "hub": {

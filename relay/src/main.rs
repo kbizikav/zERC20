@@ -1,6 +1,7 @@
 mod api;
 mod config;
 mod fee;
+mod oracle;
 mod submitter;
 
 use actix_web::{App, HttpServer, web};
@@ -25,9 +26,13 @@ async fn main() -> Result<()> {
     anyhow::ensure!(key_bytes.len() == 32, "RELAY_PRIVATE_KEY must be 32 bytes");
     let relayer_key = B256::from_slice(&key_bytes);
 
+    let oracle =
+        oracle::PriceOracle::new(&cfg.tokens).context("failed to initialize price oracle")?;
+
     let state = web::Data::new(AppState {
         relayer_key,
         tokens: cfg.tokens,
+        oracle,
     });
 
     log::info!("Starting relay node on port {}", cfg.port);

@@ -12,6 +12,34 @@ use alloy::primitives::Address;
 use anyhow::{Context, Result, anyhow, bail};
 use serde::Deserialize;
 
+/// The underlying asset type of a zERC20 token.
+///
+/// Used by the relay fee estimator to convert native gas costs into the
+/// correct token denomination.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Deserialize)]
+#[serde(rename_all = "UPPERCASE")]
+pub enum TokenType {
+    /// Native-gas-pegged token (e.g. zETH on ETH chains). 18 decimals.
+    #[serde(alias = "eth")]
+    Eth,
+    /// USD-pegged stablecoin (e.g. zUSDC). 6 decimals.
+    #[serde(alias = "usdc")]
+    Usdc,
+    /// BNB-pegged token (e.g. zBNB). 18 decimals.
+    #[serde(alias = "bnb")]
+    Bnb,
+}
+
+impl TokenType {
+    /// Number of decimals for this token type.
+    pub const fn decimals(self) -> u8 {
+        match self {
+            Self::Eth | Self::Bnb => 18,
+            Self::Usdc => 6,
+        }
+    }
+}
+
 #[derive(Debug, Deserialize, Clone)]
 pub struct TokenEntry {
     pub label: String,
@@ -44,6 +72,9 @@ pub struct TokenEntry {
         alias = "root_submit_interval_ms"
     )]
     pub root_submit_interval_ms: Option<u64>,
+    /// Underlying asset type, used for relay fee conversion.
+    #[serde(default)]
+    pub token_type: Option<TokenType>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

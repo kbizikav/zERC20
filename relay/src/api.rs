@@ -1,6 +1,7 @@
 use actix_web::{HttpResponse, web};
 use alloy::primitives::B256;
 
+use crate::oracle::PriceOracle;
 use crate::submitter;
 use client_common::contracts::relay::RelayTeleportRequest;
 use client_common::tokens::TokenEntry;
@@ -9,6 +10,7 @@ use client_common::tokens::TokenEntry;
 pub struct AppState {
     pub relayer_key: B256,
     pub tokens: Vec<TokenEntry>,
+    pub oracle: PriceOracle,
 }
 
 impl AppState {
@@ -86,7 +88,16 @@ pub async fn fee_estimate(
         }
     };
 
-    match crate::fee::estimate_fee(&provider).await {
+    let token_type = match token.token_type {
+        Some(tt) => tt,
+        None => {
+            return HttpResponse::BadRequest().json(serde_json::json!({
+                "error": format!("token_type not configured for chain {}", query.chain_id)
+            }));
+        }
+    };
+
+    match crate::fee::estimate_fee(&provider, token.chain_id, token_type, &state.oracle).await {
         Ok(fee) => HttpResponse::Ok().json(serde_json::json!({"relayerFee": fee})),
         Err(err) => {
             log::error!("fee estimation failed: {:?}", err);
