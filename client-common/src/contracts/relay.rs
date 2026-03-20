@@ -245,11 +245,12 @@ pub async fn estimate_relay_fee(relay_url: &str, chain_id: u64) -> Result<U256> 
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase")]
     struct FeeResponse {
-        relayer_fee: U256,
+        relayer_fee: String,
     }
     let parsed: FeeResponse = resp
         .json()
         .await
         .context("failed to parse relay node fee-estimate response")?;
-    Ok(parsed.relayer_fee)
+    U256::from_str_radix(&parsed.relayer_fee, 10)
+        .with_context(|| format!("invalid decimal relayer fee '{}'", parsed.relayer_fee))
 }

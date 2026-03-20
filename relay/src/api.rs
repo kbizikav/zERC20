@@ -98,7 +98,7 @@ pub async fn fee_estimate(
     };
 
     match crate::fee::estimate_fee(&provider, token.chain_id, token_type, &state.oracle).await {
-        Ok(fee) => HttpResponse::Ok().json(serde_json::json!({"relayerFee": fee})),
+        Ok(fee) => HttpResponse::Ok().json(serde_json::json!({"relayerFee": fee.to_string()})),
         Err(err) => {
             log::error!("fee estimation failed: {:?}", err);
             HttpResponse::InternalServerError()

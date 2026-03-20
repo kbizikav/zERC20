@@ -16,7 +16,8 @@
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "BNB"
     },
     {
       "label": "arb-sepolia",
@@ -34,7 +35,8 @@
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "BNB"
     },
     {
       "label": "op-sepolia",
@@ -52,7 +54,8 @@
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "BNB"
     },
     {
       "label": "bnb-testnet",
@@ -68,7 +71,8 @@
         "https://bnb-testnet.g.alchemy.com/v2/${ALCHEMY_KEY}",
         "https://bsc-testnet.infura.io/v3/${INFURA_KEY}"
       ],
-      "legacy_tx": true
+      "legacy_tx": true,
+      "token_type": "BNB"
     }
   ],
   "hub": {
