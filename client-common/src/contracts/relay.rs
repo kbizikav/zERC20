@@ -176,7 +176,7 @@ pub struct RelayTeleportRequest {
     pub signature: Vec<u8>,
 }
 
-/// Serde helper for Vec<u8> as hex string.
+/// Serde helper for `Vec<u8>` encoded as a hex string.
 mod hex_vec {
     use serde::{Deserialize, Deserializer, Serializer, de};
 

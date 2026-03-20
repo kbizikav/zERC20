@@ -3,10 +3,7 @@ use std::{collections::HashMap, path::Path, time::SystemTime};
 use alloy::primitives::{Address, B256, U256};
 use anyhow::{Context, Result, anyhow};
 use client_common::{
-    contracts::{
-        relay,
-        verifier::VerifierContract,
-    },
+    contracts::{relay, verifier::VerifierContract},
     indexer::{HttpIndexerClient, IndexedEvent},
     teleport::{
         aggregation_tree::{AggregationTreeState, TransferRootScope},
@@ -24,9 +21,7 @@ use zkp::{
 
 use crate::{
     CommonArgs, RelayArgs, build_decider_client,
-    commands::shared::{
-        confirm_relay_submission, find_token_by_chain, format_tx_hash,
-    },
+    commands::shared::{confirm_relay_submission, find_token_by_chain, format_tx_hash},
     proof::{batch::batch_teleport_proof, single::single_teleport_proof},
 };
 
@@ -253,9 +248,10 @@ pub async fn redeem_transfers_via_relay(
     private_key: B256,
     artifacts_dir: &Path,
 ) -> Result<RedeemResult> {
-    let relay_url = relay_args.relay_url.as_deref().ok_or_else(|| {
-        anyhow!("--relay-url is required when using --relay mode")
-    })?;
+    let relay_url = relay_args
+        .relay_url
+        .as_deref()
+        .ok_or_else(|| anyhow!("--relay-url is required when using --relay mode"))?;
 
     let total_eligible_value = separated_events
         .values()
@@ -434,10 +430,9 @@ pub async fn redeem_transfers_via_relay(
         .as_secs()
         + 3600; // 1 hour from now
 
-    let domain_separator =
-        relay::fetch_domain_separator(verifier.provider(), verifier.address())
-            .await
-            .context("failed to fetch EIP-712 domain separator from Verifier")?;
+    let domain_separator = relay::fetch_domain_separator(verifier.provider(), verifier.address())
+        .await
+        .context("failed to fetch EIP-712 domain separator from Verifier")?;
 
     let signature = relay::sign_relayer_fee_authorization(
         private_key,

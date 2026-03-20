@@ -19,10 +19,7 @@ use crate::{
     UnwrapArgs,
     commands::{
         quote_unwrap::build_extra_options,
-        shared::{
-            build_erc20, build_liquidity_manager, find_token_by_chain,
-            format_tx_hash,
-        },
+        shared::{build_erc20, build_liquidity_manager, find_token_by_chain, format_tx_hash},
     },
 };
 

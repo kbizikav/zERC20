@@ -1,8 +1,8 @@
 use actix_web::{HttpResponse, web};
 use alloy::primitives::B256;
 
-use client_common::contracts::relay::RelayTeleportRequest;
 use crate::{config::ChainConfig, submitter};
+use client_common::contracts::relay::RelayTeleportRequest;
 
 /// Shared application state.
 pub struct AppState {
@@ -26,8 +26,9 @@ pub async fn relay_teleport(
     let chain = match state.find_chain(req.chain_id) {
         Some(c) => c,
         None => {
-            return HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": format!("unsupported chain_id {}", req.chain_id)}));
+            return HttpResponse::BadRequest().json(
+                serde_json::json!({"error": format!("unsupported chain_id {}", req.chain_id)}),
+            );
         }
     };
 
@@ -70,8 +71,9 @@ pub async fn fee_estimate(
     let chain = match state.find_chain(query.chain_id) {
         Some(c) => c,
         None => {
-            return HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": format!("unsupported chain_id {}", query.chain_id)}));
+            return HttpResponse::BadRequest().json(
+                serde_json::json!({"error": format!("unsupported chain_id {}", query.chain_id)}),
+            );
         }
     };
 

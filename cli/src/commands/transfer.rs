@@ -1,9 +1,6 @@
 use alloy::primitives::B256;
 use anyhow::{Context, Result};
-use client_common::{
-    contracts::utils::get_address_from_private_key,
-    tokens::TokenEntry,
-};
+use client_common::{contracts::utils::get_address_from_private_key, tokens::TokenEntry};
 
 use crate::{
     TransferArgs,

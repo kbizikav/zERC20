@@ -6,8 +6,8 @@ use alloy::{
 };
 use anyhow::{Context, Result};
 
-use client_common::contracts::relay::RelayTeleportRequest;
 use crate::config::ChainConfig;
+use client_common::contracts::relay::RelayTeleportRequest;
 
 /// Submit a teleport transaction to the Verifier contract on behalf of a user.
 ///
@@ -19,7 +19,7 @@ pub async fn submit_teleport(
     relayer_key: &B256,
     req: &RelayTeleportRequest,
 ) -> Result<B256> {
-    use client_common::contracts::verifier::{Verifier, GeneralRecipientLib};
+    use client_common::contracts::verifier::{GeneralRecipientLib, Verifier};
 
     let signer = PrivateKeySigner::from_bytes(relayer_key)
         .context("failed to create signer from relayer private key")?;

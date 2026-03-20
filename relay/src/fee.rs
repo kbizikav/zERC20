@@ -1,7 +1,4 @@
-use alloy::{
-    primitives::U256,
-    providers::Provider,
-};
+use alloy::{primitives::U256, providers::Provider};
 use anyhow::{Context, Result};
 
 use crate::config::ChainConfig;
@@ -13,10 +10,7 @@ use crate::config::ChainConfig;
 ///
 /// This is a simplified estimator — production deployments should factor in
 /// the LiquidityManager unwrap fee and oracle-based token pricing.
-pub async fn estimate_fee(
-    provider: &impl Provider,
-    _chain: &ChainConfig,
-) -> Result<U256> {
+pub async fn estimate_fee(provider: &impl Provider, _chain: &ChainConfig) -> Result<U256> {
     let gas_price = provider
         .get_gas_price()
         .await

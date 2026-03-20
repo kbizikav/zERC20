@@ -37,10 +37,7 @@ async fn main() -> Result<()> {
         App::new()
             .app_data(state.clone())
             .route("/relay/teleport", web::post().to(api::relay_teleport))
-            .route(
-                "/relay/fee-estimate",
-                web::get().to(api::fee_estimate),
-            )
+            .route("/relay/fee-estimate", web::get().to(api::fee_estimate))
     })
     .bind(("0.0.0.0", cfg.port))
     .context("failed to bind relay server")?
