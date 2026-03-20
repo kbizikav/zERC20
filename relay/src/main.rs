@@ -8,14 +8,13 @@ use alloy::primitives::B256;
 use anyhow::{Context, Result};
 
 use api::AppState;
-use config::RelayConfig;
 
 #[actix_web::main]
 async fn main() -> Result<()> {
     dotenvy::dotenv().ok();
     env_logger::init();
 
-    let cfg = RelayConfig::from_env().context("failed to load relay configuration")?;
+    let cfg = config::RelayConfig::from_env().context("failed to load relay configuration")?;
 
     let normalized = cfg
         .private_key
@@ -28,7 +27,7 @@ async fn main() -> Result<()> {
 
     let state = web::Data::new(AppState {
         relayer_key,
-        chains: cfg.chains,
+        tokens: cfg.tokens,
     });
 
     log::info!("Starting relay node on port {}", cfg.port);

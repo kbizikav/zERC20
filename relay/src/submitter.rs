@@ -6,8 +6,8 @@ use alloy::{
 };
 use anyhow::{Context, Result};
 
-use crate::config::ChainConfig;
 use client_common::contracts::relay::RelayTeleportRequest;
+use client_common::tokens::TokenEntry;
 
 /// Submit a teleport transaction to the Verifier contract on behalf of a user.
 ///
@@ -15,7 +15,7 @@ use client_common::contracts::relay::RelayTeleportRequest;
 ///
 /// Returns the transaction hash.
 pub async fn submit_teleport(
-    chain: &ChainConfig,
+    token: &TokenEntry,
     relayer_key: &B256,
     req: &RelayTeleportRequest,
 ) -> Result<B256> {
@@ -25,11 +25,15 @@ pub async fn submit_teleport(
         .context("failed to create signer from relayer private key")?;
     let wallet = EthereumWallet::from(signer);
 
+    let rpc_url = token
+        .rpc_urls
+        .first()
+        .context("token has no rpc urls configured")?;
     let provider = ProviderBuilder::new()
         .wallet(wallet)
-        .connect_http(chain.rpc_url.parse().context("invalid RPC URL")?);
+        .connect_http(rpc_url.parse().context("invalid RPC URL")?);
 
-    let contract = Verifier::new(chain.verifier_address, &provider);
+    let contract = Verifier::new(token.verifier_address, &provider);
 
     let gr = GeneralRecipientLib::GeneralRecipient {
         chainId: req.chain_id,
@@ -77,7 +81,7 @@ pub async fn submit_teleport(
     log::info!(
         "Submitted teleport tx {} on chain {}",
         tx_hash,
-        chain.chain_id
+        token.chain_id
     );
     Ok(tx_hash)
 }

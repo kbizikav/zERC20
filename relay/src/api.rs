@@ -1,18 +1,19 @@
 use actix_web::{HttpResponse, web};
 use alloy::primitives::B256;
 
-use crate::{config::ChainConfig, submitter};
+use crate::submitter;
 use client_common::contracts::relay::RelayTeleportRequest;
+use client_common::tokens::TokenEntry;
 
 /// Shared application state.
 pub struct AppState {
     pub relayer_key: B256,
-    pub chains: Vec<ChainConfig>,
+    pub tokens: Vec<TokenEntry>,
 }
 
 impl AppState {
-    fn find_chain(&self, chain_id: u64) -> Option<&ChainConfig> {
-        self.chains.iter().find(|c| c.chain_id == chain_id)
+    fn find_token(&self, chain_id: u64) -> Option<&TokenEntry> {
+        self.tokens.iter().find(|t| t.chain_id == chain_id)
     }
 }
 
@@ -23,8 +24,8 @@ pub async fn relay_teleport(
 ) -> HttpResponse {
     let req = body.into_inner();
 
-    let chain = match state.find_chain(req.chain_id) {
-        Some(c) => c,
+    let token = match state.find_token(req.chain_id) {
+        Some(t) => t,
         None => {
             return HttpResponse::BadRequest().json(
                 serde_json::json!({"error": format!("unsupported chain_id {}", req.chain_id)}),
@@ -47,7 +48,7 @@ pub async fn relay_teleport(
             .json(serde_json::json!({"error": "deadline has passed"}));
     }
 
-    match submitter::submit_teleport(chain, &state.relayer_key, &req).await {
+    match submitter::submit_teleport(token, &state.relayer_key, &req).await {
         Ok(tx_hash) => HttpResponse::Ok().json(serde_json::json!({"txHash": tx_hash})),
         Err(err) => {
             log::error!("teleport submission failed: {:?}", err);
@@ -68,8 +69,8 @@ pub async fn fee_estimate(
     state: web::Data<AppState>,
     query: web::Query<FeeEstimateQuery>,
 ) -> HttpResponse {
-    let chain = match state.find_chain(query.chain_id) {
-        Some(c) => c,
+    let token = match state.find_token(query.chain_id) {
+        Some(t) => t,
         None => {
             return HttpResponse::BadRequest().json(
                 serde_json::json!({"error": format!("unsupported chain_id {}", query.chain_id)}),
@@ -77,17 +78,15 @@ pub async fn fee_estimate(
         }
     };
 
-    let rpc_url = match chain.rpc_url.parse() {
-        Ok(url) => url,
+    let provider = match token.provider() {
+        Ok(p) => p,
         Err(err) => {
             return HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("invalid RPC URL: {}", err)}));
+                .json(serde_json::json!({"error": format!("failed to create provider: {}", err)}));
         }
     };
 
-    let provider = alloy::providers::ProviderBuilder::new().connect_http(rpc_url);
-
-    match crate::fee::estimate_fee(&provider, chain).await {
+    match crate::fee::estimate_fee(&provider).await {
         Ok(fee) => HttpResponse::Ok().json(serde_json::json!({"relayerFee": fee})),
         Err(err) => {
             log::error!("fee estimation failed: {:?}", err);
