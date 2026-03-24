@@ -158,6 +158,7 @@ async fn run_single_case(anvil_bin: &str, transfer_count: usize) -> Result<PerfR
         legacy_tx: false,
         relay_interval_secs: None,
         root_submit_interval_ms: None,
+        token_type: None,
     };
 
     let event_job = EventSyncJobBuilder::new(
