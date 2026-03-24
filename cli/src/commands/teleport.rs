@@ -267,6 +267,7 @@ pub async fn redeem_transfers_via_relay(
     }
 
     let total_value = total_eligible_value;
+    let withdrawable_value = total_value - total_teleported;
     let recipient_hash = gr.to_u256();
     let token_entry = find_token_by_chain(token_entries, gr.chain_id)?;
 
@@ -287,7 +288,7 @@ pub async fn redeem_transfers_via_relay(
         local_teleport_mps.insert(*chain_id, local_proofs);
     }
     // Generate ZK proof (single or batch)
-    let (proof_bytes, _is_single, is_global) = match aggregation_tree_state.scope {
+    let (proof_bytes, is_single, is_global) = match aggregation_tree_state.scope {
         TransferRootScope::Global => {
             let global_merkle_proofs =
                 generate_global_teleport_merkle_proofs(aggregation_tree_state, &local_teleport_mps)
@@ -415,11 +416,13 @@ pub async fn redeem_transfers_via_relay(
 
     println!("  Relayer fee    : {}", relayer_fee);
 
-    if relayer_fee >= total_value {
+    if relayer_fee >= withdrawable_value {
         anyhow::bail!(
-            "estimated relayer fee {} is not less than claimable value {}; relay mode would revert with RelayerFeeExceedsDiff",
+            "estimated relayer fee {} is not less than withdrawable value {} (total eligible {}, already teleported {}); relay mode would revert with RelayerFeeExceedsDiff",
             relayer_fee,
-            total_value
+            withdrawable_value,
+            total_value,
+            total_teleported
         );
     }
 
@@ -447,6 +450,7 @@ pub async fn redeem_transfers_via_relay(
 
     // Build relay request
     let request = relay::RelayTeleportRequest {
+        is_single,
         is_global,
         root_hint: aggregation_tree_state.root_hint,
         chain_id: gr.chain_id,

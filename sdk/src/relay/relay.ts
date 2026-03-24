@@ -10,6 +10,7 @@ export async function submitRelayTeleport(
   const url = `${relayUrl.replace(/\/$/, '')}/relay/teleport`;
 
   const body = {
+    is_single: params.isSingle,
     is_global: params.isGlobal,
     root_hint: Number(params.rootHint),
     chain_id: Number(params.chainId),

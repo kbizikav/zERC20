@@ -20,6 +20,7 @@ describe('relay helpers', () => {
     vi.stubGlobal('fetch', mockFetch);
 
     const result = await submitRelayTeleport('http://localhost:3000', {
+      isSingle: false,
       isGlobal: true,
       rootHint: 9n,
       chainId: 1n,
@@ -49,6 +50,7 @@ describe('relay helpers', () => {
 
     await expect(
       submitRelayTeleport('http://localhost:3000', {
+        isSingle: false,
         isGlobal: false,
         rootHint: 1n,
         chainId: 1n,

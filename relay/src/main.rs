@@ -4,7 +4,7 @@ mod fee;
 mod oracle;
 mod submitter;
 
-use actix_web::{App, HttpServer, web};
+use actix_web::{App, HttpServer, web, HttpResponse};
 use alloy::primitives::B256;
 use anyhow::{Context, Result};
 
@@ -38,8 +38,15 @@ async fn main() -> Result<()> {
     log::info!("Starting relay node on port {}", cfg.port);
 
     HttpServer::new(move || {
+        let json_cfg = web::JsonConfig::default().error_handler(|err, _req| {
+            log::error!("JSON deserialization error: {err}");
+            let response = HttpResponse::BadRequest()
+                .json(serde_json::json!({"error": format!("{err}")}));
+            actix_web::error::InternalError::from_response(err, response).into()
+        });
         App::new()
             .app_data(state.clone())
+            .app_data(json_cfg)
             .route("/relay/teleport", web::post().to(api::relay_teleport))
             .route("/relay/fee-estimate", web::get().to(api::fee_estimate))
     })

@@ -47,10 +47,6 @@ pub async fn submit_teleport(
         signature: Bytes::from(req.signature.clone()),
     };
 
-    // Determine if this is a single (Groth16) or batch (Nova) proof based on
-    // proof size: Groth16 proofs are exactly 256 bytes (8 × 32-byte elements).
-    let is_single = req.proof.len() == 256;
-
     let legacy_gas_price = if token.legacy_tx() {
         Some(
             provider
@@ -62,7 +58,7 @@ pub async fn submit_teleport(
         None
     };
 
-    let pending = if is_single {
+    let pending = if req.is_single {
         let call = contract.singleTeleport_1(
             req.is_global,
             req.root_hint,

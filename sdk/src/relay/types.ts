@@ -1,6 +1,7 @@
 import type { Hex } from 'viem';
 
 export interface RelayTeleportParams {
+  isSingle: boolean;
   isGlobal: boolean;
   rootHint: bigint;
   chainId: bigint;

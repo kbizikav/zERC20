@@ -162,6 +162,8 @@ fn relay_http_client() -> &'static reqwest::Client {
 /// Request to submit a teleport via the custom relay node.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RelayTeleportRequest {
+    #[serde(default)]
+    pub is_single: bool,
     pub is_global: bool,
     pub root_hint: u64,
     pub chain_id: u64,
