@@ -4,7 +4,7 @@ mod fee;
 mod oracle;
 mod submitter;
 
-use actix_web::{App, HttpServer, web, HttpResponse};
+use actix_web::{App, HttpResponse, HttpServer, web};
 use alloy::primitives::B256;
 use anyhow::{Context, Result};
 
@@ -40,8 +40,8 @@ async fn main() -> Result<()> {
     HttpServer::new(move || {
         let json_cfg = web::JsonConfig::default().error_handler(|err, _req| {
             log::error!("JSON deserialization error: {err}");
-            let response = HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": format!("{err}")}));
+            let response =
+                HttpResponse::BadRequest().json(serde_json::json!({"error": format!("{err}")}));
             actix_web::error::InternalError::from_response(err, response).into()
         });
         App::new()

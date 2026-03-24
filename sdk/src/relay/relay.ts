@@ -1,4 +1,8 @@
-import type { RelayFeeEstimate, RelayResult, RelayTeleportParams } from './types.js';
+import type {
+  RelayFeeEstimate,
+  RelayResult,
+  RelayTeleportParams,
+} from "./types.js";
 
 /**
  * Submit a teleport request to the custom relay node.
@@ -7,7 +11,7 @@ export async function submitRelayTeleport(
   relayUrl: string,
   params: RelayTeleportParams,
 ): Promise<RelayResult> {
-  const url = `${relayUrl.replace(/\/$/, '')}/relay/teleport`;
+  const url = `${relayUrl.replace(/\/$/, "")}/relay/teleport`;
 
   const body = {
     is_single: params.isSingle,
@@ -24,8 +28,8 @@ export async function submitRelayTeleport(
   };
 
   const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
 
@@ -45,13 +49,15 @@ export async function estimateRelayFee(
   relayUrl: string,
   chainId: number,
 ): Promise<RelayFeeEstimate> {
-  const url = `${relayUrl.replace(/\/$/, '')}/relay/fee-estimate?chain_id=${chainId}`;
+  const url = `${relayUrl.replace(/\/$/, "")}/relay/fee-estimate?chain_id=${chainId}`;
 
   const response = await fetch(url);
 
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Relay node fee-estimate returned ${response.status}: ${text}`);
+    throw new Error(
+      `Relay node fee-estimate returned ${response.status}: ${text}`,
+    );
   }
 
   const result = (await response.json()) as { relayerFee: string };
