@@ -59,7 +59,8 @@ The detail view shows:
 Once a transfer reaches **READY** status (shown as "ARRIVED"):
 
 1. Expand the announcement
-2. Click the "REDEEM" button
+2. Wait for redeem resources to finish loading — the button shows **"Preparing redeem resources..."** while the zero-knowledge proof artifacts are being downloaded
+3. Click the "REDEEM" button once it becomes active
 
 <figure><img src="../../assets/frontend_how_to/redeem-detail.png" alt="Redeem Detail" width="480"><figcaption>Transfer ready for redemption</figcaption></figure>
 
@@ -79,6 +80,15 @@ If scanning shows no results:
 - Ensure you're connected with the correct wallet
 - Wait for the transfer to be confirmed on-chain (may take a few minutes)
 - Check that the sender used the correct recipient address
+
+### REDEEM Button Stays Disabled
+
+If the REDEEM button remains disabled even though the transfer shows READY / ARRIVED:
+
+- **"Preparing redeem resources..."** — The proof artifacts are still downloading. Wait for the download to complete.
+- **"Failed to load redeem resources..."** — The artifact download failed. Use the reload button on the announcement detail to retry. This clears the stale cache and re-fetches both the aggregation state and proof artifacts.
+
+> **Tip:** If a reload doesn't help, try refreshing the browser page. This resets all in-memory caches.
 
 ## Next Steps
 

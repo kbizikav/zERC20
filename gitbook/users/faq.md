@@ -120,6 +120,22 @@ The tokens are permanently locked unless the intended recipient of that burn add
 
 The "stuck" tokens represent the burned supply that backs the minted withdrawal.
 
+### REDEEM button is disabled even though transfer shows READY
+
+**Symptoms:** Private Receive shows an announcement as READY or ARRIVED, but the REDEEM button is grayed out.
+
+**Solutions:**
+
+1. **Wait for proof artifacts to load**
+   - The button shows "Preparing redeem resources..." while downloading proof artifacts — this is normal and may take a few seconds
+
+2. **Reload the announcement detail**
+   - If artifacts failed to load or the state is stale, click the reload button on the announcement detail
+   - This clears the aggregation state cache and retries the resource download
+
+3. **Refresh the browser**
+   - If an in-app reload doesn't resolve the issue, refresh the browser page to reset all in-memory caches
+
 ### Cross-chain unwrap failed — funds stuck in Adaptor
 
 **Symptoms:** You performed a cross-chain unwrap but the underlying token never arrived on the destination chain. The transaction on the source chain succeeded, but the Stargate bridge leg failed (e.g. due to liquidity shortage).
