@@ -100,6 +100,8 @@ After executing a cross-chain unwrap, you can track its progress in the **Histor
 The History tab auto-refreshes when you reopen it. After a cross-chain unwrap, the frontend polls for the LayerZero Scan index update automatically, showing "Waiting for LayerZero Scan to index your latest transfer..." until the entry appears.
 
 > **Tip:** If the history looks stale after switching chains, the tab automatically clears and re-fetches data for the newly selected chain.
+>
+> If there is no cross-chain unwrap history for the selected chain yet, the tab stops loading and shows **No History**.
 
 ### Recovering Stuck Funds
 
@@ -113,7 +115,7 @@ The frontend detects stuck funds automatically and displays an amber **Recoverab
 4. Confirm the transaction in your wallet
 5. The recovered funds are returned to your wallet
 
-> **Note:** Stuck funds are safe — they remain in the Adaptor contract and can be recovered at any time.
+> **Note:** Stuck funds are safe — they remain in the Adaptor contract and can be recovered at any time. After a successful withdrawal, the banner updates immediately and removes balances that reached zero.
 
 ## Step 4: Make a Private Transfer
 
