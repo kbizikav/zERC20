@@ -138,9 +138,9 @@ The "stuck" tokens represent the burned supply that backs the minted withdrawal.
 
 ### Cross-chain unwrap failed — funds stuck in Adaptor
 
-**Symptoms:** You performed a cross-chain unwrap but the underlying token never arrived on the destination chain. The transaction on the source chain succeeded, but the Stargate bridge leg failed (e.g. due to liquidity shortage).
+**Symptoms:** You performed a cross-chain unwrap but the underlying token never arrived in your wallet. The transaction on your chain succeeded, but the bridging step failed partway (e.g. due to Stargate liquidity shortage).
 
-**What happened:** When a cross-chain unwrap fails partway, the user's funds are held in the destination chain's Adaptor contract instead of being delivered to the wallet.
+**What happened:** Cross-chain unwrap routes your tokens through an intermediate chain for unwrapping and then bridges them back. When the bridge leg fails, your funds are held in the intermediate chain's Adaptor contract instead of being delivered to your wallet.
 
 **Solutions:**
 
