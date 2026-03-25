@@ -59,6 +59,10 @@ Library-agnostic interfaces for EVM interaction. viem's `PublicClient` and `Wall
 | `buildCrossUnwrapQuote` | `(params)` | `Promise<CrossUnwrapQuote>` | Quote cross-chain unwrap |
 | `sendCrossUnwrap` | `(params)` | `Promise<LiquidityActionResult>` | Execute cross-chain unwrap |
 | `fetchLiquidityManagerBalances` | `(params)` | `Promise<LiquidityBalances>` | Get token balances and decimals |
+| `fetchAdaptorBalances` | `(params)` | `Promise<AdaptorBalances>` | Get stuck fund balances from an adaptor contract |
+| `hasStuckFunds` | `(params)` | `Promise<boolean>` | Check if any funds are stuck in an adaptor |
+| `withdrawFromAdaptor` | `(params: AdaptorWithdrawParams)` | `Promise<{ transactionHash: string }>` | Withdraw stuck funds from an adaptor |
+| `NATIVE_TOKEN_ADDRESS` | constant | `` `0x${string}` `` | Native token sentinel address (`0xEeee...`) |
 | `removeDust` | `(amount, conversionRate)` | `bigint` | Remove dust from amount based on decimal conversion |
 
 ## Receive
@@ -202,6 +206,8 @@ Key exported types and interfaces:
 - `FetchWalletStatusParams` -- Parameters for `fetchWalletStatus`.
 - `LayerZeroMessageSummary` -- Decoded summary of a LayerZero message.
 - `WalletStatusResult` -- Result of `fetchWalletStatus` including messages and pagination.
+- `AdaptorBalances` -- Balances stuck in an adaptor contract (underlying, zERC20, native).
+- `AdaptorWithdrawParams` -- Parameters for `withdrawFromAdaptor` (writeProvider, adaptorAddress, token, amount).
 - `FeeOverrides` -- Gas fee overrides (gasPrice, maxFeePerGas, maxPriorityFeePerGas).
 
 ## Constants

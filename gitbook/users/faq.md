@@ -120,6 +120,27 @@ The tokens are permanently locked unless the intended recipient of that burn add
 
 The "stuck" tokens represent the burned supply that backs the minted withdrawal.
 
+### Cross-chain unwrap failed — funds stuck in Adaptor
+
+**Symptoms:** You performed a cross-chain unwrap but the underlying token never arrived on the destination chain. The transaction on the source chain succeeded, but the Stargate bridge leg failed (e.g. due to liquidity shortage).
+
+**What happened:** When a cross-chain unwrap fails partway, the user's funds are held in the destination chain's Adaptor contract instead of being delivered to the wallet.
+
+**Solutions:**
+
+1. **Check for stuck funds**
+   - In the frontend, navigate to the Wrap/Unwrap page — the UI will detect stuck funds automatically
+   - SDK users can call `hasStuckFunds()` or `fetchAdaptorBalances()` to check programmatically
+
+2. **Withdraw stuck funds**
+   - Use the frontend's recovery UI to withdraw back to your wallet
+   - SDK users can call `withdrawFromAdaptor()` to rescue the funds
+
+3. **Retry the operation**
+   - After recovering your funds, you can retry the cross-chain unwrap or use a local unwrap instead
+
+> **Note:** Stuck funds are safe — they remain in the Adaptor contract and can be recovered at any time by the original user.
+
 ---
 
 ## Still Need Help?
