@@ -167,6 +167,8 @@ Use the quote helpers to estimate costs **before** submitting a transaction:
 | Local wrap | `readProvider.readContract()` with `quoteWrapReward` | reward amount |
 | Local unwrap | `quoteLocalUnwrap()` | `fee`, `expectedOut` |
 | Cross-chain unwrap | `buildCrossUnwrapQuote()` | `tokenUnwrapFee`, `nativeBridgeFee`, `tokenBridgeFee`, `expectedOut` |
+| Stuck fund check | `hasStuckFunds()` | `boolean` |
+| Stuck fund balances | `fetchAdaptorBalances()` | `underlyingTokenBalance`, `zerc20Balance`, `nativeBalance` |
 
 ### Pool Balances
 
@@ -188,6 +190,74 @@ function fetchLiquidityManagerBalances(
 | `zerc20Balance` | `bigint` | Current zERC20 balance held by the pool |
 | `zerc20Decimals` | `number` | Decimals of the zERC20 token |
 
+## Stuck Fund Recovery (Adaptor Withdraw)
+
+When a cross-chain unwrap fails (e.g. due to Stargate liquidity shortage), user funds may remain in the destination chain's Adaptor contract. The SDK provides functions to detect and recover these stuck funds.
+
+### Check for Stuck Funds
+
+```typescript
+import { hasStuckFunds } from "zerc20-client-sdk";
+
+const stuck = await hasStuckFunds({
+  provider: readProvider,
+  account: "0xUser...",
+  adaptorAddress: "0xAdaptor...",
+});
+```
+
+### Fetch Detailed Balances
+
+```typescript
+import { fetchAdaptorBalances } from "zerc20-client-sdk";
+
+const balances = await fetchAdaptorBalances({
+  provider: readProvider,
+  account: "0xUser...",
+  adaptorAddress: "0xAdaptor...",
+});
+// balances.underlyingTokenBalance — underlying token stuck in adaptor
+// balances.zerc20Balance          — zERC20 token stuck in adaptor
+// balances.nativeBalance          — native token stuck in adaptor
+// balances.underlyingTokenAddress — underlying token contract address
+// balances.zerc20TokenAddress     — zERC20 token contract address
+```
+
+### Withdraw Stuck Funds
+
+```typescript
+import { withdrawFromAdaptor, NATIVE_TOKEN_ADDRESS } from "zerc20-client-sdk";
+
+const result = await withdrawFromAdaptor({
+  writeProvider,
+  adaptorAddress: "0xAdaptor...",
+  token: balances.underlyingTokenAddress, // or zerc20TokenAddress, or NATIVE_TOKEN_ADDRESS
+  amount: balances.underlyingTokenBalance,
+});
+console.log("Withdraw tx:", result.transactionHash);
+```
+
+### AdaptorBalances
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `underlyingTokenBalance` | `bigint` | Underlying token balance stuck in the adaptor |
+| `zerc20Balance` | `bigint` | zERC20 token balance stuck in the adaptor |
+| `nativeBalance` | `bigint` | Native token balance stuck in the adaptor |
+| `underlyingTokenAddress` | `` `0x${string}` `` | Underlying token address as configured in the adaptor |
+| `zerc20TokenAddress` | `` `0x${string}` `` | zERC20 token address as configured in the adaptor |
+
+### AdaptorWithdrawParams
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `writeProvider` | `EvmWriteProvider` | Write provider used to sign and submit transactions |
+| `readProvider?` | `EvmReadProvider` | Optional read provider for receipt polling |
+| `adaptorAddress` | `string` | Adaptor contract address |
+| `token` | `string` | Token address to withdraw (underlying, zERC20, or `NATIVE_TOKEN_ADDRESS`) |
+| `amount` | `bigint \| number \| string` | Amount to withdraw |
+| `feeOverrides?` | `FeeOverrides` | Optional gas-price / gas-limit overrides |
+
 ## Error Handling
 
 | Scenario | Behaviour |
@@ -195,6 +265,7 @@ function fetchLiquidityManagerBalances(
 | **Under-collateralized pool** | The wrap reward may drop to zero or become negative (i.e., no bonus). The transaction still succeeds but the caller receives fewer zERC20 than the deposited amount. |
 | **Slippage exceeded** | When `minAmountOut` is set and the simulated output is too low, the SDK throws `"Price changed beyond slippage tolerance"` without sending a transaction. |
 | **Allowance rejection** | The SDK sends an ERC-20 `approve` transaction automatically before wrapping/unwrapping. If the wallet rejects the approval popup the entire operation fails. |
+| **Cross-chain unwrap failure** | If the Stargate bridge leg fails (e.g. liquidity shortage), funds remain in the destination Adaptor contract. Use `hasStuckFunds()` to detect and `withdrawFromAdaptor()` to recover. |
 
 ## Next Steps
 

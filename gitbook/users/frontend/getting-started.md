@@ -87,6 +87,36 @@ The fee breakdown (unwrap fee, bridge fee, LayerZero fee) is shown before confir
 
 > **Fee Optimization**: If unwrap fees are high on your current chain due to low liquidity, cross-chain unwrap lets you access liquidity from another chain with lower fees. The frontend shows fee comparisons so you can choose the best option. See [Fees and Rewards](../fees-and-rewards.md) for details.
 
+### Unwrap History
+
+After executing a cross-chain unwrap, you can track its progress in the **History** tab of the Wrap / Unwrap dialog.
+
+| Status | Meaning |
+|--------|---------|
+| **In Transit** | Tokens are being bridged via LayerZero / Stargate |
+| **Finalizing** | Tokens have arrived on the destination but the status is still updating |
+| **Completed** | Unwrap is fully complete |
+
+The History tab auto-refreshes when you reopen it. After a cross-chain unwrap, the frontend polls for the LayerZero Scan index update automatically, showing "Waiting for LayerZero Scan to index your latest transfer..." until the entry appears.
+
+> **Tip:** If the history looks stale after switching chains, the tab automatically clears and re-fetches data for the newly selected chain.
+>
+> If there is no cross-chain unwrap history for the selected chain yet, the tab stops loading and shows **No History**.
+
+### Recovering Stuck Funds
+
+In rare cases, a cross-chain unwrap may fail partway through (e.g. due to temporary Stargate liquidity shortage). When this happens, your funds remain safely in the destination chain's Adaptor contract.
+
+The frontend detects stuck funds automatically and displays an amber **Recoverable Balances in Adaptor** banner at the top of the History tab. To recover:
+
+1. Open the **Wrap / Unwrap** dialog and go to the **History** tab
+2. If the stuck funds are on a different chain, click **"Switch to \<chain\>"** to switch networks first
+3. Click the **Withdraw** button next to each stuck balance
+4. Confirm the transaction in your wallet
+5. The recovered funds are returned to your wallet
+
+> **Note:** Stuck funds are safe — they remain in the Adaptor contract and can be recovered at any time. After a successful withdrawal, the banner updates immediately and removes balances that reached zero.
+
 ## Step 4: Make a Private Transfer
 
 See [Private Transfer Guide](private-transfer.md) for detailed instructions on sending.

@@ -120,6 +120,43 @@ The tokens are permanently locked unless the intended recipient of that burn add
 
 The "stuck" tokens represent the burned supply that backs the minted withdrawal.
 
+### REDEEM button is disabled even though transfer shows READY
+
+**Symptoms:** Private Receive shows an announcement as READY or ARRIVED, but the REDEEM button is grayed out.
+
+**Solutions:**
+
+1. **Wait for proof artifacts to load**
+   - The button shows "Preparing redeem resources..." while downloading proof artifacts — this is normal and may take a few seconds
+
+2. **Reload the announcement detail**
+   - If artifacts failed to load or the state is stale, click the reload button on the announcement detail
+   - This clears the aggregation state cache and retries the resource download
+
+3. **Refresh the browser**
+   - If an in-app reload doesn't resolve the issue, refresh the browser page to reset all in-memory caches
+
+### Cross-chain unwrap failed — funds stuck in Adaptor
+
+**Symptoms:** You performed a cross-chain unwrap but the underlying token never arrived in your wallet. The transaction on your chain succeeded, but the bridging step failed partway (e.g. due to Stargate liquidity shortage).
+
+**What happened:** Cross-chain unwrap routes your tokens through an intermediate chain for unwrapping and then bridges them back. When the bridge leg fails, your funds are held in the intermediate chain's Adaptor contract instead of being delivered to your wallet.
+
+**Solutions:**
+
+1. **Check for stuck funds**
+   - In the frontend, navigate to the Wrap/Unwrap page — the UI will detect stuck funds automatically
+   - SDK users can call `hasStuckFunds()` or `fetchAdaptorBalances()` to check programmatically
+
+2. **Withdraw stuck funds**
+   - Use the frontend's recovery UI to withdraw back to your wallet
+   - SDK users can call `withdrawFromAdaptor()` to rescue the funds
+
+3. **Retry the operation**
+   - After recovering your funds, you can retry the cross-chain unwrap or use a local unwrap instead
+
+> **Note:** Stuck funds are safe — they remain in the Adaptor contract and can be recovered at any time by the original user.
+
 ---
 
 ## Still Need Help?
