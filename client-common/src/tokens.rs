@@ -75,6 +75,9 @@ pub struct TokenEntry {
     /// Underlying asset type, used for relay fee conversion.
     #[serde(default)]
     pub token_type: Option<TokenType>,
+    /// Address of the SwapHelper contract on this chain (if deployed).
+    #[serde(default, alias = "swapHelperAddress")]
+    pub swap_helper_address: Option<Address>,
 }
 
 #[derive(Debug, Deserialize, Clone)]

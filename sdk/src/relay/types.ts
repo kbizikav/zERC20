@@ -21,3 +21,36 @@ export interface RelayFeeEstimate {
 export interface RelayResult {
   txHash: string;
 }
+
+export interface SwapQuoteParams {
+  chainId: number;
+  /** Token amount in smallest unit. */
+  amount: bigint;
+}
+
+export interface SwapQuote {
+  /** Native token amount the user will receive (wei). */
+  nativeAmount: bigint;
+  /** Fee in basis points. */
+  feeBps: number;
+}
+
+export interface RelaySwapParams {
+  chainId: number;
+  /** Token amount to swap (smallest unit). */
+  tokenAmount: bigint;
+  /** Minimum native output the user will accept (slippage protection). */
+  minNativeAmount: bigint;
+  /** Address to receive native tokens. */
+  recipient: Hex;
+  /** Address that signed the permit (token owner). */
+  owner: Hex;
+  permitDeadline: bigint;
+  permitV: number;
+  permitR: Hex;
+  permitS: Hex;
+}
+
+export interface SwapResult {
+  txHash: string;
+}

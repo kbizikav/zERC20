@@ -29,10 +29,30 @@ async fn main() -> Result<()> {
     let oracle =
         oracle::PriceOracle::new(&cfg.tokens).context("failed to initialize price oracle")?;
 
+    if cfg.swap_enabled {
+        log::info!(
+            "Swap enabled: fee={}bps, max_native={:?}",
+            cfg.swap_fee_bps,
+            cfg.max_swap_native_wei
+        );
+        for t in &cfg.tokens {
+            if let Some(addr) = t.swap_helper_address {
+                log::info!(
+                    "  SwapHelper on chain {}: {}",
+                    t.chain_id,
+                    addr
+                );
+            }
+        }
+    }
+
     let state = web::Data::new(AppState {
         relayer_key,
         tokens: cfg.tokens,
         oracle,
+        swap_enabled: cfg.swap_enabled,
+        swap_fee_bps: cfg.swap_fee_bps,
+        max_swap_native_wei: cfg.max_swap_native_wei,
     });
 
     log::info!("Starting relay node on port {}", cfg.port);
@@ -47,8 +67,11 @@ async fn main() -> Result<()> {
         App::new()
             .app_data(state.clone())
             .app_data(json_cfg)
+            .route("/relay/info", web::get().to(api::relay_info))
             .route("/relay/teleport", web::post().to(api::relay_teleport))
             .route("/relay/fee-estimate", web::get().to(api::fee_estimate))
+            .route("/relay/swap-quote", web::get().to(api::swap_quote))
+            .route("/relay/swap", web::post().to(api::relay_swap))
     })
     .bind(("0.0.0.0", cfg.port))
     .context("failed to bind relay server")?

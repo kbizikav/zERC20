@@ -224,6 +224,132 @@ pub async fn submit_relay_teleport(relay_url: &str, req: &RelayTeleportRequest) 
     Ok(parsed.tx_hash)
 }
 
+// ---------------------------------------------------------------------------
+// Relay info
+// ---------------------------------------------------------------------------
+
+/// Response from the relay info endpoint.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelayInfoResponse {
+    pub address: Address,
+    pub swap_enabled: bool,
+    pub swap_fee_bps: u64,
+    /// Map of chain_id (as string) -> SwapHelper contract address.
+    #[serde(default)]
+    pub swap_helper_addresses: Option<std::collections::HashMap<String, Address>>,
+}
+
+/// Fetch relay node info (address, capabilities).
+pub async fn fetch_relay_info(relay_url: &str) -> Result<RelayInfoResponse> {
+    let url = format!("{}/relay/info", relay_url.trim_end_matches('/'));
+
+    let resp = relay_http_client()
+        .get(&url)
+        .send()
+        .await
+        .context("relay node info HTTP request failed")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        bail!("relay node info returned {}: {}", status, body);
+    }
+
+    resp.json()
+        .await
+        .context("failed to parse relay node info response")
+}
+
+// ---------------------------------------------------------------------------
+// Swap types and HTTP functions
+// ---------------------------------------------------------------------------
+
+/// Request to execute a token-to-native swap via the relay node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RelaySwapRequest {
+    pub chain_id: u64,
+    pub token_amount: String,
+    pub min_native_amount: String,
+    pub recipient: Address,
+    pub owner: Address,
+    pub permit_deadline: String,
+    pub permit_v: u8,
+    pub permit_r: B256,
+    pub permit_s: B256,
+}
+
+/// Response from the swap-quote endpoint.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwapQuoteResponse {
+    pub native_amount: String,
+    pub fee_bps: u64,
+}
+
+/// Transaction hash returned from a swap execution.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SwapResultResponse {
+    pub tx_hash: String,
+}
+
+/// Fetch a swap quote from the relay node.
+pub async fn fetch_swap_quote(
+    relay_url: &str,
+    chain_id: u64,
+    amount: U256,
+) -> Result<SwapQuoteResponse> {
+    let url = format!(
+        "{}/relay/swap-quote?chain_id={}&amount={}",
+        relay_url.trim_end_matches('/'),
+        chain_id,
+        amount,
+    );
+
+    let resp = relay_http_client()
+        .get(&url)
+        .send()
+        .await
+        .context("relay node swap-quote HTTP request failed")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        bail!("relay node swap-quote returned {}: {}", status, body);
+    }
+
+    resp.json()
+        .await
+        .context("failed to parse relay node swap-quote response")
+}
+
+/// Submit a swap request to the relay node.
+pub async fn submit_relay_swap(
+    relay_url: &str,
+    req: &RelaySwapRequest,
+) -> Result<SwapResultResponse> {
+    let url = format!("{}/relay/swap", relay_url.trim_end_matches('/'));
+
+    let resp = relay_http_client()
+        .post(&url)
+        .json(req)
+        .send()
+        .await
+        .context("relay node swap HTTP request failed")?;
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        bail!("relay node swap returned {}: {}", status, body);
+    }
+
+    resp.json()
+        .await
+        .context("failed to parse relay node swap response")
+}
+
 /// Fetch a fee estimate from the custom relay node.
 pub async fn estimate_relay_fee(relay_url: &str, chain_id: u64) -> Result<U256> {
     let url = format!(

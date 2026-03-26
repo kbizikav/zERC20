@@ -27,10 +27,22 @@ impl AppState {
 pub async fn relay_info(state: web::Data<AppState>) -> HttpResponse {
     let signer = PrivateKeySigner::from_bytes(&state.relayer_key).unwrap();
     let address = signer.address();
+
+    // Build chain_id -> swap_helper_address map
+    let swap_helper_addresses: std::collections::HashMap<String, String> = state
+        .tokens
+        .iter()
+        .filter_map(|t| {
+            t.swap_helper_address
+                .map(|addr| (t.chain_id.to_string(), format!("{}", addr)))
+        })
+        .collect();
+
     HttpResponse::Ok().json(serde_json::json!({
         "address": format!("{}", address),
         "swapEnabled": state.swap_enabled,
         "swapFeeBps": state.swap_fee_bps,
+        "swapHelperAddresses": swap_helper_addresses,
     }))
 }
 
@@ -325,10 +337,8 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     )
     .await
     {
-        Ok(hashes) => HttpResponse::Ok().json(serde_json::json!({
-            "permitTxHash": format!("{}", hashes.permit_tx_hash),
-            "transferTxHash": format!("{}", hashes.transfer_tx_hash),
-            "nativeTxHash": format!("{}", hashes.native_tx_hash),
+        Ok(tx_hash) => HttpResponse::Ok().json(serde_json::json!({
+            "txHash": format!("{}", tx_hash),
         })),
         Err(err) => {
             log::error!("swap submission failed: {:?}", err);
