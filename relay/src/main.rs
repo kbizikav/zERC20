@@ -1,3 +1,6 @@
+// sol! macro generates functions with many args for EVM ABI bindings.
+#![allow(clippy::too_many_arguments)]
+
 mod api;
 mod config;
 mod fee;
@@ -37,11 +40,7 @@ async fn main() -> Result<()> {
         );
         for t in &cfg.tokens {
             if let Some(addr) = t.swap_helper_address {
-                log::info!(
-                    "  SwapHelper on chain {}: {}",
-                    t.chain_id,
-                    addr
-                );
+                log::info!("  SwapHelper on chain {}: {}", t.chain_id, addr);
             }
         }
     }

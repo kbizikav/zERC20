@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -122,6 +124,8 @@ enum Command {
     Unwrap(UnwrapArgs),
     /// Display LayerZero message status for the signer wallet.
     LzStatus(LzStatusArgs),
+    /// Swap zERC20 tokens for native tokens via the relay node.
+    Swap(SwapArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -305,6 +309,33 @@ pub struct LzStatusArgs {
 }
 
 #[derive(Args, Debug, Clone)]
+pub struct SwapArgs {
+    /// Chain identifier of the zERC20 token to swap.
+    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
+    pub chain_id: u64,
+
+    /// Amount of zERC20 to swap (accepts decimal or 0x-prefixed hex units).
+    #[arg(long, value_parser = parse_u256)]
+    pub amount: U256,
+
+    /// URL of the relay node.
+    #[arg(long, env = "RELAY_URL", value_name = "URL")]
+    pub relay_url: String,
+
+    /// Slippage tolerance in basis points (default: 100 = 1%).
+    #[arg(long, default_value_t = 100, value_name = "BPS")]
+    pub slippage_bps: u64,
+
+    /// Recipient of native tokens (defaults to signer address).
+    #[arg(long, value_parser = parse_address)]
+    pub recipient: Option<Address>,
+
+    /// Skip the confirmation prompt.
+    #[arg(long, default_value_t = false)]
+    pub yes: bool,
+}
+
+#[derive(Args, Debug, Clone)]
 pub struct ReceiveTransferArgs {
     /// Serialized FullBurnAddress payload in hex.
     #[arg(
@@ -451,6 +482,19 @@ async fn main() -> Result<()> {
         Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
         Command::Unwrap(args) => unwrap::run(args, &tokens, private_key).await?,
         Command::LzStatus(args) => lz_status::run(&cli.common, args, private_key).await?,
+        Command::Swap(args) => {
+            commands::swap::run(
+                &tokens,
+                private_key,
+                args.chain_id,
+                args.amount,
+                &args.relay_url,
+                args.slippage_bps,
+                args.recipient,
+                args.yes,
+            )
+            .await?
+        }
     }
 
     Ok(())

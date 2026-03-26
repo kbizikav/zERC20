@@ -15,6 +15,7 @@ use super::shared::{build_erc20, find_token_by_chain};
 /// 2. Fetch a quote from the relay.
 /// 3. Sign an ERC-2612 permit granting the relay allowance.
 /// 4. Submit the swap request.
+#[allow(clippy::too_many_arguments)]
 pub async fn run(
     tokens: &[TokenEntry],
     private_key: B256,
@@ -159,6 +160,7 @@ pub async fn run(
 }
 
 /// Sign an EIP-2612 permit (ERC20Permit standard).
+#[allow(clippy::too_many_arguments)]
 async fn sign_eip2612_permit(
     private_key: B256,
     name: &str,
