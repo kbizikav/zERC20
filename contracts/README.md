@@ -316,15 +316,49 @@ forge verify-contract --chain-id 421614 --watch <VERIFIER_IMPL> src/Verifier.sol
 forge verify-contract --chain-id 11155420 --watch <VERIFIER_IMPL> src/Verifier.sol:Verifier --constructor-args "$ARGS"
 
 # zERC20 (Arb/OP Sepolia)
-ARGS=$(cast abi-encode "constructor(address,uint8)" 0x6EDCE65403992e310A62460808c4b910D972f10f 6)
+ARGS=$(cast abi-encode "constructor(address,uint8,address)" 0x6EDCE65403992e310A62460808c4b910D972f10f 6 <BLOCKLIST_ADDRESS>)
 forge verify-contract --chain-id 421614 --watch <ZERC20_IMPL> src/zERC20.sol:zERC20 --constructor-args "$ARGS"
 forge verify-contract --chain-id 11155420 --watch <ZERC20_IMPL> src/zERC20.sol:zERC20 --constructor-args "$ARGS"
+
+# Blocklist (per chain)
+ARGS=$(cast abi-encode "constructor(address)" <BLOCKLIST_OWNER>)
+forge verify-contract --chain-id <CHAIN_ID> --watch <BLOCKLIST_ADDRESS> src/Blocklist.sol:Blocklist --constructor-args "$ARGS"
 
 # LiquidityManager (per chain)
 ARGS=$(cast abi-encode "constructor(address,address)" <UNDERLYING> <ZERC20_PROXY>)
 forge verify-contract --chain-id 421614 --watch <LIQUIDITY_MANAGER_IMPL> src/liquidity/LiquidityManager.sol:LiquidityManager --constructor-args "$ARGS"
 forge verify-contract --chain-id 11155420 --watch <LIQUIDITY_MANAGER_IMPL> src/liquidity/LiquidityManager.sol:LiquidityManager --constructor-args "$ARGS"
 ```
+
+Deploying the Blocklist and Upgrading zERC20
+---------------------------------------------
+The `Blocklist` contract is a shared per-chain registry for OFAC-sanctioned addresses. It must be deployed before upgrading existing zERC20 proxies, as the zERC20 constructor now requires a `Blocklist` address as an immutable parameter.
+
+### 1) Deploy Blocklist (once per chain)
+```bash
+export PRIVATE_KEY=0x...
+export BLOCKLIST_OWNER=0xMultisigAddress  # optional; defaults to deployer
+
+forge script script/DeployBlocklist.s.sol:DeployBlocklist \
+  --rpc-url <RPC_URL> \
+  --broadcast -vvvv
+```
+Note the deployed Blocklist address from the output.
+
+### 2) Register sanctioned addresses
+Call `blockAddresses(address[])` on the deployed Blocklist contract to register the OFAC list (~70 addresses).
+
+### 3) Upgrade existing zERC20 proxies (per proxy)
+```bash
+export PRIVATE_KEY=0x...
+export ZERC20_PROXY=0xProxyAddress
+export BLOCKLIST_ADDRESS=0xBlocklistAddress
+
+forge script script/upgrade/ZERC20BlocklistUpgrade.s.sol:UpgradeZERC20Blocklist \
+  --rpc-url <RPC_URL> \
+  --broadcast -vvvv
+```
+The script reads `endpoint` and `decimals` from the existing proxy, deploys a new implementation with the Blocklist immutable, and executes `upgradeToAndCall`. Repeat for each zERC20 proxy on each chain (4 chains × 2-3 tokens).
 
 Verifier upgrade for relay fee support
 --------------------------------------
@@ -368,6 +402,10 @@ these are the main public/external entrypoints that were NOT covered:
   - Not exercised: OFT send/receive flows (e.g. `send(...)` / compose-based flows)
   - Exercised indirectly via LiquidityManager: `mint(...)` (wrap), `burn(...)` (unwrap)
   - Admin setters exercised by scripts: `setVerifier(...)`, `setMinter(...)`
+  - Blocklist enforcement: `BLOCKLIST` immutable set via constructor; `_update()` calls `BLOCKLIST.isBlocked()` for both `from` and `to`
+- `Blocklist`
+  - Admin functions: `blockAddress(...)`, `unblockAddress(...)`, `blockAddresses(...)` (onlyOwner)
+  - View: `isBlocked(...)`
 - `Adaptor`
   - Not exercised: `lzCompose(...)` (the common path when zERC20 arrives via OFT + compose), `decodeBridgeRequest(...)`,
     `bridgeZerc20Self(...)`
