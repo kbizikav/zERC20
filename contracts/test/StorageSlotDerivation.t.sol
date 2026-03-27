@@ -8,6 +8,8 @@ import {LiquidityManager} from "../src/liquidity/LiquidityManager.sol";
 import {Hub} from "../src/Hub.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {zERC20} from "../src/zERC20.sol";
+import {IBlocklist} from "../src/interfaces/IBlocklist.sol";
+import {Blocklist} from "../src/Blocklist.sol";
 import {SelfCall} from "../src/utils/SelfCall.sol";
 
 contract MockLiquidityManager {
@@ -77,7 +79,7 @@ contract VerifierSlotHarness is Verifier {
 }
 
 contract ZERC20SlotHarness is zERC20 {
-    constructor(address endpoint, uint8 decimals_) zERC20(endpoint, decimals_) {}
+    constructor(address endpoint, uint8 decimals_, IBlocklist blocklist_) zERC20(endpoint, decimals_, blocklist_) {}
 
     function slot() external pure returns (bytes32) {
         return ZERC20_STORAGE_SLOT;
@@ -118,7 +120,8 @@ contract StorageSlotDerivationTest is Test {
     }
 
     function testZERC20SlotConstantMatchesDerivation() public {
-        ZERC20SlotHarness harness = new ZERC20SlotHarness(address(1), 18);
+        Blocklist bl = new Blocklist(address(this));
+        ZERC20SlotHarness harness = new ZERC20SlotHarness(address(1), 18, IBlocklist(address(bl)));
         bytes32 expected = SlotDerivation.erc7201Slot("zerc20.storage.zerc20");
         assertEq(harness.slot(), expected, "zerc20 slot");
     }

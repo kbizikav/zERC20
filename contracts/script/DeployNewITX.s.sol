@@ -4,6 +4,7 @@ pragma solidity 0.8.33;
 import {Script, console2} from "forge-std/Script.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {zERC20} from "../src/zERC20.sol";
+import {IBlocklist} from "../src/interfaces/IBlocklist.sol";
 
 /// @notice Deploys the zERC20 token (new ITX) with UUPS proxy pattern.
 contract DeployNewITX is Script {
@@ -13,6 +14,7 @@ contract DeployNewITX is Script {
         string memory name = "new-itx";
         string memory symbol = "NITX";
         address initialOwner = 0x18DE9A6028cFAa0B4B58cc72E257b12e5625B396;
+        IBlocklist blocklist = IBlocklist(vm.envAddress("BLOCKLIST_ADDRESS"));
 
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
@@ -27,7 +29,7 @@ contract DeployNewITX is Script {
         vm.startBroadcast(deployerKey);
 
         // Deploy implementation
-        zERC20 implementation = new zERC20(endpoint, decimals);
+        zERC20 implementation = new zERC20(endpoint, decimals, blocklist);
         console2.log("Implementation deployed at:", address(implementation));
 
         // Deploy proxy with initialization

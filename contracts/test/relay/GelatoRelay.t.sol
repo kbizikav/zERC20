@@ -9,6 +9,8 @@ import {Origin} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILa
 import {Verifier} from "../../src/Verifier.sol";
 import {LiquidityManager} from "../../src/liquidity/LiquidityManager.sol";
 import {zERC20} from "../../src/zERC20.sol";
+import {IBlocklist} from "../../src/interfaces/IBlocklist.sol";
+import {Blocklist} from "../../src/Blocklist.sol";
 import {IWithdrawDecider} from "../../src/interfaces/IWithdrawDecider.sol";
 import {IWithdrawVerifier} from "../../src/interfaces/IVerifier.sol";
 import {GeneralRecipientLib} from "../../src/utils/GeneralRecipientLib.sol";
@@ -95,7 +97,8 @@ contract GelatoRelayTest is TestHelperOz5 {
         underlying = new MintableERC20();
 
         // Deploy zERC20 token
-        zERC20 tokenImpl = new zERC20(address(endpoint), 18);
+        Blocklist bl = new Blocklist(address(this));
+        zERC20 tokenImpl = new zERC20(address(endpoint), 18, IBlocklist(address(bl)));
         bytes memory tokenInit = abi.encodeCall(zERC20.initialize, ("zUSDC", "zUSDC", address(this)));
         token = zERC20(address(new ERC1967Proxy(address(tokenImpl), tokenInit)));
 
