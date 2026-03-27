@@ -12,7 +12,8 @@ This document explains how zERC20 is architected across on-chain contracts, off-
 
 | Contract | Purpose |
 |----------|---------|
-| **zERC20** | Upgradeable ERC-20 that emits `IndexedTransfer` events, maintains SHA-256 hash chain, and exposes `teleport` for verified mints |
+| **zERC20** | Upgradeable ERC-20 that emits `IndexedTransfer` events, maintains SHA-256 hash chain, exposes `teleport` for verified mints, and enforces OFAC blocklist |
+| **Blocklist** | Shared per-chain OFAC sanctions registry. Non-upgradeable. Referenced by all zERC20 tokens on the same chain as an immutable |
 | **Verifier** | LayerZero OApp that verifies Nova/Groth16 proofs, tracks teleported amounts per recipient, and relays roots to Hub |
 | **Hub** | Aggregates transfer roots from all chains into a Poseidon tree, broadcasts global root to all Verifiers |
 | **LiquidityManager** | Manages liquidity policy, handles wrap/unwrap of underlying assets |
@@ -81,6 +82,7 @@ Generates ZKP → Verifier.teleport() → zERC20 mints to recipient
 | Actor | Trust Assumption |
 |-------|------------------|
 | Contract Owner | Can upgrade contracts, rotate verifiers |
+| Blocklist Owner | Can add/remove sanctioned addresses on the Blocklist contract |
 | Indexer Operator | Observes sender/burn-address/value; learns recipient on query |
 | ICP Canisters | Stores encrypted data; cannot decrypt without recipient's key |
 
