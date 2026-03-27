@@ -5,6 +5,7 @@ pragma solidity 0.8.33;
 
 import {console2} from "forge-std/console2.sol";
 import {zERC20} from "../src/zERC20.sol";
+import {IBlocklist} from "../src/interfaces/IBlocklist.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {RootNovaDecider} from "../src/verifiers/RootNovaDecider.sol";
 import {WithdrawGlobalNovaDecider} from "../src/verifiers/WithdrawGlobalNovaDecider.sol";
@@ -26,6 +27,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         address delegate; // optional
         address owner; // optional
         uint8 tokenDecimals;
+        address blocklist;
     }
 
     struct VerifierArgs {
@@ -69,10 +71,13 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         // forge-lint: disable-next-line(unsafe-typecast)
         cfg.tokenDecimals = uint8(decimals);
 
+        cfg.blocklist = vm.envAddress("BLOCKLIST_ADDRESS");
+
         require(bytes(cfg.tokenName).length != 0, "tokenName missing");
         require(bytes(cfg.tokenSymbol).length != 0, "tokenSymbol missing");
         require(cfg.hubEid != 0, "hubEid missing");
         require(cfg.endpoint != address(0), "endpoint missing");
+        require(cfg.blocklist != address(0), "blocklist missing");
     }
 
     function _resolveLzEndpoint() private returns (address endpoint) {
@@ -97,7 +102,7 @@ contract DeployVerifierAndToken is DeterministicDeployer {
         bytes32 baseSalt = _loadBaseSalt();
 
         bytes memory tokenImplCode =
-            abi.encodePacked(type(zERC20).creationCode, abi.encode(endpoint, cfg.tokenDecimals));
+            abi.encodePacked(type(zERC20).creationCode, abi.encode(endpoint, cfg.tokenDecimals, cfg.blocklist));
         zERC20 tokenImpl = zERC20(_deploy3(deployer, baseSalt, "TOKEN_IMPL", tokenImplCode));
         bytes memory tokenInit = abi.encodeCall(zERC20.initialize, (cfg.tokenName, cfg.tokenSymbol, owner));
         zERC20 token = zERC20(_deployProxyAndInit(deployer, baseSalt, "TOKEN_PROXY", address(tokenImpl), tokenInit));
