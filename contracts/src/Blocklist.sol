@@ -2,10 +2,11 @@
 pragma solidity 0.8.33;
 
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {IBlocklist} from "./interfaces/IBlocklist.sol";
 
 /// @title Blocklist
 /// @notice Shared OFAC-sanctioned-address registry referenced by multiple zERC20 tokens on the same chain.
-contract Blocklist is Ownable {
+contract Blocklist is IBlocklist, Ownable {
     mapping(address => bool) private _blocked;
 
     /// @notice Emitted when an address is added to the blocklist.
