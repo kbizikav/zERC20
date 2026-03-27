@@ -569,6 +569,61 @@ contract ZERC20Test is Test {
         assertEq(upgraded.version(), "v2", "upgrade succeeded");
         assertEq(upgraded.balanceOf(ALICE), 5 ether, "state preserved");
     }
+
+    /// @notice Simulates upgrading from a pre-blocklist impl to a blocklist-enabled impl.
+    ///         Verifies all storage state is preserved and BLOCKLIST immutable is accessible.
+    function testUpgradeToBlocklistImplPreservesState() public {
+        // Deploy "old" impl and proxy (using a different blocklist to simulate pre-upgrade)
+        Blocklist oldBl = new Blocklist(address(this));
+        ZERC20Harness oldImpl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(oldBl)));
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(this)));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(oldImpl), initData);
+        ZERC20Harness proxiedToken = ZERC20Harness(address(proxy));
+
+        // Set up state: minter, verifier, mint tokens, do a transfer
+        proxiedToken.setMinter(address(this));
+        proxiedToken.setVerifier(address(0x1234));
+        proxiedToken.mint(ALICE, 10 ether);
+        vm.prank(ALICE);
+        proxiedToken.transfer(BOB, 3 ether);
+
+        // Snapshot pre-upgrade state
+        uint256 aliceBalance = proxiedToken.balanceOf(ALICE);
+        uint256 bobBalance = proxiedToken.balanceOf(BOB);
+        uint256 totalSupply = proxiedToken.totalSupply();
+        uint256 hashChainBefore = proxiedToken.hashChain();
+        uint256 indexBefore = proxiedToken.index();
+        address verifierBefore = proxiedToken.verifier();
+        address minterBefore = proxiedToken.minter();
+
+        // Upgrade to new impl with a different Blocklist
+        ZERC20Harness newImpl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(bl)));
+        proxiedToken.upgradeToAndCall(address(newImpl), bytes(""));
+
+        // Verify BLOCKLIST immutable is accessible and correct
+        assertEq(address(proxiedToken.BLOCKLIST()), address(bl), "BLOCKLIST immutable set after upgrade");
+
+        // Verify all storage state is preserved
+        assertEq(proxiedToken.balanceOf(ALICE), aliceBalance, "alice balance preserved");
+        assertEq(proxiedToken.balanceOf(BOB), bobBalance, "bob balance preserved");
+        assertEq(proxiedToken.totalSupply(), totalSupply, "total supply preserved");
+        assertEq(proxiedToken.hashChain(), hashChainBefore, "hash chain preserved");
+        assertEq(proxiedToken.index(), indexBefore, "index preserved");
+        assertEq(proxiedToken.verifier(), verifierBefore, "verifier preserved");
+        assertEq(proxiedToken.minter(), minterBefore, "minter preserved");
+
+        // Verify blocklist enforcement works after upgrade
+        bl.blockAddress(BOB);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, BOB));
+        proxiedToken.transfer(BOB, 1 ether);
+
+        // Verify non-blocked transfers still work
+        vm.prank(ALICE);
+        bool ok = proxiedToken.transfer(address(0xCAFE), 1 ether);
+        assertTrue(ok, "non-blocked transfer works after upgrade");
+        assertEq(proxiedToken.index(), indexBefore + 1, "index incremented after upgrade transfer");
+    }
 }
 
 contract ZERC20UpgradeMock is zERC20 {
