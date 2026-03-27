@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {IzERC20} from "./interfaces/IzERC20.sol";
+import {IBlocklist} from "./interfaces/IBlocklist.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
@@ -29,6 +30,7 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
         uint256 totalTeleported;
         address verifier;
         address minter;
+        IBlocklist blocklist;
     }
 
     function _getZerc20Storage() private pure returns (Zerc20Storage storage $) {
@@ -43,6 +45,8 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     event VerifierUpdated(address indexed newVerifier);
     /// @notice Emitted when the minter address changes.
     event MinterUpdated(address indexed newMinter);
+    /// @notice Emitted when the blocklist contract reference changes.
+    event BlocklistUpdated(address indexed newBlocklist);
 
     /// @notice Reverts when a caller other than the verifier invokes a verifier-only entrypoint.
     error OnlyVerifier();
@@ -54,6 +58,8 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     error ValueTooLarge();
     /// @notice Reverts when upgrading to an implementation with a different LayerZero endpoint.
     error EndpointMismatch(address expected, address actual);
+    /// @notice Reverts when a blocked address is involved in a transfer.
+    error AddressIsBlocked(address account);
 
     /// @notice Locks implementation contracts on deployment.
     constructor(address endpoint, uint8 decimals_) OFTCoreUpgradeable(decimals_, endpoint) {
@@ -178,8 +184,13 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         require(value <= type(uint248).max, ValueTooLarge());
-        super._update(from, to, value);
         Zerc20Storage storage $ = _getZerc20Storage();
+        IBlocklist bl = $.blocklist;
+        if (address(bl) != address(0)) {
+            require(!bl.isBlocked(from), AddressIsBlocked(from));
+            require(!bl.isBlocked(to), AddressIsBlocked(to));
+        }
+        super._update(from, to, value);
         $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);
         emit IndexedTransfer($.index, from, to, value);
         ++$.index;
@@ -204,6 +215,19 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     function setMinter(address newMinter) external onlyOwner {
         _getZerc20Storage().minter = newMinter;
         emit MinterUpdated(newMinter);
+    }
+
+    /// @notice Returns the blocklist contract address. address(0) means no blocklist is active.
+    function blocklist() public view returns (IBlocklist) {
+        return _getZerc20Storage().blocklist;
+    }
+
+    /// @notice Sets the shared Blocklist contract that all transfers are checked against.
+    /// @dev Pass address(0) to disable blocklist enforcement.
+    /// @param newBlocklist Blocklist contract address.
+    function setBlocklist(address newBlocklist) external onlyOwner {
+        _getZerc20Storage().blocklist = IBlocklist(newBlocklist);
+        emit BlocklistUpdated(newBlocklist);
     }
 
     // -----------------------------------------------------------------------

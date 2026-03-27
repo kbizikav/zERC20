@@ -36,4 +36,5 @@ interface IzERC20 is IOFT, IERC20, IERC20Permit {
 
     /// @notice Burns tokens under the liquidity manager / minter role.
     function burn(address from, uint256 amount) external;
+
 }

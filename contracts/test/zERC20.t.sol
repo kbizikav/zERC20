@@ -7,6 +7,7 @@ import {
 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {zERC20} from "../src/zERC20.sol";
+import {Blocklist} from "../src/Blocklist.sol";
 import {ShaHashChainLib} from "../src/utils/ShaHashChainLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IOFT, SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
@@ -73,6 +74,7 @@ contract ZERC20Test is Test {
     event Teleport(address indexed to, uint256 value);
     event VerifierUpdated(address indexed newVerifier);
     event MinterUpdated(address indexed newMinter);
+    event BlocklistUpdated(address indexed newBlocklist);
 
     function setUp() public {
         endpoint = new EndpointV2(1, address(this));
@@ -461,6 +463,125 @@ contract ZERC20Test is Test {
             abi.encodeWithSelector(zERC20.EndpointMismatch.selector, address(endpoint), address(otherEndpoint))
         );
         proxiedToken.upgradeToAndCall(address(newImpl), bytes(""));
+    }
+
+    // -----------------------------------------------------------------------
+    // Blocklist
+    // -----------------------------------------------------------------------
+
+    function _deployBlocklist() private returns (Blocklist) {
+        return new Blocklist(address(this));
+    }
+
+    function testSetBlocklistOnlyOwner() public {
+        Blocklist bl = _deployBlocklist();
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, ALICE));
+        token.setBlocklist(address(bl));
+    }
+
+    function testSetBlocklistEmitsEvent() public {
+        Blocklist bl = _deployBlocklist();
+        vm.expectEmit(true, false, false, false, address(token));
+        emit BlocklistUpdated(address(bl));
+        token.setBlocklist(address(bl));
+        assertEq(address(token.blocklist()), address(bl), "blocklist stored");
+    }
+
+    function testSetBlocklistToZeroDisables() public {
+        Blocklist bl = _deployBlocklist();
+        token.setBlocklist(address(bl));
+        token.setBlocklist(address(0));
+        assertEq(address(token.blocklist()), address(0), "blocklist disabled");
+    }
+
+    function testTransfersWorkWithoutBlocklist() public {
+        // blocklist is address(0) by default — no revert
+        token.mint(ALICE, 10 ether);
+        vm.prank(ALICE);
+        bool ok = token.transfer(BOB, 1 ether);
+        assertTrue(ok, "transfer without blocklist");
+    }
+
+    function testBlockedAddressCannotTransfer() public {
+        Blocklist bl = _deployBlocklist();
+        token.setBlocklist(address(bl));
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(ALICE);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.transfer(BOB, 1 ether);
+    }
+
+    function testBlockedAddressCannotReceiveTransfer() public {
+        Blocklist bl = _deployBlocklist();
+        token.setBlocklist(address(bl));
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(BOB);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, BOB));
+        token.transfer(BOB, 1 ether);
+    }
+
+    function testBlockedAddressCannotReceiveMint() public {
+        Blocklist bl = _deployBlocklist();
+        token.setBlocklist(address(bl));
+        bl.blockAddress(ALICE);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.mint(ALICE, 1 ether);
+    }
+
+    function testBlockedAddressCannotBurn() public {
+        Blocklist bl = _deployBlocklist();
+        token.setBlocklist(address(bl));
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(ALICE);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.burn(ALICE, 1 ether);
+    }
+
+    function testBlockedAddressCannotReceiveTeleport() public {
+        Blocklist bl = _deployBlocklist();
+        token.setBlocklist(address(bl));
+        token.setVerifier(address(this));
+        bl.blockAddress(ALICE);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.teleport(ALICE, 1 ether);
+    }
+
+    function testUnblockedAddressCanTransferAgain() public {
+        Blocklist bl = _deployBlocklist();
+        token.setBlocklist(address(bl));
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(ALICE);
+        bl.unblockAddress(ALICE);
+
+        vm.prank(ALICE);
+        bool ok = token.transfer(BOB, 1 ether);
+        assertTrue(ok, "transfer succeeds after unblock");
+        assertEq(token.balanceOf(BOB), 1 ether, "bob received");
+    }
+
+    function testSharedBlocklistAcrossTokens() public {
+        Blocklist bl = _deployBlocklist();
+        ZERC20Harness token2 = _deployToken(address(this), endpoint, 18);
+        token2.setMinter(address(this));
+
+        token.setBlocklist(address(bl));
+        token2.setBlocklist(address(bl));
+
+        bl.blockAddress(ALICE);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.mint(ALICE, 1 ether);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token2.mint(ALICE, 1 ether);
     }
 
     function testUpgradeSucceedsWithSameEndpoint() public {
