@@ -186,8 +186,8 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         require(value <= type(uint248).max, ValueTooLarge());
-        require(!BLOCKLIST.isBlocked(from), AddressIsBlocked(from));
-        require(!BLOCKLIST.isBlocked(to), AddressIsBlocked(to));
+        require(from == address(0) || !BLOCKLIST.isBlocked(from), AddressIsBlocked(from));
+        require(to == address(0) || !BLOCKLIST.isBlocked(to), AddressIsBlocked(to));
         super._update(from, to, value);
         Zerc20Storage storage $ = _getZerc20Storage();
         $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);

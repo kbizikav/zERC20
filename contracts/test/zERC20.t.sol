@@ -552,6 +552,47 @@ contract ZERC20Test is Test {
         assertTrue(ok, "non-blocked transfer succeeds");
     }
 
+    function testBlockedAddressCannotTransferFrom() public {
+        token.mint(ALICE, 10 ether);
+        vm.prank(ALICE);
+        token.approve(BOB, 5 ether);
+
+        bl.blockAddress(ALICE);
+
+        vm.prank(BOB);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.transferFrom(ALICE, BOB, 1 ether);
+    }
+
+    function testBlockedSpenderCannotReceiveViaTransferFrom() public {
+        token.mint(ALICE, 10 ether);
+        vm.prank(ALICE);
+        token.approve(BOB, 5 ether);
+
+        bl.blockAddress(BOB);
+
+        vm.prank(BOB);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, BOB));
+        token.transferFrom(ALICE, BOB, 1 ether);
+    }
+
+    function testOftDebitBlockedSenderReverts() public {
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(ALICE);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.debit(1 ether, 0, 1);
+    }
+
+    function testOftCreditToBlockedDeadAddressReverts() public {
+        bl.blockAddress(address(0xdead));
+
+        // _credit(address(0)) redirects to 0xdead, which is blocked
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, address(0xdead)));
+        token.credit(address(0), 1 ether, 1);
+    }
+
     function testUpgradeSucceedsWithSameEndpoint() public {
         ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(bl)));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(this)));
