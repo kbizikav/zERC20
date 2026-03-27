@@ -3,6 +3,7 @@ pragma solidity 0.8.33;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
@@ -11,6 +12,8 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 ///         Works with any ERC20Permit-compatible token. Deploy one per chain.
 ///         Only allowlisted relayers may call `swap()`.
 contract SwapHelper is OwnableUpgradeable, UUPSUpgradeable {
+    using SafeERC20 for IERC20;
+
     error NativeTransferFailed();
     error NotAllowlisted();
 
@@ -29,6 +32,15 @@ contract SwapHelper is OwnableUpgradeable, UUPSUpgradeable {
         assembly {
             $.slot := SWAP_HELPER_STORAGE_SLOT
         }
+    }
+
+    modifier onlyRelayer() {
+        _checkRelayer();
+        _;
+    }
+
+    function _checkRelayer() private view {
+        if (!_getSwapHelperStorage().allowlisted[msg.sender]) revert NotAllowlisted();
     }
 
     /// @custom:oz-upgrades-unsafe-allow constructor
@@ -70,14 +82,15 @@ contract SwapHelper is OwnableUpgradeable, UUPSUpgradeable {
         uint8 v,
         bytes32 r,
         bytes32 s
-    ) external payable {
-        if (!_getSwapHelperStorage().allowlisted[msg.sender]) revert NotAllowlisted();
-
-        // 1. permit (try/catch: handles front-running and existing allowance)
+    ) external payable onlyRelayer {
+        // 1. permit — wrapped in try/catch so the tx succeeds even when permit reverts.
+        //    This can happen if: (a) a third party front-runs the permit call to consume the
+        //    nonce (griefing), or (b) the owner has already granted sufficient allowance.
+        //    In both cases the allowance is already set, so transferFrom below still works.
         try IERC20Permit(token).permit(owner, address(this), tokenAmount, deadline, v, r, s) {} catch {}
 
         // 2. transferFrom: owner -> msg.sender (relayer receives tokens)
-        IERC20(token).transferFrom(owner, msg.sender, tokenAmount);
+        IERC20(token).safeTransferFrom(owner, msg.sender, tokenAmount);
 
         // 3. forward entire msg.value to recipient
         (bool ok,) = recipient.call{value: msg.value}("");
