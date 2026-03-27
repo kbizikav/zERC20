@@ -1,6 +1,15 @@
-export { submitRelayTeleport, estimateRelayFee } from './relay.js';
+export {
+  submitRelayTeleport,
+  estimateRelayFee,
+  fetchSwapQuote,
+  submitRelaySwap,
+} from "./relay.js";
 export type {
   RelayTeleportParams,
   RelayFeeEstimate,
   RelayResult,
-} from './types.js';
+  SwapQuoteParams,
+  SwapQuote,
+  RelaySwapParams,
+  SwapResult,
+} from "./types.js";

@@ -12,6 +12,7 @@ import {DeterministicDeployer} from "./utils/DeterministicDeploy.sol";
 /// - PRIVATE_KEY (uint)            : Deployer private key.
 /// Optional env:
 /// - SWAP_HELPER_OWNER (address)   : Owner of the SwapHelper (defaults to deployer).
+/// - RELAYER (address)             : Relayer address to allowlist.
 contract DeploySwapHelper is DeterministicDeployer {
     function run() external {
         uint256 deployerKey = vm.envUint("PRIVATE_KEY");
@@ -31,6 +32,12 @@ contract DeploySwapHelper is DeterministicDeployer {
         address proxy = _deploy3Global(deployer, "SwapHelper_PROXY", proxyCreationCode);
         console2.log("SwapHelper proxy at", proxy);
         console2.log("SwapHelper owner", owner);
+
+        address relayer = vm.envOr("RELAYER", address(0));
+        if (relayer != address(0)) {
+            SwapHelper(proxy).setRelayer(relayer, true);
+            console2.log("SwapHelper relayer set", relayer);
+        }
 
         vm.stopBroadcast();
     }

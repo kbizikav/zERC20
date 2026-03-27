@@ -279,6 +279,54 @@ impl PriceOracle {
         (fallback_price(feed), 8)
     }
 
+    /// Convert a token amount (smallest unit) back to native wei.
+    ///
+    /// This is the inverse of `convert_native_to_token` and is used for swap
+    /// quotes: given N zTokens, how much native does the user receive?
+    pub async fn convert_token_to_native(
+        &self,
+        chain_id: u64,
+        token_type: TokenType,
+        token_amount: U256,
+    ) -> Result<U256> {
+        match token_type {
+            // zETH on ETH-gas chain: 1:1
+            TokenType::Eth if is_eth_gas_chain(chain_id) => Ok(token_amount),
+
+            // zBNB on BSC: 1:1
+            TokenType::Bnb if chain_id == 56 => Ok(token_amount),
+
+            // zUSDC on ETH-gas chain: token_amount * 10^(12+feed_dec) / eth_price
+            TokenType::Usdc if is_eth_gas_chain(chain_id) => {
+                let (eth_price, dec) = self.get_price(chain_id, PriceFeed::EthUsd).await;
+                if eth_price.is_zero() {
+                    bail!("ETH/USD price is zero");
+                }
+                let multiplier = U256::from(10u64).pow(U256::from(12 + dec));
+                Ok(token_amount * multiplier / eth_price)
+            }
+
+            // zBNB on ETH-gas chain: token_amount * bnb_price / eth_price
+            TokenType::Bnb if is_eth_gas_chain(chain_id) => {
+                let (eth_price, _) = self.get_price(chain_id, PriceFeed::EthUsd).await;
+                let (bnb_price, _) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
+                if eth_price.is_zero() {
+                    bail!("ETH/USD price is zero");
+                }
+                Ok(token_amount * bnb_price / eth_price)
+            }
+
+            _ => {
+                log::warn!(
+                    "no reverse conversion rule for {:?} on chain {}; returning raw amount",
+                    token_type,
+                    chain_id
+                );
+                Ok(token_amount)
+            }
+        }
+    }
+
     /// Convert a native gas cost (in wei) to the token's smallest unit.
     pub async fn convert_native_to_token(
         &self,
@@ -462,6 +510,55 @@ mod tests {
 
         // 0.001 ETH * $4000 fallback = $4.00 = 4_000000 USDC
         assert_eq!(result, U256::from(4_000_000u64));
+    }
+
+    // ---- convert_token_to_native tests ----
+
+    #[tokio::test]
+    async fn token_to_native_eth_1_to_1() {
+        let oracle = PriceOracle::with_prices(vec![]);
+        let result = oracle
+            .convert_token_to_native(1, TokenType::Eth, one_eth())
+            .await
+            .unwrap();
+        assert_eq!(result, one_eth());
+    }
+
+    #[tokio::test]
+    async fn token_to_native_bnb_on_bsc_1_to_1() {
+        let oracle = PriceOracle::with_prices(vec![]);
+        let result = oracle
+            .convert_token_to_native(56, TokenType::Bnb, one_eth())
+            .await
+            .unwrap();
+        assert_eq!(result, one_eth());
+    }
+
+    #[tokio::test]
+    async fn token_to_native_usdc_roundtrip() {
+        // 1 ETH at $3000 → 3000_000000 USDC → back to 1 ETH
+        let oracle = PriceOracle::with_prices(vec![(1, PriceFeed::EthUsd, usd(3000), 8)]);
+        let usdc_amount = U256::from(3_000_000_000u64); // $3000 in 6-dec USDC (3000 * 10^6)
+        let result = oracle
+            .convert_token_to_native(1, TokenType::Usdc, usdc_amount)
+            .await
+            .unwrap();
+        assert_eq!(result, one_eth());
+    }
+
+    #[tokio::test]
+    async fn token_to_native_bnb_on_eth_roundtrip() {
+        // ETH=$3000, BNB=$600 → 5 BNB → back to 1 ETH
+        let oracle = PriceOracle::with_prices(vec![
+            (1, PriceFeed::EthUsd, usd(3000), 8),
+            (1, PriceFeed::BnbUsd, usd(600), 8),
+        ]);
+        let bnb_amount = U256::from(5u64) * one_eth();
+        let result = oracle
+            .convert_token_to_native(1, TokenType::Bnb, bnb_amount)
+            .await
+            .unwrap();
+        assert_eq!(result, one_eth());
     }
 
     #[tokio::test]
