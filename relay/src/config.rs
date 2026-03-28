@@ -43,11 +43,11 @@ impl RelayConfig {
             .parse()
             .context("SWAP_FEE_BPS must be a valid u64")?;
 
-        // Default: 0.0001 ETH = 100_000_000_000_000 wei
+        // Default: 0.01 ETH = 10_000_000_000_000_000 wei
         let max_swap_native_wei = match std::env::var("MAX_SWAP_NATIVE_WEI") {
             Ok(v) => U256::from_str_radix(&v, 10)
                 .context("MAX_SWAP_NATIVE_WEI must be a valid decimal U256")?,
-            Err(_) => U256::from(100_000_000_000_000u64),
+            Err(_) => U256::from(10_000_000_000_000_000u64),
         };
 
         Ok(Self {

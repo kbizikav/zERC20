@@ -7,6 +7,7 @@ mod fee;
 mod oracle;
 mod submitter;
 
+use actix_cors::Cors;
 use actix_web::{App, HttpResponse, HttpServer, web};
 use alloy::primitives::B256;
 use anyhow::{Context, Result};
@@ -64,6 +65,9 @@ async fn main() -> Result<()> {
             actix_web::error::InternalError::from_response(err, response).into()
         });
         App::new()
+            // NOTE: Permissive CORS is acceptable for internal use only.
+            // If exposing this API externally, restrict origins appropriately.
+            .wrap(Cors::permissive())
             .app_data(state.clone())
             .app_data(json_cfg)
             .route("/relay/info", web::get().to(api::relay_info))
