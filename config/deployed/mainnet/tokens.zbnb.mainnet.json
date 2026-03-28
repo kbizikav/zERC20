@@ -17,7 +17,8 @@
       "root_submit_interval_ms": 300000,
       "relay_interval_secs":900,
       "legacy_tx": true,
-      "token_type": "BNB"
+      "token_type": "BNB",
+      "swap_helper_address": "0xd94B44026c85C8E57F844c204FE9aDEd669aB393"
     },
     {
       "label": "eth-mainnet",
@@ -36,7 +37,8 @@
       "root_submit_interval_ms": 300000,
       "relay_interval_secs":900,
       "legacy_tx": false,
-      "token_type": "BNB"
+      "token_type": "BNB",
+      "swap_helper_address": "0xd94B44026c85C8E57F844c204FE9aDEd669aB393"
     },
     {
       "label": "arb-mainnet",
@@ -55,7 +57,8 @@
       "root_submit_interval_ms": 300000,
       "relay_interval_secs":900,
       "legacy_tx": false,
-      "token_type": "BNB"
+      "token_type": "BNB",
+      "swap_helper_address": "0xd94B44026c85C8E57F844c204FE9aDEd669aB393"
     },
     {
       "label": "base-mainnet",
@@ -74,7 +77,8 @@
       "root_submit_interval_ms": 300000,
       "relay_interval_secs":900,
       "legacy_tx": false,
-      "token_type": "BNB"
+      "token_type": "BNB",
+      "swap_helper_address": "0xd94B44026c85C8E57F844c204FE9aDEd669aB393"
     }
   ],
   "hub": {
