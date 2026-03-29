@@ -70,10 +70,13 @@ pub async fn run(
 
     let native_amount =
         U256::from_str_radix(&quote.native_amount, 10).context("invalid native_amount in quote")?;
+    let relayer_fee =
+        U256::from_str_radix(&quote.relayer_fee, 10).context("invalid relayer_fee in quote")?;
 
     println!("  Token amount   : {}", amount);
     println!("  Native output  : {} wei", native_amount);
     println!("  Fee            : {} bps", quote.fee_bps);
+    println!("  Relayer fee    : {} wei", relayer_fee);
 
     // Apply slippage to compute min_native_amount
     let min_native = native_amount * U256::from(10_000 - slippage_bps) / U256::from(10_000u64);

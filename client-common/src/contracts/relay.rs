@@ -286,6 +286,7 @@ pub struct RelaySwapRequest {
 pub struct SwapQuoteResponse {
     pub native_amount: String,
     pub fee_bps: u64,
+    pub relayer_fee: String,
 }
 
 /// Transaction hash returned from a swap execution.

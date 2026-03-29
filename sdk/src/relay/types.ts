@@ -33,6 +33,8 @@ export interface SwapQuote {
   nativeAmount: bigint;
   /** Fee in basis points. */
   feeBps: number;
+  /** Relayer gas fee deducted from the native output (wei). */
+  relayerFee: bigint;
 }
 
 export interface RelaySwapParams {

@@ -85,7 +85,11 @@ describe("relay helpers", () => {
     const mockFetch = vi.fn().mockResolvedValue({
       ok: true,
       json: () =>
-        Promise.resolve({ nativeAmount: "1000000000000000", feeBps: 50 }),
+        Promise.resolve({
+          nativeAmount: "1000000000000000",
+          feeBps: 50,
+          relayerFee: "21000000000000",
+        }),
     });
     vi.stubGlobal("fetch", mockFetch);
 
@@ -96,6 +100,7 @@ describe("relay helpers", () => {
     );
     expect(result.nativeAmount).toBe(1000000000000000n);
     expect(result.feeBps).toBe(50);
+    expect(result.relayerFee).toBe(21000000000000n);
     expect(mockFetch).toHaveBeenCalledWith(
       expect.stringContaining("/relay/swap-quote?chain_id=1&amount="),
     );

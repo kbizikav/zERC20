@@ -89,10 +89,12 @@ export async function fetchSwapQuote(
   const result = (await response.json()) as {
     nativeAmount: string;
     feeBps: number;
+    relayerFee: string;
   };
   return {
     nativeAmount: BigInt(result.nativeAmount),
     feeBps: result.feeBps,
+    relayerFee: BigInt(result.relayerFee),
   };
 }
 
