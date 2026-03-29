@@ -34,7 +34,8 @@ async fn compute_swap_native_amount(
         .convert_token_to_native(token.chain_id, token_type, token_amount)
         .await?;
     let provider = token.provider()?;
-    let relayer_fee = crate::fee::estimate_native_fee(&provider).await?;
+    let relayer_fee =
+        crate::fee::estimate_native_fee(&provider, crate::fee::SWAP_GAS_LIMIT).await?;
     let native_after_bps =
         native_before_fee * U256::from(10_000 - state.swap_fee_bps) / U256::from(10_000u64);
     Ok((native_after_bps.saturating_sub(relayer_fee), relayer_fee))
@@ -47,7 +48,8 @@ async fn estimate_swap_quote_from_target_native(
     target_native_amount: U256,
 ) -> anyhow::Result<(U256, U256, U256, bool)> {
     let provider = token.provider()?;
-    let relayer_fee = crate::fee::estimate_native_fee(&provider).await?;
+    let relayer_fee =
+        crate::fee::estimate_native_fee(&provider, crate::fee::SWAP_GAS_LIMIT).await?;
 
     let capped = target_native_amount > state.max_swap_native_wei;
     let target_native_amount = if capped {
@@ -78,8 +80,8 @@ async fn estimate_swap_quote_from_target_native(
         }
 
         let shortfall = target_native_amount - native_amount;
-        let top_up_before_fee = (shortfall * U256::from(10_000u64) + denominator - U256::from(1u64))
-            / denominator;
+        let top_up_before_fee =
+            (shortfall * U256::from(10_000u64) + denominator - U256::from(1u64)) / denominator;
         let top_up_token_amount = state
             .oracle
             .convert_native_to_token(token.chain_id, token_type, top_up_before_fee)

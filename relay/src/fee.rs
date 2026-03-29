@@ -1,8 +1,4 @@
-use alloy::{
-    eips::BlockNumberOrTag,
-    primitives::U256,
-    providers::Provider,
-};
+use alloy::{eips::BlockNumberOrTag, primitives::U256, providers::Provider};
 use anyhow::{Context, Result};
 use client_common::tokens::TokenType;
 
@@ -19,8 +15,13 @@ fn effective_gas_price(
     }
 }
 
-/// Estimate the relayer's native gas cost in wei for a swap/teleport submission.
-pub async fn estimate_native_fee(provider: &impl Provider) -> Result<U256> {
+/// Gas limit assumed for a swap relay call.
+pub const SWAP_GAS_LIMIT: u128 = 150_000;
+/// Gas limit assumed for a redeem (teleport) relay call.
+pub const REDEEM_GAS_LIMIT: u128 = 400_000;
+
+/// Estimate the relayer's native gas cost in wei for a given `gas_limit`.
+pub async fn estimate_native_fee(provider: &impl Provider, gas_limit: u128) -> Result<U256> {
     let gas_price_legacy = provider
         .get_gas_price()
         .await
@@ -37,8 +38,6 @@ pub async fn estimate_native_fee(provider: &impl Provider) -> Result<U256> {
         gas_price_legacy,
     );
 
-    // Conservative gas estimate for a relay call.
-    let gas_limit: u128 = 1_200_000;
     let gas_cost = gas_price * U256::from(gas_limit);
 
     // Apply 20% safety buffer.
@@ -57,7 +56,7 @@ pub async fn estimate_fee(
     token_type: TokenType,
     oracle: &PriceOracle,
 ) -> Result<U256> {
-    let native_fee = estimate_native_fee(provider).await?;
+    let native_fee = estimate_native_fee(provider, REDEEM_GAS_LIMIT).await?;
 
     // Convert native gas cost to token units.
     oracle

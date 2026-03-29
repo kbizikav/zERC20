@@ -74,7 +74,10 @@ async fn main() -> Result<()> {
             .route("/relay/teleport", web::post().to(api::relay_teleport))
             .route("/relay/fee-estimate", web::get().to(api::fee_estimate))
             .route("/relay/swap-quote", web::get().to(api::swap_quote))
-            .route("/relay/swap-quote-target", web::get().to(api::swap_quote_target))
+            .route(
+                "/relay/swap-quote-target",
+                web::get().to(api::swap_quote_target),
+            )
             .route("/relay/swap", web::post().to(api::relay_swap))
     })
     .bind(("0.0.0.0", cfg.port))
