@@ -163,6 +163,19 @@ contract SwapHelperTest is Test {
         assertEq(token.balanceOf(relayer), 0, "relayer has no tokens");
     }
 
+    function test_swap_reverts_zero_recipient() public {
+        uint256 tokenAmount = 1000e18;
+        uint256 nativeAmount = 0.5 ether;
+        uint256 deadline = block.timestamp + 1 days;
+
+        token.mint(owner, tokenAmount);
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(ownerKey, owner, address(helper), tokenAmount, 0, deadline);
+
+        vm.prank(relayer);
+        vm.expectRevert(SwapHelper.ZeroRecipient.selector);
+        helper.swap{value: nativeAmount}(address(token), owner, address(0), tokenAmount, deadline, v, r, s);
+    }
+
     function test_swap_atomicity_on_revert() public {
         uint256 tokenAmount = 1000e18;
         uint256 nativeAmount = 0.5 ether;

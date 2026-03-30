@@ -16,6 +16,7 @@ contract SwapHelper is OwnableUpgradeable, UUPSUpgradeable {
 
     error NativeTransferFailed();
     error NotAllowlisted();
+    error ZeroRecipient();
 
     event RelayerUpdated(address indexed relayer, bool allowed);
 
@@ -83,6 +84,8 @@ contract SwapHelper is OwnableUpgradeable, UUPSUpgradeable {
         bytes32 r,
         bytes32 s
     ) external payable onlyRelayer {
+        if (recipient == address(0)) revert ZeroRecipient();
+
         // 1. permit — wrapped in try/catch so the tx succeeds even when permit reverts.
         //    This can happen if: (a) a third party front-runs the permit call to consume the
         //    nonce (griefing), or (b) the owner has already granted sufficient allowance.
