@@ -98,12 +98,31 @@ async fn estimate_swap_quote_from_target_native(
     }
 
     // If rounding caused native_amount to overshoot max, back off token_amount
-    // so the quote is always executable by /relay/swap.
-    while native_amount > state.max_swap_native_wei && token_amount > U256::ZERO {
-        token_amount -= U256::from(1u64);
+    // using a proportional decrement and a hard iteration cap, so quote
+    // computation cannot devolve into an unbounded RPC loop for low-decimal tokens.
+    const MAX_BACKOFF_ITERS: usize = 8;
+    let mut backoff_iters = 0usize;
+    while native_amount > state.max_swap_native_wei
+        && token_amount > U256::ZERO
+        && backoff_iters < MAX_BACKOFF_ITERS
+    {
+        let overshoot = native_amount - state.max_swap_native_wei;
+        let mut decrement = token_amount.saturating_mul(overshoot) / native_amount;
+        if decrement.is_zero() {
+            decrement = U256::from(1u64);
+        }
+        token_amount = token_amount.saturating_sub(decrement);
         native_amount = compute_swap_native_amount(state, token, token_type, token_amount)
             .await?
             .0;
+        backoff_iters += 1;
+    }
+
+    if native_amount > state.max_swap_native_wei {
+        anyhow::bail!(
+            "failed to back off target swap quote below max_native_amount after {} iterations",
+            MAX_BACKOFF_ITERS
+        );
     }
 
     Ok((token_amount, native_amount, relayer_fee, capped))
