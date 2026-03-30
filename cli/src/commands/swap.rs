@@ -78,7 +78,9 @@ pub async fn run(
     println!("  Fee            : {} bps", quote.fee_bps);
     println!("  Relayer fee    : {} wei", relayer_fee);
     if quote.price_fallback {
-        println!("  WARNING: relay is using fallback/stale oracle prices — quoted rate may be less favorable");
+        println!(
+            "  WARNING: relay is using fallback/stale oracle prices — quoted rate may be less favorable"
+        );
     }
 
     // Apply slippage to compute min_native_amount
