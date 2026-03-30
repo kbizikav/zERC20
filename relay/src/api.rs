@@ -97,6 +97,15 @@ async fn estimate_swap_quote_from_target_native(
             .0;
     }
 
+    // If rounding caused native_amount to overshoot max, back off token_amount
+    // so the quote is always executable by /relay/swap.
+    while native_amount > state.max_swap_native_wei && token_amount > U256::ZERO {
+        token_amount -= U256::from(1u64);
+        native_amount = compute_swap_native_amount(state, token, token_type, token_amount)
+            .await?
+            .0;
+    }
+
     Ok((token_amount, native_amount, relayer_fee, capped))
 }
 
