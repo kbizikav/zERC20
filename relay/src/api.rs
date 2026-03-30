@@ -159,15 +159,6 @@ pub async fn relay_teleport(
 ) -> HttpResponse {
     let req = body.into_inner();
 
-    if req.recipient == Address::ZERO {
-        return HttpResponse::BadRequest()
-            .json(serde_json::json!({"error": "recipient must not be zero address"}));
-    }
-    if req.owner == Address::ZERO {
-        return HttpResponse::BadRequest()
-            .json(serde_json::json!({"error": "owner must not be zero address"}));
-    }
-
     let token = match state.find_token(req.chain_id) {
         Some(t) => t,
         None => {
