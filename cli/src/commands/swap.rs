@@ -165,8 +165,9 @@ pub async fn run(
         .await
         .context("swap submission failed")?;
 
-    println!("\nSwap completed!");
+    println!("\nSwap submitted.");
     println!("  Tx hash: {}", result.tx_hash);
+    println!("  Status : pending confirmation");
 
     Ok(())
 }
