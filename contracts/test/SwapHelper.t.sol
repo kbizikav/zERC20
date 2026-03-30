@@ -97,7 +97,7 @@ contract SwapHelperTest is Test {
         assertEq(address(helper).balance, 0, "helper has no leftover balance");
     }
 
-    function test_swap_zero_value() public {
+    function test_swap_reverts_zero_value() public {
         uint256 tokenAmount = 500e18;
         uint256 deadline = block.timestamp + 1 days;
 
@@ -105,9 +105,8 @@ contract SwapHelperTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signPermit(ownerKey, owner, address(helper), tokenAmount, 0, deadline);
 
         vm.prank(relayer);
+        vm.expectRevert(SwapHelper.ZeroNativeAmount.selector);
         helper.swap{value: 0}(address(token), owner, recipient, tokenAmount, deadline, v, r, s);
-
-        assertEq(token.balanceOf(relayer), tokenAmount, "relayer received tokens");
     }
 
     function test_swap_with_existing_allowance() public {
