@@ -43,8 +43,8 @@ impl RelayConfig {
             .parse()
             .context("SWAP_FEE_BPS must be a valid u64")?;
         anyhow::ensure!(
-            swap_fee_bps <= 10_000,
-            "SWAP_FEE_BPS must be <= 10000 (got {})",
+            swap_fee_bps < 10_000,
+            "SWAP_FEE_BPS must be < 10000 (got {})",
             swap_fee_bps
         );
 
