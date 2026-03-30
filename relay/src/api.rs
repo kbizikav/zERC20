@@ -2,6 +2,7 @@ use actix_web::{HttpResponse, web};
 use alloy::primitives::{Address, B256, U256};
 use alloy::signers::local::PrivateKeySigner;
 
+use crate::fee::GasFeeCache;
 use crate::oracle::PriceOracle;
 use crate::submitter;
 use client_common::contracts::relay::RelayTeleportRequest;
@@ -15,6 +16,7 @@ pub struct AppState {
     pub swap_enabled: bool,
     pub swap_fee_bps: u64,
     pub max_swap_native_wei: U256,
+    pub gas_fee_cache: GasFeeCache,
 }
 
 impl AppState {
@@ -23,22 +25,24 @@ impl AppState {
     }
 }
 
-async fn compute_swap_native_amount(
-    state: &AppState,
-    token: &TokenEntry,
-    token_type: TokenType,
-    token_amount: U256,
-) -> anyhow::Result<(U256, U256)> {
-    let native_before_fee = state
-        .oracle
-        .convert_token_to_native(token.chain_id, token_type, token_amount)
-        .await?;
-    let provider = token.provider()?;
-    let relayer_fee =
-        crate::fee::estimate_native_fee(&provider, crate::fee::SWAP_GAS_LIMIT).await?;
+/// Compute the native output for a given token amount, using a pre-computed relayer fee.
+fn compute_swap_native_output(
+    swap_fee_bps: u64,
+    native_before_fee: U256,
+    relayer_fee: U256,
+) -> U256 {
     let native_after_bps =
-        native_before_fee * U256::from(10_000 - state.swap_fee_bps) / U256::from(10_000u64);
-    Ok((native_after_bps.saturating_sub(relayer_fee), relayer_fee))
+        native_before_fee * U256::from(10_000 - swap_fee_bps) / U256::from(10_000u64);
+    native_after_bps.saturating_sub(relayer_fee)
+}
+
+/// Estimate the relayer fee for swaps on the given token's chain, using the cache.
+async fn cached_swap_relayer_fee(state: &AppState, token: &TokenEntry) -> anyhow::Result<U256> {
+    let provider = token.provider()?;
+    state
+        .gas_fee_cache
+        .get_or_estimate(token.chain_id, &provider, crate::fee::SWAP_GAS_LIMIT)
+        .await
 }
 
 async fn estimate_swap_quote_from_target_native(
@@ -47,9 +51,7 @@ async fn estimate_swap_quote_from_target_native(
     token_type: TokenType,
     target_native_amount: U256,
 ) -> anyhow::Result<(U256, U256, U256, bool)> {
-    let provider = token.provider()?;
-    let relayer_fee =
-        crate::fee::estimate_native_fee(&provider, crate::fee::SWAP_GAS_LIMIT).await?;
+    let relayer_fee = cached_swap_relayer_fee(state, token).await?;
 
     let capped = target_native_amount > state.max_swap_native_wei;
     let target_native_amount = if capped {
@@ -62,35 +64,20 @@ async fn estimate_swap_quote_from_target_native(
     let numerator = (target_native_amount + relayer_fee) * U256::from(10_000u64);
     let native_before_fee_needed = (numerator + denominator - U256::from(1u64)) / denominator;
 
-    let mut token_amount = state
+    // Convert to token units, adding 1 to compensate for integer truncation in
+    // the oracle's division so the forward calculation never falls short.
+    let token_amount = state
         .oracle
         .convert_native_to_token(token.chain_id, token_type, native_before_fee_needed)
-        .await?;
-    if token_amount.is_zero() {
-        token_amount = U256::from(1u64);
-    }
-
-    let mut native_amount = compute_swap_native_amount(state, token, token_type, token_amount)
         .await?
-        .0;
+        + U256::from(1u64);
 
-    for _ in 0..4 {
-        if native_amount >= target_native_amount || native_amount >= state.max_swap_native_wei {
-            break;
-        }
-
-        let shortfall = target_native_amount - native_amount;
-        let top_up_before_fee =
-            (shortfall * U256::from(10_000u64) + denominator - U256::from(1u64)) / denominator;
-        let top_up_token_amount = state
-            .oracle
-            .convert_native_to_token(token.chain_id, token_type, top_up_before_fee)
-            .await?;
-        token_amount += top_up_token_amount.max(U256::from(1u64));
-        native_amount = compute_swap_native_amount(state, token, token_type, token_amount)
-            .await?
-            .0;
-    }
+    let native_before_fee = state
+        .oracle
+        .convert_token_to_native(token.chain_id, token_type, token_amount)
+        .await?;
+    let native_amount =
+        compute_swap_native_output(state.swap_fee_bps, native_before_fee, relayer_fee);
 
     Ok((token_amount, native_amount, relayer_fee, capped))
 }
@@ -263,14 +250,28 @@ pub async fn swap_quote(
         }
     };
 
-    let (native_amount, relayer_fee) =
-        match compute_swap_native_amount(state.get_ref(), token, token_type, token_amount).await {
-            Ok(v) => v,
-            Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .json(serde_json::json!({"error": format!("{:#}", err)}));
-            }
-        };
+    let relayer_fee = match cached_swap_relayer_fee(state.get_ref(), token).await {
+        Ok(f) => f,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"error": format!("{:#}", err)}));
+        }
+    };
+
+    let native_before_fee = match state
+        .oracle
+        .convert_token_to_native(token.chain_id, token_type, token_amount)
+        .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"error": format!("{:#}", err)}));
+        }
+    };
+
+    let native_amount =
+        compute_swap_native_output(state.swap_fee_bps, native_before_fee, relayer_fee);
 
     if native_amount.is_zero() {
         return HttpResponse::BadRequest().json(serde_json::json!({
@@ -440,14 +441,28 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
             .json(serde_json::json!({"error": "permit deadline has passed"}));
     }
 
-    let (native_amount, relayer_fee) =
-        match compute_swap_native_amount(state.get_ref(), token, token_type, token_amount).await {
-            Ok(v) => v,
-            Err(err) => {
-                return HttpResponse::InternalServerError()
-                    .json(serde_json::json!({"error": format!("{:#}", err)}));
-            }
-        };
+    let relayer_fee = match cached_swap_relayer_fee(state.get_ref(), token).await {
+        Ok(f) => f,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"error": format!("{:#}", err)}));
+        }
+    };
+
+    let native_before_fee = match state
+        .oracle
+        .convert_token_to_native(token.chain_id, token_type, token_amount)
+        .await
+    {
+        Ok(v) => v,
+        Err(err) => {
+            return HttpResponse::InternalServerError()
+                .json(serde_json::json!({"error": format!("{:#}", err)}));
+        }
+    };
+
+    let native_amount =
+        compute_swap_native_output(state.swap_fee_bps, native_before_fee, relayer_fee);
 
     if native_amount.is_zero() {
         return HttpResponse::BadRequest().json(serde_json::json!({

@@ -53,6 +53,7 @@ async fn main() -> Result<()> {
         swap_enabled: cfg.swap_enabled,
         swap_fee_bps: cfg.swap_fee_bps,
         max_swap_native_wei: cfg.max_swap_native_wei,
+        gas_fee_cache: fee::GasFeeCache::new(),
     });
 
     log::info!("Starting relay node on port {}", cfg.port);

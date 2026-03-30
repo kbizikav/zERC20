@@ -1,6 +1,13 @@
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
 use alloy::{eips::BlockNumberOrTag, primitives::U256, providers::Provider};
 use anyhow::{Context, Result};
 use client_common::tokens::TokenType;
+use tokio::sync::RwLock;
 
 use crate::oracle::PriceOracle;
 
@@ -20,26 +27,70 @@ pub const SWAP_GAS_LIMIT: u128 = 150_000;
 /// Gas limit assumed for a redeem (teleport) relay call.
 pub const REDEEM_GAS_LIMIT: u128 = 400_000;
 
-/// Estimate the relayer's native gas cost in wei for a given `gas_limit`.
-pub async fn estimate_native_fee(provider: &impl Provider, gas_limit: u128) -> Result<U256> {
-    let gas_price_legacy = provider
-        .get_gas_price()
-        .await
-        .context("failed to fetch gas price")?;
+/// How long a cached gas fee is considered fresh.
+const GAS_FEE_CACHE_TTL: Duration = Duration::from_secs(5);
 
-    let latest_block = provider
-        .get_block_by_number(BlockNumberOrTag::Latest)
-        .await
-        .context("failed to fetch latest block for fee estimation")?;
-    let priority_fee = provider.get_max_priority_fee_per_gas().await.ok();
-    let gas_price = effective_gas_price(
-        latest_block.and_then(|block| block.header.base_fee_per_gas),
-        priority_fee,
-        gas_price_legacy,
+/// Per-chain cached gas fee to avoid redundant RPC calls within short windows.
+pub struct GasFeeCache {
+    cache: Arc<RwLock<HashMap<u64, (U256, Instant)>>>,
+}
+
+impl GasFeeCache {
+    pub fn new() -> Self {
+        Self {
+            cache: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+
+    /// Get a cached native fee for the given chain and gas limit, or compute it.
+    pub async fn get_or_estimate(
+        &self,
+        chain_id: u64,
+        provider: &impl Provider,
+        gas_limit: u128,
+    ) -> Result<U256> {
+        {
+            let cache = self.cache.read().await;
+            if let Some((cached_gas_price, ts)) = cache.get(&chain_id)
+                && ts.elapsed() < GAS_FEE_CACHE_TTL
+            {
+                let gas_cost = *cached_gas_price * U256::from(gas_limit);
+                return Ok(gas_cost + gas_cost / U256::from(5));
+            }
+        }
+
+        let gas_price = fetch_gas_price(provider).await?;
+        {
+            let mut cache = self.cache.write().await;
+            cache.insert(chain_id, (gas_price, Instant::now()));
+        }
+        let gas_cost = gas_price * U256::from(gas_limit);
+        Ok(gas_cost + gas_cost / U256::from(5))
+    }
+}
+
+/// Fetch the effective gas price from the provider, parallelizing RPC calls.
+async fn fetch_gas_price(provider: &impl Provider) -> Result<U256> {
+    let (gas_price_legacy, latest_block, priority_fee) = tokio::join!(
+        provider.get_gas_price(),
+        provider.get_block_by_number(BlockNumberOrTag::Latest),
+        provider.get_max_priority_fee_per_gas(),
     );
 
-    let gas_cost = gas_price * U256::from(gas_limit);
+    let gas_price_legacy = gas_price_legacy.context("failed to fetch gas price")?;
+    let latest_block = latest_block.context("failed to fetch latest block for fee estimation")?;
 
+    Ok(effective_gas_price(
+        latest_block.and_then(|block| block.header.base_fee_per_gas),
+        priority_fee.ok(),
+        gas_price_legacy,
+    ))
+}
+
+/// Estimate the relayer's native gas cost in wei for a given `gas_limit`.
+pub async fn estimate_native_fee(provider: &impl Provider, gas_limit: u128) -> Result<U256> {
+    let gas_price = fetch_gas_price(provider).await?;
+    let gas_cost = gas_price * U256::from(gas_limit);
     // Apply 20% safety buffer.
     Ok(gas_cost + gas_cost / U256::from(5))
 }
