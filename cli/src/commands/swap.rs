@@ -149,6 +149,7 @@ pub async fn run(
         chain_id,
         token_amount: amount.to_string(),
         min_native_amount: min_native.to_string(),
+        max_native_amount: native_amount.to_string(),
         recipient,
         owner,
         permit_deadline: deadline.to_string(),

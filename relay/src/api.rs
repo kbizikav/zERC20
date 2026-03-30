@@ -408,6 +408,8 @@ pub struct SwapRequest {
     pub token_amount: String,
     /// Minimum native output the user will accept (slippage protection).
     pub min_native_amount: String,
+    /// Maximum native output the relayer is willing to pay.
+    pub max_native_amount: String,
     /// Address to receive native tokens.
     pub recipient: Address,
     /// The address that signed the permit (token owner).
@@ -462,6 +464,15 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
         }
     };
 
+    let max_native = match U256::from_str_radix(&req.max_native_amount, 10) {
+        Ok(a) if !a.is_zero() => a,
+        _ => {
+            return HttpResponse::BadRequest().json(
+                serde_json::json!({"error": "max_native_amount must be a positive decimal"}),
+            );
+        }
+    };
+
     let permit_deadline = match U256::from_str_radix(&req.permit_deadline, 10) {
         Ok(d) => d,
         _ => {
@@ -505,6 +516,15 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
             "error": format!(
                 "computed native output {} is below min_native_amount {} after deducting relayer fee {}",
                 native_amount, min_native, relayer_fee
+            )
+        }));
+    }
+
+    if native_amount > max_native {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": format!(
+                "computed native output {} exceeds max_native_amount {} after deducting relayer fee {}",
+                native_amount, max_native, relayer_fee
             )
         }));
     }

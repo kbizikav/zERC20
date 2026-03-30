@@ -272,6 +272,7 @@ pub struct RelaySwapRequest {
     pub chain_id: u64,
     pub token_amount: String,
     pub min_native_amount: String,
+    pub max_native_amount: String,
     pub recipient: Address,
     pub owner: Address,
     pub permit_deadline: String,
