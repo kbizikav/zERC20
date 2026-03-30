@@ -415,10 +415,10 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     };
 
     let min_native = match U256::from_str_radix(&req.min_native_amount, 10) {
-        Ok(a) => a,
+        Ok(a) if !a.is_zero() => a,
         _ => {
             return HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": "min_native_amount must be a valid decimal"}));
+                .json(serde_json::json!({"error": "min_native_amount must be a positive decimal"}));
         }
     };
 
