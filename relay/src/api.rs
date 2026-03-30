@@ -300,10 +300,13 @@ pub async fn swap_quote(
         }));
     }
 
+    let price_fallback = !state.oracle.has_fresh_prices(query.chain_id, token_type).await;
+
     HttpResponse::Ok().json(serde_json::json!({
         "nativeAmount": native_amount.to_string(),
         "feeBps": fee_bps,
         "relayerFee": relayer_fee.to_string(),
+        "priceFallback": price_fallback,
     }))
 }
 
@@ -360,6 +363,11 @@ pub async fn swap_quote_target(
             }
         };
 
+    let price_fallback = !state
+        .oracle
+        .has_fresh_prices(query.chain_id, token_type)
+        .await;
+
     HttpResponse::Ok().json(serde_json::json!({
         "tokenAmount": token_amount.to_string(),
         "nativeAmount": native_amount.to_string(),
@@ -368,6 +376,7 @@ pub async fn swap_quote_target(
         "requestedNativeAmount": target_native_amount.to_string(),
         "maxNativeAmount": state.max_swap_native_wei.to_string(),
         "cappedToMax": capped_to_max,
+        "priceFallback": price_fallback,
     }))
 }
 

@@ -279,6 +279,21 @@ impl PriceOracle {
         (fallback_price(feed), 8)
     }
 
+    /// Check whether all required price feeds for a (chain, token_type) pair
+    /// have fresh cached data. Returns `false` if any feed is stale or missing
+    /// (i.e. the oracle would use a fallback or stale price).
+    pub async fn has_fresh_prices(&self, chain_id: u64, token_type: TokenType) -> bool {
+        let feeds = required_feeds(chain_id, token_type);
+        let cache = self.cache.read().await;
+        for feed in feeds {
+            match cache.get(&(chain_id, feed)) {
+                Some(cached) if cached.updated_at.elapsed() < CACHE_TTL => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+
     /// Convert a token amount (smallest unit) back to native wei.
     ///
     /// This is the inverse of `convert_native_to_token` and is used for swap
