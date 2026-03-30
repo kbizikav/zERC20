@@ -29,7 +29,7 @@ impl RelayConfig {
             .context("RELAY_PORT must be a valid u16")?;
 
         let private_key =
-            std::env::var("RELAY_PRIVATE_KEY").context("RELAY_PRIVATE_KEY is required")?;
+            std::env::var("RELAYER_PRIVATE_KEY").context("RELAYER_PRIVATE_KEY is required")?;
 
         let tokens_path: PathBuf = std::env::var("TOKENS_FILE_PATH")
             .unwrap_or_else(|_| "../config/tokens.json".to_string())
@@ -116,7 +116,7 @@ mod tests {
     fn set_base_env(tokens_path: &PathBuf) {
         unsafe {
             std::env::set_var(
-                "RELAY_PRIVATE_KEY",
+                "RELAYER_PRIVATE_KEY",
                 "0x1111111111111111111111111111111111111111111111111111111111111111",
             );
             std::env::set_var("TOKENS_FILE_PATH", tokens_path);
