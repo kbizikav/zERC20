@@ -612,7 +612,7 @@ mod tests {
             relayer_address: address!("0000000000000000000000000000000000000010"),
             tokens: vec![test_token()],
             signer_providers: HashMap::new(),
-            oracle: PriceOracle::new(&[]).expect("oracle"),
+            oracle: PriceOracle::new(&[], None).expect("oracle"),
             swap_enabled: true,
             swap_fee_bps: 50,
             max_swap_native_wei: U256::from(10_000_000_000_000_000u64),

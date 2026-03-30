@@ -9,6 +9,9 @@ pub struct RelayConfig {
     pub port: u16,
     pub private_key: String,
     pub tokens: Vec<TokenEntry>,
+    /// RPC URL used to query Chainlink price feeds (Ethereum mainnet).
+    /// Falls back to the RPC of any configured mainnet-like chain if unset.
+    pub oracle_rpc_url: Option<String>,
     /// Whether the swap endpoint is enabled. Default: false.
     pub swap_enabled: bool,
     /// Swap fee in basis points (100 = 1%). Default: 50 (0.5%).
@@ -59,10 +62,13 @@ impl RelayConfig {
             "MAX_SWAP_NATIVE_WEI must be non-zero"
         );
 
+        let oracle_rpc_url = std::env::var("ORACLE_RPC_URL").ok();
+
         Ok(Self {
             port,
             private_key,
             tokens: tokens_file.tokens,
+            oracle_rpc_url,
             swap_enabled,
             swap_fee_bps,
             max_swap_native_wei,

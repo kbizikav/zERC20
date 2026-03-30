@@ -33,8 +33,8 @@ async fn main() -> Result<()> {
     let relayer_key = B256::from_slice(&key_bytes);
     let relayer_address: Address = get_address_from_private_key(relayer_key);
 
-    let oracle =
-        oracle::PriceOracle::new(&cfg.tokens).context("failed to initialize price oracle")?;
+    let oracle = oracle::PriceOracle::new(&cfg.tokens, cfg.oracle_rpc_url.as_deref())
+        .context("failed to initialize price oracle")?;
 
     let mut signer_providers = HashMap::new();
     for token in &cfg.tokens {
