@@ -1,13 +1,12 @@
 use alloy::{
-    network::EthereumWallet,
     primitives::{Address, B256, Bytes, U256},
-    providers::{Provider, ProviderBuilder},
+    providers::Provider,
     rpc::types::TransactionRequest,
-    signers::local::PrivateKeySigner,
     sol,
 };
 use anyhow::{Context, Result};
 
+use client_common::contracts::utils::{get_address_from_private_key, get_provider_with_signer};
 use client_common::contracts::relay::RelayTeleportRequest;
 use client_common::tokens::TokenEntry;
 
@@ -45,17 +44,10 @@ pub async fn submit_teleport(
 ) -> Result<B256> {
     use client_common::contracts::verifier::{GeneralRecipientLib, Verifier};
 
-    let signer = PrivateKeySigner::from_bytes(relayer_key)
-        .context("failed to create signer from relayer private key")?;
-    let wallet = EthereumWallet::from(signer);
-
-    let rpc_url = token
-        .rpc_urls
-        .first()
-        .context("token has no rpc urls configured")?;
-    let provider = ProviderBuilder::new()
-        .wallet(wallet)
-        .connect_http(rpc_url.parse().context("invalid RPC URL")?);
+    let provider = get_provider_with_signer(
+        &token.provider().context("failed to create provider")?,
+        *relayer_key,
+    );
 
     let contract = Verifier::new(token.verifier_address, &provider);
 
@@ -189,17 +181,10 @@ async fn submit_swap_atomic(
     permit_r: B256,
     permit_s: B256,
 ) -> Result<B256> {
-    let signer = PrivateKeySigner::from_bytes(relayer_key)
-        .context("failed to create signer from relayer private key")?;
-    let wallet = EthereumWallet::from(signer);
-
-    let rpc_url = token
-        .rpc_urls
-        .first()
-        .context("token has no rpc urls configured")?;
-    let provider = ProviderBuilder::new()
-        .wallet(wallet)
-        .connect_http(rpc_url.parse().context("invalid RPC URL")?);
+    let provider = get_provider_with_signer(
+        &token.provider().context("failed to create provider")?,
+        *relayer_key,
+    );
 
     let swap_helper = ISwapHelper::new(swap_helper_address, &provider);
 
@@ -250,18 +235,11 @@ async fn submit_swap_legacy(
     permit_r: B256,
     permit_s: B256,
 ) -> Result<SwapTxHashes> {
-    let signer = PrivateKeySigner::from_bytes(relayer_key)
-        .context("failed to create signer from relayer private key")?;
-    let relayer_address = signer.address();
-    let wallet = EthereumWallet::from(signer);
-
-    let rpc_url = token
-        .rpc_urls
-        .first()
-        .context("token has no rpc urls configured")?;
-    let provider = ProviderBuilder::new()
-        .wallet(wallet)
-        .connect_http(rpc_url.parse().context("invalid RPC URL")?);
+    let relayer_address = get_address_from_private_key(*relayer_key);
+    let provider = get_provider_with_signer(
+        &token.provider().context("failed to create provider")?,
+        *relayer_key,
+    );
 
     let erc20 = IERC20Permit::new(token.token_address, &provider);
 
