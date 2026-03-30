@@ -279,6 +279,21 @@ impl PriceOracle {
         (fallback_price(feed), 8)
     }
 
+    /// Check whether all required price feeds for a (chain, token_type) pair
+    /// have fresh cached data. Returns `false` if any feed is stale or missing
+    /// (i.e. the oracle would use a fallback or stale price).
+    pub async fn has_fresh_prices(&self, chain_id: u64, token_type: TokenType) -> bool {
+        let feeds = required_feeds(chain_id, token_type);
+        let cache = self.cache.read().await;
+        for feed in feeds {
+            match cache.get(&(chain_id, feed)) {
+                Some(cached) if cached.updated_at.elapsed() < CACHE_TTL => {}
+                _ => return false,
+            }
+        }
+        true
+    }
+
     /// Convert a token amount (smallest unit) back to native wei.
     ///
     /// This is the inverse of `convert_native_to_token` and is used for swap
@@ -308,10 +323,18 @@ impl PriceOracle {
 
             // zBNB on ETH-gas chain: token_amount * bnb_price / eth_price
             TokenType::Bnb if is_eth_gas_chain(chain_id) => {
-                let (eth_price, _) = self.get_price(chain_id, PriceFeed::EthUsd).await;
-                let (bnb_price, _) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
+                let (eth_price, eth_dec) = self.get_price(chain_id, PriceFeed::EthUsd).await;
+                let (bnb_price, bnb_dec) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
                 if eth_price.is_zero() {
                     bail!("ETH/USD price is zero");
+                }
+                if eth_dec != bnb_dec {
+                    bail!(
+                        "feed decimals mismatch for chain {}: ETH/USD has {}, BNB/USD has {}",
+                        chain_id,
+                        eth_dec,
+                        bnb_dec
+                    );
                 }
                 Ok(token_amount * bnb_price / eth_price)
             }
@@ -351,12 +374,19 @@ impl PriceOracle {
             }
 
             // zBNB on ETH-gas chain: native_wei * eth_price / bnb_price
-            // Both feeds have the same decimals so they cancel out.
             TokenType::Bnb if is_eth_gas_chain(chain_id) => {
-                let (eth_price, _) = self.get_price(chain_id, PriceFeed::EthUsd).await;
-                let (bnb_price, _) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
+                let (eth_price, eth_dec) = self.get_price(chain_id, PriceFeed::EthUsd).await;
+                let (bnb_price, bnb_dec) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
                 if bnb_price.is_zero() {
                     bail!("BNB/USD price is zero");
+                }
+                if eth_dec != bnb_dec {
+                    bail!(
+                        "feed decimals mismatch for chain {}: ETH/USD has {}, BNB/USD has {}",
+                        chain_id,
+                        eth_dec,
+                        bnb_dec
+                    );
                 }
                 // native_wei * (eth/usd) / (bnb/usd) = native_wei in BNB terms (18 dec)
                 Ok(native_wei * eth_price / bnb_price)
@@ -383,6 +413,9 @@ async fn fetch_price(feed_address: Address, provider: &impl Provider) -> Result<
         .call()
         .await
         .context("failed to call decimals()")?;
+    if decimals > 18 {
+        bail!("Chainlink returned unsupported feed decimals: {}", decimals);
+    }
 
     let round = aggregator
         .latestRoundData()

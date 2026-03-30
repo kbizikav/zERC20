@@ -97,7 +97,7 @@ contract SwapHelperTest is Test {
         assertEq(address(helper).balance, 0, "helper has no leftover balance");
     }
 
-    function test_swap_zero_value() public {
+    function test_swap_reverts_zero_value() public {
         uint256 tokenAmount = 500e18;
         uint256 deadline = block.timestamp + 1 days;
 
@@ -105,12 +105,11 @@ contract SwapHelperTest is Test {
         (uint8 v, bytes32 r, bytes32 s) = _signPermit(ownerKey, owner, address(helper), tokenAmount, 0, deadline);
 
         vm.prank(relayer);
+        vm.expectRevert(SwapHelper.ZeroNativeAmount.selector);
         helper.swap{value: 0}(address(token), owner, recipient, tokenAmount, deadline, v, r, s);
-
-        assertEq(token.balanceOf(relayer), tokenAmount, "relayer received tokens");
     }
 
-    function test_swap_with_existing_allowance() public {
+    function test_swap_reverts_with_existing_allowance_bad_permit() public {
         uint256 tokenAmount = 1000e18;
         uint256 nativeAmount = 0.5 ether;
         uint256 deadline = block.timestamp + 1 days;
@@ -121,14 +120,12 @@ contract SwapHelperTest is Test {
         vm.prank(owner);
         token.approve(address(helper), tokenAmount);
 
-        // Use a bad permit signature — caught by try/catch, approve already set
+        // Use a bad permit signature — existing allowance must not bypass permit validation
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xDEAD, keccak256("bad"));
 
         vm.prank(relayer);
+        vm.expectRevert();
         helper.swap{value: nativeAmount}(address(token), owner, recipient, tokenAmount, deadline, v, r, s);
-
-        assertEq(token.balanceOf(relayer), tokenAmount, "relayer received tokens via existing allowance");
-        assertEq(recipient.balance, nativeAmount, "recipient received native");
     }
 
     function test_swap_reverts_no_allowance_bad_permit() public {
@@ -161,6 +158,19 @@ contract SwapHelperTest is Test {
         // Atomicity: token transfer also reverted
         assertEq(token.balanceOf(owner), tokenAmount, "owner still has tokens");
         assertEq(token.balanceOf(relayer), 0, "relayer has no tokens");
+    }
+
+    function test_swap_reverts_zero_recipient() public {
+        uint256 tokenAmount = 1000e18;
+        uint256 nativeAmount = 0.5 ether;
+        uint256 deadline = block.timestamp + 1 days;
+
+        token.mint(owner, tokenAmount);
+        (uint8 v, bytes32 r, bytes32 s) = _signPermit(ownerKey, owner, address(helper), tokenAmount, 0, deadline);
+
+        vm.prank(relayer);
+        vm.expectRevert(SwapHelper.ZeroRecipient.selector);
+        helper.swap{value: nativeAmount}(address(token), owner, address(0), tokenAmount, deadline, v, r, s);
     }
 
     function test_swap_atomicity_on_revert() public {

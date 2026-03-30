@@ -9,10 +9,12 @@ mod submitter;
 
 use actix_cors::Cors;
 use actix_web::{App, HttpResponse, HttpServer, web};
-use alloy::primitives::B256;
+use alloy::primitives::{Address, B256};
 use anyhow::{Context, Result};
+use std::collections::HashMap;
 
 use api::AppState;
+use client_common::contracts::utils::{get_address_from_private_key, get_provider_with_signer};
 
 #[actix_web::main]
 async fn main() -> Result<()> {
@@ -29,9 +31,25 @@ async fn main() -> Result<()> {
     let key_bytes = hex::decode(normalized).context("failed to decode RELAY_PRIVATE_KEY hex")?;
     anyhow::ensure!(key_bytes.len() == 32, "RELAY_PRIVATE_KEY must be 32 bytes");
     let relayer_key = B256::from_slice(&key_bytes);
+    let relayer_address: Address = get_address_from_private_key(relayer_key);
 
     let oracle =
         oracle::PriceOracle::new(&cfg.tokens).context("failed to initialize price oracle")?;
+
+    let mut signer_providers = HashMap::new();
+    for token in &cfg.tokens {
+        signer_providers
+            .entry(token.chain_id)
+            .or_insert(get_provider_with_signer(
+                &token.provider().with_context(|| {
+                    format!(
+                        "failed to create signer provider for chain {} ({})",
+                        token.chain_id, token.label
+                    )
+                })?,
+                relayer_key,
+            ));
+    }
 
     if cfg.swap_enabled {
         log::info!(
@@ -40,15 +58,25 @@ async fn main() -> Result<()> {
             cfg.max_swap_native_wei
         );
         for t in &cfg.tokens {
-            if let Some(addr) = t.swap_helper_address {
-                log::info!("  SwapHelper on chain {}: {}", t.chain_id, addr);
+            match t.swap_helper_address {
+                Some(addr) => {
+                    log::info!("  SwapHelper on chain {}: {}", t.chain_id, addr);
+                }
+                None => {
+                    anyhow::bail!(
+                        "SWAP_ENABLED=true but chain {} ({}) has no swap_helper_address configured",
+                        t.chain_id,
+                        t.label
+                    );
+                }
             }
         }
     }
 
     let state = web::Data::new(AppState {
-        relayer_key,
+        relayer_address,
         tokens: cfg.tokens,
+        signer_providers,
         oracle,
         swap_enabled: cfg.swap_enabled,
         swap_fee_bps: cfg.swap_fee_bps,

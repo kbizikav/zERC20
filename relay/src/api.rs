@@ -1,17 +1,18 @@
 use actix_web::{HttpResponse, web};
 use alloy::primitives::{Address, B256, U256};
-use alloy::signers::local::PrivateKeySigner;
 
 use crate::fee::GasFeeCache;
 use crate::oracle::PriceOracle;
 use crate::submitter;
 use client_common::contracts::relay::RelayTeleportRequest;
+use client_common::contracts::utils::ProviderWithSigner;
 use client_common::tokens::{TokenEntry, TokenType};
 
 /// Shared application state.
 pub struct AppState {
-    pub relayer_key: B256,
+    pub relayer_address: Address,
     pub tokens: Vec<TokenEntry>,
+    pub signer_providers: std::collections::HashMap<u64, ProviderWithSigner>,
     pub oracle: PriceOracle,
     pub swap_enabled: bool,
     pub swap_fee_bps: u64,
@@ -22,6 +23,10 @@ pub struct AppState {
 impl AppState {
     fn find_token(&self, chain_id: u64) -> Option<&TokenEntry> {
         self.tokens.iter().find(|t| t.chain_id == chain_id)
+    }
+
+    fn signer_provider(&self, chain_id: u64) -> Option<&ProviderWithSigner> {
+        self.signer_providers.get(&chain_id)
     }
 }
 
@@ -84,9 +89,6 @@ async fn estimate_swap_quote_from_target_native(
 
 /// GET /relay/info
 pub async fn relay_info(state: web::Data<AppState>) -> HttpResponse {
-    let signer = PrivateKeySigner::from_bytes(&state.relayer_key).unwrap();
-    let address = signer.address();
-
     // Build chain_id -> swap_helper_address map
     let swap_helper_addresses: std::collections::HashMap<String, String> = state
         .tokens
@@ -98,7 +100,7 @@ pub async fn relay_info(state: web::Data<AppState>) -> HttpResponse {
         .collect();
 
     HttpResponse::Ok().json(serde_json::json!({
-        "address": format!("{}", address),
+        "address": format!("{}", state.relayer_address),
         "swapEnabled": state.swap_enabled,
         "swapFeeBps": state.swap_fee_bps,
         "maxSwapNativeWei": state.max_swap_native_wei.to_string(),
@@ -137,12 +139,21 @@ pub async fn relay_teleport(
             .json(serde_json::json!({"error": "deadline has passed"}));
     }
 
-    match submitter::submit_teleport(token, &state.relayer_key, &req).await {
+    let provider = match state.signer_provider(req.chain_id) {
+        Some(p) => p,
+        None => {
+            return HttpResponse::InternalServerError().json(
+                serde_json::json!({"error": format!("no signer provider configured for chain {}", req.chain_id)}),
+            );
+        }
+    };
+
+    match submitter::submit_teleport(token, provider, &req).await {
         Ok(tx_hash) => HttpResponse::Ok().json(serde_json::json!({"txHash": tx_hash})),
         Err(err) => {
             log::error!("teleport submission failed: {:?}", err);
             HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}))
+                .json(serde_json::json!({"error": "teleport submission failed"}))
         }
     }
 }
@@ -170,8 +181,13 @@ pub async fn fee_estimate(
     let provider = match token.provider() {
         Ok(p) => p,
         Err(err) => {
+            log::error!(
+                "failed to create provider for chain {}: {:?}",
+                query.chain_id,
+                err
+            );
             return HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("failed to create provider: {}", err)}));
+                .json(serde_json::json!({"error": "internal provider error"}));
         }
     };
 
@@ -189,7 +205,7 @@ pub async fn fee_estimate(
         Err(err) => {
             log::error!("fee estimation failed: {:?}", err);
             HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}))
+                .json(serde_json::json!({"error": "fee estimation failed"}))
         }
     }
 }
@@ -290,10 +306,16 @@ pub async fn swap_quote(
         }));
     }
 
+    let price_fallback = !state
+        .oracle
+        .has_fresh_prices(query.chain_id, token_type)
+        .await;
+
     HttpResponse::Ok().json(serde_json::json!({
         "nativeAmount": native_amount.to_string(),
         "feeBps": fee_bps,
         "relayerFee": relayer_fee.to_string(),
+        "priceFallback": price_fallback,
     }))
 }
 
@@ -345,10 +367,25 @@ pub async fn swap_quote_target(
         {
             Ok(v) => v,
             Err(err) => {
+                log::error!("swap quote target computation failed: {:?}", err);
                 return HttpResponse::InternalServerError()
-                    .json(serde_json::json!({"error": format!("{:#}", err)}));
+                    .json(serde_json::json!({"error": "swap quote computation failed"}));
             }
         };
+
+    if native_amount.is_zero() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": format!(
+                "swap output is zero after deducting relayer fee {}",
+                relayer_fee
+            )
+        }));
+    }
+
+    let price_fallback = !state
+        .oracle
+        .has_fresh_prices(query.chain_id, token_type)
+        .await;
 
     HttpResponse::Ok().json(serde_json::json!({
         "tokenAmount": token_amount.to_string(),
@@ -358,6 +395,7 @@ pub async fn swap_quote_target(
         "requestedNativeAmount": target_native_amount.to_string(),
         "maxNativeAmount": state.max_swap_native_wei.to_string(),
         "cappedToMax": capped_to_max,
+        "priceFallback": price_fallback,
     }))
 }
 
@@ -382,12 +420,23 @@ pub struct SwapRequest {
 
 /// POST /relay/swap
 pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>) -> HttpResponse {
+    const MAX_PERMIT_TTL_SECS: u64 = 3600;
+
     if !state.swap_enabled {
         return HttpResponse::ServiceUnavailable()
             .json(serde_json::json!({"error": "swap is not enabled on this relay"}));
     }
 
     let req = body.into_inner();
+
+    if req.recipient == Address::ZERO {
+        return HttpResponse::BadRequest()
+            .json(serde_json::json!({"error": "recipient must not be zero address"}));
+    }
+    if req.owner == Address::ZERO {
+        return HttpResponse::BadRequest()
+            .json(serde_json::json!({"error": "owner must not be zero address"}));
+    }
 
     let token = match state.find_token(req.chain_id) {
         Some(t) => t,
@@ -416,10 +465,11 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     };
 
     let min_native = match U256::from_str_radix(&req.min_native_amount, 10) {
-        Ok(a) => a,
+        Ok(a) if !a.is_zero() => a,
         _ => {
-            return HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": "min_native_amount must be a valid decimal"}));
+            return HttpResponse::BadRequest().json(
+                serde_json::json!({"error": "min_native_amount must be a positive decimal"}),
+            );
         }
     };
 
@@ -439,6 +489,15 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     if permit_deadline < U256::from(now) {
         return HttpResponse::BadRequest()
             .json(serde_json::json!({"error": "permit deadline has passed"}));
+    }
+    let max_deadline = U256::from(now + MAX_PERMIT_TTL_SECS);
+    if permit_deadline > max_deadline {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": format!(
+                "permit_deadline must be within {} seconds from now",
+                MAX_PERMIT_TTL_SECS
+            )
+        }));
     }
 
     let relayer_fee = match cached_swap_relayer_fee(state.get_ref(), token).await {
@@ -492,7 +551,7 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
 
     match submitter::submit_swap(
         token,
-        &state.relayer_key,
+        state.signer_provider(req.chain_id),
         req.owner,
         req.recipient,
         token_amount,
@@ -510,7 +569,123 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
         Err(err) => {
             log::error!("swap submission failed: {:?}", err);
             HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}))
+                .json(serde_json::json!({"error": "swap submission failed"}))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{App, body::to_bytes, http::StatusCode, test};
+    use alloy::primitives::address;
+    use client_common::tokens::TokenEntry;
+    use serde_json::{Value, json};
+    use std::collections::HashMap;
+
+    fn test_token() -> TokenEntry {
+        TokenEntry {
+            label: "zUSDC".to_string(),
+            token_address: address!("0000000000000000000000000000000000000001"),
+            verifier_address: address!("0000000000000000000000000000000000000002"),
+            liquidity_manager_address: None,
+            adaptor_address: None,
+            eid: None,
+            layerzero_endpoint: None,
+            chain_id: 1,
+            deployed_block_number: 1,
+            rpc_urls: vec!["http://localhost:8545".to_string()],
+            legacy_tx: false,
+            relay_interval_secs: None,
+            root_submit_interval_ms: None,
+            token_type: Some(TokenType::Usdc),
+            swap_helper_address: Some(address!("0000000000000000000000000000000000000003")),
+        }
+    }
+
+    fn test_state() -> web::Data<AppState> {
+        web::Data::new(AppState {
+            relayer_address: address!("0000000000000000000000000000000000000010"),
+            tokens: vec![test_token()],
+            signer_providers: HashMap::new(),
+            oracle: PriceOracle::new(&[]).expect("oracle"),
+            swap_enabled: true,
+            swap_fee_bps: 50,
+            max_swap_native_wei: U256::from(10_000_000_000_000_000u64),
+            gas_fee_cache: GasFeeCache::new(),
+        })
+    }
+
+    async fn call_relay_swap(body: Value) -> (StatusCode, Value) {
+        let app = test::init_service(
+            App::new()
+                .app_data(test_state())
+                .route("/relay/swap", web::post().to(relay_swap)),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/relay/swap")
+            .set_json(body)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body()).await.expect("response body");
+        let json: Value = serde_json::from_slice(&bytes).expect("json body");
+        (status, json)
+    }
+
+    fn valid_swap_body() -> Value {
+        json!({
+            "chainId": 1,
+            "tokenAmount": "1000000",
+            "minNativeAmount": "1",
+            "recipient": "0x00000000000000000000000000000000000000aa",
+            "owner": "0x00000000000000000000000000000000000000bb",
+            "permitDeadline": (u64::MAX / 2).to_string(),
+            "permitV": 27,
+            "permitR": format!("{:#066x}", 1),
+            "permitS": format!("{:#066x}", 2),
+        })
+    }
+
+    #[actix_web::test]
+    async fn relay_swap_rejects_zero_recipient() {
+        let mut body = valid_swap_body();
+        body["recipient"] = Value::String(format!("{:#x}", Address::ZERO));
+
+        let (status, json) = call_relay_swap(body).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(json["error"], "recipient must not be zero address");
+    }
+
+    #[actix_web::test]
+    async fn relay_swap_rejects_zero_owner() {
+        let mut body = valid_swap_body();
+        body["owner"] = Value::String(format!("{:#x}", Address::ZERO));
+
+        let (status, json) = call_relay_swap(body).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(json["error"], "owner must not be zero address");
+    }
+
+    #[actix_web::test]
+    async fn relay_swap_rejects_permit_deadline_beyond_ttl() {
+        let mut body = valid_swap_body();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        body["permitDeadline"] = Value::String((now + 3601).to_string());
+
+        let (status, json) = call_relay_swap(body).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            json["error"],
+            "permit_deadline must be within 3600 seconds from now"
+        );
     }
 }

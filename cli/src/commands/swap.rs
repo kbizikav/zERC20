@@ -77,6 +77,11 @@ pub async fn run(
     println!("  Native output  : {} wei", native_amount);
     println!("  Fee            : {} bps", quote.fee_bps);
     println!("  Relayer fee    : {} wei", relayer_fee);
+    if quote.price_fallback {
+        println!(
+            "  WARNING: relay is using fallback/stale oracle prices — quoted rate may be less favorable"
+        );
+    }
 
     // Apply slippage to compute min_native_amount
     let min_native = native_amount * U256::from(10_000 - slippage_bps) / U256::from(10_000u64);
@@ -87,6 +92,9 @@ pub async fn run(
 
     if native_amount.is_zero() {
         bail!("swap quote returned zero native output");
+    }
+    if min_native.is_zero() {
+        bail!("slippage_bps is too high; min native output became zero");
     }
 
     if !yes {
@@ -109,7 +117,7 @@ pub async fn run(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
-            + 600, // 10 minutes
+            + 1800, // 30 minutes
     );
 
     let nonce = erc20
@@ -156,8 +164,9 @@ pub async fn run(
         .await
         .context("swap submission failed")?;
 
-    println!("\nSwap completed!");
+    println!("\nSwap submitted.");
     println!("  Tx hash: {}", result.tx_hash);
+    println!("  Status : pending confirmation");
 
     Ok(())
 }

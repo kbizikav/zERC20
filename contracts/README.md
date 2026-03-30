@@ -194,6 +194,26 @@ forge script script/DeployLiquidity.s.sol:DeployLiquidity --rpc-url <ARB_RPC> --
 forge script script/DeployLiquidity.s.sol:DeployLiquidity --rpc-url <OP_RPC> --broadcast -vvvv
 ```
 
+### 3.5) Deploy SwapHelper for relay swaps (per chain)
+`SwapHelper` atomically executes `permit + transferFrom + native payout` for relay-based swaps.
+Deploy one instance per chain where the relay node should expose `/relay/swap`.
+
+```bash
+export PRIVATE_KEY=0x...
+export SWAP_HELPER_OWNER=0xYourOwner
+export RELAYER=0xYourRelayAddress
+
+forge script script/DeploySwapHelper.s.sol:DeploySwapHelper \
+  --rpc-url <CHAIN_RPC> \
+  --broadcast \
+  -vvvv
+```
+
+After deployment:
+- Record the proxy address in the matching token entry as `swap_helper_address`
+- Ensure the relayer account is allowlisted with `setRelayer(...)`
+- If `SWAP_ENABLED=true` on the relay node, every enabled chain must have `swap_helper_address`
+
 ### 4) Wire Hub/Verifier/Token peers
 
 Use a tokens config file from `../config/` (e.g., `tokens.zusdc.testnet.json`, `tokens.zeth.testnet.json`, `tokens.zbnb.testnet.json`)
@@ -372,6 +392,9 @@ these are the main public/external entrypoints that were NOT covered:
   - Not exercised: `lzCompose(...)` (the common path when zERC20 arrives via OFT + compose), `decodeBridgeRequest(...)`,
     `bridgeZerc20Self(...)`
   - Exercised: `quoteFee(...)`, `unwrapAndBridge(...)`, `withdraw(...)`, balance views
+- `SwapHelper`
+  - Not exercised: `swap(...)`, `setRelayer(...)`, `upgradeToAndCall(...)`
+  - View-only you can call anytime: `isRelayer(...)`
 - `LiquidityManager`
   - Not exercised: `unwrap(...)`, `quoteWrapReward(...)`, `quoteUnwrapFee(...)`, `setFeeParams(...)`, `withdrawRewards(...)`
   - Exercised: `wrap(...)`
