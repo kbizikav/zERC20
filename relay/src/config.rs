@@ -42,6 +42,11 @@ impl RelayConfig {
             .unwrap_or_else(|_| "50".to_string())
             .parse()
             .context("SWAP_FEE_BPS must be a valid u64")?;
+        anyhow::ensure!(
+            swap_fee_bps <= 10_000,
+            "SWAP_FEE_BPS must be <= 10000 (got {})",
+            swap_fee_bps
+        );
 
         // Default: 0.01 ETH = 10_000_000_000_000_000 wei
         let max_swap_native_wei = match std::env::var("MAX_SWAP_NATIVE_WEI") {
