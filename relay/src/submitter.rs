@@ -5,8 +5,8 @@ use alloy::{
 };
 use anyhow::{Context, Result, anyhow};
 
-use client_common::contracts::utils::ProviderWithSigner;
 use client_common::contracts::relay::RelayTeleportRequest;
+use client_common::contracts::utils::ProviderWithSigner;
 use client_common::tokens::TokenEntry;
 
 sol! {

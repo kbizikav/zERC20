@@ -3,8 +3,8 @@ use alloy::primitives::{Address, B256, U256};
 
 use crate::oracle::PriceOracle;
 use crate::submitter;
-use client_common::contracts::utils::ProviderWithSigner;
 use client_common::contracts::relay::RelayTeleportRequest;
+use client_common::contracts::utils::ProviderWithSigner;
 use client_common::tokens::{TokenEntry, TokenType};
 
 /// Shared application state.
@@ -428,8 +428,9 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     let min_native = match U256::from_str_radix(&req.min_native_amount, 10) {
         Ok(a) if !a.is_zero() => a,
         _ => {
-            return HttpResponse::BadRequest()
-                .json(serde_json::json!({"error": "min_native_amount must be a positive decimal"}));
+            return HttpResponse::BadRequest().json(
+                serde_json::json!({"error": "min_native_amount must be a positive decimal"}),
+            );
         }
     };
 
