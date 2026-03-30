@@ -166,7 +166,7 @@ pub async fn relay_teleport(
         Err(err) => {
             log::error!("teleport submission failed: {:?}", err);
             HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}))
+                .json(serde_json::json!({"error": "teleport submission failed"}))
         }
     }
 }
@@ -194,8 +194,9 @@ pub async fn fee_estimate(
     let provider = match token.provider() {
         Ok(p) => p,
         Err(err) => {
+            log::error!("failed to create provider for chain {}: {:?}", query.chain_id, err);
             return HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("failed to create provider: {}", err)}));
+                .json(serde_json::json!({"error": "internal provider error"}));
         }
     };
 
@@ -213,7 +214,7 @@ pub async fn fee_estimate(
         Err(err) => {
             log::error!("fee estimation failed: {:?}", err);
             HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}))
+                .json(serde_json::json!({"error": "fee estimation failed"}))
         }
     }
 }
@@ -278,8 +279,9 @@ pub async fn swap_quote(
         match compute_swap_native_amount(state.get_ref(), token, token_type, token_amount).await {
             Ok(v) => v,
             Err(err) => {
+                log::error!("swap quote computation failed: {:?}", err);
                 return HttpResponse::InternalServerError()
-                    .json(serde_json::json!({"error": format!("{:#}", err)}));
+                    .json(serde_json::json!({"error": "swap quote computation failed"}));
             }
         };
 
@@ -358,8 +360,9 @@ pub async fn swap_quote_target(
         {
             Ok(v) => v,
             Err(err) => {
+                log::error!("swap quote target computation failed: {:?}", err);
                 return HttpResponse::InternalServerError()
-                    .json(serde_json::json!({"error": format!("{:#}", err)}));
+                    .json(serde_json::json!({"error": "swap quote computation failed"}));
             }
         };
 
@@ -465,8 +468,9 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
         match compute_swap_native_amount(state.get_ref(), token, token_type, token_amount).await {
             Ok(v) => v,
             Err(err) => {
+                log::error!("swap computation failed: {:?}", err);
                 return HttpResponse::InternalServerError()
-                    .json(serde_json::json!({"error": format!("{:#}", err)}));
+                    .json(serde_json::json!({"error": "swap computation failed"}));
             }
         };
 
@@ -516,7 +520,7 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
         Err(err) => {
             log::error!("swap submission failed: {:?}", err);
             HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}))
+                .json(serde_json::json!({"error": "swap submission failed"}))
         }
     }
 }
