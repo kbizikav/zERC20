@@ -14,6 +14,7 @@ members = [
     "zstorage/backend/storage",
     "circuit-setup",
     "watcher",
+    "relay",
 ]
 resolver = "2"
 

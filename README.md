@@ -22,7 +22,7 @@ Before starting any node, make sure the Nova artifacts and Solidity verifiers ex
 
 ## Local setup guide
 
-Follow these steps to bring up the indexer, crosschain job, and decider-prover, then exercise the CLI end-to-end:
+Follow these steps to bring up the indexer, crosschain job, decider-prover, and relay node, then exercise the CLI end-to-end:
 
 1. Prepare token metadata
    Use a token configuration file from `config/deployed/` for your target environment (e.g., `config/deployed/mainnet/` or `config/deployed/testnet/`). Alternatively, copy `config/tokens.example.json` and fill it with your own deployed contracts.
@@ -32,11 +32,18 @@ Follow these steps to bring up the indexer, crosschain job, and decider-prover, 
    - `ALCHEMY_KEY` - Alchemy API key for RPC access
    - `INFURA_KEY` - Infura API key for RPC fallback access
    - `ROOT_SUBMITTER_PRIVATE_KEY` - Key for submitting roots on-chain
-   - `RELAY_PRIVATE_KEY` - Key for cross-chain relay operations
+   - `RELAY_PRIVATE_KEY` - Key for relay node operations (`/relay/teleport`, `/relay/swap`)
    - `FEE_MANAGER_PRIVATE_KEY` - Key for fee manager operations
    - `TOKENS_FILE_PATH` - Path to token configuration file
 
+   Optional relay-node envs:
+   - `SWAP_ENABLED` - Enable `/relay/swap*` endpoints (`false` by default)
+   - `SWAP_FEE_BPS` - Swap fee in basis points (`50` by default)
+   - `MAX_SWAP_NATIVE_WEI` - Per-swap native output cap (`0.01 ETH` by default)
+
    These keys must control accounts with enough ETH on the EVM chains listed in your tokens configuration.
+
+   If `SWAP_ENABLED=true`, every token entry must include `swap_helper_address` in `tokens.json`.
 
    ```bash
    # Example: Point to mainnet token configuration
@@ -72,8 +79,21 @@ Follow these steps to bring up the indexer, crosschain job, and decider-prover, 
 
    > **Note:** The decider-prover must run directly on the host, not in Docker. It crashes during proof generation when containerized.
 
-6. Exercise the CLI
-   Use the CLI to send transfers and receive funds; see `cli/README.md` for commands and options.
+6. Run the relay node
+   In `relay/`, start the HTTP server:
+
+   ```bash
+   cargo run -r
+   ```
+
+   Check it with:
+
+   ```bash
+   curl http://localhost:3000/relay/info
+   ```
+
+7. Exercise the CLI
+   Use the CLI to send transfers, redeem via the relay node, and swap zERC20 into native gas tokens; see `cli/README.md` for commands and options.
 
 ## Contract-only testnet verification
 

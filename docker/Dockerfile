@@ -27,6 +27,7 @@ RUN mkdir -p \
     indexer \
     wasm \
     watcher \
+    relay \
     bin
 
 COPY Cargo.toml Cargo.lock ./
@@ -40,6 +41,7 @@ COPY decider-prover/Cargo.toml decider-prover/Cargo.toml
 COPY indexer/Cargo.toml indexer/Cargo.toml
 COPY wasm/Cargo.toml wasm/Cargo.toml
 COPY watcher/Cargo.toml watcher/Cargo.toml
+COPY relay/Cargo.toml relay/Cargo.toml
 
 COPY . .
 
@@ -50,10 +52,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
       --package zerc20-crosschain-job \
       --package zerc20-fee-manager \
       --package zerc20-watcher \
+      --package zerc20-relay \
     && cp target/release/zerc20-tree-indexer      /workspace/bin/tree-indexer \
     && cp target/release/zerc20-crosschain-job    /workspace/bin/crosschain-job \
     && cp target/release/zerc20-fee-manager       /workspace/bin/fee-manager \
-    && cp target/release/zerc20-watcher           /workspace/bin/watcher
+    && cp target/release/zerc20-watcher           /workspace/bin/watcher \
+    && cp target/release/zerc20-relay             /workspace/bin/relay
 
 RUN --mount=type=cache,target=/usr/local/cargo/registry,sharing=locked \
     cargo install --locked sqlx-cli --version 0.8.6 --no-default-features --features rustls,postgres
@@ -137,3 +141,20 @@ ENV RUST_LOG=info
 USER appuser
 
 ENTRYPOINT ["/usr/local/bin/watcher"]
+
+# ============================================================
+# Runtime: relay
+# ============================================================
+FROM runtime-base AS relay
+
+WORKDIR /app
+
+COPY --from=builder /workspace/bin/relay /usr/local/bin/relay
+
+ENV RUST_LOG=info
+
+USER appuser
+
+EXPOSE 3000
+
+ENTRYPOINT ["/usr/local/bin/relay"]

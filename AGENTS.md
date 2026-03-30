@@ -1,6 +1,6 @@
 # Agent Notes (Repo Root)
 
-This repository contains both the on-chain Solidity contracts (`contracts/`) and the off-chain services (indexer, crosschain job, prover, CLI, frontend).
+This repository contains both the on-chain Solidity contracts (`contracts/`) and the off-chain services (indexer, crosschain job, prover, relay, CLI, frontend).
 
 Use this file as a quick “how to work here safely” guide.
 
@@ -8,6 +8,7 @@ Use this file as a quick “how to work here safely” guide.
 
 - `contracts/`: Foundry project (deploy scripts, Solidity sources)
 - `config/`: Chain/token config used by services and helper scripts (`tokens.json`, etc.)
+- `relay/`: HTTP relay node for gasless teleport submission and token-to-native swaps
 - `cli/`: User-facing CLI
 - `indexer/`, `crosschain-job/`, `decider-prover/`, `fee-manager/`: Off-chain components
 - `scripts/`: Helper scripts for artifacts/config
@@ -24,6 +25,8 @@ Two common workflows exist:
 
 1) **Full system (node + services)**
 - Follow `README.md` and `cli/README.md`.
+- If testing relay-assisted flows, also run `relay/` and ensure `tokens.json` includes
+  `swap_helper_address` for swap-enabled chains.
 - Requires circuit artifacts + Solidity verifiers to exist in `contracts/src/verifiers/`.
 
 2) **Contracts-only smoke testing**

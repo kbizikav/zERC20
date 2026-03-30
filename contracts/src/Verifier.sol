@@ -263,7 +263,7 @@ contract Verifier is
         require(delegate != address(0), ZeroAddress());
         __Ownable_init(delegate);
         __OApp_init(delegate);
-        _initEIP712(eip712Init);
+        _initEip712(eip712Init);
         __Verifier_init(
             token_,
             hubEid_,
@@ -276,7 +276,7 @@ contract Verifier is
     }
 
     /// @dev Decodes and forwards EIP-712 domain parameters to avoid stack-too-deep in `initialize`.
-    function _initEIP712(bytes calldata eip712Init) private onlyInitializing {
+    function _initEip712(bytes calldata eip712Init) private onlyInitializing {
         (string memory name_, string memory version_) = abi.decode(eip712Init, (string, string));
         __EIP712_init(name_, version_);
     }
