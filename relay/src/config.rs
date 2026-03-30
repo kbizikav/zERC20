@@ -13,7 +13,7 @@ pub struct RelayConfig {
     pub swap_enabled: bool,
     /// Swap fee in basis points (100 = 1%). Default: 50 (0.5%).
     pub swap_fee_bps: u64,
-    /// Maximum native token (wei) the relay will pay per swap. Default: 0.0001 ETH.
+    /// Maximum native token (wei) the relay will pay per swap. Default: 0.01 ETH.
     pub max_swap_native_wei: U256,
 }
 
