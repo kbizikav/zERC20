@@ -109,7 +109,7 @@ pub async fn run(
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs()
-            + 600, // 10 minutes
+            + 1800, // 30 minutes
     );
 
     let nonce = erc20
