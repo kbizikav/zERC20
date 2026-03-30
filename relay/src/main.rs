@@ -28,8 +28,11 @@ async fn main() -> Result<()> {
         .trim()
         .strip_prefix("0x")
         .unwrap_or(cfg.private_key.trim());
-    let key_bytes = hex::decode(normalized).context("failed to decode RELAY_PRIVATE_KEY hex")?;
-    anyhow::ensure!(key_bytes.len() == 32, "RELAY_PRIVATE_KEY must be 32 bytes");
+    let key_bytes = hex::decode(normalized).context("failed to decode RELAYER_PRIVATE_KEY hex")?;
+    anyhow::ensure!(
+        key_bytes.len() == 32,
+        "RELAYER_PRIVATE_KEY must be 32 bytes"
+    );
     let relayer_key = B256::from_slice(&key_bytes);
     let relayer_address: Address = get_address_from_private_key(relayer_key);
 
