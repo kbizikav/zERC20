@@ -1,7 +1,6 @@
 use alloy::{
     primitives::{Address, B256, Bytes, U256},
     providers::Provider,
-    rpc::types::TransactionRequest,
     sol,
 };
 use anyhow::{Context, Result, anyhow};
@@ -112,13 +111,12 @@ pub async fn submit_teleport(
 
 /// Execute a token-to-native swap on behalf of a user.
 ///
-/// If the token has a `swap_helper_address` configured, uses the SwapHelper contract
-/// for an atomic single-transaction swap. Otherwise falls back to the legacy 3-tx flow.
+/// Requires the token to have a `swap_helper_address` configured and executes
+/// the swap atomically through the SwapHelper contract.
 #[allow(clippy::too_many_arguments)]
 pub async fn submit_swap(
     token: &TokenEntry,
     provider: Option<&ProviderWithSigner>,
-    relayer_address: Address,
     owner: Address,
     recipient: Address,
     token_amount: U256,
@@ -135,39 +133,27 @@ pub async fn submit_swap(
             token.label
         )
     })?;
-    if let Some(swap_helper_address) = token.swap_helper_address {
-        submit_swap_atomic(
-            token,
-            provider,
-            swap_helper_address,
-            owner,
-            recipient,
-            token_amount,
-            native_amount,
-            permit_deadline,
-            permit_v,
-            permit_r,
-            permit_s,
+    let swap_helper_address = token.swap_helper_address.ok_or_else(|| {
+        anyhow!(
+            "no swap_helper_address configured for chain {} ({})",
+            token.chain_id,
+            token.label
         )
-        .await
-    } else {
-        let hashes = submit_swap_legacy(
-            token,
-            provider,
-            relayer_address,
-            owner,
-            recipient,
-            token_amount,
-            native_amount,
-            permit_deadline,
-            permit_v,
-            permit_r,
-            permit_s,
-        )
-        .await?;
-        // Return the last tx hash (native transfer) as the canonical result
-        Ok(hashes.native_tx_hash)
-    }
+    })?;
+    submit_swap_atomic(
+        token,
+        provider,
+        swap_helper_address,
+        owner,
+        recipient,
+        token_amount,
+        native_amount,
+        permit_deadline,
+        permit_v,
+        permit_r,
+        permit_s,
+    )
+    .await
 }
 
 /// Atomic swap via SwapHelper contract (single transaction).
@@ -218,112 +204,4 @@ async fn submit_swap_atomic(
     log::info!("Swap atomic tx: {} on chain {}", tx_hash, token.chain_id);
 
     Ok(tx_hash)
-}
-
-/// Legacy 3-transaction swap (permit → transferFrom → native transfer).
-#[allow(clippy::too_many_arguments)]
-async fn submit_swap_legacy(
-    token: &TokenEntry,
-    provider: &ProviderWithSigner,
-    relayer_address: Address,
-    owner: Address,
-    recipient: Address,
-    token_amount: U256,
-    native_amount: U256,
-    permit_deadline: U256,
-    permit_v: u8,
-    permit_r: B256,
-    permit_s: B256,
-) -> Result<SwapTxHashes> {
-    let erc20 = IERC20Permit::new(token.token_address, provider);
-
-    let legacy_gas_price = if token.legacy_tx() {
-        Some(
-            provider
-                .get_gas_price()
-                .await
-                .context("failed to fetch gas price for legacy tx")?,
-        )
-    } else {
-        None
-    };
-
-    // 1. permit
-    let permit_call = erc20.permit(
-        owner,
-        relayer_address,
-        token_amount,
-        permit_deadline,
-        permit_v,
-        permit_r,
-        permit_s,
-    );
-    let permit_call = match legacy_gas_price {
-        Some(gp) => permit_call.gas_price(gp),
-        None => permit_call,
-    };
-    let permit_pending = permit_call
-        .send()
-        .await
-        .context("failed to send permit transaction")?;
-    let permit_tx_hash = *permit_pending.tx_hash();
-    log::info!("Swap permit tx: {}", permit_tx_hash);
-
-    // Wait for permit confirmation before proceeding
-    let permit_receipt = permit_pending
-        .get_receipt()
-        .await
-        .context("permit transaction failed")?;
-    if !permit_receipt.status() {
-        anyhow::bail!("permit transaction reverted: {:?}", permit_receipt);
-    }
-
-    // 2. transferFrom
-    let transfer_call = erc20.transferFrom(owner, relayer_address, token_amount);
-    let transfer_call = match legacy_gas_price {
-        Some(gp) => transfer_call.gas_price(gp),
-        None => transfer_call,
-    };
-    let transfer_pending = transfer_call
-        .send()
-        .await
-        .context("failed to send transferFrom transaction")?;
-    let transfer_tx_hash = *transfer_pending.tx_hash();
-    log::info!("Swap transferFrom tx: {}", transfer_tx_hash);
-
-    let transfer_receipt = transfer_pending
-        .get_receipt()
-        .await
-        .context("transferFrom transaction failed")?;
-    if !transfer_receipt.status() {
-        anyhow::bail!("transferFrom transaction reverted: {:?}", transfer_receipt);
-    }
-
-    // 3. Send native tokens to recipient
-    let mut tx_req = TransactionRequest::default()
-        .to(recipient)
-        .value(native_amount);
-    if let Some(gp) = legacy_gas_price {
-        tx_req = tx_req.gas_price(gp);
-    }
-    let native_pending = provider
-        .send_transaction(tx_req)
-        .await
-        .context("failed to send native transfer transaction")?;
-    let native_tx_hash = *native_pending.tx_hash();
-    log::info!("Swap native transfer tx: {}", native_tx_hash);
-
-    Ok(SwapTxHashes {
-        permit_tx_hash,
-        transfer_tx_hash,
-        native_tx_hash,
-    })
-}
-
-/// Transaction hashes returned from a legacy swap execution.
-#[allow(dead_code)]
-struct SwapTxHashes {
-    permit_tx_hash: B256,
-    transfer_tx_hash: B256,
-    native_tx_hash: B256,
 }

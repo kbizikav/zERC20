@@ -489,7 +489,6 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     match submitter::submit_swap(
         token,
         state.signer_provider(req.chain_id),
-        state.relayer_address,
         req.owner,
         req.recipient,
         token_amount,
