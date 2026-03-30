@@ -382,6 +382,15 @@ pub async fn swap_quote_target(
             }
         };
 
+    if native_amount.is_zero() {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": format!(
+                "swap output is zero after deducting relayer fee {}",
+                relayer_fee
+            )
+        }));
+    }
+
     let price_fallback = !state
         .oracle
         .has_fresh_prices(query.chain_id, token_type)
