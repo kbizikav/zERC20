@@ -298,10 +298,13 @@ async fn submit_swap_legacy(
     log::info!("Swap permit tx: {}", permit_tx_hash);
 
     // Wait for permit confirmation before proceeding
-    permit_pending
+    let permit_receipt = permit_pending
         .get_receipt()
         .await
         .context("permit transaction failed")?;
+    if !permit_receipt.status() {
+        anyhow::bail!("permit transaction reverted: {:?}", permit_receipt);
+    }
 
     // 2. transferFrom
     let transfer_call = erc20.transferFrom(owner, relayer_address, token_amount);
@@ -316,10 +319,13 @@ async fn submit_swap_legacy(
     let transfer_tx_hash = *transfer_pending.tx_hash();
     log::info!("Swap transferFrom tx: {}", transfer_tx_hash);
 
-    transfer_pending
+    let transfer_receipt = transfer_pending
         .get_receipt()
         .await
         .context("transferFrom transaction failed")?;
+    if !transfer_receipt.status() {
+        anyhow::bail!("transferFrom transaction reverted: {:?}", transfer_receipt);
+    }
 
     // 3. Send native tokens to recipient
     let mut tx_req = TransactionRequest::default()
