@@ -269,8 +269,9 @@ pub async fn swap_quote(
     let relayer_fee = match cached_swap_relayer_fee(state.get_ref(), token).await {
         Ok(f) => f,
         Err(err) => {
+            log::error!("swap quote computation failed: {:?}", err);
             return HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}));
+                .json(serde_json::json!({"error": "swap quote computation failed"}));
         }
     };
 
@@ -281,8 +282,9 @@ pub async fn swap_quote(
     {
         Ok(v) => v,
         Err(err) => {
+            log::error!("swap quote computation failed: {:?}", err);
             return HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}));
+                .json(serde_json::json!({"error": "swap quote computation failed"}));
         }
     };
 
@@ -503,8 +505,9 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     let relayer_fee = match cached_swap_relayer_fee(state.get_ref(), token).await {
         Ok(f) => f,
         Err(err) => {
+            log::error!("swap computation failed: {:?}", err);
             return HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}));
+                .json(serde_json::json!({"error": "swap computation failed"}));
         }
     };
 
@@ -515,8 +518,9 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     {
         Ok(v) => v,
         Err(err) => {
+            log::error!("swap computation failed: {:?}", err);
             return HttpResponse::InternalServerError()
-                .json(serde_json::json!({"error": format!("{:#}", err)}));
+                .json(serde_json::json!({"error": "swap computation failed"}));
         }
     };
 

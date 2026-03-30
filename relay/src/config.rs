@@ -109,7 +109,10 @@ mod tests {
 
     fn set_base_env(tokens_path: &PathBuf) {
         unsafe {
-            std::env::set_var("RELAY_PRIVATE_KEY", "0x1111111111111111111111111111111111111111111111111111111111111111");
+            std::env::set_var(
+                "RELAY_PRIVATE_KEY",
+                "0x1111111111111111111111111111111111111111111111111111111111111111",
+            );
             std::env::set_var("TOKENS_FILE_PATH", tokens_path);
             std::env::remove_var("SWAP_ENABLED");
             std::env::remove_var("SWAP_FEE_BPS");
@@ -143,7 +146,10 @@ mod tests {
         }
 
         let err = RelayConfig::from_env().expect_err("should reject zero max native");
-        assert!(err.to_string().contains("MAX_SWAP_NATIVE_WEI must be non-zero"));
+        assert!(
+            err.to_string()
+                .contains("MAX_SWAP_NATIVE_WEI must be non-zero")
+        );
 
         fs::remove_file(tokens_path).ok();
     }
