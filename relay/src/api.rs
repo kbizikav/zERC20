@@ -611,3 +611,130 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::{App, body::to_bytes, http::StatusCode, test};
+    use alloy::primitives::address;
+    use client_common::tokens::TokenEntry;
+    use serde_json::{Value, json};
+    use std::collections::HashMap;
+
+    fn test_token() -> TokenEntry {
+        TokenEntry {
+            label: "zUSDC".to_string(),
+            token_address: address!("0000000000000000000000000000000000000001"),
+            verifier_address: address!("0000000000000000000000000000000000000002"),
+            liquidity_manager_address: None,
+            adaptor_address: None,
+            eid: None,
+            layerzero_endpoint: None,
+            chain_id: 1,
+            deployed_block_number: 1,
+            rpc_urls: vec!["http://localhost:8545".to_string()],
+            legacy_tx: false,
+            relay_interval_secs: None,
+            root_submit_interval_ms: None,
+            token_type: Some(TokenType::Usdc),
+            swap_helper_address: Some(address!("0000000000000000000000000000000000000003")),
+        }
+    }
+
+    fn test_state() -> web::Data<AppState> {
+        web::Data::new(AppState {
+            relayer_address: address!("0000000000000000000000000000000000000010"),
+            tokens: vec![test_token()],
+            signer_providers: HashMap::new(),
+            oracle: PriceOracle::new(&[]).expect("oracle"),
+            swap_enabled: true,
+            swap_fee_bps: 50,
+            max_swap_native_wei: U256::from(10_000_000_000_000_000u64),
+        })
+    }
+
+    async fn call_relay_swap(body: Value) -> (StatusCode, Value) {
+        let app = test::init_service(
+            App::new()
+                .app_data(test_state())
+                .route("/relay/swap", web::post().to(relay_swap)),
+        )
+        .await;
+
+        let req = test::TestRequest::post()
+            .uri("/relay/swap")
+            .set_json(body)
+            .to_request();
+        let resp = test::call_service(&app, req).await;
+        let status = resp.status();
+        let bytes = to_bytes(resp.into_body()).await.expect("response body");
+        let json: Value = serde_json::from_slice(&bytes).expect("json body");
+        (status, json)
+    }
+
+    fn valid_swap_body() -> Value {
+        json!({
+            "chainId": 1,
+            "tokenAmount": "1000000",
+            "minNativeAmount": "1",
+            "maxNativeAmount": "1",
+            "recipient": "0x00000000000000000000000000000000000000aa",
+            "owner": "0x00000000000000000000000000000000000000bb",
+            "permitDeadline": (u64::MAX / 2).to_string(),
+            "permitV": 27,
+            "permitR": format!("{:#066x}", 1),
+            "permitS": format!("{:#066x}", 2),
+        })
+    }
+
+    #[actix_web::test]
+    async fn relay_swap_rejects_zero_recipient() {
+        let mut body = valid_swap_body();
+        body["recipient"] = Value::String(format!("{:#x}", Address::ZERO));
+
+        let (status, json) = call_relay_swap(body).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(json["error"], "recipient must not be zero address");
+    }
+
+    #[actix_web::test]
+    async fn relay_swap_rejects_zero_owner() {
+        let mut body = valid_swap_body();
+        body["owner"] = Value::String(format!("{:#x}", Address::ZERO));
+
+        let (status, json) = call_relay_swap(body).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(json["error"], "owner must not be zero address");
+    }
+
+    #[actix_web::test]
+    async fn relay_swap_rejects_zero_max_native_amount() {
+        let mut body = valid_swap_body();
+        body["maxNativeAmount"] = Value::String("0".to_string());
+
+        let (status, json) = call_relay_swap(body).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(json["error"], "max_native_amount must be a positive decimal");
+    }
+
+    #[actix_web::test]
+    async fn relay_swap_rejects_permit_deadline_beyond_ttl() {
+        let mut body = valid_swap_body();
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        body["permitDeadline"] = Value::String((now + 3601).to_string());
+
+        let (status, json) = call_relay_swap(body).await;
+
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            json["error"],
+            "permit_deadline must be within 3600 seconds from now"
+        );
+    }
+}

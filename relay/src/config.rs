@@ -69,3 +69,82 @@ impl RelayConfig {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::{
+        fs,
+        path::PathBuf,
+        sync::{Mutex, OnceLock},
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    fn env_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    fn write_test_tokens_file() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("zerc20-relay-config-{unique}.json"));
+        let json = r#"{
+          "tokens": [
+            {
+              "label": "zUSDC",
+              "token_address": "0x0000000000000000000000000000000000000001",
+              "verifier_address": "0x0000000000000000000000000000000000000002",
+              "chain_id": 1,
+              "deployed_block_number": 1,
+              "rpc_urls": ["http://localhost:8545"]
+            }
+          ]
+        }"#;
+        fs::write(&path, json).expect("write tokens file");
+        path
+    }
+
+    fn set_base_env(tokens_path: &PathBuf) {
+        unsafe {
+            std::env::set_var("RELAY_PRIVATE_KEY", "0x1111111111111111111111111111111111111111111111111111111111111111");
+            std::env::set_var("TOKENS_FILE_PATH", tokens_path);
+            std::env::remove_var("SWAP_ENABLED");
+            std::env::remove_var("SWAP_FEE_BPS");
+            std::env::remove_var("MAX_SWAP_NATIVE_WEI");
+            std::env::remove_var("RELAY_PORT");
+        }
+    }
+
+    #[test]
+    fn from_env_rejects_swap_fee_bps_at_10000() {
+        let _guard = env_lock().lock().expect("env lock");
+        let tokens_path = write_test_tokens_file();
+        set_base_env(&tokens_path);
+        unsafe {
+            std::env::set_var("SWAP_FEE_BPS", "10000");
+        }
+
+        let err = RelayConfig::from_env().expect_err("should reject 10000 bps");
+        assert!(err.to_string().contains("SWAP_FEE_BPS must be < 10000"));
+
+        fs::remove_file(tokens_path).ok();
+    }
+
+    #[test]
+    fn from_env_rejects_zero_max_swap_native_wei() {
+        let _guard = env_lock().lock().expect("env lock");
+        let tokens_path = write_test_tokens_file();
+        set_base_env(&tokens_path);
+        unsafe {
+            std::env::set_var("MAX_SWAP_NATIVE_WEI", "0");
+        }
+
+        let err = RelayConfig::from_env().expect_err("should reject zero max native");
+        assert!(err.to_string().contains("MAX_SWAP_NATIVE_WEI must be non-zero"));
+
+        fs::remove_file(tokens_path).ok();
+    }
+}
