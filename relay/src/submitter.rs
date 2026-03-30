@@ -4,9 +4,9 @@ use alloy::{
     rpc::types::TransactionRequest,
     sol,
 };
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, anyhow};
 
-use client_common::contracts::utils::{get_address_from_private_key, get_provider_with_signer};
+use client_common::contracts::utils::ProviderWithSigner;
 use client_common::contracts::relay::RelayTeleportRequest;
 use client_common::tokens::TokenEntry;
 
@@ -39,17 +39,12 @@ sol! {
 /// Returns the transaction hash.
 pub async fn submit_teleport(
     token: &TokenEntry,
-    relayer_key: &B256,
+    provider: &ProviderWithSigner,
     req: &RelayTeleportRequest,
 ) -> Result<B256> {
     use client_common::contracts::verifier::{GeneralRecipientLib, Verifier};
 
-    let provider = get_provider_with_signer(
-        &token.provider().context("failed to create provider")?,
-        *relayer_key,
-    );
-
-    let contract = Verifier::new(token.verifier_address, &provider);
+    let contract = Verifier::new(token.verifier_address, provider);
 
     let gr = GeneralRecipientLib::GeneralRecipient {
         chainId: req.chain_id,
@@ -122,7 +117,8 @@ pub async fn submit_teleport(
 #[allow(clippy::too_many_arguments)]
 pub async fn submit_swap(
     token: &TokenEntry,
-    relayer_key: &B256,
+    provider: Option<&ProviderWithSigner>,
+    relayer_address: Address,
     owner: Address,
     recipient: Address,
     token_amount: U256,
@@ -132,10 +128,17 @@ pub async fn submit_swap(
     permit_r: B256,
     permit_s: B256,
 ) -> Result<B256> {
+    let provider = provider.ok_or_else(|| {
+        anyhow!(
+            "no signer provider configured for chain {} ({})",
+            token.chain_id,
+            token.label
+        )
+    })?;
     if let Some(swap_helper_address) = token.swap_helper_address {
         submit_swap_atomic(
             token,
-            relayer_key,
+            provider,
             swap_helper_address,
             owner,
             recipient,
@@ -150,7 +153,8 @@ pub async fn submit_swap(
     } else {
         let hashes = submit_swap_legacy(
             token,
-            relayer_key,
+            provider,
+            relayer_address,
             owner,
             recipient,
             token_amount,
@@ -170,7 +174,7 @@ pub async fn submit_swap(
 #[allow(clippy::too_many_arguments)]
 async fn submit_swap_atomic(
     token: &TokenEntry,
-    relayer_key: &B256,
+    provider: &ProviderWithSigner,
     swap_helper_address: Address,
     owner: Address,
     recipient: Address,
@@ -181,12 +185,7 @@ async fn submit_swap_atomic(
     permit_r: B256,
     permit_s: B256,
 ) -> Result<B256> {
-    let provider = get_provider_with_signer(
-        &token.provider().context("failed to create provider")?,
-        *relayer_key,
-    );
-
-    let swap_helper = ISwapHelper::new(swap_helper_address, &provider);
+    let swap_helper = ISwapHelper::new(swap_helper_address, provider);
 
     let call = swap_helper
         .swap(
@@ -225,7 +224,8 @@ async fn submit_swap_atomic(
 #[allow(clippy::too_many_arguments)]
 async fn submit_swap_legacy(
     token: &TokenEntry,
-    relayer_key: &B256,
+    provider: &ProviderWithSigner,
+    relayer_address: Address,
     owner: Address,
     recipient: Address,
     token_amount: U256,
@@ -235,13 +235,7 @@ async fn submit_swap_legacy(
     permit_r: B256,
     permit_s: B256,
 ) -> Result<SwapTxHashes> {
-    let relayer_address = get_address_from_private_key(*relayer_key);
-    let provider = get_provider_with_signer(
-        &token.provider().context("failed to create provider")?,
-        *relayer_key,
-    );
-
-    let erc20 = IERC20Permit::new(token.token_address, &provider);
+    let erc20 = IERC20Permit::new(token.token_address, provider);
 
     let legacy_gas_price = if token.legacy_tx() {
         Some(

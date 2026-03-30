@@ -1,16 +1,17 @@
 use actix_web::{HttpResponse, web};
 use alloy::primitives::{Address, B256, U256};
-use alloy::signers::local::PrivateKeySigner;
 
 use crate::oracle::PriceOracle;
 use crate::submitter;
+use client_common::contracts::utils::ProviderWithSigner;
 use client_common::contracts::relay::RelayTeleportRequest;
 use client_common::tokens::{TokenEntry, TokenType};
 
 /// Shared application state.
 pub struct AppState {
-    pub relayer_key: B256,
+    pub relayer_address: Address,
     pub tokens: Vec<TokenEntry>,
+    pub signer_providers: std::collections::HashMap<u64, ProviderWithSigner>,
     pub oracle: PriceOracle,
     pub swap_enabled: bool,
     pub swap_fee_bps: u64,
@@ -20,6 +21,10 @@ pub struct AppState {
 impl AppState {
     fn find_token(&self, chain_id: u64) -> Option<&TokenEntry> {
         self.tokens.iter().find(|t| t.chain_id == chain_id)
+    }
+
+    fn signer_provider(&self, chain_id: u64) -> Option<&ProviderWithSigner> {
+        self.signer_providers.get(&chain_id)
     }
 }
 
@@ -97,9 +102,6 @@ async fn estimate_swap_quote_from_target_native(
 
 /// GET /relay/info
 pub async fn relay_info(state: web::Data<AppState>) -> HttpResponse {
-    let signer = PrivateKeySigner::from_bytes(&state.relayer_key).unwrap();
-    let address = signer.address();
-
     // Build chain_id -> swap_helper_address map
     let swap_helper_addresses: std::collections::HashMap<String, String> = state
         .tokens
@@ -111,7 +113,7 @@ pub async fn relay_info(state: web::Data<AppState>) -> HttpResponse {
         .collect();
 
     HttpResponse::Ok().json(serde_json::json!({
-        "address": format!("{}", address),
+        "address": format!("{}", state.relayer_address),
         "swapEnabled": state.swap_enabled,
         "swapFeeBps": state.swap_fee_bps,
         "maxSwapNativeWei": state.max_swap_native_wei.to_string(),
@@ -150,7 +152,16 @@ pub async fn relay_teleport(
             .json(serde_json::json!({"error": "deadline has passed"}));
     }
 
-    match submitter::submit_teleport(token, &state.relayer_key, &req).await {
+    let provider = match state.signer_provider(req.chain_id) {
+        Some(p) => p,
+        None => {
+            return HttpResponse::InternalServerError().json(
+                serde_json::json!({"error": format!("no signer provider configured for chain {}", req.chain_id)}),
+            );
+        }
+    };
+
+    match submitter::submit_teleport(token, provider, &req).await {
         Ok(tx_hash) => HttpResponse::Ok().json(serde_json::json!({"txHash": tx_hash})),
         Err(err) => {
             log::error!("teleport submission failed: {:?}", err);
@@ -477,7 +488,8 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
 
     match submitter::submit_swap(
         token,
-        &state.relayer_key,
+        state.signer_provider(req.chain_id),
+        state.relayer_address,
         req.owner,
         req.recipient,
         token_amount,
