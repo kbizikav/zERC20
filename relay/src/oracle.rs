@@ -323,10 +323,18 @@ impl PriceOracle {
 
             // zBNB on ETH-gas chain: token_amount * bnb_price / eth_price
             TokenType::Bnb if is_eth_gas_chain(chain_id) => {
-                let (eth_price, _) = self.get_price(chain_id, PriceFeed::EthUsd).await;
-                let (bnb_price, _) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
+                let (eth_price, eth_dec) = self.get_price(chain_id, PriceFeed::EthUsd).await;
+                let (bnb_price, bnb_dec) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
                 if eth_price.is_zero() {
                     bail!("ETH/USD price is zero");
+                }
+                if eth_dec != bnb_dec {
+                    bail!(
+                        "feed decimals mismatch for chain {}: ETH/USD has {}, BNB/USD has {}",
+                        chain_id,
+                        eth_dec,
+                        bnb_dec
+                    );
                 }
                 Ok(token_amount * bnb_price / eth_price)
             }
@@ -366,12 +374,19 @@ impl PriceOracle {
             }
 
             // zBNB on ETH-gas chain: native_wei * eth_price / bnb_price
-            // Both feeds have the same decimals so they cancel out.
             TokenType::Bnb if is_eth_gas_chain(chain_id) => {
-                let (eth_price, _) = self.get_price(chain_id, PriceFeed::EthUsd).await;
-                let (bnb_price, _) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
+                let (eth_price, eth_dec) = self.get_price(chain_id, PriceFeed::EthUsd).await;
+                let (bnb_price, bnb_dec) = self.get_price(chain_id, PriceFeed::BnbUsd).await;
                 if bnb_price.is_zero() {
                     bail!("BNB/USD price is zero");
+                }
+                if eth_dec != bnb_dec {
+                    bail!(
+                        "feed decimals mismatch for chain {}: ETH/USD has {}, BNB/USD has {}",
+                        chain_id,
+                        eth_dec,
+                        bnb_dec
+                    );
                 }
                 // native_wei * (eth/usd) / (bnb/usd) = native_wei in BNB terms (18 dec)
                 Ok(native_wei * eth_price / bnb_price)
