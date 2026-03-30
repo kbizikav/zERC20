@@ -459,6 +459,8 @@ pub struct SwapRequest {
 
 /// POST /relay/swap
 pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>) -> HttpResponse {
+    const MAX_PERMIT_TTL_SECS: u64 = 3600;
+
     if !state.swap_enabled {
         return HttpResponse::ServiceUnavailable()
             .json(serde_json::json!({"error": "swap is not enabled on this relay"}));
@@ -535,6 +537,15 @@ pub async fn relay_swap(state: web::Data<AppState>, body: web::Json<SwapRequest>
     if permit_deadline < U256::from(now) {
         return HttpResponse::BadRequest()
             .json(serde_json::json!({"error": "permit deadline has passed"}));
+    }
+    let max_deadline = U256::from(now + MAX_PERMIT_TTL_SECS);
+    if permit_deadline > max_deadline {
+        return HttpResponse::BadRequest().json(serde_json::json!({
+            "error": format!(
+                "permit_deadline must be within {} seconds from now",
+                MAX_PERMIT_TTL_SECS
+            )
+        }));
     }
 
     let (native_amount, relayer_fee) =
