@@ -322,8 +322,8 @@ pub struct SwapArgs {
     #[arg(long, env = "RELAY_URL", value_name = "URL")]
     pub relay_url: String,
 
-    /// Slippage tolerance in basis points (default: 100 = 1%, max: 10000).
-    #[arg(long, default_value_t = 100, value_name = "BPS", value_parser = clap::value_parser!(u64).range(0..=10_000))]
+    /// Slippage tolerance in basis points (default: 100 = 1%, max: 9999).
+    #[arg(long, default_value_t = 100, value_name = "BPS", value_parser = clap::value_parser!(u64).range(0..=9_999))]
     pub slippage_bps: u64,
 
     /// Recipient of native tokens (defaults to signer address).

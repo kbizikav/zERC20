@@ -93,6 +93,9 @@ pub async fn run(
     if native_amount.is_zero() {
         bail!("swap quote returned zero native output");
     }
+    if min_native.is_zero() {
+        bail!("slippage_bps is too high; min native output became zero");
+    }
 
     if !yes {
         print!("\nProceed with swap? [y/N] ");
