@@ -40,8 +40,17 @@ async fn main() -> Result<()> {
             cfg.max_swap_native_wei
         );
         for t in &cfg.tokens {
-            if let Some(addr) = t.swap_helper_address {
-                log::info!("  SwapHelper on chain {}: {}", t.chain_id, addr);
+            match t.swap_helper_address {
+                Some(addr) => {
+                    log::info!("  SwapHelper on chain {}: {}", t.chain_id, addr);
+                }
+                None => {
+                    anyhow::bail!(
+                        "SWAP_ENABLED=true but chain {} ({}) has no swap_helper_address configured",
+                        t.chain_id,
+                        t.label
+                    );
+                }
             }
         }
     }
