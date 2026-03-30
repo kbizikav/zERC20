@@ -88,11 +88,9 @@ contract SwapHelper is OwnableUpgradeable, UUPSUpgradeable {
         if (msg.value == 0) revert ZeroNativeAmount();
         if (recipient == address(0)) revert ZeroRecipient();
 
-        // 1. permit — wrapped in try/catch so the tx succeeds even when permit reverts.
-        //    This can happen if: (a) a third party front-runs the permit call to consume the
-        //    nonce (griefing), or (b) the owner has already granted sufficient allowance.
-        //    In both cases the allowance is already set, so transferFrom below still works.
-        try IERC20Permit(token).permit(owner, address(this), tokenAmount, deadline, v, r, s) {} catch {}
+        // 1. permit — must succeed so the relayer cannot exploit pre-existing
+        //    allowance with an invalid signature.
+        IERC20Permit(token).permit(owner, address(this), tokenAmount, deadline, v, r, s);
 
         // 2. transferFrom: owner -> msg.sender (relayer receives tokens)
         IERC20(token).safeTransferFrom(owner, msg.sender, tokenAmount);

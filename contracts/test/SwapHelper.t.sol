@@ -109,7 +109,7 @@ contract SwapHelperTest is Test {
         helper.swap{value: 0}(address(token), owner, recipient, tokenAmount, deadline, v, r, s);
     }
 
-    function test_swap_with_existing_allowance() public {
+    function test_swap_reverts_with_existing_allowance_bad_permit() public {
         uint256 tokenAmount = 1000e18;
         uint256 nativeAmount = 0.5 ether;
         uint256 deadline = block.timestamp + 1 days;
@@ -120,14 +120,12 @@ contract SwapHelperTest is Test {
         vm.prank(owner);
         token.approve(address(helper), tokenAmount);
 
-        // Use a bad permit signature — caught by try/catch, approve already set
+        // Use a bad permit signature — existing allowance must not bypass permit validation
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xDEAD, keccak256("bad"));
 
         vm.prank(relayer);
+        vm.expectRevert();
         helper.swap{value: nativeAmount}(address(token), owner, recipient, tokenAmount, deadline, v, r, s);
-
-        assertEq(token.balanceOf(relayer), tokenAmount, "relayer received tokens via existing allowance");
-        assertEq(recipient.balance, nativeAmount, "recipient received native");
     }
 
     function test_swap_reverts_no_allowance_bad_permit() public {
