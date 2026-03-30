@@ -80,7 +80,10 @@ async fn estimate_swap_quote_from_target_native(
         .0;
 
     for _ in 0..4 {
-        if native_amount >= target_native_amount || native_amount > state.max_swap_native_wei {
+        if native_amount.is_zero()
+            || native_amount >= target_native_amount
+            || native_amount > state.max_swap_native_wei
+        {
             break;
         }
 
