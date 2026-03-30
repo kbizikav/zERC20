@@ -77,6 +77,9 @@ pub async fn run(
     println!("  Native output  : {} wei", native_amount);
     println!("  Fee            : {} bps", quote.fee_bps);
     println!("  Relayer fee    : {} wei", relayer_fee);
+    if quote.price_fallback {
+        println!("  WARNING: relay is using fallback/stale oracle prices — quoted rate may be less favorable");
+    }
 
     // Apply slippage to compute min_native_amount
     let min_native = native_amount * U256::from(10_000 - slippage_bps) / U256::from(10_000u64);

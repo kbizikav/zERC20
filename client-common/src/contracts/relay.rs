@@ -287,6 +287,8 @@ pub struct SwapQuoteResponse {
     pub native_amount: String,
     pub fee_bps: u64,
     pub relayer_fee: String,
+    #[serde(default)]
+    pub price_fallback: bool,
 }
 
 /// Transaction hash returned from a swap execution.
