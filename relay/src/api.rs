@@ -194,7 +194,11 @@ pub async fn fee_estimate(
     let provider = match token.provider() {
         Ok(p) => p,
         Err(err) => {
-            log::error!("failed to create provider for chain {}: {:?}", query.chain_id, err);
+            log::error!(
+                "failed to create provider for chain {}: {:?}",
+                query.chain_id,
+                err
+            );
             return HttpResponse::InternalServerError()
                 .json(serde_json::json!({"error": "internal provider error"}));
         }
@@ -302,7 +306,10 @@ pub async fn swap_quote(
         }));
     }
 
-    let price_fallback = !state.oracle.has_fresh_prices(query.chain_id, token_type).await;
+    let price_fallback = !state
+        .oracle
+        .has_fresh_prices(query.chain_id, token_type)
+        .await;
 
     HttpResponse::Ok().json(serde_json::json!({
         "nativeAmount": native_amount.to_string(),
