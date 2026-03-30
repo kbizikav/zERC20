@@ -413,6 +413,9 @@ async fn fetch_price(feed_address: Address, provider: &impl Provider) -> Result<
         .call()
         .await
         .context("failed to call decimals()")?;
+    if decimals > 18 {
+        bail!("Chainlink returned unsupported feed decimals: {}", decimals);
+    }
 
     let round = aggregator
         .latestRoundData()
