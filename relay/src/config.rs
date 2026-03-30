@@ -54,6 +54,10 @@ impl RelayConfig {
                 .context("MAX_SWAP_NATIVE_WEI must be a valid decimal U256")?,
             Err(_) => U256::from(10_000_000_000_000_000u64),
         };
+        anyhow::ensure!(
+            !max_swap_native_wei.is_zero(),
+            "MAX_SWAP_NATIVE_WEI must be non-zero"
+        );
 
         Ok(Self {
             port,
