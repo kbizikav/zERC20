@@ -123,6 +123,35 @@ See [Private Transfer Guide](private-transfer.md) for detailed instructions on s
 
 See [Scan Receives Guide](scan-receives.md) for instructions on receiving transfers.
 
+### Relayer-assisted redeem
+
+When you receive a private transfer, the frontend can optionally use a relay node to submit the
+redeem transaction for you. This is useful when your destination wallet does not already hold
+native gas on that chain.
+
+- Enable **Use Relayer** in the receive flow
+- Review the quoted relay fee before approving
+- Sign the relayer authorization with your wallet
+- The relay submits the redeem transaction and returns a transaction hash
+
+See [Scan Receives Guide](scan-receives.md) for the full redeem flow.
+
+### Get Gas
+
+The connection card includes a **Get Gas** action for supported tokens. This opens a relay-backed
+swap flow that converts zERC20 into the selected chain's native token.
+
+Typical flow:
+
+1. Click **Get Gas**
+2. Review the quoted native output and slippage-protected minimum
+3. If the quote shows a fallback-price warning, review it carefully before continuing
+4. Sign the ERC-2612 permit
+5. Wait for the relay to submit the swap transaction
+
+> **Note:** The success message indicates that the swap transaction was submitted to the chain. It
+> is not a guarantee that the transaction has already been mined successfully.
+
 ## Important Notes
 
 - **Crosschain Capability**: You can send on one chain and withdraw on another using LayerZero messaging

@@ -76,6 +76,17 @@ Library-agnostic interfaces for EVM interaction. viem's `PublicClient` and `Wall
 | `submitRedeemTransaction` | `(params: SubmitRedeemTransactionParams)` | `Promise<{ transactionHash: Hex }>` | Sign and submit redeem transaction on-chain |
 | `getAnnouncementStatus` | `(params: AnnouncementStatusParams)` | `Promise<AnnouncementStatus>` | Lightweight status check |
 
+## Relay
+
+Relay-node HTTP helpers for gasless redeem and token-to-native swap flows.
+
+| Name | Signature | Returns | Description |
+|------|-----------|---------|-------------|
+| `submitRelayTeleport` | `(relayUrl, req: RelayTeleportParams)` | `Promise<RelayResult>` | Submit a redeem/teleport request to a relay node |
+| `estimateRelayFee` | `(relayUrl, chainId)` | `Promise<RelayFeeEstimate>` | Ask the relay node for the current redeem fee quote |
+| `fetchSwapQuote` | `(relayUrl, chainId, amount)` | `Promise<SwapQuote>` | Quote a zERC20-to-native swap |
+| `submitRelaySwap` | `(relayUrl, params: RelaySwapParams)` | `Promise<SwapResult>` | Submit a signed permit-based swap request |
+
 ## Chain Metadata
 
 | Name | Signature | Returns | Description |
@@ -195,6 +206,11 @@ Key exported types and interfaces:
 - `ReadableVerifierContract` -- Verifier contract interface for `readContract`-based reads.
 - `OnChainGeneralRecipient` -- On-chain representation of a general recipient.
 - `AnnouncementStatus` -- Lightweight status of an announcement (pending, redeemable, redeemed).
+- `RelayerFeeAuthorization` -- EIP-712 authorization that lets a relay redeem on the recipient's behalf while capping the fee it may keep.
+- `RelayTeleportParams` -- Request body for relay-node redeem submission.
+- `RelayFeeEstimate` -- Relay quote for redeem fee in the token's smallest unit.
+- `RelaySwapParams` -- Request body for relay-node token-to-native swap submission.
+- `SwapQuote` -- Swap quote returned by the relay node, including `priceFallback`.
 - `EventsWithEligibility` -- Events annotated with their eligibility for redemption.
 - `TokenEntry` -- A single token's deployment configuration.
 - `HubEntry` -- Hub contract deployment configuration.

@@ -60,17 +60,33 @@ Once a transfer reaches **READY** status (shown as "ARRIVED"):
 
 1. Expand the announcement
 2. Wait for redeem resources to finish loading — the button shows **"Preparing redeem resources..."** while the zero-knowledge proof artifacts are being downloaded
-3. Click the "REDEEM" button once it becomes active
+3. Choose one of the available redeem paths:
+   - **Direct redeem** — you submit the on-chain transaction yourself
+   - **Use Relayer** — the relay node submits the redeem transaction on your behalf
+4. If you use the relayer path, review the quoted relay fee and approve the confirmation dialog
+5. Click the "REDEEM" button once it becomes active
 
 <figure><img src="../../assets/frontend_how_to/redeem-detail.png" alt="Redeem Detail" width="480"><figcaption>Transfer ready for redemption</figcaption></figure>
 
-3. Wait for the proof generation and transaction to complete (this creates a zero-knowledge proof that you are entitled to withdraw the funds)
+6. Wait for the proof generation and transaction to complete (this creates a zero-knowledge proof that you are entitled to withdraw the funds)
 
-4. Once completed, the status will change to **REDEEMED** and the button will show "Already Redeemed"
+7. Once completed, the status will change to **REDEEMED** and the button will show "Already Redeemed"
 
 <figure><img src="../../assets/frontend_how_to/redeem-success.png" alt="Redeem Success" width="480"><figcaption>Transfer successfully redeemed</figcaption></figure>
 
 The funds will be transferred to your connected wallet address.
+
+### When to use the relayer path
+
+Use **Use Relayer** when the destination chain wallet does not already have enough native gas to
+submit the redeem transaction directly.
+
+Notes:
+
+- The relay fee is deducted from the redeemed zERC20 amount
+- The frontend asks for confirmation before signing the relayer authorization
+- The relay path still prepares the same proof resources; it only changes who submits the final
+  on-chain transaction
 
 ## Troubleshooting
 
@@ -87,6 +103,7 @@ If the REDEEM button remains disabled even though the transfer shows READY / ARR
 
 - **"Preparing redeem resources..."** — The proof artifacts are still downloading. Wait for the download to complete.
 - **"Failed to load redeem resources..."** — The artifact download failed. Use the reload button on the announcement detail to retry. This clears the stale cache and re-fetches both the aggregation state and proof artifacts.
+- **Relayer fee estimate failed** — The relay node could not provide a fee quote. Retry, or switch off **Use Relayer** and redeem directly if you already have native gas.
 
 > **Tip:** If a reload doesn't help, try refreshing the browser page. This resets all in-memory caches.
 
