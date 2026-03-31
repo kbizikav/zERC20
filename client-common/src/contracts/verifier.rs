@@ -307,7 +307,7 @@ impl VerifierContract {
         let signer = get_provider_with_signer(&self.provider, private_key);
         let contract = Verifier::new(self.address, signer.clone());
         let call = contract
-            .teleport(
+            .teleport_0(
                 is_global,
                 root_hint,
                 gr_to_contract(gr),
@@ -328,11 +328,57 @@ impl VerifierContract {
         let signer = get_provider_with_signer(&self.provider, private_key);
         let contract = Verifier::new(self.address, signer.clone());
         let call = contract
-            .singleTeleport(
+            .singleTeleport_0(
                 is_global,
                 root_hint,
                 gr_to_contract(gr),
                 Bytes::copy_from_slice(proof),
+            )
+            .with_cloned_provider();
+        send_call_with_legacy(call, &signer, self.legacy_tx).await
+    }
+
+    pub async fn teleport_with_fee(
+        &self,
+        private_key: B256,
+        is_global: bool,
+        root_hint: u64,
+        gr: GeneralRecipient,
+        proof: &[u8],
+        fee_auth: Verifier::RelayerFeeAuthorization,
+    ) -> ContractResult<PendingTransactionBuilder<Ethereum>> {
+        let signer = get_provider_with_signer(&self.provider, private_key);
+        let contract = Verifier::new(self.address, signer.clone());
+        let call = contract
+            .teleport_1(
+                is_global,
+                root_hint,
+                gr_to_contract(gr),
+                Bytes::copy_from_slice(proof),
+                fee_auth,
+            )
+            .with_cloned_provider();
+        send_call_with_legacy(call, &signer, self.legacy_tx).await
+    }
+
+    pub async fn single_teleport_with_fee(
+        &self,
+        private_key: B256,
+        is_global: bool,
+        root_hint: u64,
+        gr: GeneralRecipient,
+        proof: &[u8],
+        fee_auth: Verifier::RelayerFeeAuthorization,
+    ) -> ContractResult<PendingTransactionBuilder<Ethereum>> {
+        let signer = get_provider_with_signer(&self.provider, private_key);
+        let contract = Verifier::new(self.address, signer.clone());
+        let call = contract
+            .singleTeleport_1(
+                is_global,
+                root_hint,
+                gr_to_contract(gr),
+                Bytes::copy_from_slice(proof),
+                fee_auth,
             )
             .with_cloned_provider();
         send_call_with_legacy(call, &signer, self.legacy_tx).await

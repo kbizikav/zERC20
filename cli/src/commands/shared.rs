@@ -137,7 +137,7 @@ pub fn confirm_relay_submission(skip_confirmation: bool, summary: &str) -> Resul
         return Ok(());
     }
 
-    print!("Submit Gelato relay task for {}? [y/N]: ", summary);
+    print!("Submit relay task for {}? [y/N]: ", summary);
     io::stdout()
         .flush()
         .context("failed to flush relay confirmation prompt")?;

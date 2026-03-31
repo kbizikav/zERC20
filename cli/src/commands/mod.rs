@@ -6,6 +6,7 @@ pub mod quote_unwrap;
 pub mod receive_transfer;
 pub mod scan_receive_transfers;
 pub mod shared;
+pub mod swap;
 pub mod teleport;
 pub mod transfer;
 pub mod unwrap;

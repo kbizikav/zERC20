@@ -16,7 +16,9 @@
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "ETH",
+      "swap_helper_address": "0xeA6FebeFd53C44E7ACF1A7bb62b261a8e6e3b8ea"
     },
     {
       "label": "arb-sepolia",
@@ -34,7 +36,9 @@
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "ETH",
+      "swap_helper_address": "0xeA6FebeFd53C44E7ACF1A7bb62b261a8e6e3b8ea"
     },
     {
       "label": "op-sepolia",
@@ -52,7 +56,9 @@
       ],
       "root_submit_interval_ms": 100000,
       "relay_interval_secs":900,
-      "legacy_tx": false
+      "legacy_tx": false,
+      "token_type": "ETH",
+      "swap_helper_address": "0xeA6FebeFd53C44E7ACF1A7bb62b261a8e6e3b8ea"
     }
   ],
   "hub": {

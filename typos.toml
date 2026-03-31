@@ -8,6 +8,7 @@ GROTH16 = "GROTH16"
 convertion = "convertion"
 Iz = "Iz"
 IzERC20 = "IzERC20"
+ba = "ba"
 
 [default.extend-identifiers]
 smove = "smove"

@@ -162,7 +162,8 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
         legacy_tx: false,
         relay_interval_secs: None,
         root_submit_interval_ms: None,
-        gelato_relay_address: None,
+        token_type: None,
+        swap_helper_address: None,
     };
 
     let tree_job_config = TreeJobConfig::default();

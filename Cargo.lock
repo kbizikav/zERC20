@@ -9291,6 +9291,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "zerc20-relay"
+version = "0.1.0"
+dependencies = [
+ "actix-cors",
+ "actix-web",
+ "alloy",
+ "anyhow",
+ "dotenvy",
+ "env_logger",
+ "hex",
+ "log",
+ "serde",
+ "serde_json",
+ "tokio",
+ "zerc20-client-common",
+]
+
+[[package]]
 name = "zerc20-stealth-client"
 version = "0.1.0"
 dependencies = [
