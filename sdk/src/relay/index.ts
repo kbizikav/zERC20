@@ -1,19 +1,15 @@
-export { gelatoRelayAbi } from './abi.js';
 export {
-  estimateRelayerFee,
-  encodeRelayTeleport,
-  encodeRelaySingleTeleport,
-  encodeRelayUnwrap,
-  encodeRelayTransfer,
-  submitTeleportRelay,
-  waitForRelayTask,
-} from './gelatoRelay.js';
+  submitRelayTeleport,
+  estimateRelayFee,
+  fetchSwapQuote,
+  submitRelaySwap,
+} from "./relay.js";
 export type {
-  EstimateRelayerFeeParams,
-  EstimateRelayerFeeResult,
-  SubmitTeleportRelayParams,
-  SubmitTeleportRelayResult,
-  RelayTaskResult,
-  WaitForRelayTaskOptions,
-} from './types.js';
-export { RelayTaskState } from './types.js';
+  RelayTeleportParams,
+  RelayFeeEstimate,
+  RelayResult,
+  SwapQuoteParams,
+  SwapQuote,
+  RelaySwapParams,
+  SwapResult,
+} from "./types.js";

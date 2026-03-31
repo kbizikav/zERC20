@@ -1,52 +1,58 @@
-import type { Address, Hex, PublicClient } from 'viem';
+import type { Hex } from "viem";
 
-export interface EstimateRelayerFeeParams {
-  chainId: number;
-  feeToken: Address;
-  gasLimit: bigint;
-  liquidityManagerAddress: Address;
-  publicClient: PublicClient;
-}
-
-export interface EstimateRelayerFeeResult {
+export interface RelayTeleportParams {
+  isSingle: boolean;
+  isGlobal: boolean;
+  rootHint: bigint;
+  chainId: bigint;
+  recipient: Hex;
+  tweak: Hex;
+  proof: Hex;
   relayerFee: bigint;
-  gelatoFee: bigint;
-  maxGelatoFee: bigint;
-  unwrapFee: bigint;
+  maxFee: bigint;
+  deadline: bigint;
+  signature: Hex;
 }
 
-export interface SubmitTeleportRelayParams {
+export interface RelayFeeEstimate {
+  relayerFee: bigint;
+}
+
+export interface RelayResult {
+  txHash: string;
+}
+
+export interface SwapQuoteParams {
   chainId: number;
-  gelatoRelayAddress: Address;
-  feeToken: Address;
-  calldata: Hex;
-  apiKey?: string;
-  gasLimit?: bigint;
+  /** Token amount in smallest unit. */
+  amount: bigint;
 }
 
-export interface SubmitTeleportRelayResult {
-  taskId: string;
+export interface SwapQuote {
+  /** Native token amount the user will receive (wei). */
+  nativeAmount: bigint;
+  /** Fee in basis points. */
+  feeBps: number;
+  /** Relayer gas fee deducted from the native output (wei). */
+  relayerFee: bigint;
 }
 
-export enum RelayTaskState {
-  CheckPending = 'CheckPending',
-  ExecPending = 'ExecPending',
-  WaitingForConfirmation = 'WaitingForConfirmation',
-  ExecSuccess = 'ExecSuccess',
-  ExecReverted = 'ExecReverted',
-  Cancelled = 'Cancelled',
+export interface RelaySwapParams {
+  chainId: number;
+  /** Token amount to swap (smallest unit). */
+  tokenAmount: bigint;
+  /** Minimum native output the user will accept (slippage protection). */
+  minNativeAmount: bigint;
+  /** Address to receive native tokens. */
+  recipient: Hex;
+  /** Address that signed the permit (token owner). */
+  owner: Hex;
+  permitDeadline: bigint;
+  permitV: number;
+  permitR: Hex;
+  permitS: Hex;
 }
 
-export interface RelayTaskResult {
-  taskId: string;
-  taskState: RelayTaskState;
-  transactionHash?: string;
-  blockNumber?: number;
-  executionDate?: string;
-  lastCheckMessage?: string;
-}
-
-export interface WaitForRelayTaskOptions {
-  polls?: number;
-  intervalMs?: number;
+export interface SwapResult {
+  txHash: string;
 }

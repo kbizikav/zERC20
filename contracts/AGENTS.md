@@ -8,6 +8,7 @@ This directory is a Foundry project for deploying and testing the zERC20 contrac
 - `src/Verifier.sol`: Verifier OApp (Arb/OP Sepolia)
 - `src/zERC20.sol`: zERC20 token (OFT-core upgradeable, blocklist-enforced via immutable `BLOCKLIST`)
 - `src/Blocklist.sol`: Shared per-chain OFAC sanctioned-address registry (Ownable, non-upgradeable)
+- `src/relay/SwapHelper.sol`: Atomic permit + transferFrom + native payout helper for relay swaps
 - `src/liquidity/LiquidityManager.sol`: Wrap/unwrap policy + fee/reward curve
 - `src/liquidity/Adaptor.sol`: Unwrap + Stargate bridge + recovery accounting
 
@@ -15,6 +16,7 @@ This directory is a Foundry project for deploying and testing the zERC20 contrac
 
 - `script/DeployHub.s.sol:DeployHub`
 - `script/DeployVerifierAndToken.s.sol:DeployVerifierAndToken`
+- `script/DeploySwapHelper.s.sol:DeploySwapHelper`
 - `script/DeployLiquidity.s.sol:DeployLiquidity`
 - `script/DeployBlocklist.s.sol:DeployBlocklist` — shared Blocklist contract (once per chain)
 - `script/upgrade/ZERC20BlocklistUpgrade.s.sol:UpgradeZERC20Blocklist` — upgrade existing zERC20 proxies with Blocklist
@@ -43,8 +45,12 @@ Follow `contracts/README.md`. The typical order:
 1) Deploy Hub (Base)
 2) Deploy Verifier + zERC20 (Arb, OP)
 3) Deploy LiquidityManager + Adaptor (Arb, OP)
-4) Wire peers using direct forge commands (see below)
-5) Smoke test: `wrap -> unwrapAndBridge` (Arb → OP is a common check)
+4) Deploy `SwapHelper` on every chain where relay swaps should be enabled
+5) Wire peers using direct forge commands (see below)
+6) Smoke test: `wrap -> unwrapAndBridge` (Arb → OP is a common check)
+
+For relay swaps, remember to write each deployed `SwapHelper` proxy address back into
+`tokens.json` as `swap_helper_address`.
 
 ### Deploying multiple token types
 
@@ -99,4 +105,3 @@ forge script script/SetPeers.s.sol:SetTokenPeers --rpc-url <RPC> --broadcast -vv
 
 - Never commit/paste real `PRIVATE_KEY` values or explorer API keys.
 - Keep any `.env` files local; use placeholders in documentation.
-

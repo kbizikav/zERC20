@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::{
     fs,
     path::{Path, PathBuf},
@@ -122,6 +124,8 @@ enum Command {
     Unwrap(UnwrapArgs),
     /// Display LayerZero message status for the signer wallet.
     LzStatus(LzStatusArgs),
+    /// Swap zERC20 tokens for native tokens via the relay node.
+    Swap(SwapArgs),
 }
 
 #[derive(Subcommand, Debug)]
@@ -156,9 +160,6 @@ pub struct TransferArgs {
     /// Token amount (accepts decimal or 0x-prefixed hex units).
     #[arg(long, value_parser = parse_u256)]
     pub amount: U256,
-
-    #[command(flatten)]
-    pub relay: RelayArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -279,9 +280,6 @@ pub struct UnwrapArgs {
     /// Amount of zERC20 to unwrap (accepts decimal or 0x-prefixed hex units).
     #[arg(long, value_parser = parse_u256)]
     pub amount: U256,
-
-    #[command(flatten)]
-    pub relay: RelayArgs,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -308,6 +306,33 @@ pub struct LzStatusArgs {
     /// Pagination token returned by previous calls.
     #[arg(long, value_name = "TOKEN")]
     pub next_token: Option<String>,
+}
+
+#[derive(Args, Debug, Clone)]
+pub struct SwapArgs {
+    /// Chain identifier of the zERC20 token to swap.
+    #[arg(long, env = "CHAIN_ID", value_name = "CHAIN_ID")]
+    pub chain_id: u64,
+
+    /// Amount of zERC20 to swap (accepts decimal or 0x-prefixed hex units).
+    #[arg(long, value_parser = parse_u256)]
+    pub amount: U256,
+
+    /// URL of the relay node.
+    #[arg(long, env = "RELAY_URL", value_name = "URL")]
+    pub relay_url: String,
+
+    /// Slippage tolerance in basis points (default: 100 = 1%, max: 9999).
+    #[arg(long, default_value_t = 100, value_name = "BPS", value_parser = clap::value_parser!(u64).range(0..=9_999))]
+    pub slippage_bps: u64,
+
+    /// Recipient of native tokens (defaults to signer address).
+    #[arg(long, value_parser = parse_address)]
+    pub recipient: Option<Address>,
+
+    /// Skip the confirmation prompt.
+    #[arg(long, default_value_t = false)]
+    pub yes: bool,
 }
 
 #[derive(Args, Debug, Clone)]
@@ -399,22 +424,22 @@ pub struct InvoiceReceiveArgs {
     pub relay: RelayArgs,
 }
 
-/// Shared relay-mode arguments for Gelato gasless transactions.
+/// Shared relay-mode arguments for gasless teleport submission.
 #[derive(Args, Debug, Clone)]
 pub struct RelayArgs {
-    /// Use Gelato Relay for gasless teleport submission.
+    /// Use the relay node for gasless teleport submission.
     #[arg(long, default_value_t = false)]
     pub relay: bool,
 
-    /// Optional Gelato API key for relay requests.
-    #[arg(long, env = "GELATO_API_KEY", value_name = "API_KEY")]
-    pub gelato_api_key: Option<String>,
+    /// URL of the custom relay node.
+    #[arg(long, env = "RELAY_URL", value_name = "URL")]
+    pub relay_url: Option<String>,
 
     /// Maximum relayer fee in zERC20 units (optional safety cap).
     #[arg(long, value_parser = parse_u256, value_name = "AMOUNT")]
     pub max_relay_fee: Option<U256>,
 
-    /// Skip the confirmation prompt before submitting a Gelato relay task.
+    /// Skip the confirmation prompt before submitting a relay task.
     #[arg(long, default_value_t = false)]
     pub yes: bool,
 }
@@ -457,6 +482,19 @@ async fn main() -> Result<()> {
         Command::QuoteUnwrap(args) => quote_unwrap::run(args, &tokens, private_key).await?,
         Command::Unwrap(args) => unwrap::run(args, &tokens, private_key).await?,
         Command::LzStatus(args) => lz_status::run(&cli.common, args, private_key).await?,
+        Command::Swap(args) => {
+            commands::swap::run(
+                &tokens,
+                private_key,
+                args.chain_id,
+                args.amount,
+                &args.relay_url,
+                args.slippage_bps,
+                args.recipient,
+                args.yes,
+            )
+            .await?
+        }
     }
 
     Ok(())

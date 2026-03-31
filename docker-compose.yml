@@ -103,5 +103,28 @@ services:
     volumes:
       - "${WATCHER_CONFIG_PATH:-./config/watcher.yaml}:/app/config/watcher.yaml:ro"
 
+  relay:
+    profiles:
+      - relay
+    build:
+      context: .
+      dockerfile: docker/Dockerfile
+      target: relay
+    restart: unless-stopped
+    environment:
+      TOKENS_FILE_PATH: /app/config/tokens.json
+      ALCHEMY_KEY: "${ALCHEMY_KEY:?ALCHEMY_KEY must be set in .env}"
+      INFURA_KEY: "${INFURA_KEY:?INFURA_KEY must be set in .env}"
+      RELAYER_PRIVATE_KEY: "${RELAYER_PRIVATE_KEY:?RELAYER_PRIVATE_KEY must be set in .env}"
+      RELAY_PORT: "${RELAY_PORT:-3000}"
+      SWAP_ENABLED: "${SWAP_ENABLED:-true}"
+      SWAP_FEE_BPS: "${SWAP_FEE_BPS:-50}"
+      ORACLE_RPC_URL: "${ORACLE_RPC_URL:-}"
+      RUST_LOG: info
+    ports:
+      - "${RELAY_HOST_PORT:-3000}:${RELAY_PORT:-3000}"
+    volumes:
+      - "${TOKENS_FILE_PATH:?TOKENS_FILE_PATH must be set in .env}:/app/config/tokens.json:ro"
+
 volumes:
   postgres-data:
