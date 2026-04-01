@@ -17,6 +17,7 @@ This document explains how zERC20 is architected across on-chain contracts, off-
 | **Hub** | Aggregates transfer roots from all chains into a Poseidon tree, broadcasts global root to all Verifiers |
 | **LiquidityManager** | Manages liquidity policy, handles wrap/unwrap of underlying assets |
 | **Adaptor** | Cross-chain exit via Stargate when liquidity is more favorable on another chain |
+| **SwapHelper** | Per-chain helper contract that atomically executes `permit + transferFrom + native payout` for relayer-managed token-to-native swaps |
 
 ## Off-Chain Services
 
@@ -25,6 +26,7 @@ This document explains how zERC20 is architected across on-chain contracts, off-
 | **Indexer** | Actix HTTP server + Postgres. Syncs on-chain events, maintains Merkle trees, generates root proofs |
 | **Decider Prover** | HTTP worker that finalizes Nova proofs for on-chain verification |
 | **Cross-chain Job** | Relays transfer roots to Hub and triggers broadcasts |
+| **Relay Node** | HTTP service that can submit gasless redeem transactions on behalf of users and swap zERC20 into native gas tokens |
 
 ## ICP Stealth Storage
 
@@ -65,6 +67,18 @@ Each chain's Verifier relays its transfer root to the Hub, which aggregates them
 Sender → zERC20 transfer to burn address → Recipient scans ICP storage →
 Generates ZKP → Verifier.teleport() → zERC20 mints to recipient
 ```
+
+### 5. Relayer-assisted Receive and Get Gas
+
+```
+Recipient → signs relayer fee authorization / ERC-2612 permit →
+Relay Node → Verifier.(single)Teleport(...) or SwapHelper.swap(...) →
+recipient receives zERC20 redemption or native gas token
+```
+
+- **Relayer redeem** lets users redeem eligible transfers without already holding destination-chain native gas.
+- **Get Gas** lets users swap zERC20 into the destination chain's native token through the relay node.
+- `SwapHelper` keeps the swap path atomic on-chain, so token transfer and native payout succeed or fail together.
 
 ## Cryptographic Primitives
 
