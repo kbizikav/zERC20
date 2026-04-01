@@ -73,6 +73,11 @@ accounts:
     required_balance: "0.1"
     chains: [ethereum, base, arbitrum, bnb]
 
+  - name: mainnet_fee_relayer
+    address: "${MAINNET_FEE_RELAYER}"
+    required_balance: "0.05"
+    chains: [ethereum, base, arbitrum, bnb]
+
   # ===== Testnet =====
   - name: testnet_fee_manager
     address: "${TESTNET_FEE_MANAGER_ADDRESS}"
@@ -91,6 +96,11 @@ accounts:
 
   - name: testnet_relayer_zbnb
     address: "${TESTNET_RELAYER_ZBNB_ADDRESS}"
+    required_balance: "0.1"
+    chains: [sepolia, optimism_sepolia, arbitrum_sepolia, bnb_testnet]
+
+  - name: testnet_fee_relayer
+    address: "${TESTNET_FEE_RELAYER}"
     required_balance: "0.1"
     chains: [sepolia, optimism_sepolia, arbitrum_sepolia, bnb_testnet]
 
