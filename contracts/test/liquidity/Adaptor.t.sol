@@ -20,6 +20,8 @@ import {
 } from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {OFTComposeMsgCodec} from "@layerzerolabs/oft-evm/contracts/libs/OFTComposeMsgCodec.sol";
 import {zERC20} from "../../src/zERC20.sol";
+import {IBlocklist} from "../../src/interfaces/IBlocklist.sol";
+import {Blocklist} from "../../src/Blocklist.sol";
 import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/oft/OFTCoreUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
@@ -288,7 +290,7 @@ contract ZERC20AdaptorHarness is zERC20 {
     uint256 public lastSendValue;
     SendParam public lastSendParam;
 
-    constructor(address endpoint) zERC20(endpoint, 18) {}
+    constructor(address endpoint, IBlocklist blocklist_) zERC20(endpoint, 18, blocklist_) {}
 
     function setQuoteSendFee(uint256 nativeFee) external {
         quoteNativeFee = nativeFee;
@@ -333,6 +335,7 @@ contract AdaptorTest is TestHelperOz5 {
     MockStargate internal stargate;
     ZERC20AdaptorHarness internal zerc20;
     MintableToken internal underlying;
+    Blocklist internal bl;
 
     EndpointV2 internal endpoint;
 
@@ -344,6 +347,7 @@ contract AdaptorTest is TestHelperOz5 {
     function setUp() public override {
         super.setUp();
         endpoint = new EndpointV2(1, address(this));
+        bl = new Blocklist(address(this));
 
         underlying = new MintableToken();
         zerc20 = _deployZerc20(endpoint);
@@ -896,7 +900,7 @@ contract AdaptorTest is TestHelperOz5 {
     }
 
     function _deployZerc20(EndpointV2 endpointMock) private returns (ZERC20AdaptorHarness) {
-        ZERC20AdaptorHarness impl = new ZERC20AdaptorHarness(address(endpointMock));
+        ZERC20AdaptorHarness impl = new ZERC20AdaptorHarness(address(endpointMock), IBlocklist(address(bl)));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return ZERC20AdaptorHarness(payable(address(proxy)));

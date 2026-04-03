@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {IOFT} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {IERC20Permit} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Permit.sol";
+import {IBlocklist} from "./IBlocklist.sol";
 
 /// @title IzERC20
 /// @notice zERC20 interface that extends ERC20 + OFT with teleport semantics and indexed transfer hashing.
@@ -36,4 +37,7 @@ interface IzERC20 is IOFT, IERC20, IERC20Permit {
 
     /// @notice Burns tokens under the liquidity manager / minter role.
     function burn(address from, uint256 amount) external;
+
+    /// @notice Returns the immutable Blocklist contract used for sanctions enforcement.
+    function BLOCKLIST() external view returns (IBlocklist);
 }

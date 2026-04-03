@@ -5,6 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {LiquidityManager} from "../../src/liquidity/LiquidityManager.sol";
 import {IncentiveLib} from "../../src/libraries/IncentiveLib.sol";
 import {zERC20} from "../../src/zERC20.sol";
+import {IBlocklist} from "../../src/interfaces/IBlocklist.sol";
+import {Blocklist} from "../../src/Blocklist.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {
@@ -40,6 +42,7 @@ contract LiquidityManagerTest is Test {
     zERC20 internal token;
     MintableERC20 internal underlying;
     EndpointV2 internal endpoint;
+    Blocklist internal bl;
     IncentiveLib.FeeParams internal params;
 
     address internal constant ALICE = address(0xA11CE);
@@ -49,6 +52,7 @@ contract LiquidityManagerTest is Test {
 
     function setUp() public {
         endpoint = new EndpointV2(1, address(this));
+        bl = new Blocklist(address(this));
         token = _deployToken(address(this), endpoint, 18);
         underlying = new MintableERC20("Underlying", "UND", 18);
 
@@ -449,7 +453,7 @@ contract LiquidityManagerTest is Test {
     }
 
     function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (zERC20) {
-        zERC20 impl = new zERC20(address(endpointMock), decimals_);
+        zERC20 impl = new zERC20(address(endpointMock), decimals_, IBlocklist(address(bl)));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return zERC20(address(proxy));

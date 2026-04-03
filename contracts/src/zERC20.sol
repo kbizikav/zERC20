@@ -2,6 +2,7 @@
 pragma solidity 0.8.33;
 
 import {IzERC20} from "./interfaces/IzERC20.sol";
+import {IBlocklist} from "./interfaces/IBlocklist.sol";
 import {ShaHashChainLib} from "./utils/ShaHashChainLib.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ERC20Upgradeable} from "@openzeppelin/contracts-upgradeable/token/ERC20/ERC20Upgradeable.sol";
@@ -18,6 +19,7 @@ import {OFTCoreUpgradeable} from "@layerzerolabs/oft-evm-upgradeable/contracts/o
 // solhint-disable-next-line contract-name-capwords
 contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, IzERC20 {
     uint8 private immutable TOKEN_DECIMALS;
+    IBlocklist public immutable BLOCKLIST;
 
     // ERC-7201 slot for namespace "zerc20.storage.zerc20".
     bytes32 internal constant ZERC20_STORAGE_SLOT = 0xcd5e781c912e334c5bd043d02db19923b6e202919d5c40ac0cfab0473b1e3400;
@@ -43,7 +45,6 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     event VerifierUpdated(address indexed newVerifier);
     /// @notice Emitted when the minter address changes.
     event MinterUpdated(address indexed newMinter);
-
     /// @notice Reverts when a caller other than the verifier invokes a verifier-only entrypoint.
     error OnlyVerifier();
     /// @notice Reverts when a caller other than the minter invokes a minter-only entrypoint.
@@ -54,11 +55,18 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     error ValueTooLarge();
     /// @notice Reverts when upgrading to an implementation with a different LayerZero endpoint.
     error EndpointMismatch(address expected, address actual);
+    /// @notice Reverts when a blocked address is involved in a transfer.
+    error AddressIsBlocked(address account);
 
     /// @notice Locks implementation contracts on deployment.
-    constructor(address endpoint, uint8 decimals_) OFTCoreUpgradeable(decimals_, endpoint) {
+    /// @param endpoint LayerZero V2 endpoint address.
+    /// @param decimals_ ERC20 decimal precision.
+    /// @param blocklist_ Shared OFAC blocklist contract. Must not be address(0).
+    constructor(address endpoint, uint8 decimals_, IBlocklist blocklist_) OFTCoreUpgradeable(decimals_, endpoint) {
         require(endpoint != address(0), InvalidEndpointCall());
+        require(address(blocklist_) != address(0), ZeroAddress());
         TOKEN_DECIMALS = decimals_;
+        BLOCKLIST = blocklist_;
         _disableInitializers();
     }
 
@@ -178,6 +186,8 @@ contract zERC20 is OFTCoreUpgradeable, ERC20PermitUpgradeable, UUPSUpgradeable, 
     ///      Reverts if the amount exceeds the BN254-friendly bound so that the proof circuits remain well-defined.
     function _update(address from, address to, uint256 value) internal override(ERC20Upgradeable) {
         require(value <= type(uint248).max, ValueTooLarge());
+        require(from == address(0) || !BLOCKLIST.isBlocked(from), AddressIsBlocked(from));
+        require(to == address(0) || !BLOCKLIST.isBlocked(to), AddressIsBlocked(to));
         super._update(from, to, value);
         Zerc20Storage storage $ = _getZerc20Storage();
         $.hashChain = ShaHashChainLib.compute($.hashChain, from, to, value);

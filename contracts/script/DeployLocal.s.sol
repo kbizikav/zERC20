@@ -6,6 +6,8 @@ pragma solidity 0.8.33;
 import {console2} from "forge-std/console2.sol";
 import {Hub} from "../src/Hub.sol";
 import {zERC20} from "../src/zERC20.sol";
+import {IBlocklist} from "../src/interfaces/IBlocklist.sol";
+import {Blocklist} from "../src/Blocklist.sol";
 import {Verifier} from "../src/Verifier.sol";
 import {RootNovaDecider} from "../src/verifiers/RootNovaDecider.sol";
 import {WithdrawGlobalNovaDecider} from "../src/verifiers/WithdrawGlobalNovaDecider.sol";
@@ -73,7 +75,9 @@ contract DeployLocal is DeterministicDeployer {
         (EndpointV2Mock hubEndpoint, EndpointV2Mock verifierEndpoint) = _deployEndpoints(cfg, deployer);
 
         Hub hub = _deployHub(cfg, deployer, hubEndpoint, baseSalt);
-        zERC20 token = _deployToken(cfg, deployer, verifierEndpoint, baseSalt);
+        Blocklist blocklist = new Blocklist(deployer);
+        console2.log("Blocklist deployed at", address(blocklist));
+        zERC20 token = _deployToken(cfg, deployer, verifierEndpoint, baseSalt, blocklist);
         Verifier verifier = _deployVerifierSuite(cfg, deployer, verifierEndpoint, token, baseSalt);
 
         _finalizeDeployment(cfg, deployer, hub, token, verifier);
@@ -164,13 +168,17 @@ contract DeployLocal is DeterministicDeployer {
         console2.log("Hub proxy deployed at", address(hub));
     }
 
-    function _deployToken(Config memory cfg, address deployer, EndpointV2Mock endpoint, bytes32 baseSalt)
-        private
-        returns (zERC20 token)
-    {
+    function _deployToken(
+        Config memory cfg,
+        address deployer,
+        EndpointV2Mock endpoint,
+        bytes32 baseSalt,
+        Blocklist blocklist
+    ) private returns (zERC20 token) {
         address owner = cfg.tokenOwner == address(0) ? deployer : cfg.tokenOwner;
-        bytes memory implCode =
-            abi.encodePacked(type(zERC20).creationCode, abi.encode(address(endpoint), cfg.tokenDecimals));
+        bytes memory implCode = abi.encodePacked(
+            type(zERC20).creationCode, abi.encode(address(endpoint), cfg.tokenDecimals, address(blocklist))
+        );
         zERC20 impl = zERC20(_deploy3(deployer, baseSalt, "TOKEN_IMPL", implCode));
         bytes memory initData = _encodeTokenInit(cfg.tokenName, cfg.tokenSymbol, owner);
         token = zERC20(_deployProxyAndInit(deployer, baseSalt, "TOKEN_PROXY", address(impl), initData));

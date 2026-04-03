@@ -3,6 +3,8 @@ pragma solidity 0.8.33;
 
 import {TestHelperOz5, EndpointV2} from "@layerzerolabs/test-devtools-evm-foundry/contracts/TestHelperOz5.sol";
 import {zERC20} from "../src/zERC20.sol";
+import {IBlocklist} from "../src/interfaces/IBlocklist.sol";
+import {Blocklist} from "../src/Blocklist.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -22,7 +24,8 @@ contract ZERC20GasTest is TestHelperOz5 {
         super.setUp();
         setUpEndpoints(1, LibraryType.SimpleMessageLib);
         endpoint = endpointSetup.endpointList[0];
-        zERC20 impl = new zERC20(address(endpoint), 18);
+        Blocklist bl = new Blocklist(address(this));
+        zERC20 impl = new zERC20(address(endpoint), 18, IBlocklist(address(bl)));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         zToken = zERC20(address(proxy));
