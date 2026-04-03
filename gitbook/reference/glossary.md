@@ -78,6 +78,9 @@ A library-agnostic interface for signing and submitting EVM transactions. viem's
 ### RedeemTransaction
 A prepared transaction object returned by `prepareRedeemTransaction()`. Contains the contract address, ABI, function name, and encoded arguments ready for on-chain submission via `submitRedeemTransaction()`.
 
+### Blocklist
+A shared per-chain smart contract that maintains a list of OFAC-sanctioned Ethereum addresses. All zERC20 tokens on the same chain reference the same Blocklist. Blocked addresses cannot send, receive, mint, or burn zERC20 tokens. The Blocklist is set as an immutable in the zERC20 constructor and is non-upgradeable.
+
 ## Infrastructure Terms
 
 ### LayerZero

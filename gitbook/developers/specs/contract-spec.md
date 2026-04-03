@@ -5,6 +5,7 @@
 The zERC20 contract system consists of:
 
 - **zERC20**: Privacy-enabled ERC-20 token
+- **Blocklist**: Shared per-chain OFAC sanctions registry
 - **Verifier**: Proof verification and teleport execution
 - **Hub**: Cross-chain root aggregation
 - **LiquidityManager**: Liquidity entry/exit policy
@@ -22,6 +23,7 @@ An upgradeable ERC-20 that tracks all transfers in a hash chain for ZKP verifica
 - Emits `IndexedTransfer(index, from, to, value)` for every transfer
 - Maintains truncated SHA-256 hash chain: `hashChain = SHA256(hashChain || from || to || value)[0:248]`
 - Exposes `teleport` for Verifier-initiated mints
+- Enforces OFAC blocklist via immutable `BLOCKLIST` reference (all transfers, mints, burns, and teleports are checked)
 
 ### Functions
 
@@ -41,10 +43,46 @@ event IndexedTransfer(uint256 indexed index, address indexed from, address index
 event Teleport(address indexed to, uint256 value);
 ```
 
+### Blocklist Enforcement
+
+Every call to `_update()` (transfer, mint, burn, teleport, OFT credit/debit) checks both `from` and `to` against the immutable `BLOCKLIST` contract. Blocked addresses cannot send, receive, or be minted/burned. The `BLOCKLIST` address is set in the constructor and cannot be changed without upgrading the implementation.
+
 ### Constraints
 
 - All transfer values must be ≤ 2^248 - 1 (fits in BN254 scalar field)
 - Reverts with `ValueTooLarge` if exceeded
+- Reverts with `AddressIsBlocked(address)` if a sanctioned address is involved
+
+## Blocklist
+
+**Location**: `contracts/src/Blocklist.sol`
+
+Shared per-chain registry for OFAC-sanctioned addresses. A single Blocklist is deployed per chain and referenced by all zERC20 tokens on that chain via constructor immutable.
+
+### Key Features
+
+- Non-upgradeable (simple Ownable pattern)
+- Shared across multiple zERC20 tokens on the same chain
+- Batch registration for efficient bulk updates
+
+### Functions
+
+```javascript
+// Query
+function isBlocked(address account) external view returns (bool);
+
+// Admin (onlyOwner)
+function blockAddress(address account) external;
+function unblockAddress(address account) external;
+function blockAddresses(address[] calldata accounts) external;
+```
+
+### Events
+
+```javascript
+event AddressBlocked(address indexed account);
+event AddressUnblocked(address indexed account);
+```
 
 ## Verifier
 
@@ -291,3 +329,4 @@ liquidityManager.grantRole(FEE_MANAGER_ROLE, feeManagerAddress);
 - **Double-spend prevention**: `totalTeleported` tracks cumulative mints per recipient
 - **LayerZero security**: Only accepts messages from known endpoints
 - **Upgrade safety**: UUPS pattern with owner-only upgrade
+- **OFAC compliance**: Blocklist enforced at the token level via immutable reference; blocked addresses cannot participate in any token operation (transfer, mint, burn, teleport). This provides a defense layer complementary to the off-chain Proof of Innocence mechanism
