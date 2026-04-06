@@ -82,10 +82,10 @@ Relay-node HTTP helpers for gasless redeem and token-to-native swap flows.
 
 | Name | Signature | Returns | Description |
 |------|-----------|---------|-------------|
-| `submitRelayTeleport` | `(relayUrl, req: RelayTeleportParams)` | `Promise<RelayResult>` | Submit a redeem/teleport request to a relay node |
-| `estimateRelayFee` | `(relayUrl, chainId)` | `Promise<RelayFeeEstimate>` | Ask the relay node for the current redeem fee quote |
-| `fetchSwapQuote` | `(relayUrl, chainId, amount)` | `Promise<SwapQuote>` | Quote a zERC20-to-native swap |
-| `submitRelaySwap` | `(relayUrl, params: RelaySwapParams)` | `Promise<SwapResult>` | Submit a signed permit-based swap request |
+| `submitRelayTeleport` | `(relayUrl, params: RelayTeleportParams, options?)` | `Promise<RelayResult>` | Submit a redeem/teleport request to a relay node |
+| `estimateRelayFee` | `(relayUrl, chainId, options?)` | `Promise<RelayFeeEstimate>` | Ask the relay node for the current redeem fee quote |
+| `fetchSwapQuote` | `(relayUrl, params: SwapQuoteParams, options?)` | `Promise<SwapQuote>` | Quote a zERC20-to-native swap |
+| `submitRelaySwap` | `(relayUrl, params: RelaySwapParams, options?)` | `Promise<SwapResult>` | Submit a signed permit-based swap request |
 
 ## Chain Metadata
 
