@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::primitives::U256;
 use anyhow::Context;
 use zkp::{

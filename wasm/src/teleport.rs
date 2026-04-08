@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::utils::{
     anyhow_to_js_error, format_u256_hex, fr_to_hex, hex_to_fr, parse_address_hex, parse_u256_hex,
     serde_error_to_js,

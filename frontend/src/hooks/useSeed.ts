@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import type { JsonRpcSigner } from 'ethers';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { keccak256, toBytes } from 'viem';

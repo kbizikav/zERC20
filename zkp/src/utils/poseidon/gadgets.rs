@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use super::{CircomCRH, CircomTwoToOneCRH, circom_poseidon_hash};
 use ark_crypto_primitives::{
     crh::{CRHSchemeGadget as CRHGadgetTrait, TwoToOneCRHSchemeGadget},

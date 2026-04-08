@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 const DEFAULT_DOMAIN = 'icp-stealth-announcement-v1';
 
 const encoder = new TextEncoder();

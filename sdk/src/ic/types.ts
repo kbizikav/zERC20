@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 export interface AnnouncementInput {
   ibeCiphertext: Uint8Array;
   ciphertext: Uint8Array;

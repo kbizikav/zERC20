@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 pub mod circom;
 pub mod gadgets;
 pub mod utils;

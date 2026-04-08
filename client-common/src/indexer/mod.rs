@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::{collections::VecDeque, sync::Arc};
 
 use alloy::primitives::{Address, U256};

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import type { Announcement, AnnouncementInput } from './ic/types.js';
 
 export interface SecretAndTweak {

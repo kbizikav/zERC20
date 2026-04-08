@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::utils::poseidon::utils::poseidon2;
 use ark_bn254::Fr;
 use ark_ff::AdditiveGroup;

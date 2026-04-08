@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { GLOBAL_TRANSFER_TREE_HEIGHT } from '../constants.js';
 import { normalizeHex } from '../utils/hex.js';
 

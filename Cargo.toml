@@ -18,6 +18,9 @@ members = [
 ]
 resolver = "2"
 
+[workspace.package]
+license = "BUSL-1.1"
+
 [workspace.dependencies]
 envy = "0.4.2"
 dotenvy = "0.15.7"

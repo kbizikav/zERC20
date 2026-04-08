@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::utils::poseidon::gadgets::{CircomCRHGadget, CircomCRHParametersVar};
 use ark_crypto_primitives::{crh::CRHSchemeGadget as _, sponge::Absorb};
 use ark_ff::PrimeField;

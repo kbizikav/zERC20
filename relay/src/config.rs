@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::primitives::U256;
 use anyhow::{Context, Result};
 use client_common::tokens::{TokenEntry, load_tokens_from_path};

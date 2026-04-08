@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { describe, expect, test } from 'vitest';
 import { GLOBAL_TRANSFER_TREE_HEIGHT } from '../../constants.js';
 import * as proofUtils from '../proofUtils.js';

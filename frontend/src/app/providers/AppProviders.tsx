@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { PropsWithChildren } from 'react';
 import { ConfigProvider } from '@config/ConfigContext';
 import { WalletProvider } from './WalletProvider';

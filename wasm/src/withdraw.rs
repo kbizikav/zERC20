@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::utils::{anyhow_to_js_error, fr_to_hex, hex_to_fr, log_timing, parse_u64};
 use ark_bn254::Fr;
 use ark_serialize::CanonicalSerialize;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use serde::{Deserialize, Serialize};
 
 #[derive(Default, Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]

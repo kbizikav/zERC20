@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 pub mod prover {
     use serde::{Deserialize, Serialize};
     use std::{fmt, str::FromStr};

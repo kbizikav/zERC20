@@ -2,6 +2,7 @@
 name = "zerc20-wasm"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 zkp = { path = "../zkp", package = "zerc20-zkp", default-features = false }

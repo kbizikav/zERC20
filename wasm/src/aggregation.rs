@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::utils::{anyhow_to_js_error, fr_to_hex, parse_u256_hex};
 use wasm_bindgen::prelude::*;
 use zkp::{

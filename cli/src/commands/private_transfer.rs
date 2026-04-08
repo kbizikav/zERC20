@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::primitives::B256;
 use anyhow::{Context, Result};
 use client_common::{

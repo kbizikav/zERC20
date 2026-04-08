@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import chains from '@config/chains.json';
 import type { SwitchChainOptions } from '@/app/providers/WalletProvider';
 import type { TokenEntry } from '@zerc20/sdk';

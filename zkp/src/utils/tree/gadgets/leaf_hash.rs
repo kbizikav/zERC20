@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use ark_bn254::Fr;
 use ark_crypto_primitives::sponge::Absorb;
 use ark_ff::PrimeField;

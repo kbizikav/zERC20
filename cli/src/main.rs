@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 #![allow(clippy::too_many_arguments)]
 
 use std::{

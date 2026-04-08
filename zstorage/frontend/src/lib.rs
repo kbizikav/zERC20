@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 //! Rust helper library for the ICP stealth announcement protocol.
 
 pub mod types;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::{cell::RefCell, collections::BTreeMap};
 
 use alloy_primitives::{utils::eip191_message, Signature, B256};

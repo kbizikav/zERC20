@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use candid::{CandidType, Encode};
 use ic_agent::{identity::AnonymousIdentity, Agent};
 use k256::ecdsa::SigningKey;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import type { PublicClient, WalletClient } from 'viem';
 import { zeroAddress } from 'viem';
 import { waitForTransactionReceipt } from 'viem/actions';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use anyhow::{Context, Result};
 use candid::{Decode, Encode, Principal};
 use ic_agent::Agent;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 export * from './authorization.js';
 export * from './client.js';
 export * from './config.js';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import {
   BurnArtifacts,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { PropsWithChildren, createContext, useContext, useMemo } from 'react';
 import { RuntimeConfig, resolveRuntimeConfig } from './appConfig';
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::time::Instant;
 
 use anyhow::Context;

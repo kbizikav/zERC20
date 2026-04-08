@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import type { AggregationTreeState } from '../types.js';
 
 export function getTreeIndexForChain(state: AggregationTreeState, chainId: bigint): bigint {

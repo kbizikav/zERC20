@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use candid::Error as CandidError;
 use ic_agent::AgentError;
 use thiserror::Error;

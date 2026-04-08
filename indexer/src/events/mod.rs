@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::{convert::TryFrom, num::NonZeroU64};
 
 use alloy::primitives::{B256, U256};

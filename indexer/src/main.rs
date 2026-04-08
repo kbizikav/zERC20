@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::{env, path::PathBuf};
 
 use anyhow::Context;

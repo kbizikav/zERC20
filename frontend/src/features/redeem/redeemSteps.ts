@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 export type RedeemStage = 'indexer' | 'proof' | 'decider' | 'wallet';
 
 export type RedeemStepStatus = 'pending' | 'active' | 'done' | 'error';

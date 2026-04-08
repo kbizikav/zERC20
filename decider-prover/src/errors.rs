@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use thiserror::Error;
 
 use zkp::nova::params::NovaError;

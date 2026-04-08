@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import type { AggregationTreeState, BatchTeleportProof } from '../types.js';
 
 export function getTeleportProofIndex(

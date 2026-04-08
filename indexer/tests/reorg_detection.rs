@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 mod common;
 
 use std::{convert::TryFrom, path::Path};

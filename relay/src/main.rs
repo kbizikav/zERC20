@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 // sol! macro generates functions with many args for EVM ABI bindings.
 #![allow(clippy::too_many_arguments)]
 

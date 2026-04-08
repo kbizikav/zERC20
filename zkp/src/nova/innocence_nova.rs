@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 //! Nova IVC wrapper for Proof of Innocence circuit.
 //!
 //! This module provides the `InnocenceCircuit` struct that implements the `FCircuit`

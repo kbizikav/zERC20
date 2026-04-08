@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy_primitives::utils::eip191_message;
 
 /// Build the human-readable message string (without EIP-191 prefix) for invoice signing.

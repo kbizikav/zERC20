@@ -2,6 +2,7 @@
 name = "zerc20-relay"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 client-common = { path = "../client-common", package = "zerc20-client-common" }
