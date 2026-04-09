@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::{
     circuits::root_transition::root_transition_step, nova::constants::TRANSFER_TREE_HEIGHT,
     utils::poseidon::gadgets::CircomCRHParametersVar,

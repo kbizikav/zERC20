@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { Hex } from "viem";
 

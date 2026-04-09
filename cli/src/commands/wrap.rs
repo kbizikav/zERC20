@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::{
     network::Ethereum,
     primitives::{Address, B256},

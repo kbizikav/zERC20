@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { ChangeEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import { formatUnits } from 'ethers';
 import { AppProviders } from './providers/AppProviders';

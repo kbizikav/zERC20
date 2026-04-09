@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { z } from "zod";
 import type { EnvProvider } from "@zerc20/sdk";
 

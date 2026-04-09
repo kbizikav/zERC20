@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { describe, expect, test } from 'vitest';
 import { Principal } from '@dfinity/principal';
 

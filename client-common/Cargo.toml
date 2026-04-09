@@ -2,6 +2,7 @@
 name = "zerc20-client-common"
 version = "0.1.0"
 edition = "2024"
+license.workspace = true
 
 [dependencies]
 alloy = { workspace = true }

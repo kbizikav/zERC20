@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::error::{Result as StealthResult, StealthError};
 use candid::Principal;
 use ic_cdk::management_canister::{VetKDCurve, VetKDKeyId};

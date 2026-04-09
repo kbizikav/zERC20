@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 export class StealthError extends Error {
   constructor(message: string) {
     super(message);

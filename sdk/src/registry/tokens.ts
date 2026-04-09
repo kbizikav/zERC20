@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { createPublicClient, http, type PublicClient } from 'viem';
 import { decode as decodeBase64 } from 'base64-arraybuffer';
 import { ungzip } from 'pako';

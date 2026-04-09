@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 export function ensureFetch(): typeof fetch {
   if (typeof fetch === 'undefined') {
     throw new Error('fetch is not available in the current environment');

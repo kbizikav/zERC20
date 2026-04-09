@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::primitives::{Address, B256, keccak256};
 use rand::{RngCore, rngs::OsRng};
 use zkp::{

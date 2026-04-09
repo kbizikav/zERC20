@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { WasmRuntime } from '../index.js';
 import { NUM_BATCH_INVOICES } from '../../constants.js';

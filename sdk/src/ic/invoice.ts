@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { DEFAULT_STORAGE_TAG } from '../constants.js';
 import { bytesToHex } from '../utils/hex.js';
 

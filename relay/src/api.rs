@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use actix_web::{HttpResponse, web};
 use alloy::primitives::{Address, B256, U256};
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import {
   DEFAULT_DECIDER_POLL_INTERVAL_MS,
   DEFAULT_DECIDER_TIMEOUT_MS,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { bytesToHex as viemBytesToHex, hexToBytes as viemHexToBytes } from 'viem';
 
 export type HexLike =

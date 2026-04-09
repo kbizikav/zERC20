@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::{
     primitives::{Address, B256, Bytes, U256},
     providers::Provider,

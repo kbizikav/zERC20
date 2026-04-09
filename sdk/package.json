@@ -1,6 +1,7 @@
 {
   "name": "@zerc20/sdk",
   "version": "0.1.0",
+  "license": "BUSL-1.1",
   "private": true,
   "type": "module",
   "main": "dist/index.js",

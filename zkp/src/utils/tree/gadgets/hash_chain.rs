@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::primitives::{Address, U256};
 use ark_crypto_primitives::crh::sha256::constraints::Sha256Gadget;
 use ark_ff::PrimeField;

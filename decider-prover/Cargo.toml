@@ -3,6 +3,7 @@ name = "zerc20-decider-prover"
 version = "0.1.0"
 edition = "2024"
 default-run = "zerc20-decider-prover"
+license.workspace = true
 
 [dependencies]
 envy = { workspace = true }

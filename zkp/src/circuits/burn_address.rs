@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::{
     circuits::constants::{ADDRESS_BIT_LENGTH, POW_DIFFICULTY},
     utils::poseidon::{

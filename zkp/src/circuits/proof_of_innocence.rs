@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 //! Proof of Innocence circuit for OFAC non-membership proofs.
 //!
 //! This circuit proves that a set of transfers to a recipient did not originate

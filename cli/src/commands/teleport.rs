@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::{collections::HashMap, path::Path, time::SystemTime};
 
 use alloy::primitives::{Address, B256, U256};

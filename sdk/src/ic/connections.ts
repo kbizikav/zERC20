@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import type { Agent, HttpAgentOptions } from '@dfinity/agent';
 import { HttpAgent } from '@dfinity/agent';
 import { Principal } from '@dfinity/principal';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { beforeAll, describe, expect, test } from 'vitest';
 import { HttpAgent, AnonymousIdentity } from '@dfinity/agent';
 import { Principal } from '@dfinity/principal';

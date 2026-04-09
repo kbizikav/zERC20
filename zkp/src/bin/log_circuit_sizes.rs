@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use anyhow::Result;
 use ark_bn254::{Fr, G1Projective as G1};
 use ark_crypto_primitives::sponge::poseidon::PoseidonConfig;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 pub mod balance;
 pub mod invoice;
 pub mod lz_status;

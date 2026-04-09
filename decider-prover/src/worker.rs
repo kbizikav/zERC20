@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::sync::Arc;
 
 use base64::{Engine, engine::general_purpose::STANDARD as BASE64_STANDARD};

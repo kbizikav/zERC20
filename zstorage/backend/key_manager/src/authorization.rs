@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy_primitives::{utils::eip191_message, Signature as AlloySignature, B256};
 use candid::Principal;
 use sha3::{Digest, Keccak256};

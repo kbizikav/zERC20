@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { describe, expect, it, beforeEach } from 'vitest';
 
 import type { EnvProvider, NormalizedTokens, TokensFile } from '../tokens.js';

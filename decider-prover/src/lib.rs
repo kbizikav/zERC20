@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 pub mod circuits;
 pub mod config;
 pub mod errors;

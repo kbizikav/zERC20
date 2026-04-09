@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 export * from "./constants.js";
 export * from "./decider/prover.js";
 export * from "./ic/connections.js";
