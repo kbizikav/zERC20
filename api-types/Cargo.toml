@@ -6,5 +6,5 @@ license.workspace = true
 
 [dependencies]
 serde = { workspace = true }
-serde_with = { version = "3.16.1", features = ["macros"] }
+serde_with = { version = "3.18.0", features = ["macros"] }
 alloy = { workspace = true }
