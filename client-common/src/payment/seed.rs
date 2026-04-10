@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::{
     primitives::{B256, keccak256},
     signers::{Signer as _, local::PrivateKeySigner},

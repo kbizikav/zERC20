@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { invoiceMessageText } from '../ic/invoice.js';
 import { StealthCanisterClient } from '../ic/client.js';
 import { InvoiceSubmission } from '../ic/types.js';

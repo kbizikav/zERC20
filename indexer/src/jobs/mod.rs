@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 mod event;
 mod lock;
 mod root;

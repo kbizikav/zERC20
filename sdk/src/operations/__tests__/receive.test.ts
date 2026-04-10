@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { GLOBAL_TRANSFER_TREE_HEIGHT } from '../../constants.js';
 import type { GlobalTeleportProofWithEvent, LocalTeleportProof } from '../../types.js';

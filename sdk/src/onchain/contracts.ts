@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { erc20Abi, getContract, type PublicClient, type WalletClient } from 'viem';
 
 import AdaptorArtifact from '../assets/abi/Adaptor.json' assert { type: 'json' };

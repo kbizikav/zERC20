@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 pub const AGGREGATION_TREE_HEIGHT: usize = 6;
 pub const TRANSFER_TREE_HEIGHT: usize = 40;
 pub const GLOBAL_TRANSFER_TREE_HEIGHT: usize = TRANSFER_TREE_HEIGHT + AGGREGATION_TREE_HEIGHT;

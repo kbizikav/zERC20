@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 declare module 'qrcode' {
   type ErrorCorrectionLevel = 'L' | 'M' | 'Q' | 'H';
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { encryptAnnouncementWithArtifacts } from '../ic/encryption.js';
 import { StealthCanisterClient } from '../ic/client.js';
 import { Announcement } from '../ic/types.js';

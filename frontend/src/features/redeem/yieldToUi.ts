@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 export async function yieldToUi(): Promise<void> {
   await new Promise<void>((resolve) => {
     if (typeof window !== 'undefined') {

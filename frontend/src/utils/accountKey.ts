@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { normalizeHex } from '@zerc20/sdk';
 
 export function toAccountKey(account?: string): string | undefined {

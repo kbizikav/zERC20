@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::contracts::{
     ContractResult,
     utils::{NormalProvider, get_provider_with_signer, send_call_with_legacy},

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: BUSL-1.1
 pragma solidity ^0.8.24;
 
 import {PoseidonT3} from "poseidon-solidity/contracts/PoseidonT3.sol";

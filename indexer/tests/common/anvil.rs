@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 #![allow(dead_code)]
 
 use std::{net::TcpListener, process::Stdio, time::Duration};

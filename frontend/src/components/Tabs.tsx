@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { ReactNode } from 'react';
 
 export interface TabItem {

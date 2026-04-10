@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import poseidon from 'poseidon-lite';
 
 import type { AggregationTreeState, BatchTeleportProof, IndexedEvent } from '../types.js';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { FormEvent, useCallback, useMemo, useRef, useState } from 'react';
 import { normalizeHex, prepareInvoiceIssue, submitInvoice, getStealthClientFromConfig } from '@zerc20/sdk';
 import { getBytes, parseEther } from 'ethers';

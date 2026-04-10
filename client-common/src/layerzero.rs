@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::primitives::Address;
 use async_trait::async_trait;
 use reqwest::{Client, StatusCode, Url};

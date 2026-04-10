@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { ensureFetch } from '../utils/http.js';
 
 export interface SingleTeleportWasmArtifacts {

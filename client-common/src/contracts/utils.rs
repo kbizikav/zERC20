@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::{
     consensus::Transaction as _,
     contract::{CallBuilder, CallDecoder},

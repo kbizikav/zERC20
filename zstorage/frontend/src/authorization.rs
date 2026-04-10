@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy_primitives::keccak256;
 use anyhow::{anyhow, Context, Result};
 use k256::ecdsa::SigningKey;

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use rand::{rngs::OsRng, RngCore};
 
 use crate::error::{Result, StealthError};

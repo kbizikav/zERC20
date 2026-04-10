@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { DEFAULT_INDEXER_FETCH_LIMIT } from '../constants.js';
 import { HttpDeciderClient } from '../decider/prover.js';
 import { getTreeIndexForChain } from './teleport.js';

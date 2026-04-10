@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::sync::Arc;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};

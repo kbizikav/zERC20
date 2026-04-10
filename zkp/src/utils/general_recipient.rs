@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::primitives::{Address, B256, U256};
 use ark_bn254::Fr;
 use sha2::{Digest as _, Sha256};

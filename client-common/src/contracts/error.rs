@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use alloy::contract;
 use std::error::Error as StdError;
 use thiserror::Error;

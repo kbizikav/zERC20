@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 //! Exclusion tree for OFAC non-membership proofs.
 //!
 //! Converts a sorted list of sanctioned addresses into a Merkle tree of gaps,

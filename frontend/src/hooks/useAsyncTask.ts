@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { useCallback, useRef, useState } from 'react';
 
 export type AsyncStatus = 'idle' | 'pending' | 'success' | 'error';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { Principal } from '@dfinity/principal';
 import { secp256k1 } from '@noble/curves/secp256k1';
 import { keccak256, toHex } from 'viem';

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::{
     circuits::withdraw::single_withdraw, utils::poseidon::gadgets::CircomCRHParametersVar,
 };

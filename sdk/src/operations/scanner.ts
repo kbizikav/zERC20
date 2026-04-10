@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { authorizationMessage, authorizationMessageText, unixTimeNs } from '../ic/authorization.js';
 import { StealthCanisterClient } from '../ic/client.js';
 import { decryptVetKey, prepareTransportKey, TransportKeyPair } from '../ic/recipient.js';

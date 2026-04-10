@@ -224,6 +224,55 @@ The SDK automatically selects the proof mode based on the number of eligible eve
 - **1 eligible event** -- uses Groth16 single proof via `Verifier.singleTeleport()`
 - **Multiple eligible events** -- uses Nova batch proof via `Verifier.teleport()` (requires a Decider)
 
+### Optional: Relayer-assisted redeem
+
+If you want a relay node to submit the redeem transaction on the user's behalf, attach a
+`RelayerFeeAuthorization` when preparing the transaction. This lets the user cap the fee the
+relayer may keep while avoiding the need to hold native gas on the destination chain.
+
+```typescript
+import {
+  prepareRedeemTransaction,
+  submitRelayTeleport,
+  type RelayerFeeAuthorization,
+} from "zerc20-client-sdk";
+
+const feeAuth: RelayerFeeAuthorization = {
+  relayerFee: 50_000n,
+  maxFee: 60_000n,
+  deadline: 1_700_000_000n,
+  signature: "0x...",
+};
+
+const redeemTx = await prepareRedeemTransaction({
+  redeemContext,
+  burn,
+  teleportProofClient: sdk.proofs,
+  decider: sdk.decider,
+  relayerFeeAuth: feeAuth,
+});
+
+await submitRelayTeleport("https://relay.example", {
+  isSingle: redeemTx.mode === "single",
+  isGlobal: true,
+  rootHint: redeemContext.aggregationState.latestAggSeq,
+  chainId: redeemTx.args[2].chainId,
+  recipient: redeemTx.args[2].recipient,
+  tweak: redeemTx.args[2].tweak,
+  proof: redeemTx.args[3] as `0x${string}`,
+  relayerFee: feeAuth.relayerFee,
+  maxFee: feeAuth.maxFee,
+  deadline: feeAuth.deadline,
+  signature: feeAuth.signature,
+});
+```
+
+Practical notes:
+
+- `relayerFeeAuth` is optional. Omit it for the normal direct-wallet redeem flow.
+- Relay nodes typically expose a fee quote endpoint first; use that quote to build the authorization.
+- The relay returns a transaction hash after submission. This indicates broadcast, not final mined success.
+
 ### prepareRedeemTransaction
 
 ```typescript
@@ -240,6 +289,7 @@ function prepareRedeemTransaction(
 | `burn` | `BurnArtifacts` | Yes | Burn artifacts for the announcement |
 | `teleportProofClient` | `TeleportProofClient` | Yes | Proof generator (from `sdk.teleportProofs`) |
 | `decider` | `HttpDeciderClient` | No | Required for batch proofs; omit for single-only |
+| `relayerFeeAuth` | `RelayerFeeAuthorization` | No | Required only when preparing a relayer-assisted redeem |
 
 **RedeemTransaction:**
 

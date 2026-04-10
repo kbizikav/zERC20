@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::{sync::OnceLock, time::Duration};
 
 use anyhow::{Context, Result, bail};

@@ -233,6 +233,7 @@ console.log("Announcement submitted:", result);
 
 - [Private Send](private-send.md) -- detailed walkthrough of each step
 - [Receiving](receiving.md) -- scanning and claiming incoming transfers
+- [API Reference](api-reference.md#relay) -- relay-node helpers for gasless redeem and native-gas swaps
 - [Token Registry](token-registry.md) -- loading and querying token configuration
 - [Integration Guide](../integration.md) -- on-chain oracle and self-hosted indexer
 - [Contract Addresses](../../reference/addresses.md) -- deployed addresses per chain

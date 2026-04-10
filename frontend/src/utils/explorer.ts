@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import chains from '@config/chains.json';
 
 type ExplorerEntry = {

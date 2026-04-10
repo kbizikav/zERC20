@@ -2,6 +2,7 @@
 name = "zerc20-circuit-setup"
 version = "0.1.0"
 edition = "2021"
+license.workspace = true
 
 [[bin]]
 name = "zerc20-circuit-setup"

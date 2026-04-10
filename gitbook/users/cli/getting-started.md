@@ -47,6 +47,9 @@ export STORAGE_CANISTER_ID=<CANISTER_ID>
 
 # Required for receiving funds (path to downloaded circuit artifacts)
 export NOVA_ARTIFACTS_DIR=/path/to/nova_artifacts
+
+# Optional relay node URL (used for --relay / swap flows)
+export RELAY_URL=http://127.0.0.1:3000
 ```
 
 See [ICP Canister IDs](../../reference/addresses.md#icp-canister-ids) for mainnet/testnet values.
@@ -94,6 +97,46 @@ Generate proofs and receive:
 zerc20-cli invoice receive --chain-id <CHAIN_ID> --invoice-id <INVOICE_ID>
 ```
 
+### Gasless Receive via Relay Node
+
+Ask the relay node to submit the redeem transaction on your behalf:
+
+```bash
+zerc20-cli invoice receive \
+  --chain-id <CHAIN_ID> \
+  --invoice-id <INVOICE_ID> \
+  --relay \
+  --relay-url $RELAY_URL
+```
+
+Useful flags:
+
+- `--max-relay-fee <AMOUNT>` to abort if the quoted fee is too high
+- `--yes` to skip the confirmation prompt
+- `--local` to redeem from the latest proved local root instead of the global root
+
+### Swap zERC20 into Native Gas
+
+Use the relay node to swap zERC20 into the chain's native gas token:
+
+```bash
+zerc20-cli swap \
+  --chain-id <CHAIN_ID> \
+  --amount <TOKEN_AMOUNT> \
+  --relay-url $RELAY_URL
+```
+
+Useful flags:
+
+- `--slippage-bps <BPS>` sets the minimum accepted native output (`0..=9999`, default `100`)
+- `--recipient <ADDRESS>` sends native tokens to a different address
+- `--yes` skips the confirmation prompt
+
+Notes:
+
+- The CLI prints `Swap submitted.` after the relay accepts the request and returns a transaction hash
+- If the quote reports `priceFallback`, the CLI warns because fallback or stale oracle prices may be less favorable
+
 ## Quick Start Example
 
 ```bash
@@ -114,6 +157,12 @@ zerc20-cli invoice status --chain-id 1 --invoice-id inv-01
 
 # 5. Receive
 zerc20-cli invoice receive --chain-id 1 --invoice-id inv-01
+
+# 6. Or redeem through a relay node if you have no native gas
+zerc20-cli invoice receive --chain-id 1 --invoice-id inv-01 --relay --relay-url $RELAY_URL
+
+# 7. Optionally swap zERC20 into native gas
+zerc20-cli swap --chain-id 1 --amount 1000000 --relay-url $RELAY_URL
 ```
 
 ## Important Notes

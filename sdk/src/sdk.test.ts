@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import type { Agent } from '@dfinity/agent';
 import { Principal } from '@dfinity/principal';
 import { describe, expect, it } from 'vitest';

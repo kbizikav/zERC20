@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import initWasm, {
   build_full_burn_address as wasmBuildFullBurnAddress,
   decode_full_burn_address as wasmDecodeFullBurnAddress,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::io::Cursor;
 
 use ark_bn254::{Bn254, Fr};

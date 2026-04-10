@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use std::convert::TryFrom;
 
 use alloy::primitives::{Address, U256};

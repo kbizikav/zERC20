@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 use crate::utils::poseidon::utils::circom_poseidon_hash;
 use ark_crypto_primitives::sponge::{Absorb, poseidon::PoseidonConfig};
 use ark_ff::{BigInteger, PrimeField};

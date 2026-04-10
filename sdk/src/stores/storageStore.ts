@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: BUSL-1.1
+
 import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 
