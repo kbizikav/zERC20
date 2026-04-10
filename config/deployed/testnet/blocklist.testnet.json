@@ -1,0 +1,22 @@
+{
+  "blocklist_address": "0xC5D75395376f2535EC1B7F0F803C91E80C3845e0",
+  "owner": "0x18DE9A6028cFAa0B4B58cc72E257b12e5625B396",
+  "deploy_salt": "blocklist.testnet.v1",
+  "chains": [
+    {
+      "label": "sepolia",
+      "chain_id": 11155111,
+      "deploy_tx": "0xea92f109f0bcc771b6044f9b76b9e9f498879090fbe14937f29dcc75dceda5b3"
+    },
+    {
+      "label": "arb-sepolia",
+      "chain_id": 421614,
+      "deploy_tx": "0x1faeb124ff6d86e5fd8996ffae9af6164b3939273bcd0512c937784312e356d3"
+    },
+    {
+      "label": "op-sepolia",
+      "chain_id": 11155420,
+      "deploy_tx": "0xbe597e55ff53c941d815bd663e023b0f6ef8537773ca0cedaaa08ec43e92f6ea"
+    }
+  ]
+}
