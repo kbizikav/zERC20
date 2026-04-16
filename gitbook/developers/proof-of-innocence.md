@@ -1,4 +1,4 @@
-# Proof of Innocence (Planned)
+# Proof of Innocence
 
 > **Status: Not yet implemented.** This page describes a planned feature. The interfaces and designs below are subject to change and are not available for use today.
 
