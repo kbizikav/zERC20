@@ -68,7 +68,7 @@ for each transfer we prove the sender (`transfer_leaf.from`) is not in the OFAC 
 1. **Sender not sanctioned**: `start < from_address < end` verified against `ofac_root`
 2. **Accumulate value**: `totalTeleported_new = totalTeleported_old + value`
 
-## CLI Usage (Planned)
+## CLI Usage
 
 > **Note**: This is an MVP interface. Users must manually assemble witness files.
 
