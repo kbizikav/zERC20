@@ -28,7 +28,7 @@
   * [API Reference](developers/sdk/api-reference.md)
 * [Integration Guide](developers/integration.md)
 * [Circuit Setup](developers/circuit-setup.md)
-* [Proof of Innocence (Planned)](developers/proof-of-innocence.md)
+* [Proof of Innocence](developers/proof-of-innocence.md)
 * [Technical Specifications](developers/specs/README.md)
   * [Contract Spec](developers/specs/contract-spec.md)
   * [ZKP Spec](developers/specs/zkp-spec.md)
