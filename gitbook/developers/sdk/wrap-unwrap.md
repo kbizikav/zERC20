@@ -123,6 +123,7 @@ function quoteLocalUnwrap(
 |-------|------|-------------|
 | `fee` | `bigint` | Fee deducted from the unwrapped amount |
 | `expectedOut` | `bigint` | Underlying tokens the caller will receive (`amount - fee`) |
+| `availableLiquidity` | `bigint` | Available underlying token liquidity in the liquidity manager |
 
 ## Cross-Chain Unwrap
 
@@ -165,7 +166,7 @@ Use the quote helpers to estimate costs **before** submitting a transaction:
 | Operation | Helper | Key fields |
 |-----------|--------|------------|
 | Local wrap | `readProvider.readContract()` with `quoteWrapReward` | reward amount |
-| Local unwrap | `quoteLocalUnwrap()` | `fee`, `expectedOut` |
+| Local unwrap | `quoteLocalUnwrap()` | `fee`, `expectedOut`, `availableLiquidity` |
 | Cross-chain unwrap | `buildCrossUnwrapQuote()` | `tokenUnwrapFee`, `nativeBridgeFee`, `tokenBridgeFee`, `expectedOut` |
 | Stuck fund check | `hasStuckFunds()` | `boolean` |
 | Stuck fund balances | `fetchAdaptorBalances()` | `underlyingTokenBalance`, `zerc20Balance`, `nativeBalance` |
