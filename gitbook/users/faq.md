@@ -69,6 +69,16 @@ Open the Wrap/Unwrap modal in the frontend and enter an amount. The interface di
 
 See [Fees and Rewards](fees-and-rewards.md) for detailed information.
 
+### Compliance
+
+**What happens if my address is on the blocklist?**
+
+If your address is on the OFAC sanctions blocklist, you will not be able to send, receive, wrap, unwrap, or teleport any zERC20 tokens. Transactions involving a blocked address will revert with an `AddressIsBlocked` error.
+
+**How is the blocklist maintained?**
+
+The Blocklist contract is managed by a designated owner (multisig). It references the OFAC sanctions list. Only addresses subject to international sanctions are added. The blocklist is shared across all zERC20 tokens on the same chain.
+
 ### Transfers
 
 **How long do private transfers take?**

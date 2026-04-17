@@ -4,6 +4,21 @@
 
 ## Mainnet
 
+### Shared Contracts
+
+The Blocklist contract is deployed once per chain and shared by all zERC20 tokens on that chain.
+
+| Chain | Blocklist |
+|-------|-----------|
+| Ethereum | `0x847b6E2dBB28A3a163C6e0fcA9B0222b9C1E4Df9` |
+| Arbitrum | `0x847b6E2dBB28A3a163C6e0fcA9B0222b9C1E4Df9` |
+| Base | `0x847b6E2dBB28A3a163C6e0fcA9B0222b9C1E4Df9` |
+| BNB Chain | `0x847b6E2dBB28A3a163C6e0fcA9B0222b9C1E4Df9` |
+
+> All chains share the same Blocklist address via CREATE3 deterministic deployment.
+
+---
+
 ### zETH
 
 **Hub**: `0x6B5e8509ae57A54863A7255e610d6F0c10FCAFB5` (Base)
@@ -115,6 +130,16 @@
 ---
 
 ## Testnet
+
+### Shared Contracts
+
+| Chain | Blocklist |
+|-------|-----------|
+| Sepolia | `0xC5D75395376f2535EC1B7F0F803C91E80C3845e0` |
+| Arbitrum Sepolia | `0xC5D75395376f2535EC1B7F0F803C91E80C3845e0` |
+| OP Sepolia | `0xC5D75395376f2535EC1B7F0F803C91E80C3845e0` |
+
+---
 
 ### zETH
 

@@ -1,0 +1,27 @@
+{
+  "blocklist_address": "0x847b6E2dBB28A3a163C6e0fcA9B0222b9C1E4Df9",
+  "owner": "0x43010855B94e65e77679FE81af2047719F67B1fa",
+  "deploy_salt": "blocklist.mainnet.v1",
+  "chains": [
+    {
+      "label": "eth-mainnet",
+      "chain_id": 1,
+      "deploy_tx": "0x5b9eb6932a821606ff502c46006ce8d6901ac60756c3fed9664273565c4be63c"
+    },
+    {
+      "label": "arb-mainnet",
+      "chain_id": 42161,
+      "deploy_tx": "0x83fd3697888781f867d06a7bba19a7e0940eb0067898675248688e7748b9b217"
+    },
+    {
+      "label": "base-mainnet",
+      "chain_id": 8453,
+      "deploy_tx": "0x44816dc7a76a60f18917ed34092d3c3aefeb7c5fa092f701c4ae47620e0676ca"
+    },
+    {
+      "label": "bnb-mainnet",
+      "chain_id": 56,
+      "deploy_tx": "0x1df2672b99e8dc9651dd0247527068c92641ffbc65561ef536f6719d6f7deb3d"
+    }
+  ]
+}

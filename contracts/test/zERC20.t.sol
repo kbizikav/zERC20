@@ -7,6 +7,8 @@ import {
 } from "@layerzerolabs/test-devtools-evm-foundry/contracts/mocks/EndpointV2Mock.sol";
 import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 import {zERC20} from "../src/zERC20.sol";
+import {IBlocklist} from "../src/interfaces/IBlocklist.sol";
+import {Blocklist} from "../src/Blocklist.sol";
 import {ShaHashChainLib} from "../src/utils/ShaHashChainLib.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import {IOFT, SendParam} from "@layerzerolabs/oft-evm/contracts/interfaces/IOFT.sol";
@@ -17,7 +19,7 @@ import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/Own
 import {Initializable} from "@openzeppelin/contracts/proxy/utils/Initializable.sol";
 
 contract ZERC20Harness is zERC20 {
-    constructor(address endpoint, uint8 decimals_) zERC20(endpoint, decimals_) {}
+    constructor(address endpoint, uint8 decimals_, IBlocklist blocklist_) zERC20(endpoint, decimals_, blocklist_) {}
 
     function debit(uint256 amountToSendLd, uint256 minAmountToCreditLd, uint32 dstEid)
         public
@@ -61,6 +63,7 @@ contract ZERC20Harness is zERC20 {
 
 contract ZERC20Test is Test {
     ZERC20Harness internal token;
+    Blocklist internal bl;
     EndpointV2 internal endpoint;
 
     address internal constant ALICE = address(0xA11CE);
@@ -76,12 +79,13 @@ contract ZERC20Test is Test {
 
     function setUp() public {
         endpoint = new EndpointV2(1, address(this));
+        bl = new Blocklist(address(this));
         token = _deployToken(address(this), endpoint, 18);
         token.setMinter(address(this));
     }
 
     function _deployToken(address owner, EndpointV2 endpointMock, uint8 decimals_) private returns (ZERC20Harness) {
-        ZERC20Harness impl = new ZERC20Harness(address(endpointMock), decimals_);
+        ZERC20Harness impl = new ZERC20Harness(address(endpointMock), decimals_, IBlocklist(address(bl)));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Zero Token", "ZTK", owner));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         return ZERC20Harness(address(proxy));
@@ -89,11 +93,16 @@ contract ZERC20Test is Test {
 
     function testConstructorRevertsOnZeroEndpoint() public {
         vm.expectRevert(IOAppCore.InvalidEndpointCall.selector);
-        new zERC20(address(0), 18);
+        new zERC20(address(0), 18, IBlocklist(address(bl)));
+    }
+
+    function testConstructorRevertsOnZeroBlocklist() public {
+        vm.expectRevert(zERC20.ZeroAddress.selector);
+        new zERC20(address(endpoint), 18, IBlocklist(address(0)));
     }
 
     function testInitializeRevertsOnZeroOwner() public {
-        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18);
+        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(bl)));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(0)));
 
         vm.expectRevert(zERC20.ZeroAddress.selector);
@@ -106,7 +115,7 @@ contract ZERC20Test is Test {
     }
 
     function testImplementationInitializeIsDisabled() public {
-        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18);
+        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(bl)));
         vm.expectRevert(Initializable.InvalidInitialization.selector);
         impl.initialize("Impl", "IMPL", address(this));
     }
@@ -251,7 +260,7 @@ contract ZERC20Test is Test {
 
     function testInitializeRejectsBelowSharedDecimals() public {
         vm.expectRevert(IOFT.InvalidLocalDecimals.selector);
-        new zERC20(address(endpoint), 5);
+        new zERC20(address(endpoint), 5, IBlocklist(address(bl)));
     }
 
     function testMintOnlyMinter() public {
@@ -449,13 +458,13 @@ contract ZERC20Test is Test {
     }
 
     function testUpgradeRevertsOnEndpointMismatch() public {
-        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18);
+        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(bl)));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         ZERC20Harness proxiedToken = ZERC20Harness(address(proxy));
 
         EndpointV2 otherEndpoint = new EndpointV2(2, address(this));
-        ZERC20UpgradeMock newImpl = new ZERC20UpgradeMock(address(otherEndpoint), 18);
+        ZERC20UpgradeMock newImpl = new ZERC20UpgradeMock(address(otherEndpoint), 18, IBlocklist(address(bl)));
 
         vm.expectRevert(
             abi.encodeWithSelector(zERC20.EndpointMismatch.selector, address(endpoint), address(otherEndpoint))
@@ -463,8 +472,129 @@ contract ZERC20Test is Test {
         proxiedToken.upgradeToAndCall(address(newImpl), bytes(""));
     }
 
+    // -----------------------------------------------------------------------
+    // Blocklist
+    // -----------------------------------------------------------------------
+
+    function testBlocklistImmutableIsSet() public view {
+        assertEq(address(token.BLOCKLIST()), address(bl), "blocklist immutable set");
+    }
+
+    function testBlockedAddressCannotTransfer() public {
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(ALICE);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.transfer(BOB, 1 ether);
+    }
+
+    function testBlockedAddressCannotReceiveTransfer() public {
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(BOB);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, BOB));
+        token.transfer(BOB, 1 ether);
+    }
+
+    function testBlockedAddressCannotReceiveMint() public {
+        bl.blockAddress(ALICE);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.mint(ALICE, 1 ether);
+    }
+
+    function testBlockedAddressCannotBurn() public {
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(ALICE);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.burn(ALICE, 1 ether);
+    }
+
+    function testBlockedAddressCannotReceiveTeleport() public {
+        token.setVerifier(address(this));
+        bl.blockAddress(ALICE);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.teleport(ALICE, 1 ether);
+    }
+
+    function testUnblockedAddressCanTransferAgain() public {
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(ALICE);
+        bl.unblockAddress(ALICE);
+
+        vm.prank(ALICE);
+        bool ok = token.transfer(BOB, 1 ether);
+        assertTrue(ok, "transfer succeeds after unblock");
+        assertEq(token.balanceOf(BOB), 1 ether, "bob received");
+    }
+
+    function testSharedBlocklistAcrossTokens() public {
+        ZERC20Harness token2 = _deployToken(address(this), endpoint, 18);
+        token2.setMinter(address(this));
+
+        bl.blockAddress(ALICE);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.mint(ALICE, 1 ether);
+
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token2.mint(ALICE, 1 ether);
+    }
+
+    function testNonBlockedTransferSucceeds() public {
+        token.mint(ALICE, 10 ether);
+        vm.prank(ALICE);
+        bool ok = token.transfer(BOB, 1 ether);
+        assertTrue(ok, "non-blocked transfer succeeds");
+    }
+
+    function testBlockedAddressCannotTransferFrom() public {
+        token.mint(ALICE, 10 ether);
+        vm.prank(ALICE);
+        token.approve(BOB, 5 ether);
+
+        bl.blockAddress(ALICE);
+
+        vm.prank(BOB);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.transferFrom(ALICE, BOB, 1 ether);
+    }
+
+    function testBlockedSpenderCannotReceiveViaTransferFrom() public {
+        token.mint(ALICE, 10 ether);
+        vm.prank(ALICE);
+        token.approve(BOB, 5 ether);
+
+        bl.blockAddress(BOB);
+
+        vm.prank(BOB);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, BOB));
+        token.transferFrom(ALICE, BOB, 1 ether);
+    }
+
+    function testOftDebitBlockedSenderReverts() public {
+        token.mint(ALICE, 10 ether);
+        bl.blockAddress(ALICE);
+
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, ALICE));
+        token.debit(1 ether, 0, 1);
+    }
+
+    function testOftCreditToBlockedDeadAddressReverts() public {
+        bl.blockAddress(address(0xdead));
+
+        // _credit(address(0)) redirects to 0xdead, which is blocked
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, address(0xdead)));
+        token.credit(address(0), 1 ether, 1);
+    }
+
     function testUpgradeSucceedsWithSameEndpoint() public {
-        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18);
+        ZERC20Harness impl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(bl)));
         bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(this)));
         ERC1967Proxy proxy = new ERC1967Proxy(address(impl), initData);
         ZERC20Harness proxiedToken = ZERC20Harness(address(proxy));
@@ -473,17 +603,72 @@ contract ZERC20Test is Test {
         proxiedToken.setMinter(address(this));
         proxiedToken.mint(ALICE, 5 ether);
 
-        ZERC20UpgradeMock newImpl = new ZERC20UpgradeMock(address(endpoint), 18);
+        ZERC20UpgradeMock newImpl = new ZERC20UpgradeMock(address(endpoint), 18, IBlocklist(address(bl)));
         proxiedToken.upgradeToAndCall(address(newImpl), bytes(""));
 
         ZERC20UpgradeMock upgraded = ZERC20UpgradeMock(address(proxiedToken));
         assertEq(upgraded.version(), "v2", "upgrade succeeded");
         assertEq(upgraded.balanceOf(ALICE), 5 ether, "state preserved");
     }
+
+    /// @notice Simulates upgrading from a pre-blocklist impl to a blocklist-enabled impl.
+    ///         Verifies all storage state is preserved and BLOCKLIST immutable is accessible.
+    function testUpgradeToBlocklistImplPreservesState() public {
+        // Deploy "old" impl and proxy (using a different blocklist to simulate pre-upgrade)
+        Blocklist oldBl = new Blocklist(address(this));
+        ZERC20Harness oldImpl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(oldBl)));
+        bytes memory initData = abi.encodeCall(zERC20.initialize, ("Test", "TST", address(this)));
+        ERC1967Proxy proxy = new ERC1967Proxy(address(oldImpl), initData);
+        ZERC20Harness proxiedToken = ZERC20Harness(address(proxy));
+
+        // Set up state: minter, verifier, mint tokens, do a transfer
+        proxiedToken.setMinter(address(this));
+        proxiedToken.setVerifier(address(0x1234));
+        proxiedToken.mint(ALICE, 10 ether);
+        vm.prank(ALICE);
+        proxiedToken.transfer(BOB, 3 ether);
+
+        // Snapshot pre-upgrade state
+        uint256 aliceBalance = proxiedToken.balanceOf(ALICE);
+        uint256 bobBalance = proxiedToken.balanceOf(BOB);
+        uint256 totalSupply = proxiedToken.totalSupply();
+        uint256 hashChainBefore = proxiedToken.hashChain();
+        uint256 indexBefore = proxiedToken.index();
+        address verifierBefore = proxiedToken.verifier();
+        address minterBefore = proxiedToken.minter();
+
+        // Upgrade to new impl with a different Blocklist
+        ZERC20Harness newImpl = new ZERC20Harness(address(endpoint), 18, IBlocklist(address(bl)));
+        proxiedToken.upgradeToAndCall(address(newImpl), bytes(""));
+
+        // Verify BLOCKLIST immutable is accessible and correct
+        assertEq(address(proxiedToken.BLOCKLIST()), address(bl), "BLOCKLIST immutable set after upgrade");
+
+        // Verify all storage state is preserved
+        assertEq(proxiedToken.balanceOf(ALICE), aliceBalance, "alice balance preserved");
+        assertEq(proxiedToken.balanceOf(BOB), bobBalance, "bob balance preserved");
+        assertEq(proxiedToken.totalSupply(), totalSupply, "total supply preserved");
+        assertEq(proxiedToken.hashChain(), hashChainBefore, "hash chain preserved");
+        assertEq(proxiedToken.index(), indexBefore, "index preserved");
+        assertEq(proxiedToken.verifier(), verifierBefore, "verifier preserved");
+        assertEq(proxiedToken.minter(), minterBefore, "minter preserved");
+
+        // Verify blocklist enforcement works after upgrade
+        bl.blockAddress(BOB);
+        vm.prank(ALICE);
+        vm.expectRevert(abi.encodeWithSelector(zERC20.AddressIsBlocked.selector, BOB));
+        proxiedToken.transfer(BOB, 1 ether);
+
+        // Verify non-blocked transfers still work
+        vm.prank(ALICE);
+        bool ok = proxiedToken.transfer(address(0xCAFE), 1 ether);
+        assertTrue(ok, "non-blocked transfer works after upgrade");
+        assertEq(proxiedToken.index(), indexBefore + 1, "index incremented after upgrade transfer");
+    }
 }
 
 contract ZERC20UpgradeMock is zERC20 {
-    constructor(address endpoint_, uint8 decimals_) zERC20(endpoint_, decimals_) {}
+    constructor(address endpoint_, uint8 decimals_, IBlocklist blocklist_) zERC20(endpoint_, decimals_, blocklist_) {}
 
     function version() external pure returns (string memory) {
         return "v2";

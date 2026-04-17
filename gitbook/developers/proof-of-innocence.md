@@ -4,6 +4,8 @@
 
 Proof of Innocence is an off-chain compliance feature that acts as an AML policy. It allows users to prove their received funds did not originate from sanctioned addresses (e.g., OFAC list) without revealing transaction details.
 
+> **Multi-layered compliance**: zERC20 enforces sanctions compliance at two layers. The on-chain **Blocklist** contract prevents sanctioned addresses from participating in any token operation (transfer, mint, burn, teleport). Proof of Innocence adds a second layer by enabling recipients to cryptographically prove that none of their received funds originated from sanctioned sources, even when the sender's identity is hidden by the privacy mechanism.
+
 ## Overview
 
 | Property | Description |
