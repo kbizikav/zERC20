@@ -126,6 +126,7 @@ Cross-chain message tracking via the LayerZero Scan API. See [LayerZero Scan](la
 | `readTokenBalance` | `(provider, tokenAddress, account)` | `Promise<bigint>` | Read ERC-20 balance via provider |
 | `readTokenDecimals` | `(provider, tokenAddress)` | `Promise<number>` | Read ERC-20 decimals via provider |
 | `readDecimalConversionRate` | `(provider, tokenAddress)` | `Promise<bigint>` | Read zERC20 decimal conversion rate |
+| `isBlockedAddress` | `(provider, blocklistAddress, account)` | `Promise<boolean>` | Check if an address is on the OFAC sanctions blocklist |
 | `decodeSendPayload` | `(data: Hex)` | `DecodedSendPayload` | Decode OFT send() calldata |
 | `extractOftSentAmount` | `(logs)` | `bigint \| undefined` | Extract OFTSent amount from tx logs |
 | `decodeBridgeRequest` | `(composeMsg: Hex)` | `DecodedBridgeRequest \| null` | Decode a bridge compose message |
@@ -169,6 +170,7 @@ The SDK exports ABI artifacts for on-chain contracts. These can be used with any
 | `HubArtifact` | Hub contract ABI |
 | `LiquidityManagerArtifact` | LiquidityManager contract ABI |
 | `AdaptorArtifact` | Adaptor contract ABI |
+| `BlocklistArtifact` | Blocklist contract ABI (OFAC sanctions registry) |
 
 ## Utilities
 

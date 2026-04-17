@@ -12,6 +12,23 @@ A private send follows three on/off-chain phases:
 
 > The recipient can then scan the ICP storage canister, decrypt their announcements, and generate a ZKP to mint the equivalent zERC20 via `Verifier.teleport()`.
 
+## Optional: Pre-flight Blocklist Check
+
+zERC20 tokens enforce the on-chain [Blocklist](../specs/contract-spec.md#blocklist) at `transfer` time. Any transfer to a blocked recipient will revert with `AddressIsBlocked`, and because the private-send path sends to a burn address derived from the recipient, the funds would be unrecoverable if the recipient later turned out to be sanctioned.
+
+Call `isBlockedAddress()` before preparing a send to fail fast with a user-friendly error instead of a reverted transaction:
+
+```typescript
+import { isBlockedAddress } from "zerc20-client-sdk";
+
+const blocked = await isBlockedAddress(readProvider, blocklistAddress, recipientAddress);
+if (blocked) {
+  throw new Error("Recipient is on the OFAC sanctions blocklist");
+}
+```
+
+The blocklist contract address is shared across all zERC20 tokens on the same chain; see [Addresses](../../reference/addresses.md) for deployed addresses.
+
 ## Step 1: Derive Seed
 
 Every private send starts with a **seed** -- a wallet-signed message that deterministically derives stealth keys.
