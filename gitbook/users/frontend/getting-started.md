@@ -123,16 +123,16 @@ See [Private Transfer Guide](private-transfer.md) for detailed instructions on s
 
 See [Scan Receives Guide](scan-receives.md) for instructions on receiving transfers.
 
-### Relayer-assisted redeem
+### Gasless Redeem
 
 When you receive a private transfer, the frontend can optionally use a relay node to submit the
 redeem transaction for you. This is useful when your destination wallet does not already hold
 native gas on that chain.
 
-- Enable **Use Relayer** in the receive flow
+- Enable **Gasless Redeem** in the receive flow
 - Review the quoted relay fee before approving
-- Sign the relayer authorization with your wallet
-- The relay submits the redeem transaction and returns a transaction hash
+- Sign the fee authorization with your wallet
+- The relay node submits the redeem transaction and returns a transaction hash
 
 See [Scan Receives Guide](scan-receives.md) for the full redeem flow.
 

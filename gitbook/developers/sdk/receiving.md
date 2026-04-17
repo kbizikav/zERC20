@@ -224,11 +224,11 @@ The SDK automatically selects the proof mode based on the number of eligible eve
 - **1 eligible event** -- uses Groth16 single proof via `Verifier.singleTeleport()`
 - **Multiple eligible events** -- uses Nova batch proof via `Verifier.teleport()` (requires a Decider)
 
-### Optional: Relayer-assisted redeem
+### Optional: Gasless redeem
 
 If you want a relay node to submit the redeem transaction on the user's behalf, attach a
 `RelayerFeeAuthorization` when preparing the transaction. This lets the user cap the fee the
-relayer may keep while avoiding the need to hold native gas on the destination chain.
+relay node may keep while avoiding the need to hold native gas on the destination chain.
 
 ```typescript
 import {
@@ -289,7 +289,7 @@ function prepareRedeemTransaction(
 | `burn` | `BurnArtifacts` | Yes | Burn artifacts for the announcement |
 | `teleportProofClient` | `TeleportProofClient` | Yes | Proof generator (from `sdk.teleportProofs`) |
 | `decider` | `HttpDeciderClient` | No | Required for batch proofs; omit for single-only |
-| `relayerFeeAuth` | `RelayerFeeAuthorization` | No | Required only when preparing a relayer-assisted redeem |
+| `relayerFeeAuth` | `RelayerFeeAuthorization` | No | Required only when preparing a gasless redeem |
 
 **RedeemTransaction:**
 
