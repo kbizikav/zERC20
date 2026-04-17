@@ -49,7 +49,7 @@ pub async fn fetch_local_teleport_merkle_proofs(
         );
     }
     let mut local_proofs = Vec::with_capacity(events.len());
-    for (event, proof) in events.iter().zip(proofs.into_iter()) {
+    for (event, proof) in events.iter().zip(proofs) {
         if proof.leaf_index != event.event_index || proof.target_index != tree_index {
             anyhow::bail!(
                 "Mismatch in proof indices for event index {}: proof leaf index = {}, proof target index = {}, expected target index = {}",
