@@ -69,15 +69,15 @@ Sender → zERC20 transfer to burn address → Recipient scans ICP storage →
 Generates ZKP → Verifier.teleport() → zERC20 mints to recipient
 ```
 
-### 5. Relayer-assisted Receive and Get Gas
+### 5. Gasless Redeem and Get Gas
 
 ```
-Recipient → signs relayer fee authorization / ERC-2612 permit →
+Recipient → signs fee authorization / ERC-2612 permit →
 Relay Node → Verifier.(single)Teleport(...) or SwapHelper.swap(...) →
 recipient receives zERC20 redemption or native gas token
 ```
 
-- **Relayer redeem** lets users redeem eligible transfers without already holding destination-chain native gas.
+- **Gasless redeem** lets users redeem eligible transfers without already holding destination-chain native gas.
 - **Get Gas** lets users swap zERC20 into the destination chain's native token through the relay node.
 - `SwapHelper` keeps the swap path atomic on-chain, so token transfer and native payout succeed or fail together.
 
