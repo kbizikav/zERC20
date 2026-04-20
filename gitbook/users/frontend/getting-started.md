@@ -141,6 +141,8 @@ See [Scan Receives Guide](scan-receives.md) for the full redeem flow.
 The connection card includes a **Get Gas** action for supported tokens. This opens a relay-backed
 swap flow that converts zERC20 into the selected chain's native token.
 
+<figure><img src="../../assets/frontend_how_to/get-gas-dialog.png" alt="Get Gas Dialog" width="420"><figcaption>Get Gas dialog — review balance, pay amount, receive amount, relay fee, and slippage in a single view</figcaption></figure>
+
 Typical flow:
 
 1. Click **Get Gas**
