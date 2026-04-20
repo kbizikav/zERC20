@@ -33,7 +33,7 @@ getrandom.workspace = true
 
 [dev-dependencies]
 pocket-ic = "12.0.0"
-criterion = "0.5"
+criterion = "0.7"
 ic_bls12_381 = { version = "0.10", features = [
     "groups",
     "pairings",
