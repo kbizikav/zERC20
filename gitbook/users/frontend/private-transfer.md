@@ -17,6 +17,8 @@ If you know the recipient's address:
 
 <figure><img src="../../assets/frontend_how_to/private-send-form.png" alt="Private Send Form" width="480"><figcaption>Private Send Form</figcaption></figure>
 
+> **OFAC sanctions pre-check:** After you enter a recipient address, the frontend checks it against the on-chain [Blocklist](../../developers/specs/contract-spec.md#blocklist) before allowing submission. If the recipient is sanctioned, an inline error is shown and the Send button stays disabled. If the check itself fails (e.g. RPC error), the frontend fails closed and also blocks submission until the check succeeds — this prevents a degraded RPC from silently bypassing the sanctions check. See [FAQ — Compliance](../faq.md#compliance) for what the blocklist covers.
+
 The transfer will process in three steps:
 
 1. **Generate**: The system generates a burn address and encrypted announcement
