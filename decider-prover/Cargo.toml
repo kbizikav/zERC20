@@ -29,5 +29,5 @@ actix-cors = { workspace = true }
 api-types = { path = "../api-types", package = "zerc20-api-types" }
 pgmq = "0.32.0"
 sqlx = { workspace = true }
-chrono = "0.4.38"
+chrono = "0.4.44"
 reqwest = { workspace = true, features = ["json"] }
