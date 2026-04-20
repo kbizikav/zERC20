@@ -1162,7 +1162,7 @@ dependencies = [
 [[package]]
 name = "ark-ff-asm"
 version = "0.5.0"
-source = "git+https://github.com/arkworks-rs/algebra#598a5fbabc1903c7bab6668ef8812bfdf2158723"
+source = "git+https://github.com/arkworks-rs/algebra#08aa6de11f481f241ab7d6015be6db89eb03e2f1"
 dependencies = [
  "quote",
  "syn 2.0.106",
@@ -1196,7 +1196,7 @@ dependencies = [
 [[package]]
 name = "ark-ff-macros"
 version = "0.5.0"
-source = "git+https://github.com/arkworks-rs/algebra#598a5fbabc1903c7bab6668ef8812bfdf2158723"
+source = "git+https://github.com/arkworks-rs/algebra#08aa6de11f481f241ab7d6015be6db89eb03e2f1"
 dependencies = [
  "num-bigint",
  "num-traits",
@@ -1236,7 +1236,7 @@ dependencies = [
 [[package]]
 name = "ark-poly"
 version = "0.5.0"
-source = "git+https://github.com/arkworks-rs/algebra#598a5fbabc1903c7bab6668ef8812bfdf2158723"
+source = "git+https://github.com/arkworks-rs/algebra#08aa6de11f481f241ab7d6015be6db89eb03e2f1"
 dependencies = [
  "ahash",
  "ark-ff 0.5.0",
@@ -1358,7 +1358,7 @@ dependencies = [
 [[package]]
 name = "ark-serialize-derive"
 version = "0.5.0"
-source = "git+https://github.com/arkworks-rs/algebra#598a5fbabc1903c7bab6668ef8812bfdf2158723"
+source = "git+https://github.com/arkworks-rs/algebra#08aa6de11f481f241ab7d6015be6db89eb03e2f1"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8408,9 +8408,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
-version = "2.5.7"
+version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08bc136a29a3d1758e07a9cca267be308aeebf5cfd5a10f3f67ab2097683ef5b"
+checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
 dependencies = [
  "form_urlencoded",
  "idna",
