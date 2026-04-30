@@ -41,7 +41,7 @@ jobs:
         with:
           toolchain: stable
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.10
       - name: Check docs
         run: cargo doc --no-deps --workspace
 
@@ -64,7 +64,7 @@ jobs:
           toolchain: stable
           components: clippy
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.10
       - name: Install mold linker
         uses: rui314/setup-mold@v1
       - uses: r7kamura/rust-problem-matchers@v1
@@ -81,7 +81,7 @@ jobs:
         with:
           toolchain: stable
       - name: Run sccache-cache
-        uses: mozilla-actions/sccache-action@v0.0.9
+        uses: mozilla-actions/sccache-action@v0.0.10
       - name: Install mold linker
         uses: rui314/setup-mold@v1
       - uses: taiki-e/install-action@v2
