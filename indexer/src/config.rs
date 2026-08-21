@@ -53,6 +53,9 @@ impl IndexerConfig {
             block_span: env.event_block_span,
             forward_scan_overlap: env.event_forward_scan_overlap,
             reorg_check_window: env.event_reorg_check_window,
+            request_delay_ms: env.event_request_delay_ms,
+            retry_base_delay_ms: env.event_retry_base_delay_ms,
+            retry_max_attempts: env.event_retry_max_attempts,
         };
         event_indexer
             .ensure_valid()
@@ -73,7 +76,8 @@ impl IndexerConfig {
             env.decider_prover_timeout_secs,
             env.decider_prover_poll_interval_ms,
             env.decider_prover_url,
-            env.root_submitter_private_key,
+            env.root_submitter_private_key.as_deref(),
+            env.root_submission_enabled,
             env.root_artifacts_dir,
         )
         .context("invalid root prover configuration")?;
@@ -99,6 +103,12 @@ struct EnvSettings {
     event_forward_scan_overlap: u64,
     #[serde(default = "default_reorg_check_window")]
     event_reorg_check_window: u64,
+    #[serde(default)]
+    event_request_delay_ms: u64,
+    #[serde(default = "default_retry_base_delay_ms")]
+    event_retry_base_delay_ms: u64,
+    #[serde(default = "default_retry_max_attempts")]
+    event_retry_max_attempts: u32,
     #[serde(default = "default_tree_interval_ms")]
     tree_interval_ms: u64,
     #[serde(default = "default_history_window")]
@@ -115,8 +125,12 @@ struct EnvSettings {
     decider_prover_timeout_secs: u64,
     #[serde(default = "default_decider_prover_poll_interval_ms")]
     decider_prover_poll_interval_ms: u64,
+    #[serde(default = "default_decider_prover_url")]
     decider_prover_url: String,
-    root_submitter_private_key: String,
+    #[serde(default = "default_root_submission_enabled")]
+    root_submission_enabled: bool,
+    #[serde(default)]
+    root_submitter_private_key: Option<String>,
     #[serde(default)]
     root_artifacts_dir: Option<String>,
 }
@@ -137,6 +151,12 @@ pub struct EventJobConfig {
     pub forward_scan_overlap: u64,
     #[serde(default = "default_reorg_check_window")]
     pub reorg_check_window: u64,
+    #[serde(default)]
+    pub request_delay_ms: u64,
+    #[serde(default = "default_retry_base_delay_ms")]
+    pub retry_base_delay_ms: u64,
+    #[serde(default = "default_retry_max_attempts")]
+    pub retry_max_attempts: u32,
 }
 
 impl EventJobConfig {
@@ -149,6 +169,10 @@ impl EventJobConfig {
             self.forward_scan_overlap,
             self.reorg_check_window,
         )
+        .map(|config| config.with_request_delay_ms(self.request_delay_ms))
+        .map(|config| {
+            config.with_rate_limit_backoff(self.retry_base_delay_ms, self.retry_max_attempts)
+        })
         .context("invalid event indexer configuration")?;
         Ok(())
     }
@@ -163,6 +187,10 @@ impl EventJobConfig {
             self.forward_scan_overlap,
             self.reorg_check_window,
         )
+        .map(|config| config.with_request_delay_ms(self.request_delay_ms))
+        .map(|config| {
+            config.with_rate_limit_backoff(self.retry_base_delay_ms, self.retry_max_attempts)
+        })
         .context("failed to construct EventIndexerConfig")
     }
 }
@@ -174,6 +202,9 @@ impl Default for EventJobConfig {
             block_span: default_block_span(),
             forward_scan_overlap: default_forward_overlap(),
             reorg_check_window: default_reorg_check_window(),
+            request_delay_ms: 0,
+            retry_base_delay_ms: default_retry_base_delay_ms(),
+            retry_max_attempts: default_retry_max_attempts(),
         }
     }
 }
@@ -236,6 +267,7 @@ pub struct RootJobConfig {
     pub prover_poll_interval: Duration,
     pub prover_url: Url,
     pub submitter_private_key: B256,
+    pub submission_enabled: bool,
     pub artifacts_dir: PathBuf,
 }
 
@@ -248,7 +280,8 @@ impl RootJobConfig {
         prover_timeout_secs: u64,
         prover_poll_interval_ms: u64,
         prover_url: String,
-        submitter_private_key: String,
+        submitter_private_key: Option<&str>,
+        submission_enabled: bool,
         artifacts_dir: Option<String>,
     ) -> Result<Self> {
         if interval_ms == 0 {
@@ -271,7 +304,7 @@ impl RootJobConfig {
         let prover_url = Url::parse(prover_url.trim())
             .context("failed to parse decider prover URL from DECIDER_PROVER_URL")?;
         let submitter_private_key =
-            parse_hex_b256(&submitter_private_key).context("invalid ROOT_SUBMITTER_PRIVATE_KEY")?;
+            parse_submitter_private_key(submitter_private_key, submission_enabled)?;
         let artifacts_dir = match artifacts_dir {
             Some(path) => {
                 let normalized = PathBuf::from(path);
@@ -292,6 +325,7 @@ impl RootJobConfig {
             prover_poll_interval: Duration::from_millis(prover_poll_interval_ms),
             prover_url,
             submitter_private_key,
+            submission_enabled,
             artifacts_dir,
         })
     }
@@ -321,6 +355,14 @@ fn default_reorg_check_window() -> u64 {
     REORG_CHECK_WINDOW_RECOMMENDED
 }
 
+fn default_retry_base_delay_ms() -> u64 {
+    5_000
+}
+
+fn default_retry_max_attempts() -> u32 {
+    5
+}
+
 fn default_tree_interval_ms() -> u64 {
     DEFAULT_TREE_INTERVAL_MS
 }
@@ -343,6 +385,14 @@ fn default_root_interval_ms() -> u64 {
 
 fn default_root_submit_interval_ms() -> u64 {
     DEFAULT_ROOT_SUBMIT_INTERVAL_MS
+}
+
+fn default_decider_prover_url() -> String {
+    "http://127.0.0.1:8081".to_string()
+}
+
+fn default_root_submission_enabled() -> bool {
+    true
 }
 
 fn default_decider_prover_timeout_secs() -> u64 {
@@ -378,9 +428,35 @@ fn parse_hex_b256(value: &str) -> Result<B256> {
     Ok(B256::from(arr))
 }
 
+fn parse_submitter_private_key(value: Option<&str>, submission_enabled: bool) -> Result<B256> {
+    match (value, submission_enabled) {
+        (Some(value), _) => parse_hex_b256(value).context("invalid ROOT_SUBMITTER_PRIVATE_KEY"),
+        (None, true) => Err(anyhow!(
+            "ROOT_SUBMITTER_PRIVATE_KEY is required when ROOT_SUBMISSION_ENABLED=true"
+        )),
+        (None, false) => Ok(B256::ZERO),
+    }
+}
+
 fn workspace_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .parent()
         .map(Path::to_path_buf)
         .unwrap_or_else(|| PathBuf::from("."))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::parse_submitter_private_key;
+
+    #[test]
+    fn root_submitter_key_is_optional_when_submission_is_disabled() {
+        assert!(parse_submitter_private_key(None, false).is_ok());
+    }
+
+    #[test]
+    fn root_submitter_key_is_required_when_submission_is_enabled() {
+        let error = parse_submitter_private_key(None, true).unwrap_err();
+        assert!(error.to_string().contains("ROOT_SUBMITTER_PRIVATE_KEY"));
+    }
 }

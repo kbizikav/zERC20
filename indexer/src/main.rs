@@ -89,21 +89,31 @@ async fn main() -> Result<()> {
         .build_tree_config()
         .context("failed to build merkle tree config for root prover job")?;
 
-    let root_job = RootProverJobBuilder::new(
-        pool.clone(),
-        config.root.clone(),
-        tree_config.clone(),
-        config.tree.height,
-        config.tokens.clone(),
-    )
-    .into_job()
-    .context("failed to construct root prover job")?;
+    let root_job = if config.root.submission_enabled {
+        Some(
+            RootProverJobBuilder::new(
+                pool.clone(),
+                config.root.clone(),
+                tree_config.clone(),
+                config.tree.height,
+                config.tokens.clone(),
+            )
+            .with_submission_enabled(true)
+            .into_job()
+            .context("failed to construct root prover job")?,
+        )
+    } else {
+        info!("ROOT_SUBMISSION_ENABLED is false; root prover job is disabled");
+        None
+    };
 
     if cli.once {
         if run_sync {
             event_job.run_once().await;
             tree_job.run_once().await;
-            root_job.run_once().await?;
+            if let Some(root_job) = root_job {
+                root_job.run_once().await?;
+            }
         } else {
             info!("IS_SYNC is not set to 'true'; skipping job execution in --once mode");
         }
@@ -125,7 +135,12 @@ async fn main() -> Result<()> {
         );
         let event_handle = tokio::spawn(async move { event_job.run_forever().await });
         let tree_handle = tokio::spawn(async move { tree_job.run_forever().await });
-        let root_handle = tokio::spawn(async move { root_job.run_forever().await });
+        let root_handle = tokio::spawn(async move {
+            match root_job {
+                Some(root_job) => root_job.run_forever().await,
+                None => std::future::pending::<Result<()>>().await,
+            }
+        });
 
         tokio::select! {
             res = &mut server_future => {

@@ -11,7 +11,7 @@ use client_common::{
     contracts::{ContractError, z_erc20::ZErc20Contract},
     tokens::TokenMetadata,
 };
-use log::warn;
+use log::{info, warn};
 
 pub const BLOCK_SPAN_RECOMMENDED: u64 = 5_000;
 pub const FORWARD_SCAN_OVERLAP_RECOMMENDED: u64 = 10;
@@ -70,6 +70,9 @@ pub struct EventIndexerConfig {
     block_span: NonZeroU64,
     forward_scan_overlap: u64,
     reorg_check_window: u64,
+    request_delay_ms: u64,
+    retry_base_delay_ms: u64,
+    retry_max_attempts: u32,
 }
 
 impl EventIndexerConfig {
@@ -87,7 +90,21 @@ impl EventIndexerConfig {
             block_span,
             forward_scan_overlap,
             reorg_check_window,
+            request_delay_ms: 0,
+            retry_base_delay_ms: 5_000,
+            retry_max_attempts: 5,
         })
+    }
+
+    pub fn with_request_delay_ms(mut self, request_delay_ms: u64) -> Self {
+        self.request_delay_ms = request_delay_ms;
+        self
+    }
+
+    pub fn with_rate_limit_backoff(mut self, base_delay_ms: u64, max_attempts: u32) -> Self {
+        self.retry_base_delay_ms = base_delay_ms;
+        self.retry_max_attempts = max_attempts.max(1);
+        self
     }
 
     pub fn block_span(&self) -> NonZeroU64 {
@@ -100,6 +117,18 @@ impl EventIndexerConfig {
 
     pub fn reorg_check_window(&self) -> u64 {
         self.reorg_check_window
+    }
+
+    pub fn request_delay_ms(&self) -> u64 {
+        self.request_delay_ms
+    }
+
+    fn retry_base_delay_ms(&self) -> u64 {
+        self.retry_base_delay_ms
+    }
+
+    fn retry_max_attempts(&self) -> u32 {
+        self.retry_max_attempts
     }
 }
 
@@ -157,16 +186,12 @@ impl EventIndexer {
             .await?;
         }
 
-        let latest_block = self
-            .contract
-            .latest_block()
-            .await
-            .map_err(|err| EventIndexerError::contract("latest_block", err))?;
-        let contract_next_index = self
-            .contract
-            .index()
-            .await
-            .map_err(|err| EventIndexerError::contract("index", err))?;
+        let latest_block = self.latest_block_with_backoff().await?;
+        let contract_next_index = self.contract_index_with_backoff().await?;
+        info!(
+            "event sync phase reached logs for '{}' at latest_block={} contract_next_index={} from_db_block={}",
+            self.label, latest_block, contract_next_index, state.last_synced_block
+        );
         let expected_last_index = contract_next_index.checked_sub(1);
 
         let forward_start = state
@@ -175,7 +200,8 @@ impl EventIndexer {
             .max(self.deployed_block_number);
 
         let synced_to = if forward_start <= latest_block {
-            self.scan_chunked(forward_start, latest_block).await?
+            self.scan_chunked(forward_start, latest_block, contract_next_index)
+                .await?
         } else {
             latest_block
         };
@@ -207,7 +233,12 @@ impl EventIndexer {
 
     /// Scans blocks in chunks and returns the actual `to_block` that was scanned
     /// (which may be lower than the input if the head was refreshed).
-    async fn scan_chunked(&self, from_block: u64, to_block: u64) -> Result<u64> {
+    async fn scan_chunked(
+        &self,
+        from_block: u64,
+        to_block: u64,
+        contract_next_index: u64,
+    ) -> Result<u64> {
         if from_block > to_block {
             return Ok(to_block);
         }
@@ -219,16 +250,18 @@ impl EventIndexer {
         let mut current_span = max_block_span;
 
         while from <= to_block {
+            if self.config.request_delay_ms() > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    self.config.request_delay_ms(),
+                ))
+                .await;
+            }
             let to = to_block.min(from.saturating_add(current_span - 1));
-            let fetched = match self.contract.get_indexed_transfer_events(from, to).await {
+            let fetched = match self.fetch_events_with_backoff(from, to).await {
                 Ok(events) => events,
                 Err(err) => {
                     if is_beyond_head_error(&err) {
-                        let refreshed = self
-                            .contract
-                            .latest_block()
-                            .await
-                            .map_err(|e| EventIndexerError::contract("latest_block", e))?;
+                        let refreshed = self.latest_block_with_backoff().await?;
                         warn!(
                             "block range [{from}, {to}] extends beyond head for '{}' (contract {}); \
                             refreshed latest block from {} to {}",
@@ -283,6 +316,18 @@ impl EventIndexer {
                 insert_events(&self.pool, self.partitions.token_id(), &fetched).await?;
             }
 
+            // Persist after every successfully scanned chunk so a process
+            // restart resumes from this boundary instead of replaying the
+            // entire catch-up range. Event insertion is idempotent, but the
+            // watermark is the primary crash-resume primitive.
+            persist_sync_watermark(
+                &self.pool,
+                self.partitions.token_id(),
+                to,
+                contract_next_index,
+            )
+            .await?;
+
             if to == to_block {
                 break;
             }
@@ -300,6 +345,74 @@ impl EventIndexer {
         }
 
         Ok(to_block)
+    }
+
+    async fn latest_block_with_backoff(&self) -> Result<u64> {
+        self.retry_rpc("latest_block", || self.contract.latest_block())
+            .await
+    }
+
+    async fn contract_index_with_backoff(&self) -> Result<u64> {
+        self.retry_rpc("index", || self.contract.index()).await
+    }
+
+    async fn retry_rpc<T, F, Fut>(&self, action: &'static str, mut call: F) -> Result<T>
+    where
+        F: FnMut() -> Fut,
+        Fut: std::future::Future<Output = std::result::Result<T, ContractError>>,
+    {
+        let mut attempt = 0u32;
+        loop {
+            match call().await {
+                Ok(value) => return Ok(value),
+                Err(err)
+                    if is_rate_limit_error(&err)
+                        && attempt + 1 < self.config.retry_max_attempts() =>
+                {
+                    let delay = self
+                        .config
+                        .retry_base_delay_ms()
+                        .saturating_mul(1u64 << attempt.min(6));
+                    warn!(
+                        "RPC rate limit during {action}; retrying after {delay}ms (attempt {})",
+                        attempt + 1
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                    attempt += 1;
+                }
+                Err(err) => return Err(EventIndexerError::contract(action, err)),
+            }
+        }
+    }
+
+    async fn fetch_events_with_backoff(
+        &self,
+        from: u64,
+        to: u64,
+    ) -> std::result::Result<Vec<IndexedEvent>, ContractError> {
+        let mut attempt = 0u32;
+        loop {
+            match self.contract.get_indexed_transfer_events(from, to).await {
+                Ok(events) => return Ok(events),
+                Err(err)
+                    if is_rate_limit_error(&err)
+                        && attempt + 1 < self.config.retry_max_attempts() =>
+                {
+                    let shift = attempt.min(6);
+                    let delay = self
+                        .config
+                        .retry_base_delay_ms()
+                        .saturating_mul(1u64 << shift);
+                    warn!(
+                        "RPC rate limit for block range [{from}, {to}], retrying after {delay}ms (attempt {})",
+                        attempt + 1
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                    attempt += 1;
+                }
+                Err(err) => return Err(err),
+            }
+        }
     }
 
     async fn backfill_missing_indices(
@@ -331,8 +444,12 @@ impl EventIndexer {
             };
 
             let prior_contiguous = state.contiguous_index;
-            self.scan_chunked(anchor.from_block, anchor.to_block)
-                .await?;
+            self.scan_chunked(
+                anchor.from_block,
+                anchor.to_block,
+                target_last_index.saturating_add(1),
+            )
+            .await?;
 
             let next_state =
                 advance_contiguous_index(&self.pool, self.partitions.token_id()).await?;
@@ -361,20 +478,22 @@ impl EventIndexer {
             return Ok(Vec::new());
         }
 
-        let futs: Vec<_> = unique
-            .into_iter()
-            .map(|number| async move {
-                let hash = self
-                    .contract
-                    .block_hash_by_number(number)
-                    .await
-                    .map_err(|err| EventIndexerError::contract("block_hash_by_number", err))?;
-                Ok((number, hash))
-            })
-            .collect();
-
-        let results: Vec<Result<(u64, B256)>> = futures::future::join_all(futs).await;
-        results.into_iter().collect()
+        let mut results = Vec::with_capacity(unique.len());
+        for number in unique {
+            if self.config.request_delay_ms() > 0 {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    self.config.request_delay_ms(),
+                ))
+                .await;
+            }
+            let hash = self
+                .retry_rpc("block_hash_by_number", || {
+                    self.contract.block_hash_by_number(number)
+                })
+                .await?;
+            results.push((number, hash));
+        }
+        Ok(results)
     }
 
     async fn detect_reorg(&self, state: &IndexerState) -> Result<Option<u64>> {
@@ -589,6 +708,8 @@ struct PreparedEvent {
     from: Vec<u8>,
     to: Vec<u8>,
     value_bytes: [u8; VALUE_BYTES],
+    transaction_hash: Vec<u8>,
+    log_index_i64: i64,
 }
 
 #[derive(Clone, Debug)]
@@ -675,6 +796,14 @@ impl EventIndexerPartitions {
 ///
 /// If you encounter a new error pattern that should trigger span reduction,
 /// add it here and document the provider that uses it.
+fn is_rate_limit_error(err: &ContractError) -> bool {
+    let message = err.to_string().to_ascii_lowercase();
+    message.contains("429")
+        || message.contains("too many requests")
+        || message.contains("rate limit")
+        || message.contains("throughput")
+}
+
 fn is_beyond_head_error(err: &ContractError) -> bool {
     let message = err.to_string().to_ascii_lowercase();
     message.contains("beyond current head")
@@ -691,6 +820,7 @@ fn is_invalid_block_range_error(err: &ContractError) -> bool {
         || message.contains("query returned more than")
         || message.contains("too many results")
         || message.contains("range too large")
+        || message.contains("up to a 10 block range")
         || (message.contains("eth_getlogs") && message.contains("limit"))
 }
 
@@ -1006,6 +1136,8 @@ async fn insert_events(pool: &PgPool, token_id: i64, events: &[IndexedEvent]) ->
             from: event.from.as_slice().to_vec(),
             to: event.to.as_slice().to_vec(),
             value_bytes: u256_to_bytes(&event.value),
+            transaction_hash: event.transaction_hash.as_slice().to_vec(),
+            log_index_i64: to_i64(event.log_index, "event log index")?,
         });
     }
 
@@ -1015,7 +1147,7 @@ async fn insert_events(pool: &PgPool, token_id: i64, events: &[IndexedEvent]) ->
         .map_err(|err| EventIndexerError::database("begin events insert transaction", err))?;
 
     let mut builder = QueryBuilder::<Postgres>::new(format!(
-        "INSERT INTO {events_table} (token_id, event_index, from_address, to_address, value, eth_block_number) ",
+        "INSERT INTO {events_table} (token_id, event_index, from_address, to_address, value, eth_block_number, transaction_hash, log_index) ",
         events_table = EVENTS_TABLE,
     ));
     builder.push_values(&prepared, |mut b, event| {
@@ -1025,13 +1157,17 @@ async fn insert_events(pool: &PgPool, token_id: i64, events: &[IndexedEvent]) ->
         b.push_bind(event.to.as_slice());
         b.push_bind(event.value_bytes.as_slice());
         b.push_bind(event.block_i64);
+        b.push_bind(event.transaction_hash.as_slice());
+        b.push_bind(event.log_index_i64);
     });
     builder.push(
         " ON CONFLICT (token_id, event_index) DO UPDATE \
          SET from_address = EXCLUDED.from_address, \
              to_address = EXCLUDED.to_address, \
              value = EXCLUDED.value, \
-             eth_block_number = EXCLUDED.eth_block_number",
+             eth_block_number = EXCLUDED.eth_block_number,
+             transaction_hash = EXCLUDED.transaction_hash,
+             log_index = EXCLUDED.log_index",
     );
 
     builder

@@ -245,10 +245,12 @@ async fn events_by_recipient(
 
     let rows = sqlx::query(
         r#"
-        SELECT event_index, from_address, to_address, value, eth_block_number
+        SELECT event_index, from_address, to_address, value, eth_block_number, transaction_hash, log_index
         FROM indexed_transfer_events
         WHERE token_id = $1
           AND to_address = $2
+          AND transaction_hash IS NOT NULL
+          AND log_index IS NOT NULL
         ORDER BY event_index ASC
         LIMIT $3
         "#,
@@ -283,6 +285,14 @@ async fn events_by_recipient(
         let block_number: i64 = row.try_get("eth_block_number").map_err(|_| {
             ErrorInternalServerError("invalid eth_block_number retrieved from database")
         })?;
+        let tx_bytes: Vec<u8> = row.try_get("transaction_hash").map_err(|_| {
+            ErrorInternalServerError("invalid transaction_hash retrieved from database")
+        })?;
+        let transaction_hash = alloy::primitives::B256::try_from(tx_bytes.as_slice())
+            .map_err(|_| ErrorInternalServerError("transaction_hash must be 32 bytes"))?;
+        let log_index: i64 = row
+            .try_get("log_index")
+            .map_err(|_| ErrorInternalServerError("invalid log_index retrieved from database"))?;
 
         let event_index = u64::try_from(event_index)
             .map_err(|_| ErrorInternalServerError("event_index does not fit into u64"))?;
@@ -296,10 +306,14 @@ async fn events_by_recipient(
 
         events.push(IndexedEvent {
             event_index,
+            token_address: token.token_address,
             from,
             to,
             value,
             eth_block_number: block_number,
+            transaction_hash,
+            log_index: u64::try_from(log_index)
+                .map_err(|_| ErrorInternalServerError("log_index does not fit into u64"))?,
         });
     }
 
@@ -337,7 +351,7 @@ async fn all_events(
 
     let rows = sqlx::query(
         r#"
-        SELECT chain_id, token_address, event_index, from_address, to_address, value, eth_block_number
+        SELECT chain_id, token_address, event_index, from_address, to_address, value, eth_block_number, transaction_hash, log_index
         FROM (
             SELECT
                 t.chain_id,
@@ -347,10 +361,14 @@ async fn all_events(
                 e.to_address,
                 e.value,
                 e.eth_block_number,
+                e.transaction_hash,
+                e.log_index,
                 ROW_NUMBER() OVER (PARTITION BY e.token_id, e.to_address ORDER BY e.event_index ASC) AS rn
             FROM indexed_transfer_events e
             JOIN tokens t ON t.id = e.token_id
             WHERE e.to_address = ANY($1)
+              AND e.transaction_hash IS NOT NULL
+              AND e.log_index IS NOT NULL
         ) ranked
         WHERE rn <= $2
         ORDER BY chain_id ASC, token_address ASC, event_index ASC
@@ -388,6 +406,14 @@ async fn all_events(
         let block_number: i64 = row.try_get("eth_block_number").map_err(|_| {
             ErrorInternalServerError("invalid eth_block_number retrieved from database")
         })?;
+        let tx_bytes: Vec<u8> = row.try_get("transaction_hash").map_err(|_| {
+            ErrorInternalServerError("invalid transaction_hash retrieved from database")
+        })?;
+        let transaction_hash = alloy::primitives::B256::try_from(tx_bytes.as_slice())
+            .map_err(|_| ErrorInternalServerError("transaction_hash must be 32 bytes"))?;
+        let log_index: i64 = row
+            .try_get("log_index")
+            .map_err(|_| ErrorInternalServerError("invalid log_index retrieved from database"))?;
 
         let chain_id = u64::try_from(chain_id)
             .map_err(|_| ErrorInternalServerError("chain_id does not fit into u64"))?;
@@ -410,6 +436,9 @@ async fn all_events(
             to,
             value,
             eth_block_number: block_number,
+            transaction_hash,
+            log_index: u64::try_from(log_index)
+                .map_err(|_| ErrorInternalServerError("log_index does not fit into u64"))?,
         });
     }
 

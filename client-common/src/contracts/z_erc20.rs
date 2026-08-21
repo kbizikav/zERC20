@@ -303,10 +303,13 @@ impl ZErc20Contract {
             .into_iter()
             .map(|(e, l)| IndexedEvent {
                 event_index: uint256_as_u64(e.index),
+                token_address: self.address,
                 from: e.from,
                 to: e.to,
                 value: e.value,
                 eth_block_number: l.block_number.unwrap_or_default(),
+                transaction_hash: l.transaction_hash.unwrap_or_default(),
+                log_index: l.log_index.unwrap_or_default(),
             })
             .collect();
         Ok(events)

@@ -195,12 +195,17 @@ pub mod indexer {
     pub struct IndexedEvent {
         pub event_index: u64,
         #[serde_as(as = "DisplayFromStr")]
+        pub token_address: Address,
+        #[serde_as(as = "DisplayFromStr")]
         pub from: Address,
         #[serde_as(as = "DisplayFromStr")]
         pub to: Address,
         #[serde(with = "crate::serde_utils::u256_hex")]
         pub value: U256,
         pub eth_block_number: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub transaction_hash: alloy::primitives::B256,
+        pub log_index: u64,
     }
 
     #[serde_as]
@@ -217,6 +222,9 @@ pub mod indexer {
         #[serde(with = "crate::serde_utils::u256_hex")]
         pub value: U256,
         pub eth_block_number: u64,
+        #[serde_as(as = "DisplayFromStr")]
+        pub transaction_hash: alloy::primitives::B256,
+        pub log_index: u64,
     }
 
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -258,14 +266,52 @@ pub mod indexer {
         pub limit: Option<usize>,
     }
 
-    #[serde_as]
     #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
     pub struct AllEventsQuery {
-        #[serde_as(as = "Vec<DisplayFromStr>")]
-        #[serde(default)]
+        #[serde(default, deserialize_with = "deserialize_recipients")]
         pub recipients: Vec<Address>,
         #[serde(default)]
         pub limit: Option<usize>,
+    }
+
+    fn deserialize_recipients<'de, D>(deserializer: D) -> Result<Vec<Address>, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Clone, Copy)]
+        struct RecipientsVisitor;
+
+        impl<'de> serde::de::Visitor<'de> for RecipientsVisitor {
+            type Value = Vec<Address>;
+
+            fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                formatter.write_str("a recipient address or a sequence of recipient addresses")
+            }
+
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: serde::de::Error,
+            {
+                value
+                    .split(',')
+                    .filter(|value| !value.is_empty())
+                    .map(|value| value.parse().map_err(E::custom))
+                    .collect()
+            }
+
+            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+            where
+                A: serde::de::SeqAccess<'de>,
+            {
+                let mut recipients = Vec::new();
+                while let Some(value) = seq.next_element::<String>()? {
+                    recipients.extend(self.visit_str::<A::Error>(&value)?);
+                }
+                Ok(recipients)
+            }
+        }
+
+        deserializer.deserialize_any(RecipientsVisitor)
     }
 
     #[serde_as]

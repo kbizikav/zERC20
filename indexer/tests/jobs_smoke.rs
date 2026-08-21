@@ -203,6 +203,7 @@ async fn event_and_tree_jobs_ingest_transfers() -> Result<()> {
         prover_url: Url::parse("http://127.0.0.1:8080").expect("hardcoded prover url should parse"),
         submitter_private_key: deployer_key,
         artifacts_dir,
+        submission_enabled: false,
     };
     let tree_db_config = tree_job_config
         .build_tree_config()
